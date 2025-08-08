@@ -146,15 +146,17 @@ export function DocumentUploadModal({ open, onOpenChange, loanId, borrowerId }: 
       // For now, we'll create a document record
       const documentData = {
         fileName: fileWithProgress.file.name,
-        fileType: fileWithProgress.file.type,
+        originalFileName: fileWithProgress.file.name,
+        title: fileWithProgress.file.name.split('.')[0], // Use filename without extension as title
+        filePath: `/documents/${Date.now()}_${fileWithProgress.file.name}`, // Placeholder path
+        mimeType: fileWithProgress.file.type,
         fileSize: fileWithProgress.file.size,
         documentType,
-        description,
+        description: description || null,
         loanId: loanId || null,
         borrowerId: borrowerId || null,
         uploadedBy: user?.id,
-        uploadedAt: new Date().toISOString(),
-        fileUrl: `/documents/${Date.now()}_${fileWithProgress.file.name}` // Placeholder URL
+        tags: []
       };
 
       const res = await apiRequest("POST", "/api/documents", documentData);
