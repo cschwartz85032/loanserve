@@ -72,7 +72,7 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
     );
   }
   
-  // Handle text files - Chrome-safe approach
+  // Handle text files - Display inline
   if (mimeType.includes('text') || fileExtension === 'txt') {
     return (
       <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-sm overflow-hidden">
@@ -92,34 +92,22 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
           </Button>
         </div>
         
-        <div className="p-8 text-center">
-          <FileText className="h-20 w-20 mx-auto mb-6 text-blue-500" />
-          <h3 className="font-semibold text-xl mb-3 text-gray-900">Text File Ready</h3>
-          <p className="text-gray-600 mb-6 max-w-md mx-auto">
-            Your text file opens in a new tab for better readability and editing.
-          </p>
-          
-          <div className="space-y-4 max-w-sm mx-auto">
-            <Button asChild className="w-full h-12 text-base">
-              <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                <FileText className="h-5 w-5 mr-3" />
-                View Text File
-              </a>
-            </Button>
-            
-            <Button variant="outline" asChild className="w-full h-12 text-base">
-              <a href={fileUrl} download={fileName}>
-                <Download className="h-5 w-5 mr-3" />
-                Download File
-              </a>
-            </Button>
-          </div>
+        <div className="p-4 overflow-auto max-h-[500px]">
+          <iframe
+            src={fileUrl}
+            className="w-full h-[400px] border-0 rounded"
+            title={fileName}
+            onError={(e) => {
+              console.error('Failed to load text file:', fileName);
+              e.currentTarget.style.display = 'none';
+            }}
+          />
         </div>
       </div>
     );
   }
 
-  // Handle Office documents - Chrome-safe approach  
+  // Handle Office documents - Display inline with fallback
   if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(fileExtension)) {
     return (
       <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-sm overflow-hidden">
@@ -132,46 +120,61 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
             </Badge>
           </div>
           
-          <Button variant="ghost" size="sm" asChild>
-            <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-              Open in New Tab
-            </a>
-          </Button>
-        </div>
-        
-        <div className="p-8 text-center">
-          <FileText className="h-20 w-20 mx-auto mb-6 text-green-500" />
-          <h3 className="font-semibold text-xl mb-3 text-gray-900">{fileExtension.toUpperCase()} Document Ready</h3>
-          <p className="text-gray-600 mb-6 max-w-md mx-auto">
-            Your {fileExtension.toUpperCase()} document opens in a new tab with full functionality and optimal performance.
-          </p>
-          
-          <div className="space-y-4 max-w-sm mx-auto">
-            <Button asChild className="w-full h-12 text-base">
-              <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                <FileText className="h-5 w-5 mr-3" />
-                Open {fileExtension.toUpperCase()} Document
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" asChild>
+              <a href={fileUrl} download={fileName}>
+                <Download className="h-4 w-4" />
               </a>
             </Button>
             
-            <Button variant="outline" asChild className="w-full h-12 text-base">
-              <a href={fileUrl} download={fileName}>
-                <Download className="h-5 w-5 mr-3" />
-                Download Document
+            <Button variant="ghost" size="sm" asChild>
+              <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                Open in New Tab
               </a>
             </Button>
           </div>
-
-          <div className="mt-8 p-4 bg-green-50 border border-green-100 rounded-lg max-w-md mx-auto">
-            <div className="flex items-start text-left">
-              <FileText className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-green-800 mb-1">
-                  Professional Document Viewing
-                </p>
-                <p className="text-xs text-green-700">
-                  Opens in new tab with native application support, enabling full editing and formatting capabilities.
-                </p>
+        </div>
+        
+        <div className="relative w-full" style={{ height: '600px' }}>
+          <object
+            data={fileUrl}
+            type={mimeType}
+            className="w-full h-full"
+            onError={(e) => {
+              console.error('Failed to load Office document:', fileName);
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+              if (fallback) fallback.classList.remove('hidden');
+            }}
+          >
+            <embed
+              src={fileUrl}
+              type={mimeType}
+              className="w-full h-full"
+            />
+          </object>
+          
+          <div className="hidden flex items-center justify-center h-full bg-gray-50 dark:bg-gray-800">
+            <div className="text-center p-8">
+              <FileText className="h-16 w-16 mx-auto mb-4 text-green-500" />
+              <h3 className="font-medium text-lg mb-2">{fileExtension.toUpperCase()} Document</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                This document cannot be displayed inline. Please download or open in a new tab.
+              </p>
+              
+              <div className="space-y-3">
+                <Button asChild className="w-full">
+                  <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                    Open in New Tab
+                  </a>
+                </Button>
+                
+                <Button variant="outline" asChild className="w-full">
+                  <a href={fileUrl} download={fileName}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </a>
+                </Button>
               </div>
             </div>
           </div>

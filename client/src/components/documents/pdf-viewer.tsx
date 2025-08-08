@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Download, ZoomIn, ZoomOut, RotateCw } from 'lucide-react';
+import { FileText, Download, ZoomIn, ZoomOut, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -9,6 +9,8 @@ interface PDFViewerProps {
 }
 
 export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
+  const [loadError, setLoadError] = useState(false);
+
   return (
     <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-sm overflow-hidden">
       {/* Header */}
@@ -23,51 +25,61 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
         
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" asChild>
+            <a href={fileUrl} download={fileName}>
+              <Download className="h-4 w-4" />
+            </a>
+          </Button>
+          
+          <Button variant="ghost" size="sm" asChild>
             <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-              <Download className="h-4 w-4 mr-1" />
-              Download
+              Open in New Tab
             </a>
           </Button>
         </div>
       </div>
 
-      {/* PDF Content - Chrome-safe approach */}
-      <div className="p-8 text-center">
-        <FileText className="h-20 w-20 mx-auto mb-6 text-blue-500" />
-        <h3 className="font-semibold text-xl mb-3 text-gray-900">PDF Document Ready</h3>
-        <p className="text-gray-600 mb-6 max-w-md mx-auto">
-          Due to browser security settings, PDFs open in a new tab for the best viewing experience.
-        </p>
-        
-        <div className="space-y-4 max-w-sm mx-auto">
-          <Button asChild className="w-full h-12 text-base">
-            <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-              <FileText className="h-5 w-5 mr-3" />
-              View PDF Document
-            </a>
-          </Button>
-          
-          <Button variant="outline" asChild className="w-full h-12 text-base">
-            <a href={fileUrl} download={fileName}>
-              <Download className="h-5 w-5 mr-3" />
-              Download PDF
-            </a>
-          </Button>
-        </div>
-        
-        <div className="mt-8 p-4 bg-blue-50 border border-blue-100 rounded-lg max-w-md mx-auto">
-          <div className="flex items-start text-left">
-            <FileText className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-blue-800 mb-1">
-                Why New Tab?
+      {/* PDF Content */}
+      <div className="relative w-full" style={{ height: '600px' }}>
+        {!loadError ? (
+          <object
+            data={`${fileUrl}#toolbar=1&navpanes=1&scrollbar=1&page=1&view=FitH`}
+            type="application/pdf"
+            className="w-full h-full"
+            onError={() => setLoadError(true)}
+          >
+            <embed
+              src={`${fileUrl}#toolbar=1&navpanes=1&scrollbar=1&page=1&view=FitH`}
+              type="application/pdf"
+              className="w-full h-full"
+              onError={() => setLoadError(true)}
+            />
+          </object>
+        ) : (
+          <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-800">
+            <div className="text-center p-8">
+              <AlertTriangle className="h-16 w-16 mx-auto mb-4 text-yellow-500" />
+              <h3 className="font-medium text-lg mb-2">PDF Preview Unavailable</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                This PDF cannot be displayed inline. Please download or open in a new tab.
               </p>
-              <p className="text-xs text-blue-700">
-                Chrome blocks PDF display in modals for security. New tabs provide full PDF controls and better performance.
-              </p>
+              
+              <div className="space-y-3">
+                <Button asChild className="w-full">
+                  <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                    Open PDF in New Tab
+                  </a>
+                </Button>
+                
+                <Button variant="outline" asChild className="w-full">
+                  <a href={fileUrl} download={fileName}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </a>
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
