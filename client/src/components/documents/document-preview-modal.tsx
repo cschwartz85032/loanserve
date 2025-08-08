@@ -61,36 +61,12 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
       const fileType = document.mimeType || document.fileType;
       // Reset states when document changes
       setError('');
-      setPreviewUrl('');
-      setLoading(true);
+      setLoading(false);
       
-      // Fetch the document and create a blob URL for better compatibility
-      const fetchDocument = async () => {
-        try {
-          const response = await fetch(`/api/documents/${document.id}/file`);
-          if (!response.ok) {
-            throw new Error('Failed to fetch document');
-          }
-          
-          const blob = await response.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          setPreviewUrl(blobUrl);
-          setLoading(false);
-        } catch (err) {
-          console.error('Error fetching document:', err);
-          setError('Failed to load document');
-          setLoading(false);
-        }
-      };
-      
-      fetchDocument();
-      
-      // Cleanup function to revoke the blob URL
-      return () => {
-        if (previewUrl && previewUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(previewUrl);
-        }
-      };
+      // Use direct URL for better compatibility
+      // The browser's native PDF viewer will handle the display
+      const documentUrl = `/api/documents/${document.id}/file`;
+      setPreviewUrl(documentUrl);
     }
   }, [document]);
 
@@ -235,37 +211,47 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                         }}
                       />
                     ) : fileType?.includes('pdf') ? (
-                      <div className="w-full h-full">
-                        {loading ? (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4 animate-pulse" />
-                              <p className="text-slate-600">Loading PDF...</p>
-                            </div>
-                          </div>
-                        ) : error ? (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <FileText className="w-24 h-24 text-red-300 mx-auto mb-4" />
-                              <p className="text-red-600">{error}</p>
-                              <p className="text-sm text-slate-500 mt-2">
-                                Please try downloading the file instead
-                              </p>
-                            </div>
-                          </div>
-                        ) : previewUrl ? (
-                          <embed
-                            src={previewUrl}
+                      <div className="w-full h-full bg-gray-50 rounded-lg">
+                        {previewUrl ? (
+                          <object
+                            data={previewUrl}
                             type="application/pdf"
-                            className="w-full h-full border-0 rounded-lg shadow-lg"
+                            className="w-full h-full rounded-lg"
                             style={{
                               transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
                               transformOrigin: 'center',
                               transition: 'transform 0.3s ease'
                             }}
-                            title="PDF Preview"
-                          />
-                        ) : null}
+                          >
+                            <div className="flex items-center justify-center h-full">
+                              <div className="text-center p-8">
+                                <FileText className="w-24 h-24 text-slate-400 mx-auto mb-4" />
+                                <p className="text-lg font-medium text-slate-700 mb-2">
+                                  PDF Preview Not Available
+                                </p>
+                                <p className="text-sm text-slate-500 mb-4">
+                                  Your browser may not support inline PDF viewing
+                                </p>
+                                <a
+                                  href={previewUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                                >
+                                  <Download className="w-4 h-4 mr-2" />
+                                  Open in New Tab
+                                </a>
+                              </div>
+                            </div>
+                          </object>
+                        ) : (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                              <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4" />
+                              <p className="text-slate-600">Preparing preview...</p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center">
