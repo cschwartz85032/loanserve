@@ -247,29 +247,49 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                         }}
                       />
                     ) : (
-                      <div className="w-full h-full relative">
-                        <iframe
-                          src={previewUrl}
-                          className="w-full h-full border-0"
-                          style={{
-                            minHeight: '400px',
-                            backgroundColor: 'white'
-                          }}
-                          title="Document Preview"
-                          allowFullScreen
-                          onLoad={() => setLoading(false)}
-                          onError={() => setError('Failed to load document preview')}
-                        />
-                        <div className="absolute bottom-4 right-4">
-                          <a
-                            href={previewUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shadow-lg"
-                          >
-                            <Download className="w-3.5 h-3.5 mr-1.5" />
-                            Open in New Tab
-                          </a>
+                      <div className="w-full h-full bg-white rounded-lg overflow-hidden">
+                        <div className="w-full h-full relative">
+                          <iframe
+                            src={previewUrl}
+                            className="w-full h-full border-0"
+                            style={{
+                              minHeight: '400px',
+                              backgroundColor: 'white'
+                            }}
+                            title="Document Preview"
+                            allowFullScreen
+                            sandbox="allow-same-origin allow-scripts"
+                            onLoad={() => setLoading(false)}
+                            onError={() => setError('Chrome blocked this preview. Use "Open in New Tab" button below.')}
+                          />
+                          <div className="absolute top-4 right-4">
+                            <a
+                              href={previewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shadow-lg"
+                            >
+                              <Download className="w-3.5 h-3.5 mr-1.5" />
+                              Open in New Tab
+                            </a>
+                          </div>
+                          {/* Chrome blocking notice */}
+                          <div className="absolute bottom-4 left-4 right-4">
+                            <div className="bg-amber-50 border border-amber-200 rounded-md p-3">
+                              <div className="flex items-center">
+                                <div className="flex-shrink-0">
+                                  <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                  </svg>
+                                </div>
+                                <div className="ml-3">
+                                  <p className="text-sm text-amber-700">
+                                    If preview doesn't load, click "Open in New Tab" above
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
