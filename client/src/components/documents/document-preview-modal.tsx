@@ -60,15 +60,28 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
 
   useEffect(() => {
     if (document) {
-      const fileType = document.mimeType || document.fileType;
       // Reset states when document changes
       setError('');
-      setLoading(false);
+      setLoading(true);
       
       // Use direct URL for better compatibility
-      // The browser's native PDF viewer will handle the display
       const documentUrl = `/api/documents/${document.id}/file`;
       setPreviewUrl(documentUrl);
+      
+      // Test if the URL is accessible
+      fetch(documentUrl, { method: 'HEAD' })
+        .then(response => {
+          if (response.ok) {
+            setLoading(false);
+          } else {
+            setError('Document could not be loaded');
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          setError('Document could not be loaded');
+          setLoading(false);
+        });
     }
   }, [document]);
 
@@ -203,7 +216,27 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                 {/* Preview Area */}
                 <ScrollArea className="h-[500px] w-full border rounded-lg bg-slate-50">
                   <div className="flex items-center justify-center p-8">
-                    {fileType?.startsWith('image/') ? (
+                    {loading ? (
+                      <div className="text-center">
+                        <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4 animate-pulse" />
+                        <p className="text-slate-600">Loading document...</p>
+                      </div>
+                    ) : error ? (
+                      <div className="text-center">
+                        <FileText className="w-24 h-24 text-red-300 mx-auto mb-4" />
+                        <p className="text-red-600 font-medium">Preview Error</p>
+                        <p className="text-sm text-slate-500 mt-2">{error}</p>
+                        <a
+                          href={previewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors mt-4"
+                        >
+                          <Download className="w-3.5 h-3.5 mr-1.5" />
+                          Open in New Tab
+                        </a>
+                      </div>
+                    ) : fileType?.startsWith('image/') ? (
                       <img
                         src={previewUrl}
                         alt={document.fileName || document.originalFileName}
@@ -213,50 +246,31 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                           transition: 'transform 0.3s ease'
                         }}
                       />
-                    ) : fileType?.includes('pdf') ? (
-                      <div className="w-full h-full bg-white rounded-lg overflow-hidden">
-                        {previewUrl ? (
-                          <div className="w-full h-full relative">
-                            <iframe
-                              src={`${previewUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
-                              className="w-full h-full border-0"
-                              style={{
-                                transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
-                                transformOrigin: 'center',
-                                transition: 'transform 0.3s ease',
-                                backgroundColor: 'white'
-                              }}
-                              title="PDF Document Preview"
-                              allowFullScreen
-                            />
-                            <div className="absolute bottom-4 right-4">
-                              <a
-                                href={previewUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shadow-lg"
-                              >
-                                <Download className="w-3.5 h-3.5 mr-1.5" />
-                                Open External
-                              </a>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4" />
-                              <p className="text-slate-600">Preparing preview...</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
                     ) : (
-                      <div className="text-center">
-                        <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4" />
-                        <p className="text-slate-600">Preview not available</p>
-                        <p className="text-sm text-slate-500 mt-2">
-                          This file type cannot be previewed
-                        </p>
+                      <div className="w-full h-full relative">
+                        <iframe
+                          src={previewUrl}
+                          className="w-full h-full border-0"
+                          style={{
+                            minHeight: '400px',
+                            backgroundColor: 'white'
+                          }}
+                          title="Document Preview"
+                          allowFullScreen
+                          onLoad={() => setLoading(false)}
+                          onError={() => setError('Failed to load document preview')}
+                        />
+                        <div className="absolute bottom-4 right-4">
+                          <a
+                            href={previewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shadow-lg"
+                          >
+                            <Download className="w-3.5 h-3.5 mr-1.5" />
+                            Open in New Tab
+                          </a>
+                        </div>
                       </div>
                     )}
                   </div>
