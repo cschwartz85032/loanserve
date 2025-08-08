@@ -117,14 +117,6 @@ export function DocumentUploadModal({ open, onOpenChange, loanId, borrowerId }: 
   };
 
   const uploadFile = async (fileWithProgress: FileWithProgress, index: number) => {
-    // Simulate file upload with progress
-    const formData = new FormData();
-    formData.append('file', fileWithProgress.file);
-    formData.append('documentType', documentType);
-    formData.append('description', description);
-    if (loanId) formData.append('loanId', loanId);
-    if (borrowerId) formData.append('borrowerId', borrowerId);
-
     // Update status to uploading
     setFiles(prev => prev.map((f, i) => 
       i === index ? { ...f, status: 'uploading' } : f

@@ -31,17 +31,18 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
 
   const [formData, setFormData] = useState({
     loanNumber: "",
-    borrowerId: "",
-    lenderId: user?.id || "",
-    investorId: "",
+    propertyId: null as number | null,
+    lenderId: user?.id || null,
+    servicerId: user?.id || null,
+    investorId: null as number | null,
     originalAmount: "",
-    currentBalance: "",
+    principalBalance: "",
     interestRate: "",
     termMonths: "",
-    monthlyPayment: "",
+    monthlyPaymentAmount: "",
     nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
     maturityDate: "",
-    status: "originated",
+    status: "active",
     loanType: "conventional",
     propertyAddress: "",
     propertyCity: "",
@@ -51,12 +52,45 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
     loanToValue: "",
     originationDate: new Date().toISOString().split('T')[0],
     firstPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
-    notes: ""
+    notes: "",
+    currentInterestRate: "",
+    currentPaymentAmount: "",
+    escrowBalance: "0",
+    lateFeeAmount: "25",
+    gracePeroidDays: 15,
+    prepaymentPenalty: "0"
   });
 
   const createLoanMutation = useMutation({
     mutationFn: async (loanData: any) => {
-      const res = await apiRequest("POST", "/api/loans", loanData);
+      // Format the data to match the database schema
+      const formattedData = {
+        loanNumber: loanData.loanNumber,
+        propertyId: loanData.propertyId,
+        lenderId: loanData.lenderId ? parseInt(loanData.lenderId) : null,
+        servicerId: loanData.servicerId ? parseInt(loanData.servicerId) : null,
+        investorId: loanData.investorId ? parseInt(loanData.investorId) : null,
+        originalAmount: loanData.originalAmount,
+        principalBalance: loanData.principalBalance || loanData.originalAmount,
+        interestRate: loanData.interestRate,
+        currentInterestRate: loanData.currentInterestRate || loanData.interestRate,
+        termMonths: parseInt(loanData.termMonths),
+        monthlyPaymentAmount: loanData.monthlyPaymentAmount,
+        currentPaymentAmount: loanData.currentPaymentAmount || loanData.monthlyPaymentAmount,
+        nextPaymentDate: loanData.nextPaymentDate,
+        maturityDate: loanData.maturityDate,
+        status: loanData.status,
+        loanType: loanData.loanType,
+        originationDate: loanData.originationDate,
+        firstPaymentDate: loanData.firstPaymentDate,
+        escrowBalance: loanData.escrowBalance || "0",
+        lateFeeAmount: loanData.lateFeeAmount || "25",
+        gracePeroidDays: loanData.gracePeroidDays || 15,
+        prepaymentPenalty: loanData.prepaymentPenalty || "0",
+        notes: loanData.notes
+      };
+      
+      const res = await apiRequest("POST", "/api/loans", formattedData);
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.error || "Failed to create loan");
@@ -94,8 +128,9 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
         
         if (principal > 0 && rate > 0 && months > 0) {
           const monthlyPayment = (principal * rate * Math.pow(1 + rate, months)) / (Math.pow(1 + rate, months) - 1);
-          updated.monthlyPayment = monthlyPayment.toFixed(2);
-          updated.currentBalance = updated.originalAmount;
+          updated.monthlyPaymentAmount = monthlyPayment.toFixed(2);
+          updated.currentPaymentAmount = monthlyPayment.toFixed(2);
+          updated.principalBalance = updated.originalAmount;
           
           // Calculate maturity date
           const maturityDate = new Date(updated.originationDate);
@@ -127,17 +162,18 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
   const resetForm = () => {
     setFormData({
       loanNumber: "",
-      borrowerId: "",
-      lenderId: user?.id || "",
-      investorId: "",
+      propertyId: null,
+      lenderId: user?.id || null,
+      servicerId: user?.id || null,
+      investorId: null,
       originalAmount: "",
-      currentBalance: "",
+      principalBalance: "",
       interestRate: "",
       termMonths: "",
-      monthlyPayment: "",
+      monthlyPaymentAmount: "",
       nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
       maturityDate: "",
-      status: "originated",
+      status: "active",
       loanType: "conventional",
       propertyAddress: "",
       propertyCity: "",
@@ -147,26 +183,33 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
       loanToValue: "",
       originationDate: new Date().toISOString().split('T')[0],
       firstPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
-      notes: ""
+      notes: "",
+      currentInterestRate: "",
+      currentPaymentAmount: "",
+      escrowBalance: "0",
+      lateFeeAmount: "25",
+      gracePeroidDays: 15,
+      prepaymentPenalty: "0"
     });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Prepare submission data
+    // Prepare submission data matching database schema
     const submitData = {
       ...formData,
       originalAmount: parseFloat(formData.originalAmount),
-      currentBalance: parseFloat(formData.currentBalance || formData.originalAmount),
+      principalBalance: parseFloat(formData.principalBalance || formData.originalAmount),
       interestRate: parseFloat(formData.interestRate),
+      currentInterestRate: parseFloat(formData.currentInterestRate || formData.interestRate),
       termMonths: parseInt(formData.termMonths),
-      monthlyPayment: parseFloat(formData.monthlyPayment),
+      monthlyPaymentAmount: parseFloat(formData.monthlyPaymentAmount),
+      currentPaymentAmount: parseFloat(formData.currentPaymentAmount || formData.monthlyPaymentAmount),
       propertyValue: formData.propertyValue ? parseFloat(formData.propertyValue) : null,
       loanToValue: formData.loanToValue ? parseFloat(formData.loanToValue) : null,
-      borrowerId: formData.borrowerId || null,
-      investorId: formData.investorId || null,
-      lenderId: formData.lenderId || user?.id
+      lenderId: formData.lenderId || user?.id,
+      servicerId: formData.servicerId || user?.id
     };
     
     createLoanMutation.mutate(submitData);

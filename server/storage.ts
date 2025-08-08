@@ -41,7 +41,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql, count, sum, isNull, gte } from "drizzle-orm";
-import session from "express-session";
+import session, { Store } from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
 
@@ -142,11 +142,11 @@ export interface IStorage {
   markNotificationAsRead(id: number): Promise<void>;
   getUnreadNotificationCount(userId: number): Promise<number>;
 
-  sessionStore: session.SessionStore;
+  sessionStore: Store;
 }
 
 export class DatabaseStorage implements IStorage {
-  sessionStore: session.SessionStore;
+  sessionStore: Store;
 
   constructor() {
     this.sessionStore = new PostgresSessionStore({ 
