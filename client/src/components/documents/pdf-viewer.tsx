@@ -31,41 +31,33 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
         </div>
       </div>
 
-      {/* Content - Direct approach without iframe */}
-      <div className="p-8 text-center">
-        <FileText className="h-16 w-16 mx-auto mb-4 text-blue-500" />
-        <h3 className="font-medium text-lg mb-2">PDF Document Ready</h3>
-        <p className="text-sm text-gray-600 mb-6">
-          Click "Open in New Tab" to view this PDF document
-        </p>
-        
-        <div className="space-y-3">
-          <Button asChild className="w-full">
-            <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-              Open PDF in New Tab
-            </a>
-          </Button>
-          
-          <Button variant="outline" asChild className="w-full">
-            <a href={fileUrl} download={fileName}>
-              <Download className="h-4 w-4 mr-2" />
-              Download PDF
-            </a>
-          </Button>
-        </div>
-        
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-          <div className="flex items-start">
-            <div className="flex-shrink-0">
-              <FileText className="h-5 w-5 text-blue-600" />
-            </div>
-            <div className="ml-3 text-left">
-              <p className="text-sm text-blue-700 font-medium mb-1">
-                Browser Compatibility Note
+      {/* PDF Content */}
+      <div className="p-4 overflow-auto">
+        <div className="relative w-full h-[600px] border rounded">
+          <iframe
+            src={fileUrl}
+            className="w-full h-full border-0 rounded"
+            title={fileName}
+            onError={(e) => {
+              console.error('Failed to load PDF:', fileName);
+              // Show fallback message
+              e.currentTarget.style.display = 'none';
+              const fallbackDiv = e.currentTarget.nextElementSibling as HTMLElement;
+              if (fallbackDiv) fallbackDiv.style.display = 'block';
+            }}
+          />
+          <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-50 rounded">
+            <div className="text-center">
+              <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+              <h3 className="font-medium text-lg mb-2">PDF Preview Not Available</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Unable to display PDF in this browser. Please use the button below.
               </p>
-              <p className="text-xs text-blue-600">
-                PDFs open in a new tab to avoid browser security restrictions and provide the best viewing experience.
-              </p>
+              <Button asChild>
+                <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                  Open PDF in New Tab
+                </a>
+              </Button>
             </div>
           </div>
         </div>
