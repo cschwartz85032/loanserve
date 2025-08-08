@@ -584,52 +584,167 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Document not found" });
       }
 
-      // In a real application, this would serve the actual file from storage
-      // For now, we'll return a mock response based on the file type
+      // Create sample PDF content for demonstration
       const mimeType = document.mimeType || 'application/octet-stream';
+      const fileName = document.fileName || document.originalFileName || 'document';
       
-      // Set headers for iframe compatibility
+      // Set headers for proper file serving
       res.set({
         'Content-Type': mimeType,
-        'Content-Disposition': `inline; filename="${document.fileName}"`,
+        'Content-Disposition': `inline; filename="${fileName}"`,
         'Cache-Control': 'public, max-age=3600',
         'X-Frame-Options': 'SAMEORIGIN',
         'X-Content-Type-Options': 'nosniff'
       });
 
-      // Return mock content based on file type
-      if (mimeType.includes('pdf')) {
-        // Return a simple text document for PDF previews
+      // Create sample content based on file type
+      if (mimeType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf')) {
+        // Generate a simple PDF-like content
+        const pdfContent = generateSamplePDF(document);
+        res.type('application/pdf');
+        res.send(Buffer.from(pdfContent, 'binary'));
+      } else if (mimeType.startsWith('image/')) {
+        // Return a sample image (SVG)
+        const svgContent = generateSampleImage(document);
+        res.type('image/svg+xml');
+        res.send(svgContent);
+      } else if (mimeType.includes('text') || fileName.toLowerCase().match(/\.(doc|docx|txt)$/)) {
+        // Return formatted text content
+        const textContent = generateSampleDocument(document);
         res.type('text/plain');
-        res.send(`Document Preview: ${document.title || document.fileName}
-
-Type: ${document.category || 'Document'}
+        res.send(textContent);
+      } else {
+        // For other types, return basic info as downloadable file
+        const content = `Document: ${document.title || fileName}
+Type: ${document.category || 'Document'}  
 Created: ${new Date(document.createdAt).toLocaleDateString()}
 File Size: ${document.fileSize ? Math.round(document.fileSize / 1024) + ' KB' : 'Unknown'}
-
 Description: ${document.description || 'No description available'}
 
-Original File: ${document.originalFileName || document.fileName}
-
-This is a text preview of the document. In a full implementation, 
-this would display the actual PDF content.`);
-      } else if (mimeType.startsWith('image/')) {
-        // Return a placeholder image
-        res.redirect('https://via.placeholder.com/600x400/e2e8f0/64748b?text=' + encodeURIComponent(document.fileName));
-      } else if (mimeType.includes('text') || mimeType.includes('doc')) {
-        // Return text content
+This is a sample document file.`;
         res.type('text/plain');
-        res.send(`Document: ${document.title || document.fileName}\n\nType: ${document.category}\n\nDescription: ${document.description || 'No description available'}\n\nThis is a placeholder for the actual document content.`);
-      } else {
-        // For other types, return basic info
-        res.type('text/plain');
-        res.send(`Document placeholder for: ${document.fileName}`);
+        res.send(content);
       }
     } catch (error) {
       console.error("Error serving document file:", error);
       res.status(500).json({ error: "Failed to serve document file" });
     }
   });
+
+  // Helper functions for generating sample content
+  function generateSamplePDF(document: any): string {
+    // This creates a very basic PDF-like structure
+    // In production, you'd use a proper PDF library or serve actual files
+    const content = `%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 <<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Times-Roman
+>>
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 200
+>>
+stream
+BT
+/F1 12 Tf
+100 700 Td
+(${document.title || document.fileName || 'Document'}) Tj
+0 -20 Td
+(Type: ${document.category || 'Document'}) Tj
+0 -20 Td
+(Created: ${new Date(document.createdAt).toLocaleDateString()}) Tj
+0 -20 Td
+(Description: ${document.description || 'Sample document content'}) Tj
+ET
+endstream
+endobj
+
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000300 00000 n 
+trailer
+<<
+/Size 5
+/Root 1 0 R
+>>
+startxref
+550
+%%EOF`;
+    return content;
+  }
+
+  function generateSampleImage(document: any): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="600" height="400" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  <rect x="50" y="50" width="500" height="300" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+  <text x="300" y="120" text-anchor="middle" font-family="Arial" font-size="24" fill="#374151">${document.title || document.fileName}</text>
+  <text x="300" y="160" text-anchor="middle" font-family="Arial" font-size="14" fill="#6b7280">Type: ${document.category || 'Image'}</text>
+  <text x="300" y="200" text-anchor="middle" font-family="Arial" font-size="14" fill="#6b7280">Created: ${new Date(document.createdAt).toLocaleDateString()}</text>
+  <text x="300" y="240" text-anchor="middle" font-family="Arial" font-size="12" fill="#9ca3af">Sample Image Content</text>
+  <circle cx="300" cy="280" r="30" fill="#ddd6fe" opacity="0.5"/>
+</svg>`;
+  }
+
+  function generateSampleDocument(document: any): string {
+    return `${document.title || document.fileName || 'DOCUMENT'}
+
+Type: ${document.category || 'Document'}
+Created: ${new Date(document.createdAt).toLocaleDateString()}
+File Size: ${document.fileSize ? Math.round(document.fileSize / 1024) + ' KB' : 'Unknown'}
+
+Description:
+${document.description || 'This is a sample document with formatted content for demonstration purposes.'}
+
+Content:
+This is a sample document that demonstrates the file serving capabilities of the loan servicing platform. In a production environment, this would contain the actual document content.
+
+Key Features:
+- Document management and storage
+- File type detection and proper MIME type handling  
+- Secure file serving with appropriate headers
+- Integration with loan records and borrower information
+
+Document Details:
+- Original Filename: ${document.originalFileName || document.fileName}
+- Upload Date: ${new Date(document.createdAt).toISOString()}
+- Category: ${document.category || 'General'}
+
+This document is part of the comprehensive loan servicing system and contains important information related to the mortgage loan process.`;
+  }
 
   app.post("/api/documents", isAuthenticated, async (req, res) => {
     try {
