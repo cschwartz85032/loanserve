@@ -3,10 +3,15 @@ import {
   loans, 
   payments, 
   escrowAccounts, 
-  escrowPayments, 
+  escrowTransactions, 
   documents, 
   auditLogs, 
   notifications,
+  borrowerEntities,
+  properties,
+  loanBorrowers,
+  paymentSchedule,
+  escrowItems,
   type User, 
   type InsertUser,
   type Loan,
@@ -15,17 +20,27 @@ import {
   type InsertPayment,
   type EscrowAccount,
   type InsertEscrowAccount,
-  type EscrowPayment,
-  type InsertEscrowPayment,
+  type EscrowTransaction,
+  type InsertEscrowTransaction,
   type Document,
   type InsertDocument,
   type AuditLog,
   type InsertAuditLog,
   type Notification,
-  type InsertNotification
+  type InsertNotification,
+  type BorrowerEntity,
+  type InsertBorrowerEntity,
+  type Property,
+  type InsertProperty,
+  type LoanBorrower,
+  type InsertLoanBorrower,
+  type PaymentSchedule,
+  type InsertPaymentSchedule,
+  type EscrowItem,
+  type InsertEscrowItem
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, sql, count, sum } from "drizzle-orm";
+import { eq, desc, and, or, sql, count, sum, isNull, gte } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { pool } from "./db";
@@ -34,71 +49,98 @@ const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   // User methods
-  getUser(id: string): Promise<User | undefined>;
+  getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
+  updateUser(id: number, user: Partial<InsertUser>): Promise<User>;
+
+  // Borrower Entity methods
+  getBorrowerEntity(id: number): Promise<BorrowerEntity | undefined>;
+  createBorrowerEntity(entity: InsertBorrowerEntity): Promise<BorrowerEntity>;
+  updateBorrowerEntity(id: number, entity: Partial<InsertBorrowerEntity>): Promise<BorrowerEntity>;
+  getBorrowerEntities(): Promise<BorrowerEntity[]>;
+
+  // Property methods
+  getProperty(id: number): Promise<Property | undefined>;
+  createProperty(property: InsertProperty): Promise<Property>;
+  updateProperty(id: number, property: Partial<InsertProperty>): Promise<Property>;
+  getProperties(): Promise<Property[]>;
 
   // Loan methods
   getLoans(filters?: {
-    lenderId?: string;
-    borrowerId?: string;
-    investorId?: string;
+    lenderId?: number;
+    servicerId?: number;
+    investorId?: number;
     status?: string;
     limit?: number;
     offset?: number;
   }): Promise<Loan[]>;
-  getLoan(id: string): Promise<Loan | undefined>;
+  getLoan(id: number): Promise<Loan | undefined>;
   getLoanByNumber(loanNumber: string): Promise<Loan | undefined>;
   createLoan(loan: InsertLoan): Promise<Loan>;
-  updateLoan(id: string, loan: Partial<InsertLoan>): Promise<Loan>;
-  getLoanMetrics(userId?: string): Promise<{
+  updateLoan(id: number, loan: Partial<InsertLoan>): Promise<Loan>;
+  getLoanMetrics(userId?: number): Promise<{
     totalPortfolio: string;
     activeLoans: number;
     delinquentLoans: number;
     collectionsYTD: string;
   }>;
 
+  // Loan Borrower methods
+  getLoanBorrowers(loanId: number): Promise<LoanBorrower[]>;
+  createLoanBorrower(loanBorrower: InsertLoanBorrower): Promise<LoanBorrower>;
+  deleteLoanBorrower(id: number): Promise<void>;
+
   // Payment methods
-  getPayments(loanId: string, limit?: number): Promise<Payment[]>;
+  getPayments(loanId: number, limit?: number): Promise<Payment[]>;
   createPayment(payment: InsertPayment): Promise<Payment>;
-  getPaymentHistory(loanId: string): Promise<Payment[]>;
+  getPaymentHistory(loanId: number): Promise<Payment[]>;
+  updatePayment(id: number, payment: Partial<InsertPayment>): Promise<Payment>;
+
+  // Payment Schedule methods
+  getPaymentSchedule(loanId: number): Promise<PaymentSchedule[]>;
+  createPaymentSchedule(schedule: InsertPaymentSchedule): Promise<PaymentSchedule>;
+  generatePaymentSchedule(loanId: number): Promise<PaymentSchedule[]>;
 
   // Escrow methods
-  getEscrowAccounts(loanId: string): Promise<EscrowAccount[]>;
+  getEscrowAccount(loanId: number): Promise<EscrowAccount | undefined>;
   createEscrowAccount(escrowAccount: InsertEscrowAccount): Promise<EscrowAccount>;
-  getEscrowPayments(filters?: {
-    loanId?: string;
-    escrowAccountId?: string;
-    status?: string;
+  updateEscrowAccount(id: number, escrowAccount: Partial<InsertEscrowAccount>): Promise<EscrowAccount>;
+  getEscrowTransactions(filters?: {
+    escrowAccountId?: number;
     limit?: number;
-  }): Promise<EscrowPayment[]>;
-  createEscrowPayment(escrowPayment: InsertEscrowPayment): Promise<EscrowPayment>;
+  }): Promise<EscrowTransaction[]>;
+  createEscrowTransaction(transaction: InsertEscrowTransaction): Promise<EscrowTransaction>;
+  getEscrowItems(escrowAccountId: number): Promise<EscrowItem[]>;
+  createEscrowItem(item: InsertEscrowItem): Promise<EscrowItem>;
   getEscrowMetrics(): Promise<{
     totalBalance: string;
-    insurancePayments: string;
-    taxPayments: string;
-    hoaPayments: string;
+    pendingDisbursements: string;
+    shortages: string;
+    surpluses: string;
   }>;
 
   // Document methods
   getDocuments(filters?: {
-    loanId?: string;
-    borrowerId?: string;
-    documentType?: string;
+    loanId?: number;
+    borrowerId?: number;
+    category?: string;
   }): Promise<Document[]>;
   createDocument(document: InsertDocument): Promise<Document>;
-  getDocument(id: string): Promise<Document | undefined>;
-  deleteDocument(id: string): Promise<void>;
+  getDocument(id: number): Promise<Document | undefined>;
+  updateDocument(id: number, document: Partial<InsertDocument>): Promise<Document>;
+  deleteDocument(id: number): Promise<void>;
 
   // Audit methods
   createAuditLog(auditLog: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogs(entityType: string, entityId: number): Promise<AuditLog[]>;
 
   // Notification methods
-  getNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  getNotifications(userId: number, limit?: number): Promise<Notification[]>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(id: string): Promise<void>;
+  markNotificationAsRead(id: number): Promise<void>;
+  getUnreadNotificationCount(userId: number): Promise<number>;
 
   sessionStore: session.SessionStore;
 }
@@ -114,7 +156,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // User methods
-  async getUser(id: string): Promise<User | undefined> {
+  async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
@@ -137,7 +179,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUser(id: string, updateUser: Partial<InsertUser>): Promise<User> {
+  async updateUser(id: number, updateUser: Partial<InsertUser>): Promise<User> {
     const [user] = await db
       .update(users)
       .set({ ...updateUser, updatedAt: new Date() })
@@ -146,11 +188,65 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  // Borrower Entity methods
+  async getBorrowerEntity(id: number): Promise<BorrowerEntity | undefined> {
+    const [entity] = await db.select().from(borrowerEntities).where(eq(borrowerEntities.id, id));
+    return entity || undefined;
+  }
+
+  async createBorrowerEntity(entity: InsertBorrowerEntity): Promise<BorrowerEntity> {
+    const [borrower] = await db
+      .insert(borrowerEntities)
+      .values(entity)
+      .returning();
+    return borrower;
+  }
+
+  async updateBorrowerEntity(id: number, entity: Partial<InsertBorrowerEntity>): Promise<BorrowerEntity> {
+    const [borrower] = await db
+      .update(borrowerEntities)
+      .set({ ...entity, updatedAt: new Date() })
+      .where(eq(borrowerEntities.id, id))
+      .returning();
+    return borrower;
+  }
+
+  async getBorrowerEntities(): Promise<BorrowerEntity[]> {
+    return await db.select().from(borrowerEntities).where(eq(borrowerEntities.isActive, true));
+  }
+
+  // Property methods
+  async getProperty(id: number): Promise<Property | undefined> {
+    const [property] = await db.select().from(properties).where(eq(properties.id, id));
+    return property || undefined;
+  }
+
+  async createProperty(property: InsertProperty): Promise<Property> {
+    const [prop] = await db
+      .insert(properties)
+      .values(property)
+      .returning();
+    return prop;
+  }
+
+  async updateProperty(id: number, property: Partial<InsertProperty>): Promise<Property> {
+    const [prop] = await db
+      .update(properties)
+      .set({ ...property, updatedAt: new Date() })
+      .where(eq(properties.id, id))
+      .returning();
+    return prop;
+  }
+
+  async getProperties(): Promise<Property[]> {
+    return await db.select().from(properties).orderBy(desc(properties.createdAt));
+  }
+
   // Loan methods
   async getLoans(filters: {
-    lenderId?: string;
-    borrowerId?: string;
-    investorId?: string;
+    lenderId?: number;
+    servicerId?: number;
+    investorId?: number;
     status?: string;
     limit?: number;
     offset?: number;
@@ -159,7 +255,7 @@ export class DatabaseStorage implements IStorage {
 
     const conditions = [];
     if (filters.lenderId) conditions.push(eq(loans.lenderId, filters.lenderId));
-    if (filters.borrowerId) conditions.push(eq(loans.borrowerId, filters.borrowerId));
+    if (filters.servicerId) conditions.push(eq(loans.servicerId, filters.servicerId));
     if (filters.investorId) conditions.push(eq(loans.investorId, filters.investorId));
     if (filters.status) conditions.push(eq(loans.status, filters.status as any));
 
@@ -180,7 +276,7 @@ export class DatabaseStorage implements IStorage {
     return result as Loan[];
   }
 
-  async getLoan(id: string): Promise<Loan | undefined> {
+  async getLoan(id: number): Promise<Loan | undefined> {
     const [loan] = await db.select().from(loans).where(eq(loans.id, id));
     return loan || undefined;
   }
@@ -198,7 +294,7 @@ export class DatabaseStorage implements IStorage {
     return loan;
   }
 
-  async updateLoan(id: string, updateLoan: Partial<InsertLoan>): Promise<Loan> {
+  async updateLoan(id: number, updateLoan: Partial<InsertLoan>): Promise<Loan> {
     const [loan] = await db
       .update(loans)
       .set({ ...updateLoan, updatedAt: new Date() })
@@ -207,96 +303,95 @@ export class DatabaseStorage implements IStorage {
     return loan;
   }
 
-  async getLoanMetrics(userId?: string): Promise<{
+  async getLoanMetrics(userId?: number): Promise<{
     totalPortfolio: string;
     activeLoans: number;
     delinquentLoans: number;
     collectionsYTD: string;
   }> {
-    let baseQuery = db.select().from(loans);
+    let conditions = [];
     
     if (userId) {
-      baseQuery = baseQuery.where(
-        or(
-          eq(loans.lenderId, userId),
-          eq(loans.borrowerId, userId),
-          eq(loans.investorId, userId)
-        )
-      );
+      conditions.push(or(
+        eq(loans.lenderId, userId),
+        eq(loans.servicerId, userId),
+        eq(loans.investorId, userId)
+      ));
     }
 
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     const [totalPortfolioResult] = await db
-      .select({ total: sum(loans.currentBalance) })
+      .select({ total: sum(loans.principalBalance) })
       .from(loans)
-      .where(userId ? or(
-        eq(loans.lenderId, userId),
-        eq(loans.borrowerId, userId),
-        eq(loans.investorId, userId)
-      ) : undefined);
+      .where(whereClause);
 
     const [activeLoansResult] = await db
       .select({ count: count() })
       .from(loans)
-      .where(
-        and(
-          eq(loans.status, "active"),
-          userId ? or(
-            eq(loans.lenderId, userId),
-            eq(loans.borrowerId, userId),
-            eq(loans.investorId, userId)
-          ) : undefined
-        )
-      );
+      .where(and(
+        eq(loans.status, "active"),
+        whereClause
+      ));
 
-    const [delinquentLoansResult] = await db
+    const [delinquentResult] = await db
       .select({ count: count() })
       .from(loans)
-      .where(
-        and(
-          or(
-            eq(loans.status, "delinquent_30"),
-            eq(loans.status, "delinquent_60"),
-            eq(loans.status, "delinquent_90")
-          ),
-          userId ? or(
-            eq(loans.lenderId, userId),
-            eq(loans.borrowerId, userId),
-            eq(loans.investorId, userId)
-          ) : undefined
-        )
-      );
+      .where(and(
+        eq(loans.status, "delinquent"),
+        whereClause
+      ));
 
-    const [collectionsYTDResult] = await db
-      .select({ total: sum(payments.amount) })
+    const currentYear = new Date().getFullYear();
+    const yearStart = new Date(currentYear, 0, 1);
+    
+    const [collectionsResult] = await db
+      .select({ total: sum(payments.totalReceived) })
       .from(payments)
       .innerJoin(loans, eq(payments.loanId, loans.id))
-      .where(
-        and(
-          sql`EXTRACT(YEAR FROM ${payments.receivedDate}) = EXTRACT(YEAR FROM CURRENT_DATE)`,
-          userId ? or(
-            eq(loans.lenderId, userId),
-            eq(loans.borrowerId, userId),
-            eq(loans.investorId, userId)
-          ) : undefined
-        )
-      );
+      .where(and(
+        gte(payments.effectiveDate, yearStart.toISOString().split('T')[0]),
+        whereClause
+      ));
 
     return {
       totalPortfolio: totalPortfolioResult?.total || "0",
-      activeLoans: activeLoansResult?.count || 0,
-      delinquentLoans: delinquentLoansResult?.count || 0,
-      collectionsYTD: collectionsYTDResult?.total || "0"
+      activeLoans: Number(activeLoansResult?.count) || 0,
+      delinquentLoans: Number(delinquentResult?.count) || 0,
+      collectionsYTD: collectionsResult?.total || "0"
     };
   }
 
+  // Loan Borrower methods
+  async getLoanBorrowers(loanId: number): Promise<LoanBorrower[]> {
+    return await db.select().from(loanBorrowers).where(eq(loanBorrowers.loanId, loanId));
+  }
+
+  async createLoanBorrower(loanBorrower: InsertLoanBorrower): Promise<LoanBorrower> {
+    const [lb] = await db
+      .insert(loanBorrowers)
+      .values(loanBorrower)
+      .returning();
+    return lb;
+  }
+
+  async deleteLoanBorrower(id: number): Promise<void> {
+    await db.delete(loanBorrowers).where(eq(loanBorrowers.id, id));
+  }
+
   // Payment methods
-  async getPayments(loanId: string, limit = 50): Promise<Payment[]> {
-    return await db
+  async getPayments(loanId: number, limit?: number): Promise<Payment[]> {
+    let query = db
       .select()
       .from(payments)
       .where(eq(payments.loanId, loanId))
-      .orderBy(desc(payments.receivedDate))
-      .limit(limit);
+      .orderBy(desc(payments.effectiveDate));
+    
+    if (limit) {
+      query = query.limit(limit) as any;
+    }
+    
+    return await query;
   }
 
   async createPayment(insertPayment: InsertPayment): Promise<Payment> {
@@ -307,139 +402,164 @@ export class DatabaseStorage implements IStorage {
     return payment;
   }
 
-  async getPaymentHistory(loanId: string): Promise<Payment[]> {
+  async getPaymentHistory(loanId: number): Promise<Payment[]> {
+    return await this.getPayments(loanId);
+  }
+
+  async updatePayment(id: number, updatePayment: Partial<InsertPayment>): Promise<Payment> {
+    const [payment] = await db
+      .update(payments)
+      .set({ ...updatePayment, updatedAt: new Date() })
+      .where(eq(payments.id, id))
+      .returning();
+    return payment;
+  }
+
+  // Payment Schedule methods
+  async getPaymentSchedule(loanId: number): Promise<PaymentSchedule[]> {
     return await db
       .select()
-      .from(payments)
-      .where(eq(payments.loanId, loanId))
-      .orderBy(desc(payments.receivedDate));
+      .from(paymentSchedule)
+      .where(eq(paymentSchedule.loanId, loanId))
+      .orderBy(paymentSchedule.paymentNumber);
+  }
+
+  async createPaymentSchedule(schedule: InsertPaymentSchedule): Promise<PaymentSchedule> {
+    const [ps] = await db
+      .insert(paymentSchedule)
+      .values(schedule)
+      .returning();
+    return ps;
+  }
+
+  async generatePaymentSchedule(loanId: number): Promise<PaymentSchedule[]> {
+    // This would generate a complete amortization schedule
+    // For now, returning empty array - implementation would calculate based on loan terms
+    return [];
   }
 
   // Escrow methods
-  async getEscrowAccounts(loanId: string): Promise<EscrowAccount[]> {
-    return await db
+  async getEscrowAccount(loanId: number): Promise<EscrowAccount | undefined> {
+    const [account] = await db
       .select()
       .from(escrowAccounts)
-      .where(and(eq(escrowAccounts.loanId, loanId), eq(escrowAccounts.isActive, true)));
+      .where(eq(escrowAccounts.loanId, loanId));
+    return account || undefined;
   }
 
-  async createEscrowAccount(insertEscrowAccount: InsertEscrowAccount): Promise<EscrowAccount> {
-    const [escrowAccount] = await db
+  async createEscrowAccount(insertAccount: InsertEscrowAccount): Promise<EscrowAccount> {
+    const [account] = await db
       .insert(escrowAccounts)
-      .values(insertEscrowAccount)
+      .values(insertAccount)
       .returning();
-    return escrowAccount;
+    return account;
   }
 
-  async getEscrowPayments(filters: {
-    loanId?: string;
-    escrowAccountId?: string;
-    status?: string;
+  async updateEscrowAccount(id: number, updateAccount: Partial<InsertEscrowAccount>): Promise<EscrowAccount> {
+    const [account] = await db
+      .update(escrowAccounts)
+      .set({ ...updateAccount, updatedAt: new Date() })
+      .where(eq(escrowAccounts.id, id))
+      .returning();
+    return account;
+  }
+
+  async getEscrowTransactions(filters: {
+    escrowAccountId?: number;
     limit?: number;
-  } = {}): Promise<EscrowPayment[]> {
-    let query = db.select().from(escrowPayments);
-
-    const conditions = [];
-    if (filters.loanId) conditions.push(eq(escrowPayments.loanId, filters.loanId));
-    if (filters.escrowAccountId) conditions.push(eq(escrowPayments.escrowAccountId, filters.escrowAccountId));
-    if (filters.status) conditions.push(eq(escrowPayments.status, filters.status));
-
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
+  } = {}): Promise<EscrowTransaction[]> {
+    let query = db.select().from(escrowTransactions);
+    
+    if (filters.escrowAccountId) {
+      query = query.where(eq(escrowTransactions.escrowAccountId, filters.escrowAccountId)) as any;
     }
-
-    query = query.orderBy(desc(escrowPayments.dueDate)) as any;
-
+    
+    query = query.orderBy(desc(escrowTransactions.transactionDate)) as any;
+    
     if (filters.limit) {
       query = query.limit(filters.limit) as any;
     }
-
-    const result = await query;
-    return result as EscrowPayment[];
+    
+    return await query;
   }
 
-  async createEscrowPayment(insertEscrowPayment: InsertEscrowPayment): Promise<EscrowPayment> {
-    const [escrowPayment] = await db
-      .insert(escrowPayments)
-      .values(insertEscrowPayment)
+  async createEscrowTransaction(transaction: InsertEscrowTransaction): Promise<EscrowTransaction> {
+    const [trans] = await db
+      .insert(escrowTransactions)
+      .values(transaction)
       .returning();
-    return escrowPayment;
+    return trans;
+  }
+
+  async getEscrowItems(escrowAccountId: number): Promise<EscrowItem[]> {
+    return await db
+      .select()
+      .from(escrowItems)
+      .where(eq(escrowItems.escrowAccountId, escrowAccountId));
+  }
+
+  async createEscrowItem(item: InsertEscrowItem): Promise<EscrowItem> {
+    const [escrowItem] = await db
+      .insert(escrowItems)
+      .values(item)
+      .returning();
+    return escrowItem;
   }
 
   async getEscrowMetrics(): Promise<{
     totalBalance: string;
-    insurancePayments: string;
-    taxPayments: string;
-    hoaPayments: string;
+    pendingDisbursements: string;
+    shortages: string;
+    surpluses: string;
   }> {
-    const [totalBalanceResult] = await db
+    const [balanceResult] = await db
       .select({ total: sum(escrowAccounts.currentBalance) })
       .from(escrowAccounts)
       .where(eq(escrowAccounts.isActive, true));
 
-    const [insuranceResult] = await db
-      .select({ total: sum(escrowPayments.amount) })
-      .from(escrowPayments)
-      .innerJoin(escrowAccounts, eq(escrowPayments.escrowAccountId, escrowAccounts.id))
-      .where(
-        and(
-          or(
-            eq(escrowAccounts.escrowType, "hazard_insurance"),
-            eq(escrowAccounts.escrowType, "pmi_insurance"),
-            eq(escrowAccounts.escrowType, "flood_insurance")
-          ),
-          sql`EXTRACT(YEAR FROM ${escrowPayments.paymentDate}) = EXTRACT(YEAR FROM CURRENT_DATE)`
-        )
-      );
+    const [pendingResult] = await db
+      .select({ total: sum(escrowAccounts.pendingDisbursements) })
+      .from(escrowAccounts)
+      .where(eq(escrowAccounts.isActive, true));
 
-    const [taxResult] = await db
-      .select({ total: sum(escrowPayments.amount) })
-      .from(escrowPayments)
-      .innerJoin(escrowAccounts, eq(escrowPayments.escrowAccountId, escrowAccounts.id))
-      .where(
-        and(
-          eq(escrowAccounts.escrowType, "property_tax"),
-          sql`EXTRACT(YEAR FROM ${escrowPayments.paymentDate}) = EXTRACT(YEAR FROM CURRENT_DATE)`
-        )
-      );
+    const [shortageResult] = await db
+      .select({ total: sum(escrowAccounts.shortageAmount) })
+      .from(escrowAccounts)
+      .where(eq(escrowAccounts.isActive, true));
 
-    const [hoaResult] = await db
-      .select({ total: sum(escrowPayments.amount) })
-      .from(escrowPayments)
-      .innerJoin(escrowAccounts, eq(escrowPayments.escrowAccountId, escrowAccounts.id))
-      .where(
-        and(
-          eq(escrowAccounts.escrowType, "hoa_fees"),
-          sql`EXTRACT(YEAR FROM ${escrowPayments.paymentDate}) = EXTRACT(YEAR FROM CURRENT_DATE)`
-        )
-      );
+    const [surplusResult] = await db
+      .select({ total: sum(escrowAccounts.surplusAmount) })
+      .from(escrowAccounts)
+      .where(eq(escrowAccounts.isActive, true));
 
     return {
-      totalBalance: totalBalanceResult?.total || "0",
-      insurancePayments: insuranceResult?.total || "0",
-      taxPayments: taxResult?.total || "0",
-      hoaPayments: hoaResult?.total || "0"
+      totalBalance: balanceResult?.total || "0",
+      pendingDisbursements: pendingResult?.total || "0",
+      shortages: shortageResult?.total || "0",
+      surpluses: surplusResult?.total || "0"
     };
   }
 
   // Document methods
   async getDocuments(filters: {
-    loanId?: string;
-    borrowerId?: string;
-    documentType?: string;
+    loanId?: number;
+    borrowerId?: number;
+    category?: string;
   } = {}): Promise<Document[]> {
     let query = db.select().from(documents);
-
+    
     const conditions = [];
     if (filters.loanId) conditions.push(eq(documents.loanId, filters.loanId));
     if (filters.borrowerId) conditions.push(eq(documents.borrowerId, filters.borrowerId));
-    if (filters.documentType) conditions.push(eq(documents.documentType, filters.documentType as any));
-
+    if (filters.category) conditions.push(eq(documents.category, filters.category as any));
+    
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      query = query.where(and(...conditions)) as any;
     }
-
-    return await query.orderBy(desc(documents.createdAt));
+    
+    query = query.orderBy(desc(documents.createdAt)) as any;
+    
+    return await query;
   }
 
   async createDocument(insertDocument: InsertDocument): Promise<Document> {
@@ -450,32 +570,57 @@ export class DatabaseStorage implements IStorage {
     return document;
   }
 
-  async getDocument(id: string): Promise<Document | undefined> {
+  async getDocument(id: number): Promise<Document | undefined> {
     const [document] = await db.select().from(documents).where(eq(documents.id, id));
     return document || undefined;
   }
 
-  async deleteDocument(id: string): Promise<void> {
+  async updateDocument(id: number, updateDocument: Partial<InsertDocument>): Promise<Document> {
+    const [document] = await db
+      .update(documents)
+      .set({ ...updateDocument, updatedAt: new Date() })
+      .where(eq(documents.id, id))
+      .returning();
+    return document;
+  }
+
+  async deleteDocument(id: number): Promise<void> {
     await db.delete(documents).where(eq(documents.id, id));
   }
 
   // Audit methods
   async createAuditLog(insertAuditLog: InsertAuditLog): Promise<AuditLog> {
-    const [auditLog] = await db
+    const [log] = await db
       .insert(auditLogs)
       .values(insertAuditLog)
       .returning();
-    return auditLog;
+    return log;
+  }
+
+  async getAuditLogs(entityType: string, entityId: number): Promise<AuditLog[]> {
+    return await db
+      .select()
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.entityType, entityType),
+        eq(auditLogs.entityId, entityId)
+      ))
+      .orderBy(desc(auditLogs.createdAt));
   }
 
   // Notification methods
-  async getNotifications(userId: string, limit = 50): Promise<Notification[]> {
-    return await db
+  async getNotifications(userId: number, limit?: number): Promise<Notification[]> {
+    let query = db
       .select()
       .from(notifications)
       .where(eq(notifications.userId, userId))
-      .orderBy(desc(notifications.createdAt))
-      .limit(limit);
+      .orderBy(desc(notifications.createdAt));
+    
+    if (limit) {
+      query = query.limit(limit) as any;
+    }
+    
+    return await query;
   }
 
   async createNotification(insertNotification: InsertNotification): Promise<Notification> {
@@ -486,11 +631,22 @@ export class DatabaseStorage implements IStorage {
     return notification;
   }
 
-  async markNotificationAsRead(id: string): Promise<void> {
+  async markNotificationAsRead(id: number): Promise<void> {
     await db
       .update(notifications)
-      .set({ isRead: true })
+      .set({ isRead: true, readAt: new Date() })
       .where(eq(notifications.id, id));
+  }
+
+  async getUnreadNotificationCount(userId: number): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.isRead, false)
+      ));
+    return Number(result?.count) || 0;
   }
 }
 
