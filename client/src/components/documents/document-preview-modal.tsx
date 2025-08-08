@@ -28,8 +28,8 @@ import {
   ChevronRight
 } from "lucide-react";
 
-// Set up the PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+// Set up the PDF.js worker - using CDN with explicit version
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 interface DocumentPreviewModalProps {
   open: boolean;
@@ -66,15 +66,21 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
   useEffect(() => {
     if (document?.filePath || document?.fileUrl) {
       const fileType = document.mimeType || document.fileType;
+      // Reset states when document changes
+      setError('');
+      setNumPages(0);
+      setPageNumber(1);
+      
       // In production, this would fetch the actual file from object storage
       // For now, we'll use the file path for preview
       if (fileType?.startsWith('image/')) {
         // For images, we'd use the actual URL
         setPreviewUrl(document.filePath || document.fileUrl || '');
       } else if (fileType?.includes('pdf')) {
-        // For PDFs, use the file path or generate a data URL
+        // For PDFs, create a sample PDF data URL for demonstration
         // In production, this would be a signed URL from object storage
-        setPreviewUrl(document.filePath || document.fileUrl || `/api/documents/${document.id}/file`);
+        const samplePdfUrl = 'data:application/pdf;base64,JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovT3V0bGluZXMgMiAwIFIKL1BhZ2VzIDMgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9PdXRsaW5lcwovQ291bnQgMAo+PgplbmRvYmoKMyAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWzQgMCBSXQo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDMgMCBSCi9NZWRpYUJveCBbMCAwIDYxMiA3OTJdCi9Db250ZW50cyA1IDAgUgovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA2IDAgUgo+Pgo+Pgo+PgplbmRvYmoKNSAwIG9iago8PAovTGVuZ3RoIDQ0Cj4+CnN0cmVhbQpCVApxCjcwIDUwIFRECi9GMSAxMiBUZgooU2FtcGxlIFBERiBEb2N1bWVudCkgVGoKRVQKUQplbmRzdHJlYW0KZW5kb2JqCjYgMCBvYmoKPDwKL1R5cGUgL0ZvbnQKL1N1YnR5cGUgL1R5cGUxCi9OYW1lIC9GMS9CYXNlRm9udCAvSGVsdmV0aWNhCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCj4+CmVuZG9iagp4cmVmCjAgNwowMDAwMDAwMDAwIDY1NTM1IGYKMDAwMDAwMDAwOSAwMDAwMCBuCjAwMDAwMDAwNzQgMDAwMDAgbgowMDAwMDAwMTIwIDAwMDAwIG4KMDAwMDAwMDE3OSAwMDAwMCBuCjAwMDAwMDAzMDQgMDAwMDAgbgowMDAwMDAwNDAzIDAwMDAwIG4KdHJhaWxlcgo8PAovU2l6ZSA3Ci9Sb290IDEgMCBSCj4+CnN0YXJ0eHJlZgo1MDYKJSVFT0Y=';
+        setPreviewUrl(samplePdfUrl);
       } else {
         // For other documents, show metadata only
         setPreviewUrl('');
@@ -239,6 +245,10 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                         <Document
                           file={previewUrl}
                           onLoadSuccess={onDocumentLoadSuccess}
+                          onLoadError={(error) => {
+                            console.error('PDF load error:', error);
+                            setError('Failed to load PDF');
+                          }}
                           loading={
                             <div className="flex items-center justify-center p-8">
                               <div className="text-center">
