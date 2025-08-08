@@ -1,132 +1,246 @@
-import { Sidebar } from "@/components/layout/sidebar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, TrendingUp } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Download, CalendarIcon, TrendingUp, DollarSign, AlertCircle, FileText } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { CHART_COLORS } from "@/lib/constants";
 
-export default function Reports() {
+export default function ReportsPage() {
+  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({
+    from: new Date(new Date().getFullYear(), 0, 1),
+    to: new Date(),
+  });
+  const [reportType, setReportType] = useState("portfolio");
+
+  const { data: reportData, isLoading } = useQuery({
+    queryKey: ["/api/reports", reportType, dateRange],
+    enabled: !!dateRange.from && !!dateRange.to,
+  });
+
+  const performanceData = [
+    { month: "Jan", collections: 125000, delinquency: 2.5 },
+    { month: "Feb", collections: 132000, delinquency: 2.3 },
+    { month: "Mar", collections: 128000, delinquency: 2.8 },
+    { month: "Apr", collections: 141000, delinquency: 2.1 },
+    { month: "May", collections: 138000, delinquency: 2.4 },
+    { month: "Jun", collections: 145000, delinquency: 2.0 },
+  ];
+
+  const portfolioDistribution = [
+    { name: "Current", value: 850, color: CHART_COLORS.success },
+    { name: "30+ Days", value: 45, color: CHART_COLORS.warning },
+    { name: "60+ Days", value: 25, color: CHART_COLORS.danger },
+    { name: "90+ Days", value: 15, color: CHART_COLORS.danger },
+  ];
+
+  const downloadReport = (format: string) => {
+    // Implementation for downloading reports
+    console.log(`Downloading ${reportType} report in ${format} format`);
+  };
+
   return (
-    <div className="min-h-screen flex bg-slate-50">
-      <Sidebar />
-      
-      <main className="flex-1 overflow-y-auto">
-        {/* Header */}
-        <header className="bg-white border-b border-slate-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Reports & Analytics</h1>
-              <p className="text-sm text-slate-600">Generate insights and track performance metrics</p>
-            </div>
-            <Button>
-              <FileText className="h-4 w-4 mr-2" />
-              Generate Report
-            </Button>
-          </div>
-        </header>
-
-        {/* Content */}
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Portfolio Performance */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <TrendingUp className="w-5 h-5" />
-                  <span>Portfolio Performance</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600 mb-4">
-                  Analyze loan portfolio performance, delinquency rates, and collection metrics.
-                </p>
-                <Button variant="outline" className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Generate Report
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Financial Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Financial Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600 mb-4">
-                  Monthly and quarterly financial summaries including payments, escrow, and fees.
-                </p>
-                <Button variant="outline" className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Generate Report
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Compliance Reports */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Compliance Reports</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600 mb-4">
-                  Regulatory compliance reports including HMDA, fair lending, and audit trails.
-                </p>
-                <Button variant="outline" className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Generate Report
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Escrow Analysis */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Escrow Analysis</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600 mb-4">
-                  Annual escrow analysis reports for taxes, insurance, and HOA payments.
-                </p>
-                <Button variant="outline" className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Generate Report
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Investor Reports */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Investor Reports</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600 mb-4">
-                  Monthly investor statements and portfolio performance summaries.
-                </p>
-                <Button variant="outline" className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Generate Report
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Collections Report */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Collections Report</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-slate-600 mb-4">
-                  Delinquency and collections tracking with recovery rate analysis.
-                </p>
-                <Button variant="outline" className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  Generate Report
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+    <div className="container mx-auto py-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Reports & Analytics</h1>
+          <p className="text-muted-foreground">Generate comprehensive reports and analyze portfolio performance</p>
         </div>
-      </main>
+        <div className="flex gap-2">
+          <Button onClick={() => downloadReport("pdf")} variant="outline">
+            <Download className="mr-2 h-4 w-4" />
+            Export PDF
+          </Button>
+          <Button onClick={() => downloadReport("excel")}>
+            <Download className="mr-2 h-4 w-4" />
+            Export Excel
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Report Parameters</CardTitle>
+        </CardHeader>
+        <CardContent className="flex gap-4">
+          <Select value={reportType} onValueChange={setReportType}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Select report type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="portfolio">Portfolio Summary</SelectItem>
+              <SelectItem value="delinquency">Delinquency Report</SelectItem>
+              <SelectItem value="collections">Collections Report</SelectItem>
+              <SelectItem value="escrow">Escrow Analysis</SelectItem>
+              <SelectItem value="compliance">Compliance Report</SelectItem>
+              <SelectItem value="investor">Investor Report</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("w-[280px] justify-start text-left font-normal")}>
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateRange.from ? (
+                  dateRange.to ? (
+                    <>
+                      {format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}
+                    </>
+                  ) : (
+                    format(dateRange.from, "LLL dd, y")
+                  )
+                ) : (
+                  <span>Pick a date range</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="range"
+                selected={{ from: dateRange.from, to: dateRange.to }}
+                onSelect={(range: any) => setDateRange(range || { from: undefined, to: undefined })}
+                numberOfMonths={2}
+              />
+            </PopoverContent>
+          </Popover>
+
+          <Button>Generate Report</Button>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="distribution">Distribution</TabsTrigger>
+          <TabsTrigger value="trends">Trends</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Loans</CardTitle>
+                <FileText className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">935</div>
+                <p className="text-xs text-muted-foreground">+12 from last month</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Portfolio Value</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">$285.4M</div>
+                <p className="text-xs text-muted-foreground">+2.5% from last month</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Delinquency Rate</CardTitle>
+                <AlertCircle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">2.1%</div>
+                <p className="text-xs text-muted-foreground">-0.3% from last month</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Collections YTD</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">$18.2M</div>
+                <p className="text-xs text-muted-foreground">98.5% of target</p>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="performance">
+          <Card>
+            <CardHeader>
+              <CardTitle>Collections & Delinquency Trends</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={performanceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis yAxisId="left" />
+                  <YAxis yAxisId="right" orientation="right" />
+                  <Tooltip />
+                  <Legend />
+                  <Line yAxisId="left" type="monotone" dataKey="collections" stroke={CHART_COLORS.primary} name="Collections ($)" />
+                  <Line yAxisId="right" type="monotone" dataKey="delinquency" stroke={CHART_COLORS.danger} name="Delinquency Rate (%)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="distribution">
+          <Card>
+            <CardHeader>
+              <CardTitle>Portfolio Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={400}>
+                <PieChart>
+                  <Pie
+                    data={portfolioDistribution}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={(entry) => `${entry.name}: ${entry.value}`}
+                    outerRadius={150}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {portfolioDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="trends">
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Collection Trends</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={performanceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="collections" fill={CHART_COLORS.primary} name="Collections ($)" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

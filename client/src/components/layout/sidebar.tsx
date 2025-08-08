@@ -64,7 +64,7 @@ export function Sidebar() {
       {/* Role Selection */}
       <div className="p-4 border-b border-slate-200">
         <label className="block text-sm font-medium text-slate-700 mb-2">Active Role</label>
-        <Select value={activeRole} onValueChange={setActiveRole}>
+        <Select value={activeRole} onValueChange={(value) => setActiveRole(value as typeof activeRole)}>
           <SelectTrigger className="w-full">
             <SelectValue />
           </SelectTrigger>

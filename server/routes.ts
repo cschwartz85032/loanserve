@@ -23,8 +23,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         borrowerId, 
         investorId, 
         status, 
-        limit = 50, 
-        offset = 0 
+        limit = "50", 
+        offset = "0" 
       } = req.query as Record<string, string>;
 
       const loans = await storage.getLoans({
@@ -120,7 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Payment routes
   app.get("/api/loans/:loanId/payments", async (req, res) => {
     try {
-      const { limit = 50 } = req.query as Record<string, string>;
+      const { limit = "50" } = req.query as Record<string, string>;
       const payments = await storage.getPayments(req.params.loanId, parseInt(limit));
       res.json(payments);
     } catch (error) {
@@ -186,7 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/escrow-payments", async (req, res) => {
     try {
-      const { loanId, escrowAccountId, status, limit = 50 } = req.query as Record<string, string>;
+      const { loanId, escrowAccountId, status, limit = "50" } = req.query as Record<string, string>;
       const payments = await storage.getEscrowPayments({
         loanId: loanId || undefined,
         escrowAccountId: escrowAccountId || undefined,
@@ -290,7 +290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user) {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      const { limit = 50 } = req.query as Record<string, string>;
+      const { limit = "50" } = req.query as Record<string, string>;
       const notifications = await storage.getNotifications(req.user.id, parseInt(limit));
       res.json(notifications);
     } catch (error) {

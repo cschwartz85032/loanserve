@@ -163,19 +163,20 @@ export class DatabaseStorage implements IStorage {
     if (filters.status) conditions.push(eq(loans.status, filters.status as any));
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      query = query.where(and(...conditions)) as any;
     }
 
-    query = query.orderBy(desc(loans.createdAt));
+    query = query.orderBy(desc(loans.createdAt)) as any;
 
     if (filters.limit) {
-      query = query.limit(filters.limit);
+      query = query.limit(filters.limit) as any;
     }
     if (filters.offset) {
-      query = query.offset(filters.offset);
+      query = query.offset(filters.offset) as any;
     }
 
-    return await query;
+    const result = await query;
+    return result as Loan[];
   }
 
   async getLoan(id: string): Promise<Loan | undefined> {
@@ -343,16 +344,17 @@ export class DatabaseStorage implements IStorage {
     if (filters.status) conditions.push(eq(escrowPayments.status, filters.status));
 
     if (conditions.length > 0) {
-      query = query.where(and(...conditions));
+      query = query.where(and(...conditions)) as any;
     }
 
-    query = query.orderBy(desc(escrowPayments.dueDate));
+    query = query.orderBy(desc(escrowPayments.dueDate)) as any;
 
     if (filters.limit) {
-      query = query.limit(filters.limit);
+      query = query.limit(filters.limit) as any;
     }
 
-    return await query;
+    const result = await query;
+    return result as EscrowPayment[];
   }
 
   async createEscrowPayment(insertEscrowPayment: InsertEscrowPayment): Promise<EscrowPayment> {

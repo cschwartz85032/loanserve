@@ -41,7 +41,7 @@ export function MetricsCards() {
             <div>
               <p className="text-sm font-medium text-slate-600">Total Portfolio</p>
               <p className="text-3xl font-bold text-slate-900">
-                {metrics ? formatCurrency(metrics.totalPortfolio) : "$0"}
+                {metrics?.totalPortfolio ? formatCurrency(metrics.totalPortfolio) : "$0"}
               </p>
             </div>
             <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
@@ -58,7 +58,7 @@ export function MetricsCards() {
             <div>
               <p className="text-sm font-medium text-slate-600">Active Loans</p>
               <p className="text-3xl font-bold text-slate-900">
-                {metrics?.activeLoans.toLocaleString() || "0"}
+                {metrics?.activeLoans?.toLocaleString() || "0"}
               </p>
             </div>
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -92,7 +92,7 @@ export function MetricsCards() {
             <div>
               <p className="text-sm font-medium text-slate-600">Collections YTD</p>
               <p className="text-3xl font-bold text-slate-900">
-                {metrics ? formatCurrency(metrics.collectionsYTD) : "$0"}
+                {metrics?.collectionsYTD ? formatCurrency(metrics.collectionsYTD) : "$0"}
               </p>
             </div>
             <div className="w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center">
