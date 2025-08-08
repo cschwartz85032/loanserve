@@ -330,93 +330,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.send(transparentPng);
       }
       
-      // Create a proper PDF with correct structure
+      // Use PDFKit to generate a proper PDF
+      const PDFDocument = require('pdfkit');
+      const doc = new PDFDocument();
+      
+      // Pipe the PDF directly to the response
+      const chunks: Buffer[] = [];
+      doc.on('data', chunks.push.bind(chunks));
+      doc.on('end', () => {
+        const pdfData = Buffer.concat(chunks);
+        console.log(`Serving PDF for document: ${document.id}, size: ${pdfData.length} bytes`);
+        res.send(pdfData);
+      });
+      
+      // Add content to the PDF
       const title = document.title || document.fileName || 'Document';
       const docType = document.documentType || 'General';
       const status = document.status || 'Active';
       
-      // Build the content stream with proper formatting
-      const contentStream = [
-        'BT',
-        '/F1 24 Tf',
-        '50 700 Td',
-        `(${title}) Tj`,
-        '0 -40 Td',
-        '/F1 14 Tf',
-        `(Type: ${docType.replace(/_/g, ' ')}) Tj`,
-        '0 -25 Td',
-        `(Status: ${status}) Tj`,
-        '0 -40 Td',
-        '/F1 12 Tf',
-        '(This is a sample preview document.) Tj',
-        '0 -20 Td',
-        '(In production, the actual file would be displayed here.) Tj',
-        'ET'
-      ].join('\n');
+      // Add title
+      doc.fontSize(24)
+         .text(title, 50, 50);
       
-      const contentLength = contentStream.length;
+      // Add document details
+      doc.fontSize(14)
+         .text(`Type: ${docType.replace(/_/g, ' ')}`, 50, 100)
+         .text(`Status: ${status}`, 50, 130);
       
-      // Create a valid PDF structure
-      const pdfContent = [
-        '%PDF-1.4',
-        '1 0 obj',
-        '<<',
-        '/Type /Catalog',
-        '/Pages 2 0 R',
-        '>>',
-        'endobj',
-        '2 0 obj',
-        '<<',
-        '/Type /Pages',
-        '/Count 1',
-        '/Kids [3 0 R]',
-        '>>',
-        'endobj',
-        '3 0 obj',
-        '<<',
-        '/Type /Page',
-        '/Parent 2 0 R',
-        '/MediaBox [0 0 612 792]',
-        '/Contents 4 0 R',
-        '/Resources <<',
-        '/Font <<',
-        '/F1 <<',
-        '/Type /Font',
-        '/Subtype /Type1',
-        '/BaseFont /Helvetica',
-        '>>',
-        '>>',
-        '>>',
-        '>>',
-        'endobj',
-        '4 0 obj',
-        '<<',
-        `/Length ${contentLength}`,
-        '>>',
-        'stream',
-        contentStream,
-        'endstream',
-        'endobj',
-        'xref',
-        '0 5',
-        '0000000000 65535 f ',
-        '0000000009 00000 n ',
-        '0000000058 00000 n ',
-        '0000000115 00000 n ',
-        '0000000328 00000 n ',
-        'trailer',
-        '<<',
-        '/Size 5',
-        '/Root 1 0 R',
-        '>>',
-        'startxref',
-        `${400 + contentLength}`,
-        '%%EOF'
-      ].join('\n');
+      // Add description
+      doc.fontSize(12)
+         .text('This is a sample preview document.', 50, 180)
+         .text('In production, the actual file would be displayed here.', 50, 210);
       
-      const pdfBuffer = Buffer.from(pdfContent, 'utf-8');
-      console.log(`Serving PDF for document: ${document.id}, size: ${pdfBuffer.length} bytes`);
-      res.send(pdfBuffer);
+      // Add metadata
+      doc.fontSize(10)
+         .fillColor('#666666')
+         .text(`Document ID: ${document.id}`, 50, 300)
+         .text(`Created: ${document.createdAt ? new Date(document.createdAt).toLocaleDateString() : 'N/A'}`, 50, 320);
+      
+      // Finalize the PDF
+      doc.end();
     } catch (error) {
       console.error("Error fetching document file:", error);
       res.status(500).json({ error: "Failed to fetch document file" });

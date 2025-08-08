@@ -211,39 +211,33 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                         }}
                       />
                     ) : fileType?.includes('pdf') ? (
-                      <div className="w-full h-full bg-gray-50 rounded-lg">
+                      <div className="w-full h-full bg-white rounded-lg overflow-hidden">
                         {previewUrl ? (
-                          <object
-                            data={previewUrl}
-                            type="application/pdf"
-                            className="w-full h-full rounded-lg"
-                            style={{
-                              transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
-                              transformOrigin: 'center',
-                              transition: 'transform 0.3s ease'
-                            }}
-                          >
-                            <div className="flex items-center justify-center h-full">
-                              <div className="text-center p-8">
-                                <FileText className="w-24 h-24 text-slate-400 mx-auto mb-4" />
-                                <p className="text-lg font-medium text-slate-700 mb-2">
-                                  PDF Preview Not Available
-                                </p>
-                                <p className="text-sm text-slate-500 mb-4">
-                                  Your browser may not support inline PDF viewing
-                                </p>
-                                <a
-                                  href={previewUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                                >
-                                  <Download className="w-4 h-4 mr-2" />
-                                  Open in New Tab
-                                </a>
-                              </div>
+                          <div className="w-full h-full relative">
+                            <iframe
+                              src={`${previewUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`}
+                              className="w-full h-full border-0"
+                              style={{
+                                transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
+                                transformOrigin: 'center',
+                                transition: 'transform 0.3s ease',
+                                backgroundColor: 'white'
+                              }}
+                              title="PDF Document Preview"
+                              allowFullScreen
+                            />
+                            <div className="absolute bottom-4 right-4">
+                              <a
+                                href={previewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors shadow-lg"
+                              >
+                                <Download className="w-3.5 h-3.5 mr-1.5" />
+                                Open External
+                              </a>
                             </div>
-                          </object>
+                          </div>
                         ) : (
                           <div className="flex items-center justify-center h-full">
                             <div className="text-center">
