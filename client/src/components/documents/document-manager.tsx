@@ -222,11 +222,17 @@ export function DocumentManager() {
                     documents.map((document: any) => (
                       <tr key={document.id} className="hover:bg-slate-50">
                         <td className="px-6 py-4">
-                          <div className="flex items-center space-x-3">
+                          <div 
+                            className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => {
+                              setSelectedDocument(document);
+                              setShowPreviewModal(true);
+                            }}
+                          >
                             <FileText className="w-5 h-5 text-slate-400" />
                             <div>
-                              <p className="text-sm font-medium text-slate-900">{document.title}</p>
-                              <p className="text-xs text-slate-500">{document.originalFileName}</p>
+                              <p className="text-sm font-medium text-slate-900 hover:text-primary-600">{document.title}</p>
+                              <p className="text-xs text-slate-500 hover:text-slate-700">{document.originalFileName}</p>
                             </div>
                           </div>
                         </td>
