@@ -310,6 +310,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Document file endpoint for PDF preview
+  app.get("/api/documents/:id/file", async (req, res) => {
+    try {
+      const document = await storage.getDocument(req.params.id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      
+      // In production, this would serve the actual file from object storage
+      // For now, we'll return a placeholder response
+      res.setHeader('Content-Type', document.mimeType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${document.fileName}"`);
+      
+      // In production: stream the actual file content
+      // For demo: send a message indicating where the file would be served from
+      res.send('PDF file content would be served here from: ' + document.filePath);
+    } catch (error) {
+      console.error("Error fetching document file:", error);
+      res.status(500).json({ error: "Failed to fetch document file" });
+    }
+  });
+
   // Notification routes
   app.get("/api/notifications", async (req, res) => {
     try {

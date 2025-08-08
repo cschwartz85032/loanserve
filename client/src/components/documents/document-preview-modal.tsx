@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 import {
   Dialog,
   DialogContent,
@@ -20,8 +23,13 @@ import {
   X,
   ZoomIn,
   ZoomOut,
-  RotateCw
+  RotateCw,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
+
+// Set up the PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
 interface DocumentPreviewModalProps {
   open: boolean;
@@ -52,18 +60,21 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
   const [error, setError] = useState<string>('');
   const [zoomLevel, setZoomLevel] = useState(100);
   const [rotation, setRotation] = useState(0);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
 
   useEffect(() => {
     if (document?.filePath || document?.fileUrl) {
       const fileType = document.mimeType || document.fileType;
       // In production, this would fetch the actual file from object storage
-      // For now, we'll simulate different preview types
+      // For now, we'll use the file path for preview
       if (fileType?.startsWith('image/')) {
         // For images, we'd use the actual URL
         setPreviewUrl(document.filePath || document.fileUrl || '');
       } else if (fileType?.includes('pdf')) {
-        // For PDFs, we'd use a PDF viewer or convert to image
-        setPreviewUrl('/api/documents/' + document.id + '/preview');
+        // For PDFs, use the file path or generate a data URL
+        // In production, this would be a signed URL from object storage
+        setPreviewUrl(document.filePath || document.fileUrl || `/api/documents/${document.id}/file`);
       } else {
         // For other documents, show metadata only
         setPreviewUrl('');
@@ -119,6 +130,20 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
 
   const handleRotate = () => {
     setRotation(prev => (prev + 90) % 360);
+  };
+
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    setPageNumber(1);
+  };
+
+  const changePage = (offset: number) => {
+    setPageNumber(prevPageNumber => {
+      const newPageNumber = prevPageNumber + offset;
+      if (newPageNumber < 1) return 1;
+      if (newPageNumber > numPages) return numPages;
+      return newPageNumber;
+    });
   };
 
   const fileType = document.mimeType || document.fileType;
@@ -185,7 +210,7 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                   >
                     <ZoomIn className="w-4 h-4" />
                   </Button>
-                  {fileType?.startsWith('image/') && (
+                  {(fileType?.startsWith('image/') || fileType?.includes('pdf')) && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -210,14 +235,67 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                         }}
                       />
                     ) : fileType?.includes('pdf') ? (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <div className="text-center">
-                          <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4" />
-                          <p className="text-slate-600">PDF Preview</p>
-                          <p className="text-sm text-slate-500 mt-2">
-                            Full preview would be available with PDF viewer integration
-                          </p>
-                        </div>
+                      <div className="w-full">
+                        <Document
+                          file={previewUrl}
+                          onLoadSuccess={onDocumentLoadSuccess}
+                          loading={
+                            <div className="flex items-center justify-center p-8">
+                              <div className="text-center">
+                                <FileText className="w-12 h-12 text-slate-400 mx-auto mb-2 animate-pulse" />
+                                <p className="text-slate-600">Loading PDF...</p>
+                              </div>
+                            </div>
+                          }
+                          error={
+                            <div className="flex items-center justify-center p-8">
+                              <div className="text-center">
+                                <FileText className="w-12 h-12 text-red-400 mx-auto mb-2" />
+                                <p className="text-red-600">Failed to load PDF</p>
+                                <p className="text-sm text-slate-500 mt-2">
+                                  Please try downloading the file instead
+                                </p>
+                              </div>
+                            </div>
+                          }
+                        >
+                          <div className="flex flex-col items-center">
+                            <Page
+                              pageNumber={pageNumber}
+                              scale={zoomLevel / 100}
+                              rotate={rotation}
+                              renderTextLayer={true}
+                              renderAnnotationLayer={true}
+                              className="shadow-lg"
+                            />
+                            {/* Page Navigation */}
+                            {numPages > 1 && (
+                              <div className="flex items-center justify-center mt-4 space-x-4">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => changePage(-1)}
+                                  disabled={pageNumber <= 1}
+                                >
+                                  <ChevronLeft className="w-4 h-4" />
+                                  Previous
+                                </Button>
+                                <span className="text-sm text-slate-600">
+                                  Page {pageNumber} of {numPages}
+                                </span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => changePage(1)}
+                                  disabled={pageNumber >= numPages}
+                                >
+                                  Next
+                                  <ChevronRight className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </Document>
                       </div>
                     ) : (
                       <div className="text-center">
