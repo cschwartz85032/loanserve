@@ -79,12 +79,14 @@ export function DocumentManager() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
-  const handleDownload = (document: any) => {
+  const handleDownload = (doc: any) => {
     // In production, this would download from object storage
-    const link = window.document.createElement('a');
-    link.href = document.fileUrl || '#';
-    link.download = document.fileName || 'document';
+    const link = document.createElement('a');
+    link.href = doc.filePath || '#';
+    link.download = doc.fileName || doc.originalFileName || 'document';
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
   const deleteMutation = useMutation({

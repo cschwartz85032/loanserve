@@ -29,13 +29,18 @@ interface DocumentPreviewModalProps {
   document: {
     id: string;
     fileName: string;
-    fileType: string;
+    originalFileName?: string;
+    fileType?: string;
+    mimeType?: string;
     fileSize: number;
     fileUrl?: string;
+    filePath?: string;
     documentType: string;
+    title?: string;
     description?: string;
     uploadedBy?: string;
-    uploadedAt: string;
+    uploadedAt?: string;
+    createdAt?: string;
     loanId?: string;
     borrowerId?: string;
   } | null;
@@ -49,13 +54,14 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
   const [rotation, setRotation] = useState(0);
 
   useEffect(() => {
-    if (document?.fileUrl) {
+    if (document?.filePath || document?.fileUrl) {
+      const fileType = document.mimeType || document.fileType;
       // In production, this would fetch the actual file from object storage
       // For now, we'll simulate different preview types
-      if (document.fileType?.startsWith('image/')) {
+      if (fileType?.startsWith('image/')) {
         // For images, we'd use the actual URL
-        setPreviewUrl(document.fileUrl);
-      } else if (document.fileType?.includes('pdf')) {
+        setPreviewUrl(document.filePath || document.fileUrl || '');
+      } else if (fileType?.includes('pdf')) {
         // For PDFs, we'd use a PDF viewer or convert to image
         setPreviewUrl('/api/documents/' + document.id + '/preview');
       } else {
@@ -75,7 +81,8 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -93,10 +100,13 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
 
   const handleDownload = () => {
     // In production, this would trigger actual file download
-    const link = document.createElement('a');
-    link.href = document.fileUrl || '#';
-    link.download = document.fileName;
+    if (!document) return;
+    const link = window.document.createElement('a');
+    link.href = document.filePath || document.fileUrl || '#';
+    link.download = document.fileName || document.originalFileName || 'document';
+    window.document.body.appendChild(link);
     link.click();
+    window.document.body.removeChild(link);
   };
 
   const handleZoomIn = () => {
@@ -111,8 +121,8 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
     setRotation(prev => (prev + 90) % 360);
   };
 
-  const isPreviewable = document.fileType?.startsWith('image/') || 
-                        document.fileType?.includes('pdf');
+  const fileType = document.mimeType || document.fileType;
+  const isPreviewable = fileType?.startsWith('image/') || fileType?.includes('pdf');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,7 +131,7 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center space-x-2">
               <FileText className="w-5 h-5" />
-              <span>{document.fileName}</span>
+              <span>{document.fileName || document.originalFileName || document.title}</span>
             </DialogTitle>
             <div className="flex items-center space-x-2">
               <Button
@@ -175,7 +185,7 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                   >
                     <ZoomIn className="w-4 h-4" />
                   </Button>
-                  {document.fileType?.startsWith('image/') && (
+                  {fileType?.startsWith('image/') && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -189,17 +199,17 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                 {/* Preview Area */}
                 <ScrollArea className="h-[500px] w-full border rounded-lg bg-slate-50">
                   <div className="flex items-center justify-center p-8">
-                    {document.fileType?.startsWith('image/') ? (
+                    {fileType?.startsWith('image/') ? (
                       <img
                         src={previewUrl}
-                        alt={document.fileName}
+                        alt={document.fileName || document.originalFileName}
                         className="max-w-full h-auto shadow-lg"
                         style={{
                           transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
                           transition: 'transform 0.3s ease'
                         }}
                       />
-                    ) : document.fileType?.includes('pdf') ? (
+                    ) : fileType?.includes('pdf') ? (
                       <div className="w-full h-full flex items-center justify-center">
                         <div className="text-center">
                           <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4" />
@@ -241,11 +251,11 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-slate-500">File Name</p>
-                  <p className="font-medium">{document.fileName}</p>
+                  <p className="font-medium">{document.fileName || document.originalFileName}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">File Type</p>
-                  <p className="font-medium">{document.fileType}</p>
+                  <p className="font-medium">{document.mimeType || document.fileType || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">File Size</p>
@@ -275,7 +285,7 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                   <p className="text-slate-500">Upload Date</p>
                   <p className="font-medium flex items-center">
                     <Calendar className="w-4 h-4 mr-1" />
-                    {formatDate(document.uploadedAt)}
+                    {formatDate(document.uploadedAt || document.createdAt)}
                   </p>
                 </div>
                 {document.loanId && (
