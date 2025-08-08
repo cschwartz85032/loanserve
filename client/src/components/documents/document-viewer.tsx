@@ -1,6 +1,6 @@
 import React from 'react';
 import PDFViewer from './pdf-viewer';
-import { FileImage, FileText, File } from 'lucide-react';
+import { FileImage, FileText, File, Download } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
@@ -72,8 +72,8 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
     );
   }
   
-  // Handle text files
-  if (mimeType.includes('text') || ['txt', 'doc', 'docx'].includes(fileExtension)) {
+  // Handle text files and documents
+  if (mimeType.includes('text') || ['txt', 'doc', 'docx', 'xls', 'xlsx'].includes(fileExtension)) {
     return (
       <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-sm overflow-hidden">
         <div className="flex items-center justify-between p-3 border-b bg-gray-50 dark:bg-gray-800">
@@ -92,23 +92,24 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
           </Button>
         </div>
         
-        <div className="p-4">
-          <iframe
-            src={fileUrl}
-            className="w-full h-[500px] border rounded-lg"
-            title={fileName}
-            onError={(e) => {
-              console.error('Failed to load text document:', fileName);
-              e.currentTarget.style.display = 'none';
-              e.currentTarget.nextElementSibling?.classList.remove('hidden');
-            }}
-          />
-          <div className="hidden text-center py-12 text-gray-600">
-            <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-            <p className="font-medium mb-2">Document Preview Not Available</p>
-            <Button asChild>
+        <div className="p-8 text-center">
+          <FileText className="h-16 w-16 mx-auto mb-4 text-blue-500" />
+          <h3 className="font-medium text-lg mb-2">Document Ready to View</h3>
+          <p className="text-sm text-gray-600 mb-6">
+            Click "Open in New Tab" to view this {fileExtension.toUpperCase()} document
+          </p>
+          
+          <div className="space-y-3">
+            <Button asChild className="w-full">
               <a href={fileUrl} target="_blank" rel="noopener noreferrer">
                 Open Document in New Tab
+              </a>
+            </Button>
+            
+            <Button variant="outline" asChild className="w-full">
+              <a href={fileUrl} download={fileName}>
+                <Download className="h-4 w-4 mr-2" />
+                Download Document
               </a>
             </Button>
           </div>
