@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { LoanTable } from "@/components/loans/loan-table";
+import { NewLoanDialog } from "@/components/loans/new-loan-dialog";
 import { Button } from "@/components/ui/button";
 import { Plus, Filter } from "lucide-react";
 
 export default function Loans() {
+  const [showNewLoanDialog, setShowNewLoanDialog] = useState(false);
+
   return (
     <div className="min-h-screen flex bg-slate-50">
       <Sidebar />
@@ -22,7 +25,7 @@ export default function Loans() {
                 <Filter className="h-4 w-4 mr-2" />
                 Advanced Filters
               </Button>
-              <Button>
+              <Button onClick={() => setShowNewLoanDialog(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 New Loan
               </Button>
@@ -35,6 +38,12 @@ export default function Loans() {
           <LoanTable />
         </div>
       </main>
+
+      {/* New Loan Dialog */}
+      <NewLoanDialog 
+        open={showNewLoanDialog} 
+        onOpenChange={setShowNewLoanDialog} 
+      />
     </div>
   );
 }

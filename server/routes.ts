@@ -43,6 +43,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Loan metrics - must be defined before :id route
+  app.get("/api/loans/metrics", async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      const metrics = await storage.getLoanMetrics(userId);
+      res.json(metrics);
+    } catch (error) {
+      console.error("Error fetching loan metrics:", error);
+      res.status(500).json({ error: "Failed to fetch metrics" });
+    }
+  });
+
   app.get("/api/loans/:id", async (req, res) => {
     try {
       const loan = await storage.getLoan(req.params.id);
@@ -102,18 +114,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating loan:", error);
       res.status(400).json({ error: "Failed to update loan" });
-    }
-  });
-
-  // Loan metrics
-  app.get("/api/loans/metrics", async (req, res) => {
-    try {
-      const userId = req.user?.id;
-      const metrics = await storage.getLoanMetrics(userId);
-      res.json(metrics);
-    } catch (error) {
-      console.error("Error fetching loan metrics:", error);
-      res.status(500).json({ error: "Failed to fetch metrics" });
     }
   });
 
