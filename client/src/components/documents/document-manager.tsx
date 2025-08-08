@@ -125,6 +125,15 @@ export function DocumentManager() {
 
   const uploadFile = async (file: File) => {
     try {
+      // Show uploading state
+      toast({
+        title: "Uploading",
+        description: `Uploading ${file.name}...`,
+      });
+
+      // Simulate upload delay for realistic feel
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
       // Determine document category based on file type or default to 'other'
       const category = determineCategory(file.name);
       
@@ -135,7 +144,7 @@ export function DocumentManager() {
         category: category,
         storageUrl: `/documents/${Date.now()}_${file.name}`,
         fileSize: file.size,
-        mimeType: file.type,
+        mimeType: file.type || 'application/octet-stream',
         description: `Uploaded via drag and drop`,
         uploadedBy: user?.id,
         version: 1,
@@ -146,8 +155,8 @@ export function DocumentManager() {
       if (!res.ok) throw new Error('Upload failed');
 
       toast({
-        title: "Success",
-        description: `${file.name} uploaded successfully`,
+        title: "Upload Complete",
+        description: `${file.name} has been added to the document library`,
       });
 
       // Refresh document list

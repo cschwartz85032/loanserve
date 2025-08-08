@@ -29,22 +29,24 @@ interface DocumentPreviewModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   document: {
-    id: string;
-    fileName: string;
+    id: string | number;
+    fileName?: string;
     originalFileName?: string;
     fileType?: string;
     mimeType?: string;
-    fileSize: number;
+    fileSize?: number;
     fileUrl?: string;
     filePath?: string;
-    documentType: string;
+    storageUrl?: string;
+    documentType?: string;
+    category?: string;
     title?: string;
     description?: string;
-    uploadedBy?: string;
+    uploadedBy?: string | number;
     uploadedAt?: string;
     createdAt?: string;
-    loanId?: string;
-    borrowerId?: string;
+    loanId?: string | number;
+    borrowerId?: string | number;
   } | null;
 }
 
@@ -72,8 +74,8 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
 
   if (!document) return null;
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
+  const formatFileSize = (bytes: number | undefined) => {
+    if (!bytes || bytes === 0) return '0 Bytes';
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -91,7 +93,8 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
     });
   };
 
-  const getDocumentTypeLabel = (type: string) => {
+  const getDocumentTypeLabel = (type: string | undefined) => {
+    if (!type) return 'Document';
     return type.split('_').map(word => 
       word.charAt(0).toUpperCase() + word.slice(1)
     ).join(' ');
@@ -292,7 +295,7 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                 <div>
                   <p className="text-slate-500">Document Type</p>
                   <Badge variant="secondary">
-                    {getDocumentTypeLabel(document.documentType)}
+                    {getDocumentTypeLabel(document.category || document.documentType)}
                   </Badge>
                 </div>
               </div>
