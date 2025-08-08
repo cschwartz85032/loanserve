@@ -1,7 +1,4 @@
 import { useState, useEffect } from "react";
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
 import {
   Dialog,
   DialogContent,
@@ -27,9 +24,6 @@ import {
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
-
-// Set up the PDF.js worker - using CDN with explicit version
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 interface DocumentPreviewModalProps {
   open: boolean;
@@ -60,16 +54,13 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
   const [error, setError] = useState<string>('');
   const [zoomLevel, setZoomLevel] = useState(100);
   const [rotation, setRotation] = useState(0);
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageNumber, setPageNumber] = useState<number>(1);
+
 
   useEffect(() => {
     if (document?.filePath || document?.fileUrl) {
       const fileType = document.mimeType || document.fileType;
       // Reset states when document changes
       setError('');
-      setNumPages(0);
-      setPageNumber(1);
       
       // In production, this would fetch the actual file from object storage
       // For now, we'll use the file path for preview
@@ -77,10 +68,9 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
         // For images, we'd use the actual URL
         setPreviewUrl(document.filePath || document.fileUrl || '');
       } else if (fileType?.includes('pdf')) {
-        // For PDFs, create a sample PDF data URL for demonstration
+        // For PDFs, use the direct file path
         // In production, this would be a signed URL from object storage
-        const samplePdfUrl = 'data:application/pdf;base64,JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovT3V0bGluZXMgMiAwIFIKL1BhZ2VzIDMgMCBSCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9PdXRsaW5lcwovQ291bnQgMAo+PgplbmRvYmoKMyAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWzQgMCBSXQo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDMgMCBSCi9NZWRpYUJveCBbMCAwIDYxMiA3OTJdCi9Db250ZW50cyA1IDAgUgovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA2IDAgUgo+Pgo+Pgo+PgplbmRvYmoKNSAwIG9iago8PAovTGVuZ3RoIDQ0Cj4+CnN0cmVhbQpCVApxCjcwIDUwIFRECi9GMSAxMiBUZgooU2FtcGxlIFBERiBEb2N1bWVudCkgVGoKRVQKUQplbmRzdHJlYW0KZW5kb2JqCjYgMCBvYmoKPDwKL1R5cGUgL0ZvbnQKL1N1YnR5cGUgL1R5cGUxCi9OYW1lIC9GMS9CYXNlRm9udCAvSGVsdmV0aWNhCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCj4+CmVuZG9iagp4cmVmCjAgNwowMDAwMDAwMDAwIDY1NTM1IGYKMDAwMDAwMDAwOSAwMDAwMCBuCjAwMDAwMDAwNzQgMDAwMDAgbgowMDAwMDAwMTIwIDAwMDAwIG4KMDAwMDAwMDE3OSAwMDAwMCBuCjAwMDAwMDAzMDQgMDAwMDAgbgowMDAwMDAwNDAzIDAwMDAwIG4KdHJhaWxlcgo8PAovU2l6ZSA3Ci9Sb290IDEgMCBSCj4+CnN0YXJ0eHJlZgo1MDYKJSVFT0Y=';
-        setPreviewUrl(samplePdfUrl);
+        setPreviewUrl(document.filePath || document.fileUrl || `/api/documents/${document.id}/file`);
       } else {
         // For other documents, show metadata only
         setPreviewUrl('');
@@ -138,19 +128,7 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
     setRotation(prev => (prev + 90) % 360);
   };
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-    setPageNumber(1);
-  };
 
-  const changePage = (offset: number) => {
-    setPageNumber(prevPageNumber => {
-      const newPageNumber = prevPageNumber + offset;
-      if (newPageNumber < 1) return 1;
-      if (newPageNumber > numPages) return numPages;
-      return newPageNumber;
-    });
-  };
 
   const fileType = document.mimeType || document.fileType;
   const isPreviewable = fileType?.startsWith('image/') || fileType?.includes('pdf');
@@ -241,71 +219,29 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                         }}
                       />
                     ) : fileType?.includes('pdf') ? (
-                      <div className="w-full">
-                        <Document
-                          file={previewUrl}
-                          onLoadSuccess={onDocumentLoadSuccess}
-                          onLoadError={(error) => {
-                            console.error('PDF load error:', error);
-                            setError('Failed to load PDF');
-                          }}
-                          loading={
-                            <div className="flex items-center justify-center p-8">
-                              <div className="text-center">
-                                <FileText className="w-12 h-12 text-slate-400 mx-auto mb-2 animate-pulse" />
-                                <p className="text-slate-600">Loading PDF...</p>
-                              </div>
+                      <div className="w-full h-full">
+                        {previewUrl ? (
+                          <iframe
+                            src={previewUrl}
+                            className="w-full h-full border-0 rounded-lg shadow-lg"
+                            style={{
+                              transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
+                              transformOrigin: 'center',
+                              transition: 'transform 0.3s ease'
+                            }}
+                            title="PDF Preview"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                              <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4" />
+                              <p className="text-slate-600">PDF Preview</p>
+                              <p className="text-sm text-slate-500 mt-2">
+                                Loading PDF document...
+                              </p>
                             </div>
-                          }
-                          error={
-                            <div className="flex items-center justify-center p-8">
-                              <div className="text-center">
-                                <FileText className="w-12 h-12 text-red-400 mx-auto mb-2" />
-                                <p className="text-red-600">Failed to load PDF</p>
-                                <p className="text-sm text-slate-500 mt-2">
-                                  Please try downloading the file instead
-                                </p>
-                              </div>
-                            </div>
-                          }
-                        >
-                          <div className="flex flex-col items-center">
-                            <Page
-                              pageNumber={pageNumber}
-                              scale={zoomLevel / 100}
-                              rotate={rotation}
-                              renderTextLayer={true}
-                              renderAnnotationLayer={true}
-                              className="shadow-lg"
-                            />
-                            {/* Page Navigation */}
-                            {numPages > 1 && (
-                              <div className="flex items-center justify-center mt-4 space-x-4">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => changePage(-1)}
-                                  disabled={pageNumber <= 1}
-                                >
-                                  <ChevronLeft className="w-4 h-4" />
-                                  Previous
-                                </Button>
-                                <span className="text-sm text-slate-600">
-                                  Page {pageNumber} of {numPages}
-                                </span>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => changePage(1)}
-                                  disabled={pageNumber >= numPages}
-                                >
-                                  Next
-                                  <ChevronRight className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            )}
                           </div>
-                        </Document>
+                        )}
                       </div>
                     ) : (
                       <div className="text-center">

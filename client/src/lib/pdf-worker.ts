@@ -1,0 +1,1 @@
+// PDF worker configuration removed - using iframe approach instead
