@@ -2,6 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
+import multer from "multer";
+import path from "path";
+import fs from "fs/promises";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -22,6 +25,20 @@ function isAuthenticated(req: any, res: any, next: any) {
   }
   res.status(401).json({ error: "Unauthorized" });
 }
+
+// Configure multer for file uploads
+const uploadStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'server/uploads/');
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename with timestamp
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage: uploadStorage });
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
@@ -86,7 +103,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "UPDATE_BORROWER",
         entityType: "borrower",
         entityId: borrower.id,
-        oldValues: existingBorrower,
+        previousValues: existingBorrower,
         newValues: borrower
       });
 
@@ -156,7 +173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "UPDATE_PROPERTY",
         entityType: "property",
         entityId: property.id,
-        oldValues: existingProperty,
+        previousValues: existingProperty,
         newValues: property
       });
 
@@ -256,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "UPDATE_LOAN",
         entityType: "loan",
         entityId: loan.id,
-        oldValues: existingLoan,
+        previousValues: existingLoan,
         newValues: loan
       });
 
@@ -584,46 +601,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Document not found" });
       }
 
-      // Create sample PDF content for demonstration
-      const mimeType = document.mimeType || 'application/octet-stream';
-      const fileName = document.fileName || document.originalFileName || 'document';
-      
-      // Set headers for proper file serving
-      res.set({
-        'Content-Type': mimeType,
-        'Content-Disposition': `inline; filename="${fileName}"`,
-        'Cache-Control': 'public, max-age=3600',
-        'X-Frame-Options': 'SAMEORIGIN',
-        'X-Content-Type-Options': 'nosniff'
-      });
-
-      // Create sample content based on file type
-      if (mimeType.includes('pdf') || fileName.toLowerCase().endsWith('.pdf')) {
-        // Generate a simple PDF-like content
-        const pdfContent = generateSamplePDF(document);
-        res.type('application/pdf');
-        res.send(Buffer.from(pdfContent, 'binary'));
-      } else if (mimeType.startsWith('image/')) {
-        // Return a sample image (SVG)
-        const svgContent = generateSampleImage(document);
-        res.type('image/svg+xml');
-        res.send(svgContent);
-      } else if (mimeType.includes('text') || fileName.toLowerCase().match(/\.(doc|docx|txt)$/)) {
-        // Return formatted text content
-        const textContent = generateSampleDocument(document);
-        res.type('text/plain');
-        res.send(textContent);
+      // Get the file path from storageUrl
+      let filePath = '';
+      if (document.storageUrl.startsWith('/documents/')) {
+        // Handle local file storage
+        filePath = path.join('server/uploads', document.storageUrl.replace('/documents/', ''));
       } else {
-        // For other types, return basic info as downloadable file
-        const content = `Document: ${document.title || fileName}
-Type: ${document.category || 'Document'}  
-Created: ${new Date(document.createdAt).toLocaleDateString()}
-File Size: ${document.fileSize ? Math.round(document.fileSize / 1024) + ' KB' : 'Unknown'}
-Description: ${document.description || 'No description available'}
+        return res.status(404).json({ error: "File not found" });
+      }
 
-This is a sample document file.`;
-        res.type('text/plain');
-        res.send(content);
+      try {
+        // Check if file exists
+        await fs.access(filePath);
+        
+        // Set headers for proper file serving
+        const fileName = document.fileName || document.originalFileName || 'document';
+        const mimeType = document.mimeType || 'application/octet-stream';
+        
+        res.set({
+          'Content-Type': mimeType,
+          'Content-Disposition': `inline; filename="${fileName}"`,
+          'Cache-Control': 'public, max-age=3600',
+          'X-Frame-Options': 'SAMEORIGIN',
+          'X-Content-Type-Options': 'nosniff'
+        });
+
+        // Stream the file
+        const fileStream = await fs.readFile(filePath);
+        res.send(fileStream);
+        
+      } catch (fileError) {
+        console.error("File not found:", filePath);
+        
+        // Fallback: Return a sample document if actual file doesn't exist
+        const fileName = document.fileName || document.originalFileName || 'document';
+        const mimeType = document.mimeType || 'application/octet-stream';
+        
+        res.set({
+          'Content-Type': 'text/plain',
+          'Content-Disposition': `inline; filename="${fileName}.txt"`,
+          'Cache-Control': 'public, max-age=3600',
+        });
+
+        const fallbackContent = `DOCUMENT: ${document.title || fileName}
+
+This document was uploaded to the system but the file content is not available for preview.
+
+Document Information:
+- Type: ${document.category || 'Document'}
+- Created: ${new Date(document.createdAt).toLocaleDateString()}  
+- File Size: ${document.fileSize ? Math.round(document.fileSize / 1024) + ' KB' : 'Unknown'}
+- MIME Type: ${mimeType}
+- Description: ${document.description || 'No description available'}
+
+To implement full file serving:
+1. Upload actual files using the file upload endpoint
+2. Store files in the server/uploads directory
+3. Reference the correct file path in the database`;
+
+        res.send(fallbackContent);
       }
     } catch (error) {
       console.error("Error serving document file:", error);
@@ -631,120 +667,71 @@ This is a sample document file.`;
     }
   });
 
-  // Helper functions for generating sample content
-  function generateSamplePDF(document: any): string {
-    // This creates a very basic PDF-like structure
-    // In production, you'd use a proper PDF library or serve actual files
-    const content = `%PDF-1.4
-1 0 obj
-<<
-/Type /Catalog
-/Pages 2 0 R
->>
-endobj
-
-2 0 obj
-<<
-/Type /Pages
-/Kids [3 0 R]
-/Count 1
->>
-endobj
-
-3 0 obj
-<<
-/Type /Page
-/Parent 2 0 R
-/MediaBox [0 0 612 792]
-/Contents 4 0 R
-/Resources <<
-/Font <<
-/F1 <<
-/Type /Font
-/Subtype /Type1
-/BaseFont /Times-Roman
->>
->>
->>
->>
-endobj
-
-4 0 obj
-<<
-/Length 200
->>
-stream
-BT
-/F1 12 Tf
-100 700 Td
-(${document.title || document.fileName || 'Document'}) Tj
-0 -20 Td
-(Type: ${document.category || 'Document'}) Tj
-0 -20 Td
-(Created: ${new Date(document.createdAt).toLocaleDateString()}) Tj
-0 -20 Td
-(Description: ${document.description || 'Sample document content'}) Tj
-ET
-endstream
-endobj
-
-xref
-0 5
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000300 00000 n 
-trailer
-<<
-/Size 5
-/Root 1 0 R
->>
-startxref
-550
-%%EOF`;
-    return content;
+  // Helper function to determine document category
+  function determineCategory(fileName: string): string {
+    const lowerName = fileName.toLowerCase();
+    if (lowerName.includes('loan') || lowerName.includes('application')) return 'loan_application';
+    if (lowerName.includes('agreement')) return 'loan_agreement';
+    if (lowerName.includes('note')) return 'promissory_note';
+    if (lowerName.includes('deed')) return 'deed_of_trust';
+    if (lowerName.includes('mortgage')) return 'mortgage';
+    if (lowerName.includes('insurance') || lowerName.includes('policy')) return 'insurance_policy';
+    if (lowerName.includes('tax')) return 'tax_document';
+    if (lowerName.includes('escrow')) return 'escrow_statement';
+    if (lowerName.includes('title')) return 'title_report';
+    if (lowerName.includes('appraisal')) return 'appraisal';
+    if (lowerName.includes('inspection')) return 'inspection';
+    if (lowerName.includes('financial') || lowerName.includes('statement')) return 'financial_statement';
+    if (lowerName.includes('income')) return 'income_verification';
+    if (lowerName.includes('closing')) return 'closing_disclosure';
+    if (lowerName.includes('settlement')) return 'settlement_statement';
+    return 'other';
   }
 
-  function generateSampleImage(document: any): string {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="600" height="400" xmlns="http://www.w3.org/2000/svg">
-  <rect width="100%" height="100%" fill="#f8fafc"/>
-  <rect x="50" y="50" width="500" height="300" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
-  <text x="300" y="120" text-anchor="middle" font-family="Arial" font-size="24" fill="#374151">${document.title || document.fileName}</text>
-  <text x="300" y="160" text-anchor="middle" font-family="Arial" font-size="14" fill="#6b7280">Type: ${document.category || 'Image'}</text>
-  <text x="300" y="200" text-anchor="middle" font-family="Arial" font-size="14" fill="#6b7280">Created: ${new Date(document.createdAt).toLocaleDateString()}</text>
-  <text x="300" y="240" text-anchor="middle" font-family="Arial" font-size="12" fill="#9ca3af">Sample Image Content</text>
-  <circle cx="300" cy="280" r="30" fill="#ddd6fe" opacity="0.5"/>
-</svg>`;
-  }
+  // File upload endpoint for documents
+  app.post("/api/documents/upload", isAuthenticated, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file provided" });
+      }
 
-  function generateSampleDocument(document: any): string {
-    return `${document.title || document.fileName || 'DOCUMENT'}
+      // Determine document category based on file type or filename
+      const category = determineCategory(req.file.originalname);
+      
+      // Create document record in database
+      const documentData = {
+        title: req.body.title || req.file.originalname.split('.')[0],
+        fileName: req.file.originalname,
+        category: req.body.category || category,
+        storageUrl: `/documents/${req.file.filename}`,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        description: req.body.description || 'Uploaded via file upload',
+        uploadedBy: req.user?.id,
+        version: 1,
+        isActive: true,
+        loanId: req.body.loanId ? parseInt(req.body.loanId) : null,
+        borrowerId: req.body.borrowerId ? parseInt(req.body.borrowerId) : null,
+      };
 
-Type: ${document.category || 'Document'}
-Created: ${new Date(document.createdAt).toLocaleDateString()}
-File Size: ${document.fileSize ? Math.round(document.fileSize / 1024) + ' KB' : 'Unknown'}
+      const validatedData = insertDocumentSchema.parse(documentData);
+      const document = await storage.createDocument(validatedData);
+      
+      await storage.createAuditLog({
+        userId: req.user?.id,
+        loanId: document.loanId,
+        action: "CREATE_DOCUMENT",
+        entityType: "document",
+        entityId: document.id,
+        newValues: document
+      });
 
-Description:
-${document.description || 'This is a sample document with formatted content for demonstration purposes.'}
-
-Content:
-This is a sample document that demonstrates the file serving capabilities of the loan servicing platform. In a production environment, this would contain the actual document content.
-
-Key Features:
-- Document management and storage
-- File type detection and proper MIME type handling  
-- Secure file serving with appropriate headers
-- Integration with loan records and borrower information
-
-Document Details:
-- Original Filename: ${document.originalFileName || document.fileName}
-- Upload Date: ${new Date(document.createdAt).toISOString()}
-- Category: ${document.category || 'General'}
-
-This document is part of the comprehensive loan servicing system and contains important information related to the mortgage loan process.`;
-  }
+      res.status(201).json(document);
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      res.status(400).json({ error: "Failed to upload document" });
+    }
+  });
 
   app.post("/api/documents", isAuthenticated, async (req, res) => {
     try {
@@ -786,7 +773,7 @@ This document is part of the comprehensive loan servicing system and contains im
         action: "UPDATE_DOCUMENT",
         entityType: "document",
         entityId: document.id,
-        oldValues: existingDocument,
+        previousValues: existingDocument,
         newValues: document
       });
 
@@ -813,7 +800,7 @@ This document is part of the comprehensive loan servicing system and contains im
         action: "DELETE_DOCUMENT",
         entityType: "document",
         entityId: document.id,
-        oldValues: document
+        previousValues: document
       });
 
       res.status(204).send();

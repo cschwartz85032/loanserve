@@ -131,28 +131,25 @@ export function DocumentManager() {
         description: `Uploading ${file.name}...`,
       });
 
-      // Simulate upload delay for realistic feel
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', file.name.split('.')[0]);
+      formData.append('description', 'Uploaded via drag and drop');
       
-      // Determine document category based on file type or default to 'other'
-      const category = determineCategory(file.name);
-      
-      // Create document record in database
-      const documentData = {
-        title: file.name.split('.')[0],
-        fileName: file.name,
-        category: category,
-        storageUrl: `/documents/${Date.now()}_${file.name}`,
-        fileSize: file.size,
-        mimeType: file.type || 'application/octet-stream',
-        description: `Uploaded via drag and drop`,
-        uploadedBy: user?.id,
-        version: 1,
-        isActive: true
-      };
+      // Upload file to server
+      const res = await fetch('/api/documents/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
 
-      const res = await apiRequest("POST", "/api/documents", documentData);
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || 'Upload failed');
+      }
+
+      const document = await res.json();
 
       toast({
         title: "Upload Complete",
@@ -162,33 +159,16 @@ export function DocumentManager() {
       // Refresh document list
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
     } catch (error) {
+      console.error("Upload error:", error);
       toast({
         title: "Upload failed",
-        description: `Failed to upload ${file.name}`,
+        description: `Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`,
         variant: "destructive",
       });
     }
   };
 
-  const determineCategory = (fileName: string): string => {
-    const lowerName = fileName.toLowerCase();
-    if (lowerName.includes('loan') || lowerName.includes('application')) return 'loan_application';
-    if (lowerName.includes('agreement')) return 'loan_agreement';
-    if (lowerName.includes('note')) return 'promissory_note';
-    if (lowerName.includes('deed')) return 'deed_of_trust';
-    if (lowerName.includes('mortgage')) return 'mortgage';
-    if (lowerName.includes('insurance') || lowerName.includes('policy')) return 'insurance_policy';
-    if (lowerName.includes('tax')) return 'tax_document';
-    if (lowerName.includes('escrow')) return 'escrow_statement';
-    if (lowerName.includes('title')) return 'title_report';
-    if (lowerName.includes('appraisal')) return 'appraisal';
-    if (lowerName.includes('inspection')) return 'inspection';
-    if (lowerName.includes('financial') || lowerName.includes('statement')) return 'financial_statement';
-    if (lowerName.includes('income')) return 'income_verification';
-    if (lowerName.includes('closing')) return 'closing_disclosure';
-    if (lowerName.includes('settlement')) return 'settlement_statement';
-    return 'other';
-  };
+
 
   const deleteMutation = useMutation({
     mutationFn: async (documentId: string) => {
