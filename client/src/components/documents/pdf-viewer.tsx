@@ -40,33 +40,34 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
 
       {/* PDF Content */}
       <div className="relative w-full" style={{ height: '600px' }}>
-        {!loadError ? (
-          <object
-            data={`${fileUrl}#toolbar=1&navpanes=1&scrollbar=1&page=1&view=FitH`}
-            type="application/pdf"
-            className="w-full h-full"
-            onError={() => setLoadError(true)}
-          >
-            <embed
-              src={`${fileUrl}#toolbar=1&navpanes=1&scrollbar=1&page=1&view=FitH`}
-              type="application/pdf"
-              className="w-full h-full"
-              onError={() => setLoadError(true)}
-            />
-          </object>
-        ) : (
-          <div className="flex items-center justify-center h-full bg-gray-50 dark:bg-gray-800">
+        <iframe
+          src={fileUrl}
+          className="w-full h-full border-0"
+          title={fileName}
+          style={{ backgroundColor: '#f8f9fa' }}
+          onLoad={() => {
+            console.log('PDF loaded successfully:', fileName);
+          }}
+          onError={() => {
+            console.error('Failed to load PDF:', fileName);
+            setLoadError(true);
+          }}
+        />
+        
+        {loadError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
             <div className="text-center p-8">
-              <AlertTriangle className="h-16 w-16 mx-auto mb-4 text-yellow-500" />
-              <h3 className="font-medium text-lg mb-2">PDF Preview Unavailable</h3>
+              <FileText className="h-16 w-16 mx-auto mb-4 text-blue-500" />
+              <h3 className="font-medium text-lg mb-2">PDF Document</h3>
               <p className="text-sm text-gray-600 mb-4">
-                This PDF cannot be displayed inline. Please download or open in a new tab.
+                Click to open this PDF document in a new tab.
               </p>
               
               <div className="space-y-3">
                 <Button asChild className="w-full">
                   <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                    Open PDF in New Tab
+                    <FileText className="h-4 w-4 mr-2" />
+                    View PDF
                   </a>
                 </Button>
                 
