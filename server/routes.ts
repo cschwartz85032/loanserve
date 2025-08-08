@@ -318,10 +318,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Document not found" });
       }
       
-      // In production, this would serve the actual file from object storage
-      // For now, we'll return a sample PDF for demonstration
-      res.setHeader('Content-Type', document.mimeType || 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${document.fileName}"`);
+      // Set appropriate headers for the document type
+      const mimeType = document.mimeType || 'application/pdf';
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${document.fileName || document.originalFileName}"`);
+      
+      // For images, return a sample image
+      if (mimeType.startsWith('image/')) {
+        // Return a simple 1x1 transparent PNG
+        const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+        return res.send(transparentPng);
+      }
       
       // Sample PDF content for demonstration
       // This creates a simple PDF with the document title

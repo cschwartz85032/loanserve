@@ -57,23 +57,23 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
 
 
   useEffect(() => {
-    if (document?.filePath || document?.fileUrl) {
+    if (document) {
       const fileType = document.mimeType || document.fileType;
       // Reset states when document changes
       setError('');
+      setPreviewUrl('');
       
       // In production, this would fetch the actual file from object storage
-      // For now, we'll use the file path for preview
+      // For now, we'll use the API endpoint for all document types
       if (fileType?.startsWith('image/')) {
-        // For images, we'd use the actual URL
-        setPreviewUrl(document.filePath || document.fileUrl || '');
+        // For images, use the API endpoint
+        setPreviewUrl(`/api/documents/${document.id}/file`);
       } else if (fileType?.includes('pdf')) {
-        // For PDFs, use the direct file path
-        // In production, this would be a signed URL from object storage
-        setPreviewUrl(document.filePath || document.fileUrl || `/api/documents/${document.id}/file`);
+        // For PDFs, use the API endpoint
+        setPreviewUrl(`/api/documents/${document.id}/file`);
       } else {
-        // For other documents, show metadata only
-        setPreviewUrl('');
+        // For other documents, also try to preview via API
+        setPreviewUrl(`/api/documents/${document.id}/file`);
       }
     }
   }, [document]);
