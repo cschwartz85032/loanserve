@@ -139,16 +139,17 @@ export function DocumentUploadModal({ open, onOpenChange, loanId, borrowerId }: 
     }, 200);
 
     try {
-      // Create document record with proper schema fields
+      // Create document record with all required schema fields
       const documentData = {
-        name: fileWithProgress.file.name.split('.')[0], // Use filename without extension as name
+        title: fileWithProgress.file.name.split('.')[0], // Use filename without extension as title
+        fileName: fileWithProgress.file.name, // Full filename with extension
         category: documentType as any, // Map documentType to category
         storageUrl: `/documents/${Date.now()}_${fileWithProgress.file.name}`, // Placeholder storage URL
         fileSize: fileWithProgress.file.size,
         mimeType: fileWithProgress.file.type,
         description: description || null,
         loanId: loanId ? parseInt(loanId) : null,
-        borrowerEntityId: borrowerId ? parseInt(borrowerId) : null,
+        borrowerId: borrowerId ? parseInt(borrowerId) : null, // Fixed field name
         uploadedBy: user?.id,
         version: 1,
         isActive: true
