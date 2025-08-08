@@ -19,9 +19,10 @@ import {
   Trash2,
   Filter,
   CloudUpload,
-  File
+  File,
+  X
 } from "lucide-react";
-import { DocumentPreviewModal } from "./document-preview-modal";
+import { DocumentViewer } from "./document-viewer";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -31,14 +32,14 @@ export function DocumentManager() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showInlineViewer, setShowInlineViewer] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<File[]>([]);
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: documents, isLoading } = useQuery({
+  const { data: documents = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/documents", { documentType: typeFilter === "all" ? undefined : typeFilter }],
   });
 
@@ -85,14 +86,14 @@ export function DocumentManager() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
-  const handleDownload = (doc: any) => {
-    // In production, this would download from object storage
-    const link = document.createElement('a');
-    link.href = doc.filePath || '#';
-    link.download = doc.fileName || doc.originalFileName || 'document';
-    document.body.appendChild(link);
+  const handleDownload = (document: any) => {
+    const downloadUrl = `/api/documents/${document.id}/file`;
+    const link = window.document.createElement('a');
+    link.href = downloadUrl;
+    link.download = document.fileName || document.originalFileName || 'document';
+    window.document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    window.document.body.removeChild(link);
   };
 
   // Handle drag events
@@ -197,7 +198,22 @@ export function DocumentManager() {
   const handleDelete = (document: any) => {
     if (confirm(`Are you sure you want to delete "${document.title}"?`)) {
       deleteMutation.mutate(document.id.toString());
+      // If we're viewing this document, close the viewer
+      if (selectedDocument?.id === document.id) {
+        setSelectedDocument(null);
+        setShowInlineViewer(false);
+      }
     }
+  };
+
+  const handleViewDocument = (document: any) => {
+    setSelectedDocument(document);
+    setShowInlineViewer(true);
+  };
+
+  const handleCloseViewer = () => {
+    setSelectedDocument(null);
+    setShowInlineViewer(false);
   };
 
   return (
@@ -211,6 +227,22 @@ export function DocumentManager() {
       onDragOver={handleDrag}
       onDrop={handleDrop}
     >
+      {showInlineViewer && selectedDocument ? (
+        // Inline Document Viewer Layout
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Document List Column */}
+          <div className="order-2 lg:order-1">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-slate-900">Document Library</h2>
+              <Button
+                variant="outline"
+                onClick={handleCloseViewer}
+                className="lg:hidden"
+              >
+                Close Viewer
+              </Button>
+            </div>
       {/* Drag and Drop Overlay */}
       {dragActive && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-primary-50/90 rounded-lg">
@@ -349,10 +381,7 @@ export function DocumentManager() {
                         <td className="px-6 py-4">
                           <div 
                             className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => {
-                              setSelectedDocument(document);
-                              setShowPreviewModal(true);
-                            }}
+                            onClick={() => handleViewDocument(document)}
                           >
                             <FileText className="w-5 h-5 text-slate-400" />
                             <div>
@@ -380,10 +409,8 @@ export function DocumentManager() {
                                   <Button 
                                     variant="ghost" 
                                     size="sm"
-                                    onClick={() => {
-                                      setSelectedDocument(document);
-                                      setShowPreviewModal(true);
-                                    }}
+                                    onClick={() => handleViewDocument(document)}
+                                    className={selectedDocument?.id === document.id ? "bg-primary-100" : ""}
                                   >
                                     <Eye className="w-4 h-4" />
                                   </Button>
@@ -443,12 +470,206 @@ export function DocumentManager() {
         </CardContent>
       </Card>
 
-      {/* Preview Modal */}
-      <DocumentPreviewModal
-        open={showPreviewModal}
-        onOpenChange={setShowPreviewModal}
-        document={selectedDocument}
-      />
+          </div>
+          
+          {/* Document Viewer Column */}
+          <div className="order-1 lg:order-2">
+            <div className="sticky top-4">
+              <Card className="border-2 border-primary-200 bg-gradient-to-br from-white to-primary-50">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center space-x-2 text-lg">
+                      <FileText className="w-5 h-5 text-primary-600" />
+                      <span className="truncate">{selectedDocument.fileName || selectedDocument.title}</span>
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCloseViewer}
+                      className="hidden lg:flex"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <DocumentViewer 
+                    file={{
+                      id: Number(selectedDocument.id),
+                      fileName: selectedDocument.fileName,
+                      originalFileName: selectedDocument.originalFileName,
+                      mimeType: selectedDocument.mimeType,
+                      fileType: selectedDocument.fileType
+                    }} 
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      ) : (
+        // Default Document Management View
+        <div>
+          {/* Drag and Drop Overlay */}
+          {dragActive && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-primary-50/90 rounded-lg">
+              <div className="text-center">
+                <CloudUpload className="w-16 h-16 text-primary-600 mx-auto mb-4" />
+                <p className="text-xl font-semibold text-primary-900">Drop files to upload</p>
+                <p className="text-sm text-primary-700 mt-2">Files will be automatically added to the document library</p>
+              </div>
+            </div>
+          )}
+
+          {/* Upload Progress */}
+          {uploadingFiles.length > 0 && (
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <div className="space-y-2">
+                  {uploadingFiles.map((file, index) => (
+                    <div key={index} className="flex items-center gap-3">
+                      <File className="w-4 h-4 text-slate-500" />
+                      <span className="text-sm flex-1">{file.name}</span>
+                      <Badge variant="secondary">Uploading...</Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Rest of the original document management interface */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Document Library</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+                    <p className="text-slate-500">Loading documents...</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Document
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Type
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Size
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Date Added
+                        </th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200">
+                      {documents && documents.length > 0 ? (
+                        documents.map((document: any) => (
+                          <tr key={document.id} className="hover:bg-slate-50">
+                            <td className="px-6 py-4">
+                              <div 
+                                className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => handleViewDocument(document)}
+                              >
+                                <FileText className="w-5 h-5 text-slate-400" />
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900 hover:text-primary-600">{document.title || document.fileName}</p>
+                                  <p className="text-xs text-slate-500 hover:text-slate-700">{document.fileName}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <Badge variant="outline">
+                                {(document.category || document.documentType || 'other').replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                              </Badge>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                              {formatFileSize(document.fileSize)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                              {formatDate(document.createdAt)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                              <div className="flex items-center space-x-2">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm"
+                                        onClick={() => handleViewDocument(document)}
+                                        className={selectedDocument?.id === document.id ? "bg-primary-100" : ""}
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>View document</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                  
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm"
+                                        onClick={() => handleDownload(document)}
+                                      >
+                                        <Download className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Download document</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm"
+                                        onClick={() => handleDelete(document)}
+                                        disabled={deleteMutation.isPending}
+                                        className="hover:text-red-600"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Delete document</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                            No documents found. Upload your first document to get started.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
