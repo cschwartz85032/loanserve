@@ -107,7 +107,7 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
     );
   }
 
-  // Handle Office documents (DOC, DOCX, XLS, XLSX)
+  // Handle Office documents (DOC, DOCX, XLS, XLSX) - Chrome-safe approach
   if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(fileExtension)) {
     return (
       <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-sm overflow-hidden">
@@ -127,34 +127,27 @@ export function DocumentViewer({ file }: DocumentViewerProps) {
           </Button>
         </div>
         
-        <div className="p-4 overflow-auto">
-          <div className="relative w-full h-[600px] border rounded">
-            <iframe
-              src={`https://docs.google.com/gview?url=${encodeURIComponent(window.location.origin + fileUrl)}&embedded=true`}
-              className="w-full h-full border-0 rounded"
-              title={fileName}
-              onError={(e) => {
-                console.error('Failed to load document in Google Docs viewer:', fileName);
-                // Show fallback message instead of trying direct iframe for office docs
-                e.currentTarget.style.display = 'none';
-                const fallbackDiv = e.currentTarget.nextElementSibling as HTMLElement;
-                if (fallbackDiv) fallbackDiv.style.display = 'block';
-              }}
-            />
-            <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-50 rounded">
-              <div className="text-center p-8">
-                <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-                <h3 className="font-medium text-lg mb-2">Document Preview Not Available</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Unable to display this {fileExtension.toUpperCase()} document inline. Please use the button below.
-                </p>
-                <Button asChild>
-                  <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                    Open Document in New Tab
-                  </a>
-                </Button>
-              </div>
-            </div>
+        <div className="p-8 text-center">
+          <FileText className="h-20 w-20 mx-auto mb-6 text-green-500" />
+          <h3 className="font-semibold text-xl mb-3 text-gray-900">{fileExtension.toUpperCase()} Document Ready</h3>
+          <p className="text-gray-600 mb-6 max-w-md mx-auto">
+            Your {fileExtension.toUpperCase()} document opens in a new tab with full editing capabilities and better performance.
+          </p>
+          
+          <div className="space-y-4 max-w-sm mx-auto">
+            <Button asChild className="w-full h-12 text-base">
+              <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                <FileText className="h-5 w-5 mr-3" />
+                Open {fileExtension.toUpperCase()} Document
+              </a>
+            </Button>
+            
+            <Button variant="outline" asChild className="w-full h-12 text-base">
+              <a href={fileUrl} download={fileName}>
+                <Download className="h-5 w-5 mr-3" />
+                Download Document
+              </a>
+            </Button>
           </div>
         </div>
       </div>

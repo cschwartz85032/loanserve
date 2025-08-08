@@ -31,33 +31,40 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
         </div>
       </div>
 
-      {/* PDF Content */}
-      <div className="p-4 overflow-auto">
-        <div className="relative w-full h-[600px] border rounded">
-          <iframe
-            src={fileUrl}
-            className="w-full h-full border-0 rounded"
-            title={fileName}
-            onError={(e) => {
-              console.error('Failed to load PDF:', fileName);
-              // Show fallback message
-              e.currentTarget.style.display = 'none';
-              const fallbackDiv = e.currentTarget.nextElementSibling as HTMLElement;
-              if (fallbackDiv) fallbackDiv.style.display = 'block';
-            }}
-          />
-          <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-50 rounded">
-            <div className="text-center">
-              <FileText className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-              <h3 className="font-medium text-lg mb-2">PDF Preview Not Available</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Unable to display PDF in this browser. Please use the button below.
+      {/* PDF Content - Chrome-safe approach */}
+      <div className="p-8 text-center">
+        <FileText className="h-20 w-20 mx-auto mb-6 text-blue-500" />
+        <h3 className="font-semibold text-xl mb-3 text-gray-900">PDF Document Ready</h3>
+        <p className="text-gray-600 mb-6 max-w-md mx-auto">
+          Due to browser security settings, PDFs open in a new tab for the best viewing experience.
+        </p>
+        
+        <div className="space-y-4 max-w-sm mx-auto">
+          <Button asChild className="w-full h-12 text-base">
+            <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+              <FileText className="h-5 w-5 mr-3" />
+              View PDF Document
+            </a>
+          </Button>
+          
+          <Button variant="outline" asChild className="w-full h-12 text-base">
+            <a href={fileUrl} download={fileName}>
+              <Download className="h-5 w-5 mr-3" />
+              Download PDF
+            </a>
+          </Button>
+        </div>
+        
+        <div className="mt-8 p-4 bg-blue-50 border border-blue-100 rounded-lg max-w-md mx-auto">
+          <div className="flex items-start text-left">
+            <FileText className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-blue-800 mb-1">
+                Why New Tab?
               </p>
-              <Button asChild>
-                <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                  Open PDF in New Tab
-                </a>
-              </Button>
+              <p className="text-xs text-blue-700">
+                Chrome blocks PDF display in modals for security. New tabs provide full PDF controls and better performance.
+              </p>
             </div>
           </div>
         </div>
