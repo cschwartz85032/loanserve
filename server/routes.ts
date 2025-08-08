@@ -576,6 +576,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Serve document file content
+  app.get("/api/documents/:id/file", async (req, res) => {
+    try {
+      const document = await storage.getDocument(parseInt(req.params.id));
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      // In a real application, this would serve the actual file from storage
+      // For now, we'll return a mock response based on the file type
+      const mimeType = document.mimeType || 'application/octet-stream';
+      
+      // Set appropriate headers
+      res.set({
+        'Content-Type': mimeType,
+        'Content-Disposition': `inline; filename="${document.fileName}"`,
+        'Cache-Control': 'public, max-age=3600'
+      });
+
+      // Return mock content based on file type
+      if (mimeType.includes('pdf')) {
+        // Return a simple PDF placeholder
+        // Import at runtime since pdfkit is already installed
+        const pdfkit = await import('pdfkit');
+        const PDFDocument = pdfkit.default;
+        const doc = new PDFDocument();
+        res.type('application/pdf');
+        doc.pipe(res);
+        doc.fontSize(20).text(`Document: ${document.title || document.fileName}`, 100, 100);
+        doc.fontSize(14).text(`Type: ${document.category || 'Document'}`, 100, 150);
+        doc.fontSize(12).text(`Created: ${new Date(document.createdAt).toLocaleDateString()}`, 100, 200);
+        doc.fontSize(12).text(`Description: ${document.description || 'No description available'}`, 100, 250);
+        doc.end();
+      } else if (mimeType.startsWith('image/')) {
+        // Return a placeholder image
+        res.redirect('https://via.placeholder.com/600x400/e2e8f0/64748b?text=' + encodeURIComponent(document.fileName));
+      } else if (mimeType.includes('text') || mimeType.includes('doc')) {
+        // Return text content
+        res.type('text/plain');
+        res.send(`Document: ${document.title || document.fileName}\n\nType: ${document.category}\n\nDescription: ${document.description || 'No description available'}\n\nThis is a placeholder for the actual document content.`);
+      } else {
+        // For other types, return basic info
+        res.type('text/plain');
+        res.send(`Document placeholder for: ${document.fileName}`);
+      }
+    } catch (error) {
+      console.error("Error serving document file:", error);
+      res.status(500).json({ error: "Failed to serve document file" });
+    }
+  });
+
   app.post("/api/documents", isAuthenticated, async (req, res) => {
     try {
       const validatedData = insertDocumentSchema.parse({
