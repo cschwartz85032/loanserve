@@ -16,6 +16,13 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
     // Reset states when fileUrl changes
     setIsLoading(true);
     setHasError(false);
+    
+    // Set a timeout to hide loading state after a reasonable time
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+
+    return () => clearTimeout(timer);
   }, [fileUrl]);
 
   const handleLoad = () => {
@@ -69,41 +76,41 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
           </div>
         )}
 
-        {/* PDF Object - Chrome compatible */}
-        <object
-          data={fileUrl}
-          type="application/pdf"
-          className="w-full h-full"
-          onLoad={handleLoad}
-          onError={handleError}
-          style={{ display: hasError ? 'none' : 'block' }}
-        >
-          <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-800">
-            <div className="text-center p-8">
-              <FileText className="h-16 w-16 mx-auto mb-4 text-blue-500" />
-              <h3 className="font-medium text-lg mb-2">PDF Viewer</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Your browser doesn't support embedded PDFs.
-              </p>
-              
-              <div className="space-y-3">
-                <Button asChild className="w-full">
-                  <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                    <FileText className="h-4 w-4 mr-2" />
-                    View PDF
-                  </a>
-                </Button>
+        {/* PDF Content */}
+        {!isLoading && !hasError && (
+          <object
+            data={`${fileUrl}#toolbar=1&navpanes=1&scrollbar=1`}
+            type="application/pdf"
+            className="w-full h-full border-0"
+            style={{ minHeight: '600px' }}
+          >
+            <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-800">
+              <div className="text-center p-8">
+                <FileText className="h-16 w-16 mx-auto mb-4 text-blue-500" />
+                <h3 className="font-medium text-lg mb-2">PDF Document</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Your browser cannot display this PDF inline.
+                </p>
                 
-                <Button variant="outline" asChild className="w-full">
-                  <a href={fileUrl} download={fileName}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Download PDF
-                  </a>
-                </Button>
+                <div className="space-y-3">
+                  <Button asChild className="w-full">
+                    <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                      <FileText className="h-4 w-4 mr-2" />
+                      Open PDF in New Tab
+                    </a>
+                  </Button>
+                  
+                  <Button variant="outline" asChild className="w-full">
+                    <a href={fileUrl} download={fileName}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download PDF
+                    </a>
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </object>
+          </object>
+        )}
 
         {/* Error fallback */}
         {hasError && (

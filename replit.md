@@ -8,13 +8,14 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 - Redesigned document management to use inline two-column layout instead of modal popups
 - Left column: document list with search and filters, Right column: document viewer
 - **WORKING INLINE DOCUMENT VIEWING:**
-  - PDFs display inline using iframe elements (confirmed working in console logs)
+  - PDFs display inline using object elements with automatic loading timeout
   - Images display directly using img tags with error handling
   - Text files display inline using iframe elements  
   - Office documents use object/embed with proper fallback handling
 - All document types now show actual content in the viewer panel
+- Fixed loading screen hang issue - PDFs now load properly without getting stuck
 - Added proper close functionality and maintained all existing features (upload, download, delete)
-- Fixed Chrome compatibility issues while maintaining inline content viewing
+- Chrome-compatible PDF viewing with toolbar controls and navigation
 
 # User Preferences
 
