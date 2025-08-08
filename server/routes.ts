@@ -331,8 +331,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Use PDFKit to generate a proper PDF
-      const PDFDocument = require('pdfkit');
-      const doc = new PDFDocument();
+      const PDFKit = await import('pdfkit');
+      const doc = new PDFKit.default();
       
       // Pipe the PDF directly to the response
       const chunks: Buffer[] = [];
