@@ -17,7 +17,7 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [pdf, setPdf] = useState<any>(null);
   const [numPages, setNumPages] = useState(0);
-  const [scale, setScale] = useState(0.8);
+  const [scale, setScale] = useState(0.8); // Reduced default scale to fit better
   const [rotation, setRotation] = useState(0);
   const [renderingPage, setRenderingPage] = useState(false);
   const [allPages, setAllPages] = useState<any[]>([]);
