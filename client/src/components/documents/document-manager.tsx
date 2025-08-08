@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,19 +16,23 @@ import {
   Eye,
   Download,
   Trash2,
-  Filter
+  Filter,
+  CloudUpload,
+  File
 } from "lucide-react";
-import { DocumentUploadModal } from "./document-upload-modal";
 import { DocumentPreviewModal } from "./document-preview-modal";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 export function DocumentManager() {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState<File[]>([]);
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -89,6 +94,93 @@ export function DocumentManager() {
     document.body.removeChild(link);
   };
 
+  // Handle drag events
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files);
+      setUploadingFiles(files);
+      
+      // Upload each file
+      for (const file of files) {
+        await uploadFile(file);
+      }
+      
+      setUploadingFiles([]);
+    }
+  }, []);
+
+  const uploadFile = async (file: File) => {
+    try {
+      // Determine document category based on file type or default to 'other'
+      const category = determineCategory(file.name);
+      
+      // Create document record in database
+      const documentData = {
+        title: file.name.split('.')[0],
+        fileName: file.name,
+        category: category,
+        storageUrl: `/documents/${Date.now()}_${file.name}`,
+        fileSize: file.size,
+        mimeType: file.type,
+        description: `Uploaded via drag and drop`,
+        uploadedBy: user?.id,
+        version: 1,
+        isActive: true
+      };
+
+      const res = await apiRequest("POST", "/api/documents", documentData);
+      if (!res.ok) throw new Error('Upload failed');
+
+      toast({
+        title: "Success",
+        description: `${file.name} uploaded successfully`,
+      });
+
+      // Refresh document list
+      queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: `Failed to upload ${file.name}`,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const determineCategory = (fileName: string): string => {
+    const lowerName = fileName.toLowerCase();
+    if (lowerName.includes('loan') || lowerName.includes('application')) return 'loan_application';
+    if (lowerName.includes('agreement')) return 'loan_agreement';
+    if (lowerName.includes('note')) return 'promissory_note';
+    if (lowerName.includes('deed')) return 'deed_of_trust';
+    if (lowerName.includes('mortgage')) return 'mortgage';
+    if (lowerName.includes('insurance') || lowerName.includes('policy')) return 'insurance_policy';
+    if (lowerName.includes('tax')) return 'tax_document';
+    if (lowerName.includes('escrow')) return 'escrow_statement';
+    if (lowerName.includes('title')) return 'title_report';
+    if (lowerName.includes('appraisal')) return 'appraisal';
+    if (lowerName.includes('inspection')) return 'inspection';
+    if (lowerName.includes('financial') || lowerName.includes('statement')) return 'financial_statement';
+    if (lowerName.includes('income')) return 'income_verification';
+    if (lowerName.includes('closing')) return 'closing_disclosure';
+    if (lowerName.includes('settlement')) return 'settlement_statement';
+    return 'other';
+  };
+
   const deleteMutation = useMutation({
     mutationFn: async (documentId: string) => {
       const res = await apiRequest("DELETE", `/api/documents/${documentId}`);
@@ -112,25 +204,61 @@ export function DocumentManager() {
   });
 
   return (
-    <div className="space-y-6">
-      {/* Upload Section */}
+    <div 
+      className={cn(
+        "space-y-6 min-h-[600px] relative",
+        dragActive && "bg-primary-50 border-2 border-dashed border-primary-400 rounded-lg"
+      )}
+      onDragEnter={handleDrag}
+      onDragLeave={handleDrag}
+      onDragOver={handleDrag}
+      onDrop={handleDrop}
+    >
+      {/* Drag and Drop Overlay */}
+      {dragActive && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-primary-50/90 rounded-lg">
+          <div className="text-center">
+            <CloudUpload className="w-16 h-16 text-primary-600 mx-auto mb-4" />
+            <p className="text-xl font-semibold text-primary-900">Drop files to upload</p>
+            <p className="text-sm text-primary-700 mt-2">Files will be automatically added to the document library</p>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Progress */}
+      {uploadingFiles.length > 0 && (
+        <Card className="mb-4">
+          <CardContent className="p-4">
+            <div className="space-y-2">
+              {uploadingFiles.map((file, index) => (
+                <div key={index} className="flex items-center gap-3">
+                  <File className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm flex-1">{file.name}</span>
+                  <Badge variant="secondary">Uploading...</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Document Categories */}
       <Card>
         <CardHeader>
-          <CardTitle>Upload Documents</CardTitle>
+          <CardTitle>Document Library</CardTitle>
+          <p className="text-sm text-slate-600">Drag and drop files anywhere to upload</p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Upload Area */}
+            {/* Drag and Drop Instructions */}
             <div className="col-span-1">
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:border-primary-400 transition-colors">
-                <Upload className="mx-auto h-12 w-12 text-slate-400 mb-4" />
+              <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center bg-slate-50">
+                <CloudUpload className="mx-auto h-12 w-12 text-slate-400 mb-4" />
                 <div>
-                  <p className="text-sm font-medium text-slate-900 mb-1">Upload Documents</p>
-                  <p className="text-xs text-slate-600 mb-4">PDF, DOC, JPG up to 10MB</p>
+                  <p className="text-sm font-medium text-slate-900 mb-1">Drag & Drop Files</p>
+                  <p className="text-xs text-slate-600">Drop files anywhere on this page</p>
+                  <p className="text-xs text-slate-600 mt-1">PDF, DOC, JPG up to 10MB</p>
                 </div>
-                <Button onClick={() => setShowUploadModal(true)}>
-                  Choose Files
-                </Button>
               </div>
             </div>
 
@@ -231,14 +359,14 @@ export function DocumentManager() {
                           >
                             <FileText className="w-5 h-5 text-slate-400" />
                             <div>
-                              <p className="text-sm font-medium text-slate-900 hover:text-primary-600">{document.title}</p>
-                              <p className="text-xs text-slate-500 hover:text-slate-700">{document.originalFileName}</p>
+                              <p className="text-sm font-medium text-slate-900 hover:text-primary-600">{document.title || document.fileName}</p>
+                              <p className="text-xs text-slate-500 hover:text-slate-700">{document.fileName}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <Badge variant="outline">
-                            {document.documentType.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                            {(document.category || document.documentType || 'other').replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase())}
                           </Badge>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
@@ -285,12 +413,6 @@ export function DocumentManager() {
           )}
         </CardContent>
       </Card>
-
-      {/* Upload Modal */}
-      <DocumentUploadModal
-        open={showUploadModal}
-        onOpenChange={setShowUploadModal}
-      />
 
       {/* Preview Modal */}
       <DocumentPreviewModal
