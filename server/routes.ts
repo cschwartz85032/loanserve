@@ -330,80 +330,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.send(transparentPng);
       }
       
-      // Sample PDF content for demonstration
-      // This creates a simple PDF with the document title
-      const samplePdfContent = Buffer.from(`%PDF-1.3
-1 0 obj
-<<
-/Type /Catalog
-/Pages 2 0 R
->>
-endobj
-2 0 obj
-<<
-/Type /Pages
-/Count 1
-/Kids [3 0 R]
->>
-endobj
-3 0 obj
-<<
-/Type /Page
-/Parent 2 0 R
-/MediaBox [0 0 612 792]
-/Contents 4 0 R
-/Resources <<
-/Font <<
-/F1 5 0 R
->>
->>
->>
-endobj
-4 0 obj
-<<
-/Length 150
->>
-stream
-BT
-/F1 24 Tf
-50 700 Td
-(Document: ${document.title || document.fileName}) Tj
-0 -30 Td
-/F1 14 Tf
-(Type: ${document.documentType || 'General'}) Tj
-0 -20 Td
-(Status: ${document.status || 'Active'}) Tj
-0 -30 Td
-/F1 12 Tf
-(This is a sample preview. In production, the actual file would be displayed.) Tj
-ET
-endstream
-endobj
-5 0 obj
-<<
-/Type /Font
-/Subtype /Type1
-/BaseFont /Helvetica
->>
-endobj
-xref
-0 6
-0000000000 65535 f
-0000000009 00000 n
-0000000058 00000 n
-0000000115 00000 n
-0000000260 00000 n
-0000000467 00000 n
-trailer
-<<
-/Size 6
-/Root 1 0 R
->>
-startxref
-544
-%%EOF`, 'utf-8');
+      // Create a proper PDF with correct structure
+      const title = document.title || document.fileName || 'Document';
+      const docType = document.documentType || 'General';
+      const status = document.status || 'Active';
       
-      res.send(samplePdfContent);
+      // Build the content stream with proper formatting
+      const contentStream = [
+        'BT',
+        '/F1 24 Tf',
+        '50 700 Td',
+        `(${title}) Tj`,
+        '0 -40 Td',
+        '/F1 14 Tf',
+        `(Type: ${docType.replace(/_/g, ' ')}) Tj`,
+        '0 -25 Td',
+        `(Status: ${status}) Tj`,
+        '0 -40 Td',
+        '/F1 12 Tf',
+        '(This is a sample preview document.) Tj',
+        '0 -20 Td',
+        '(In production, the actual file would be displayed here.) Tj',
+        'ET'
+      ].join('\n');
+      
+      const contentLength = contentStream.length;
+      
+      // Create a valid PDF structure
+      const pdfContent = [
+        '%PDF-1.4',
+        '1 0 obj',
+        '<<',
+        '/Type /Catalog',
+        '/Pages 2 0 R',
+        '>>',
+        'endobj',
+        '2 0 obj',
+        '<<',
+        '/Type /Pages',
+        '/Count 1',
+        '/Kids [3 0 R]',
+        '>>',
+        'endobj',
+        '3 0 obj',
+        '<<',
+        '/Type /Page',
+        '/Parent 2 0 R',
+        '/MediaBox [0 0 612 792]',
+        '/Contents 4 0 R',
+        '/Resources <<',
+        '/Font <<',
+        '/F1 <<',
+        '/Type /Font',
+        '/Subtype /Type1',
+        '/BaseFont /Helvetica',
+        '>>',
+        '>>',
+        '>>',
+        '>>',
+        'endobj',
+        '4 0 obj',
+        '<<',
+        `/Length ${contentLength}`,
+        '>>',
+        'stream',
+        contentStream,
+        'endstream',
+        'endobj',
+        'xref',
+        '0 5',
+        '0000000000 65535 f ',
+        '0000000009 00000 n ',
+        '0000000058 00000 n ',
+        '0000000115 00000 n ',
+        '0000000328 00000 n ',
+        'trailer',
+        '<<',
+        '/Size 5',
+        '/Root 1 0 R',
+        '>>',
+        'startxref',
+        `${400 + contentLength}`,
+        '%%EOF'
+      ].join('\n');
+      
+      const pdfBuffer = Buffer.from(pdfContent, 'utf-8');
+      console.log(`Serving PDF for document: ${document.id}, size: ${pdfBuffer.length} bytes`);
+      res.send(pdfBuffer);
     } catch (error) {
       console.error("Error fetching document file:", error);
       res.status(500).json({ error: "Failed to fetch document file" });

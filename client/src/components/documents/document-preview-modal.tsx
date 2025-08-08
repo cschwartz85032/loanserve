@@ -62,19 +62,35 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
       // Reset states when document changes
       setError('');
       setPreviewUrl('');
+      setLoading(true);
       
-      // In production, this would fetch the actual file from object storage
-      // For now, we'll use the API endpoint for all document types
-      if (fileType?.startsWith('image/')) {
-        // For images, use the API endpoint
-        setPreviewUrl(`/api/documents/${document.id}/file`);
-      } else if (fileType?.includes('pdf')) {
-        // For PDFs, use the API endpoint
-        setPreviewUrl(`/api/documents/${document.id}/file`);
-      } else {
-        // For other documents, also try to preview via API
-        setPreviewUrl(`/api/documents/${document.id}/file`);
-      }
+      // Fetch the document and create a blob URL for better compatibility
+      const fetchDocument = async () => {
+        try {
+          const response = await fetch(`/api/documents/${document.id}/file`);
+          if (!response.ok) {
+            throw new Error('Failed to fetch document');
+          }
+          
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          setPreviewUrl(blobUrl);
+          setLoading(false);
+        } catch (err) {
+          console.error('Error fetching document:', err);
+          setError('Failed to load document');
+          setLoading(false);
+        }
+      };
+      
+      fetchDocument();
+      
+      // Cleanup function to revoke the blob URL
+      return () => {
+        if (previewUrl && previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(previewUrl);
+        }
+      };
     }
   }, [document]);
 
@@ -220,9 +236,27 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                       />
                     ) : fileType?.includes('pdf') ? (
                       <div className="w-full h-full">
-                        {previewUrl ? (
-                          <iframe
+                        {loading ? (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                              <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4 animate-pulse" />
+                              <p className="text-slate-600">Loading PDF...</p>
+                            </div>
+                          </div>
+                        ) : error ? (
+                          <div className="flex items-center justify-center h-full">
+                            <div className="text-center">
+                              <FileText className="w-24 h-24 text-red-300 mx-auto mb-4" />
+                              <p className="text-red-600">{error}</p>
+                              <p className="text-sm text-slate-500 mt-2">
+                                Please try downloading the file instead
+                              </p>
+                            </div>
+                          </div>
+                        ) : previewUrl ? (
+                          <embed
                             src={previewUrl}
+                            type="application/pdf"
                             className="w-full h-full border-0 rounded-lg shadow-lg"
                             style={{
                               transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg)`,
@@ -231,17 +265,7 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
                             }}
                             title="PDF Preview"
                           />
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <div className="text-center">
-                              <FileText className="w-24 h-24 text-slate-300 mx-auto mb-4" />
-                              <p className="text-slate-600">PDF Preview</p>
-                              <p className="text-sm text-slate-500 mt-2">
-                                Loading PDF document...
-                              </p>
-                            </div>
-                          </div>
-                        )}
+                        ) : null}
                       </div>
                     ) : (
                       <div className="text-center">
