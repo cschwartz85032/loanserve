@@ -175,7 +175,8 @@ export function DocumentManager() {
     mutationFn: async (documentId: string) => {
       const res = await apiRequest("DELETE", `/api/documents/${documentId}`);
       if (!res.ok) throw new Error('Failed to delete document');
-      return res.json();
+      // 204 No Content response has no body to parse
+      return null;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
