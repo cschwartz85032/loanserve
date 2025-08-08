@@ -90,6 +90,7 @@ export interface IStorage {
   }): Promise<Document[]>;
   createDocument(document: InsertDocument): Promise<Document>;
   getDocument(id: string): Promise<Document | undefined>;
+  deleteDocument(id: string): Promise<void>;
 
   // Audit methods
   createAuditLog(auditLog: InsertAuditLog): Promise<AuditLog>;
@@ -452,6 +453,10 @@ export class DatabaseStorage implements IStorage {
   async getDocument(id: string): Promise<Document | undefined> {
     const [document] = await db.select().from(documents).where(eq(documents.id, id));
     return document || undefined;
+  }
+
+  async deleteDocument(id: string): Promise<void> {
+    await db.delete(documents).where(eq(documents.id, id));
   }
 
   // Audit methods

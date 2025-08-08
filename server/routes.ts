@@ -284,6 +284,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/documents/:id", async (req, res) => {
+    try {
+      const document = await storage.getDocument(req.params.id);
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      await storage.deleteDocument(req.params.id);
+      
+      // Create audit log
+      await storage.createAuditLog({
+        userId: (req.user as any)?.id,
+        loanId: document.loanId || undefined,
+        action: "DELETE_DOCUMENT",
+        entityType: "document",
+        entityId: document.id,
+        oldValues: document
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
   // Notification routes
   app.get("/api/notifications", async (req, res) => {
     try {

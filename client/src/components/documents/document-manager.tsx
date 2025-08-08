@@ -1,15 +1,36 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Search, FileText, Shield, Building, DollarSign } from "lucide-react";
+import { 
+  Upload, 
+  Search, 
+  FileText, 
+  Shield, 
+  Building, 
+  DollarSign,
+  Eye,
+  Download,
+  Trash2,
+  Filter
+} from "lucide-react";
+import { DocumentUploadModal } from "./document-upload-modal";
+import { DocumentPreviewModal } from "./document-preview-modal";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export function DocumentManager() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: documents, isLoading } = useQuery({
     queryKey: ["/api/documents", { documentType: typeFilter === "all" ? undefined : typeFilter }],
@@ -58,6 +79,36 @@ export function DocumentManager() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
+  const handleDownload = (document: any) => {
+    // In production, this would download from object storage
+    const link = window.document.createElement('a');
+    link.href = document.fileUrl || '#';
+    link.download = document.fileName || 'document';
+    link.click();
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      const res = await apiRequest("DELETE", `/api/documents/${documentId}`);
+      if (!res.ok) throw new Error('Failed to delete document');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      toast({
+        title: "Success",
+        description: "Document deleted successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete document",
+        variant: "destructive",
+      });
+    }
+  });
+
   return (
     <div className="space-y-6">
       {/* Upload Section */}
@@ -75,7 +126,7 @@ export function DocumentManager() {
                   <p className="text-sm font-medium text-slate-900 mb-1">Upload Documents</p>
                   <p className="text-xs text-slate-600 mb-4">PDF, DOC, JPG up to 10MB</p>
                 </div>
-                <Button>
+                <Button onClick={() => setShowUploadModal(true)}>
                   Choose Files
                 </Button>
               </div>
@@ -190,10 +241,23 @@ export function DocumentManager() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => {
+                                setSelectedDocument(document);
+                                setShowPreviewModal(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4 mr-1" />
                               View
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleDownload(document)}
+                            >
+                              <Download className="w-4 h-4 mr-1" />
                               Download
                             </Button>
                           </div>
@@ -213,6 +277,19 @@ export function DocumentManager() {
           )}
         </CardContent>
       </Card>
+
+      {/* Upload Modal */}
+      <DocumentUploadModal
+        open={showUploadModal}
+        onOpenChange={setShowUploadModal}
+      />
+
+      {/* Preview Modal */}
+      <DocumentPreviewModal
+        open={showPreviewModal}
+        onOpenChange={setShowPreviewModal}
+        document={selectedDocument}
+      />
     </div>
   );
 }
