@@ -77,39 +77,64 @@ export default function PDFViewer({ fileUrl, fileName }: PDFViewerProps) {
         )}
 
         {/* PDF Content */}
-        {!isLoading && !hasError && (
-          <object
-            data={`${fileUrl}#toolbar=1&navpanes=1&scrollbar=1`}
-            type="application/pdf"
+        {!isLoading && (
+          <iframe
+            src={`${fileUrl}#view=FitH&toolbar=1&navpanes=1`}
             className="w-full h-full border-0"
-            style={{ minHeight: '600px' }}
-          >
-            <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-800">
-              <div className="text-center p-8">
-                <FileText className="h-16 w-16 mx-auto mb-4 text-blue-500" />
-                <h3 className="font-medium text-lg mb-2">PDF Document</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Your browser cannot display this PDF inline.
-                </p>
+            style={{ minHeight: '600px', backgroundColor: '#f8f9fa' }}
+            title={fileName}
+            onLoad={() => {
+              console.log('PDF iframe loaded:', fileName);
+              setHasError(false);
+            }}
+            onError={() => {
+              console.log('PDF iframe failed to load:', fileName);
+              setHasError(true);
+            }}
+          />
+        )}
+
+        {/* Error overlay only shows if there's an actual error */}
+        {hasError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 border-2 border-dashed border-gray-300 dark:border-gray-600">
+            <div className="text-center p-8">
+              <FileText className="h-16 w-16 mx-auto mb-4 text-blue-500" />
+              <h3 className="font-medium text-lg mb-2">PDF Document</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Click to open this PDF in a new tab for the best viewing experience.
+              </p>
+              
+              <div className="space-y-3">
+                <Button asChild className="w-full">
+                  <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Open PDF in New Tab
+                  </a>
+                </Button>
                 
-                <div className="space-y-3">
-                  <Button asChild className="w-full">
-                    <a href={fileUrl} target="_blank" rel="noopener noreferrer">
-                      <FileText className="h-4 w-4 mr-2" />
-                      Open PDF in New Tab
-                    </a>
-                  </Button>
-                  
-                  <Button variant="outline" asChild className="w-full">
-                    <a href={fileUrl} download={fileName}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </a>
-                  </Button>
+                <Button variant="outline" asChild className="w-full">
+                  <a href={fileUrl} download={fileName}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download PDF
+                  </a>
+                </Button>
+              </div>
+
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                <div className="flex items-start text-left">
+                  <FileText className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-800 mb-1">
+                      Why New Tab?
+                    </p>
+                    <p className="text-xs text-blue-700">
+                      Some browsers restrict PDF display for security. New tabs provide full PDF controls and better performance.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
-          </object>
+          </div>
         )}
 
         {/* Error fallback */}
