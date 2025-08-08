@@ -36,15 +36,20 @@ interface FileWithProgress {
 
 const DOCUMENT_TYPES = [
   { value: 'loan_application', label: 'Loan Application' },
-  { value: 'credit_report', label: 'Credit Report' },
-  { value: 'income_verification', label: 'Income Verification' },
-  { value: 'property_appraisal', label: 'Property Appraisal' },
-  { value: 'title_deed', label: 'Title Deed' },
+  { value: 'loan_agreement', label: 'Loan Agreement' },
+  { value: 'promissory_note', label: 'Promissory Note' },
+  { value: 'deed_of_trust', label: 'Deed of Trust' },
+  { value: 'mortgage', label: 'Mortgage' },
   { value: 'insurance_policy', label: 'Insurance Policy' },
-  { value: 'tax_return', label: 'Tax Return' },
-  { value: 'bank_statement', label: 'Bank Statement' },
-  { value: 'employment_letter', label: 'Employment Letter' },
-  { value: 'legal_document', label: 'Legal Document' },
+  { value: 'tax_document', label: 'Tax Document' },
+  { value: 'escrow_statement', label: 'Escrow Statement' },
+  { value: 'title_report', label: 'Title Report' },
+  { value: 'appraisal', label: 'Appraisal' },
+  { value: 'inspection', label: 'Inspection Report' },
+  { value: 'financial_statement', label: 'Financial Statement' },
+  { value: 'income_verification', label: 'Income Verification' },
+  { value: 'closing_disclosure', label: 'Closing Disclosure' },
+  { value: 'settlement_statement', label: 'Settlement Statement' },
   { value: 'correspondence', label: 'Correspondence' },
   { value: 'other', label: 'Other' }
 ];
@@ -134,21 +139,19 @@ export function DocumentUploadModal({ open, onOpenChange, loanId, borrowerId }: 
     }, 200);
 
     try {
-      // In a real implementation, this would upload to object storage
-      // For now, we'll create a document record
+      // Create document record with proper schema fields
       const documentData = {
-        fileName: fileWithProgress.file.name,
-        originalFileName: fileWithProgress.file.name,
-        title: fileWithProgress.file.name.split('.')[0], // Use filename without extension as title
-        filePath: `/documents/${Date.now()}_${fileWithProgress.file.name}`, // Placeholder path
-        mimeType: fileWithProgress.file.type,
+        name: fileWithProgress.file.name.split('.')[0], // Use filename without extension as name
+        category: documentType as any, // Map documentType to category
+        storageUrl: `/documents/${Date.now()}_${fileWithProgress.file.name}`, // Placeholder storage URL
         fileSize: fileWithProgress.file.size,
-        documentType,
+        mimeType: fileWithProgress.file.type,
         description: description || null,
-        loanId: loanId || null,
-        borrowerId: borrowerId || null,
+        loanId: loanId ? parseInt(loanId) : null,
+        borrowerEntityId: borrowerId ? parseInt(borrowerId) : null,
         uploadedBy: user?.id,
-        tags: []
+        version: 1,
+        isActive: true
       };
 
       const res = await apiRequest("POST", "/api/documents", documentData);
