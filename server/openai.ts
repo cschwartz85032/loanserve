@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import axios, { AxiosError } from "axios";
 import { setTimeout } from "timers/promises";
+import { fromPath } from "pdf2pic";
 
 export interface DocumentAnalysisResult {
   documentType: string;
@@ -197,7 +198,7 @@ IMPORTANT: Include the complete document context in the analysis.`;
             text: prompt
           }];
 
-          // Add image data if it's an image
+          // Add image data for images or convert PDF to image for vision models
           if (isImage) {
             const base64File = fileBuffer.toString('base64');
             content.push({
@@ -206,6 +207,46 @@ IMPORTANT: Include the complete document context in the analysis.`;
                 url: `data:image/jpeg;base64,${base64File}`
               }
             });
+          } else if (isPDF && (model.includes('vision') || model.includes('grok-4') || model.includes('grok-3'))) {
+            // Convert PDF to images for vision-capable models
+            try {
+              const tempPdfPath = `/tmp/temp_${Date.now()}.pdf`;
+              await fs.writeFile(tempPdfPath, fileBuffer);
+              
+              const convert = fromPath(tempPdfPath, {
+                density: 200,
+                saveFilename: "page",
+                savePath: "/tmp/",
+                format: "png",
+                width: 2000,
+                height: 2800
+              });
+              
+              // Convert first few pages (limit to avoid token limits)
+              const pageLimit = 5;
+              for (let i = 1; i <= pageLimit; i++) {
+                try {
+                  const page = await convert(i, { responseType: "buffer" });
+                  const base64Image = page.buffer.toString('base64');
+                  content.push({
+                    type: "image_url",
+                    image_url: {
+                      url: `data:image/png;base64,${base64Image}`
+                    }
+                  });
+                } catch (pageError) {
+                  // If page doesn't exist, stop converting
+                  break;
+                }
+              }
+              
+              // Clean up temp file
+              await fs.unlink(tempPdfPath).catch(() => {});
+              
+            } catch (pdfError) {
+              console.error('PDF conversion failed:', pdfError);
+              // Fallback: continue without images
+            }
           }
 
           console.log("AI PROMPT SENT TO GROK:", {
