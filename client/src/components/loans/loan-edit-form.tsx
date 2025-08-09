@@ -456,20 +456,25 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
             </div>
 
             {/* Document Upload Section */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold flex items-center">
+            <div className="space-y-4 border-t pt-6 mt-6">
+              <h3 className="text-lg font-semibold flex items-center text-blue-600">
                 <FileText className="mr-2 h-5 w-5" />
-                Documents
+                Document Management
               </h3>
-              <DocumentUploader 
-                loanId={parseInt(loanId)} 
-                onUploadComplete={() => {
-                  toast({
-                    title: "Documents uploaded",
-                    description: "All documents have been attached to this loan.",
-                  });
-                }}
-              />
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-700 mb-3">
+                  Upload loan documents, contracts, and supporting files here
+                </p>
+                <DocumentUploader 
+                  loanId={parseInt(loanId)} 
+                  onUploadComplete={() => {
+                    toast({
+                      title: "Documents uploaded",
+                      description: "All documents have been attached to this loan.",
+                    });
+                  }}
+                />
+              </div>
             </div>
 
             {/* Actions */}
