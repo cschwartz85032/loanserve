@@ -585,9 +585,12 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
                         <div className="flex items-center space-x-3">
                           <FileText className="h-5 w-5 text-blue-500" />
-                          <div>
-                            <p className="font-medium text-gray-900">{doc.title || doc.fileName}</p>
-                            <p className="text-sm text-gray-500">{doc.description}</p>
+                          <div 
+                            className="cursor-pointer"
+                            onClick={() => window.open(`/api/documents/${doc.id}/file`, '_blank')}
+                          >
+                            <p className="font-medium text-gray-900 hover:text-blue-600 underline">{doc.title || doc.fileName}</p>
+                            <p className="text-sm text-gray-500 hover:text-blue-500 cursor-pointer">{doc.description}</p>
                             <p className="text-xs text-gray-400">
                               {doc.mimeType} • {Math.round((doc.fileSize || 0) / 1024)}KB
                             </p>

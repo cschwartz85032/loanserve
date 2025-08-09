@@ -55,11 +55,11 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
     
     let content: any[] = [{
       type: "text",
-      text: `Analyze this ${isImage ? 'image' : isPDF ? 'PDF document' : 'document'} and extract relevant mortgage loan information. 
+      text: `IMPORTANT: Analyze the ENTIRE ${isImage ? 'image' : isPDF ? 'PDF document' : 'document'} completely - do not summarize. Read every page, every field, and every line to extract all relevant mortgage loan information. 
       
       First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
       
-      Then extract any relevant information including:
+      Then extract any relevant information from the COMPLETE document including:
       - Property details (separate street address, city, state, zip, type, value)
       - Loan information (amount, rate, term, type, prepayment terms)
       - Borrower information (name, income, SSN, mailing address separate from property)
