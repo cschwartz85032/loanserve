@@ -140,16 +140,16 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     try {
       // Process each document one by one
       for (let i = 0; i < filesToProcess.length; i++) {
-        const fileIndex = files.length + i;
-        setCurrentProcessingIndex(fileIndex);
+        setCurrentProcessingIndex(i);
         
-        // Update status to processing
-        setFiles(prev => prev.map((f, idx) => 
-          idx === fileIndex ? { ...f, status: 'processing' } : f
+        // Update status to processing for the current file
+        const currentFile = filesToProcess[i];
+        setFiles(prev => prev.map(f => 
+          f.file === currentFile.file ? { ...f, status: 'processing' } : f
         ));
 
         const formData = new FormData();
-        formData.append('file', filesToProcess[i].file);
+        formData.append('file', currentFile.file);
         
         try {
           const response = await fetch('/api/documents/analyze', {
@@ -163,10 +163,11 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
           }
 
           const result = await response.json();
+          console.log('Document analysis result:', result);
           
           // Update file status and extracted data
-          setFiles(prev => prev.map((f, idx) => 
-            idx === fileIndex ? { 
+          setFiles(prev => prev.map(f => 
+            f.file === currentFile.file ? { 
               ...f, 
               status: 'completed',
               documentType: result.documentType,
@@ -176,11 +177,12 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
           // Update form data with extracted information
           updateFormWithExtractedData(result.extractedData);
+          console.log('Form data updated with extracted data');
 
         } catch (error) {
           console.error(`Error processing file:`, error);
-          setFiles(prev => prev.map((f, idx) => 
-            idx === fileIndex ? { 
+          setFiles(prev => prev.map(f => 
+            f.file === currentFile.file ? { 
               ...f, 
               status: 'error',
               error: error instanceof Error ? error.message : 'Unknown error'
@@ -197,16 +199,19 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
   const updateFormWithExtractedData = (extractedData: any) => {
     if (!extractedData) return;
 
+    // Helper to convert values to string
+    const toString = (val: any) => val ? String(val) : "";
+
     setFormData(prev => ({
       ...prev,
       // Loan Information
       loanNumber: extractedData.loanNumber || prev.loanNumber,
       loanType: extractedData.loanType || prev.loanType,
-      originalAmount: extractedData.originalAmount || extractedData.loanAmount || prev.originalAmount,
-      principalBalance: extractedData.principalBalance || extractedData.currentBalance || prev.principalBalance,
-      interestRate: extractedData.interestRate || prev.interestRate,
+      originalAmount: toString(extractedData.originalAmount || extractedData.loanAmount) || prev.originalAmount,
+      principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) || prev.principalBalance,
+      interestRate: toString(extractedData.interestRate) || prev.interestRate,
       rateType: extractedData.rateType || prev.rateType,
-      loanTerm: extractedData.loanTerm || extractedData.termMonths || prev.loanTerm,
+      loanTerm: toString(extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
       
       // Property Information
       propertyType: extractedData.propertyType || prev.propertyType,
@@ -214,7 +219,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       propertyCity: extractedData.propertyCity || extractedData.city || prev.propertyCity,
       propertyState: extractedData.propertyState || extractedData.state || prev.propertyState,
       propertyZip: extractedData.propertyZip || extractedData.zipCode || prev.propertyZip,
-      propertyValue: extractedData.propertyValue || extractedData.appraisedValue || prev.propertyValue,
+      propertyValue: toString(extractedData.propertyValue || extractedData.appraisedValue) || prev.propertyValue,
       
       // Borrower Information
       borrowerName: extractedData.borrowerName || extractedData.primaryBorrower || prev.borrowerName,
@@ -223,18 +228,18 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       coborrowerName: extractedData.coborrowerName || extractedData.coBorrower || prev.coborrowerName,
       
       // Payment Information
-      paymentAmount: extractedData.paymentAmount || extractedData.monthlyPayment || prev.paymentAmount,
-      escrowAmount: extractedData.escrowAmount || prev.escrowAmount,
+      paymentAmount: toString(extractedData.paymentAmount || extractedData.monthlyPayment) || prev.paymentAmount,
+      escrowAmount: toString(extractedData.escrowAmount) || prev.escrowAmount,
       firstPaymentDate: extractedData.firstPaymentDate || prev.firstPaymentDate,
       nextPaymentDate: extractedData.nextPaymentDate || prev.nextPaymentDate,
       maturityDate: extractedData.maturityDate || prev.maturityDate,
       
       // Additional Fees
-      hazardInsurance: extractedData.hazardInsurance || extractedData.insuranceAmount || prev.hazardInsurance,
-      propertyTaxes: extractedData.propertyTaxes || extractedData.taxAmount || prev.propertyTaxes,
-      hoaFees: extractedData.hoaFees || prev.hoaFees,
-      pmiAmount: extractedData.pmiAmount || extractedData.pmi || prev.pmiAmount,
-      servicingFee: extractedData.servicingFee || prev.servicingFee
+      hazardInsurance: toString(extractedData.hazardInsurance || extractedData.insuranceAmount) || prev.hazardInsurance,
+      propertyTaxes: toString(extractedData.propertyTaxes || extractedData.taxAmount) || prev.propertyTaxes,
+      hoaFees: toString(extractedData.hoaFees) || prev.hoaFees,
+      pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) || prev.pmiAmount,
+      servicingFee: toString(extractedData.servicingFee) || prev.servicingFee
     }));
 
     toast({
@@ -360,6 +365,19 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Submitting loan with form data:', formData);
+    
+    // Validate required fields
+    if (!formData.originalAmount || !formData.interestRate || !formData.loanTerm || 
+        !formData.propertyAddress || !formData.propertyCity || !formData.propertyState || !formData.propertyZip) {
+      toast({
+        title: "Missing required fields",
+        description: "Please fill in all required fields before submitting",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     createLoanMutation.mutate(formData);
   };
 
