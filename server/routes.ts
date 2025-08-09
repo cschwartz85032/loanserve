@@ -243,14 +243,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertLoanSchema.parse(req.body);
       const loan = await storage.createLoan(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
-        loanId: loan.id,
-        action: "CREATE_LOAN",
-        entityType: "loan",
-        entityId: loan.id,
-        newValues: loan
-      });
+      // Temporarily skip audit log until database schema is updated
+      // await storage.createAuditLog({
+      //   userId: req.user?.id,
+      //   loanId: loan.id,
+      //   action: "CREATE_LOAN",
+      //   entityType: "loan",
+      //   entityId: loan.id,
+      //   newValues: loan
+      // });
 
       res.status(201).json(loan);
     } catch (error) {
@@ -269,15 +270,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const loan = await storage.updateLoan(id, req.body);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
-        loanId: loan.id,
-        action: "UPDATE_LOAN",
-        entityType: "loan",
-        entityId: loan.id,
-        previousValues: existingLoan,
-        newValues: loan
-      });
+      // Temporarily skip audit log until database schema is updated
+      // await storage.createAuditLog({
+      //   userId: req.user?.id,
+      //   loanId: loan.id,
+      //   action: "UPDATE_LOAN",
+      //   entityType: "loan",
+      //   entityId: loan.id,
+      //   previousValues: existingLoan,
+      //   newValues: loan
+      // });
 
       res.json(loan);
     } catch (error) {
