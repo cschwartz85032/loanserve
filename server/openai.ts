@@ -1,18 +1,14 @@
 import fs from "fs/promises";
+import pdf2pic from "pdf2pic";
 import axios, { AxiosError } from "axios";
-import { setTimeout } from "timers/promises";
-import { fromPath } from "pdf2pic";
 import { v4 as uuidv4 } from "uuid";
-import PDFParser from "pdf-parse";
 
-// Verify module availability at runtime
-if (!PDFParser) {
-  throw new Error(
-    "pdf-parse module is not installed. Run `npm install pdf-parse`",
-  );
-}
-if (!fromPath) {
-  throw new Error("pdf2pic module is not installed. Run `npm install pdf2pic`");
+// Dynamic import for pdf-parse to handle ESM compatibility
+let PDFParser: any;
+try {
+  PDFParser = (await import("pdf-parse")).default;
+} catch (error) {
+  console.warn("pdf-parse not available, text extraction disabled");
 }
 
 export interface DocumentAnalysisResult {
@@ -247,7 +243,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
 
       // Attempt image conversion with pdf2pic
       await fs.writeFile(tempPdfPath, fileBuffer);
-      const convert = fromPath(tempPdfPath, {
+      const convert = pdf2pic.fromPath(tempPdfPath, {
         density: 300,
         saveFilename: "page",
         savePath: "/tmp/",
