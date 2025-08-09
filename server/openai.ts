@@ -207,7 +207,7 @@ IMPORTANT: Include the complete document context in the analysis.`;
                 url: `data:image/jpeg;base64,${base64File}`
               }
             });
-          } else if (isPDF && (model.includes('vision') || model.includes('grok-4') || model.includes('grok-3'))) {
+          } else if (isPDF && (model.includes('grok'))) {
             // Convert PDF to images for vision-capable models
             try {
               const tempPdfPath = `/tmp/temp_${Date.now()}.pdf`;
