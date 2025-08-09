@@ -7,7 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Search, MoreHorizontal } from "lucide-react";
 
-export function LoanTable() {
+interface LoanTableProps {
+  onEditLoan?: (loanId: string) => void;
+}
+
+export function LoanTable({ onEditLoan }: LoanTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
@@ -172,8 +176,12 @@ export function LoanTable() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center space-x-2">
-                        <Button variant="ghost" size="sm">
-                          View
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => onEditLoan?.(loan.id.toString())}
+                        >
+                          Edit
                         </Button>
                         <Button variant="ghost" size="sm">
                           <MoreHorizontal className="h-4 w-4" />

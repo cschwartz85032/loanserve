@@ -2,11 +2,17 @@ import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { LoanTable } from "@/components/loans/loan-table";
 import { NewLoanDialog } from "@/components/loans/new-loan-dialog";
+import { AILoanCreator } from "@/components/loans/ai-loan-creator";
+import { LoanEditForm } from "@/components/loans/loan-edit-form";
 import { Button } from "@/components/ui/button";
-import { Plus, Filter } from "lucide-react";
+import { Plus, Filter, Bot, Edit } from "lucide-react";
+import { useLocation } from "wouter";
 
 export default function Loans() {
   const [showNewLoanDialog, setShowNewLoanDialog] = useState(false);
+  const [showAICreator, setShowAICreator] = useState(false);
+  const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
 
   return (
     <div className="min-h-screen flex bg-slate-50">
@@ -25,9 +31,13 @@ export default function Loans() {
                 <Filter className="h-4 w-4 mr-2" />
                 Advanced Filters
               </Button>
+              <Button variant="outline" onClick={() => setShowAICreator(true)}>
+                <Bot className="h-4 w-4 mr-2" />
+                AI Loan Creation
+              </Button>
               <Button onClick={() => setShowNewLoanDialog(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                New Loan
+                Manual Entry
               </Button>
             </div>
           </div>
@@ -35,7 +45,26 @@ export default function Loans() {
 
         {/* Content */}
         <div className="p-6">
-          <LoanTable />
+          {editingLoanId ? (
+            <div>
+              <div className="mb-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setEditingLoanId(null)}
+                  className="mb-4"
+                >
+                  ← Back to Loan List
+                </Button>
+              </div>
+              <LoanEditForm 
+                loanId={editingLoanId}
+                onSave={() => setEditingLoanId(null)}
+                onCancel={() => setEditingLoanId(null)}
+              />
+            </div>
+          ) : (
+            <LoanTable onEditLoan={setEditingLoanId} />
+          )}
         </div>
       </main>
 
@@ -43,6 +72,16 @@ export default function Loans() {
       <NewLoanDialog 
         open={showNewLoanDialog} 
         onOpenChange={setShowNewLoanDialog} 
+      />
+
+      {/* AI Loan Creator */}
+      <AILoanCreator 
+        open={showAICreator}
+        onClose={() => setShowAICreator(false)}
+        onLoanCreated={(loanId) => {
+          setShowAICreator(false);
+          setEditingLoanId(loanId);
+        }}
       />
     </div>
   );

@@ -892,6 +892,7 @@ export const insurancePolicies = pgTable("insurance_policies", {
 export const auditLogs = pgTable("audit_logs", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id),
+  loanId: integer("loan_id").references(() => loans.id),
   entityType: text("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
   action: text("action").notNull(), // 'create', 'update', 'delete', 'view', 'export'

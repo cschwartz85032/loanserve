@@ -5,6 +5,7 @@ import { setupAuth } from "./auth";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
+import { analyzeDocument } from "./openai";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -861,6 +862,74 @@ To implement full file serving:
     } catch (error) {
       console.error("Error fetching audit logs:", error);
       res.status(500).json({ error: "Failed to fetch audit logs" });
+    }
+  });
+
+  // ============= AI DOCUMENT ANALYSIS ROUTES =============
+  app.post("/api/documents/analyze", upload.single('file'), isAuthenticated, async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const result = await analyzeDocument(req.file.path, req.file.originalname || req.file.filename);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error analyzing document:", error);
+      res.status(500).json({ error: "Failed to analyze document" });
+    }
+  });
+
+  app.post("/api/loans/create-from-documents", isAuthenticated, async (req, res) => {
+    try {
+      const { extractedData, documentTypes } = req.body;
+      
+      // Create loan with AI-extracted data
+      const loanData = {
+        borrowerName: extractedData.borrowerName || "Unknown",
+        propertyAddress: extractedData.propertyAddress || "Unknown",
+        loanAmount: extractedData.loanAmount || 0,
+        interestRate: extractedData.interestRate || 0,
+        loanTerm: extractedData.loanTerm || 30,
+        monthlyPayment: extractedData.monthlyPayment || 0,
+        loanStatus: "active" as const,
+        originationDate: new Date().toISOString().split('T')[0],
+        maturityDate: new Date(Date.now() + (extractedData.loanTerm || 30) * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        remainingBalance: extractedData.loanAmount || 0,
+        nextPaymentDate: extractedData.firstPaymentDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        nextPaymentAmount: extractedData.monthlyPayment || 0,
+        servicingFee: 25, // Default servicing fee
+        // Additional extracted fields
+        loanType: extractedData.loanType || "conventional",
+        propertyType: extractedData.propertyType || "single_family",
+        propertyValue: extractedData.propertyValue || 0,
+        downPayment: extractedData.downPayment || 0,
+        closingCosts: extractedData.closingCosts || 0,
+        pmiAmount: extractedData.pmi || 0,
+        hazardInsurance: extractedData.insurance || 0,
+        propertyTaxes: extractedData.taxes || 0,
+        hoaFees: extractedData.hoaFees || 0,
+        escrowAmount: extractedData.escrowAmount || 0,
+      };
+
+      const validatedData = insertLoanSchema.parse(loanData);
+      const loan = await storage.createLoan(validatedData);
+
+      // Create audit log
+      await storage.createAuditLog({
+        userId: req.user?.id,
+        loanId: loan.id,
+        action: "CREATE_LOAN_AI",
+        entityType: "loan",
+        entityId: loan.id,
+        newValues: { ...loan, documentTypes }
+      });
+
+      res.status(201).json(loan);
+    } catch (error) {
+      console.error("Error creating loan from documents:", error);
+      res.status(400).json({ error: "Failed to create loan from extracted data" });
     }
   });
 

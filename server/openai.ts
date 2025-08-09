@@ -1,0 +1,134 @@
+import OpenAI from "openai";
+import fs from "fs/promises";
+
+// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+export interface DocumentAnalysisResult {
+  documentType: string;
+  extractedData: {
+    // Property Information
+    propertyAddress?: string;
+    propertyType?: string;
+    propertyValue?: number;
+    
+    // Loan Information
+    loanAmount?: number;
+    interestRate?: number;
+    loanTerm?: number;
+    loanType?: string;
+    
+    // Borrower Information
+    borrowerName?: string;
+    borrowerSSN?: string;
+    borrowerIncome?: number;
+    coborrowerId?: string;
+    
+    // Payment Information
+    monthlyPayment?: number;
+    escrowAmount?: number;
+    hoaFees?: number;
+    
+    // Other Financial Details
+    downPayment?: number;
+    closingCosts?: number;
+    pmi?: number;
+    taxes?: number;
+    insurance?: number;
+    
+    // Dates
+    closingDate?: string;
+    firstPaymentDate?: string;
+  };
+  confidence: number;
+}
+
+export async function analyzeDocument(filePath: string, fileName: string): Promise<DocumentAnalysisResult> {
+  try {
+    // Read the file
+    const fileBuffer = await fs.readFile(filePath);
+    const base64File = fileBuffer.toString('base64');
+    
+    // Determine file type and prepare content
+    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
+    const isPDF = /\.pdf$/i.test(fileName);
+    
+    let content: any[] = [{
+      type: "text",
+      text: `Analyze this ${isImage ? 'image' : isPDF ? 'PDF document' : 'document'} and extract relevant mortgage loan information. 
+      
+      First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
+      
+      Then extract any relevant information including:
+      - Property details (address, type, value)
+      - Loan information (amount, rate, term, type)
+      - Borrower information (name, income, SSN)
+      - Payment details (monthly payment, escrow, HOA)
+      - Financial details (down payment, closing costs, PMI, taxes, insurance)
+      - Important dates (closing, first payment)
+      
+      Return your response as JSON in this exact format:
+      {
+        "documentType": "document_category_here",
+        "extractedData": {
+          "propertyAddress": "extracted_value_or_null",
+          "propertyType": "extracted_value_or_null",
+          "propertyValue": number_or_null,
+          "loanAmount": number_or_null,
+          "interestRate": number_or_null,
+          "loanTerm": number_or_null,
+          "loanType": "extracted_value_or_null",
+          "borrowerName": "extracted_value_or_null",
+          "borrowerSSN": "extracted_value_or_null",
+          "borrowerIncome": number_or_null,
+          "monthlyPayment": number_or_null,
+          "escrowAmount": number_or_null,
+          "hoaFees": number_or_null,
+          "downPayment": number_or_null,
+          "closingCosts": number_or_null,
+          "pmi": number_or_null,
+          "taxes": number_or_null,
+          "insurance": number_or_null,
+          "closingDate": "YYYY-MM-DD_or_null",
+          "firstPaymentDate": "YYYY-MM-DD_or_null"
+        },
+        "confidence": 0.85
+      }`
+    }];
+
+    if (isImage) {
+      content.push({
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${base64File}`
+        }
+      });
+    }
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{
+        role: "user",
+        content: content
+      }],
+      response_format: { type: "json_object" },
+      max_tokens: 1500,
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+    
+    return {
+      documentType: result.documentType || "unknown",
+      extractedData: result.extractedData || {},
+      confidence: result.confidence || 0.5
+    };
+
+  } catch (error) {
+    console.error("Error analyzing document:", error);
+    return {
+      documentType: "unknown",
+      extractedData: {},
+      confidence: 0.0
+    };
+  }
+}
