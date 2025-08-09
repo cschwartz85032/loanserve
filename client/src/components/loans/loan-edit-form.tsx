@@ -119,7 +119,21 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await apiRequest("PUT", `/api/loans/${loanId}`, data);
+      // Convert date strings to proper format for database
+      const cleanData = { ...data };
+      
+      // Convert date fields to proper format if they exist
+      if (cleanData.firstPaymentDate && typeof cleanData.firstPaymentDate === 'string') {
+        cleanData.firstPaymentDate = cleanData.firstPaymentDate;
+      }
+      if (cleanData.nextPaymentDate && typeof cleanData.nextPaymentDate === 'string') {
+        cleanData.nextPaymentDate = cleanData.nextPaymentDate;
+      }
+      if (cleanData.maturityDate && typeof cleanData.maturityDate === 'string') {
+        cleanData.maturityDate = cleanData.maturityDate;
+      }
+      
+      const res = await apiRequest("PUT", `/api/loans/${loanId}`, cleanData);
       if (!res.ok) throw new Error('Failed to update loan');
       return res.json();
     },
