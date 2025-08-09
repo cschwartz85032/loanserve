@@ -1,15 +1,27 @@
 import fs from "fs/promises";
 import axios, { AxiosError } from "axios";
 import { setTimeout } from "timers/promises";
-import { fromPath } from "pdf2pic";
 import { v4 as uuidv4 } from "uuid";
-import { getDocument } from "pdfjs-dist";
 
-// Verify module availability at runtime
-if (!fromPath) {
+// Import pdf2pic and pdfjs-dist with runtime checks
+let fromPath: any;
+let getDocument: any;
+
+try {
+  ({ fromPath } = await import("pdf2pic"));
+} catch (error) {
+  console.error("[FATAL] Failed to load pdf2pic module", {
+    error: error.message,
+  });
   throw new Error("pdf2pic module is not installed. Run `npm install pdf2pic`");
 }
-if (!getDocument) {
+
+try {
+  ({ getDocument } = await import("pdfjs-dist"));
+} catch (error) {
+  console.error("[FATAL] Failed to load pdfjs-dist module", {
+    error: error.message,
+  });
   throw new Error(
     "pdfjs-dist module is not installed. Run `npm install pdfjs-dist`",
   );
@@ -544,7 +556,8 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
           return;
         }
 
-        // Accumulate only valid JSON content
+        jsonContent += chunkStr;
+
         const lines = chunkStr.split("\n");
         for (const line of lines) {
           if (line.startsWith("data: ")) {
