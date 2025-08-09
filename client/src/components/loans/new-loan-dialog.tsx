@@ -28,15 +28,13 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  console.log("NewLoanDialog - open state:", open);
 
   const [formData, setFormData] = useState({
     loanNumber: "",
     propertyId: null as number | null,
     borrowerId: "",
-    lenderId: user?.id ? String(user.id) : "",
-    servicerId: user?.id ? String(user.id) : "",
+    lenderId: "",
+    servicerId: "",
     investorId: "",
     originalAmount: "",
     principalBalance: "",
@@ -169,8 +167,8 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
       loanNumber: "",
       propertyId: null,
       borrowerId: "",
-      lenderId: user?.id ? String(user.id) : "",
-      servicerId: user?.id ? String(user.id) : "",
+      lenderId: "",
+      servicerId: "",
       investorId: "",
       originalAmount: "",
       principalBalance: "",

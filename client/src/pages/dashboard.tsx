@@ -5,15 +5,14 @@ import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { PortfolioOverview } from "@/components/dashboard/portfolio-overview";
 import { LoanTable } from "@/components/loans/loan-table";
 import { EscrowSummary } from "@/components/escrow/escrow-summary";
-import { NewLoanDialog } from "@/components/loans/new-loan-dialog";
-import { TestDialog } from "@/components/loans/test-dialog";
+import { SimpleNewLoanDialog } from "@/components/loans/simple-new-loan-dialog";
 import { Bell, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Dashboard() {
   const [newLoanOpen, setNewLoanOpen] = useState(false);
   
-  console.log("Dashboard - newLoanOpen state:", newLoanOpen);
+
   return (
     <div className="min-h-screen flex bg-slate-50">
       <Sidebar />
@@ -31,10 +30,7 @@ export default function Dashboard() {
                 <Bell className="h-5 w-5" />
                 <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full"></span>
               </Button>
-              <Button onClick={() => {
-                console.log("New Loan button clicked");
-                setNewLoanOpen(true);
-              }}>
+              <Button onClick={() => setNewLoanOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 New Loan
               </Button>
@@ -63,8 +59,7 @@ export default function Dashboard() {
         </div>
       </main>
       
-      <TestDialog open={newLoanOpen} onOpenChange={setNewLoanOpen} />
-      {/* <NewLoanDialog open={newLoanOpen} onOpenChange={setNewLoanOpen} /> */}
+      <SimpleNewLoanDialog open={newLoanOpen} onOpenChange={setNewLoanOpen} />
     </div>
   );
 }
