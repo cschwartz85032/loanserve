@@ -6,6 +6,7 @@ import { LoanEditForm } from "@/components/loans/loan-edit-form";
 import { Button } from "@/components/ui/button";
 import { Plus, Filter } from "lucide-react";
 import { useLocation } from "wouter";
+import { queryClient } from "@/lib/queryClient";
 
 export default function Loans() {
   const [showNewLoanDialog, setShowNewLoanDialog] = useState(false);
@@ -61,10 +62,12 @@ export default function Loans() {
               onEditLoan={setEditingLoanId}
               onViewLoan={setEditingLoanId}
               onDeleteLoan={(loanId) => {
-                // Direct delete without confirmation
+                // Direct delete without confirmation - use React Query for proper state management
                 fetch(`/api/loans/${loanId}`, { method: 'DELETE' })
                   .then(() => {
-                    window.location.reload(); // Refresh the page to show updated list
+                    // Invalidate queries to refresh data without screen clearing
+                    queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+                    queryClient.invalidateQueries({ queryKey: ['/api/loans/metrics'] });
                   })
                   .catch(error => console.error('Error deleting loan:', error));
               }}

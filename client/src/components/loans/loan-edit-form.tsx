@@ -597,7 +597,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => window.open(doc.storageUrl, '_blank')}
+                            onClick={() => window.open(`/api/documents/${doc.id}/file`, '_blank')}
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -606,7 +606,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                             size="sm"
                             onClick={() => {
                               const link = document.createElement('a');
-                              link.href = doc.storageUrl;
+                              link.href = `/api/documents/${doc.id}/file`;
                               link.download = doc.fileName;
                               link.click();
                             }}

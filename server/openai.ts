@@ -116,6 +116,8 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
       });
     }
 
+    console.log("AI PROMPT SENT TO GPT-4o:", JSON.stringify(content, null, 2));
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [{
@@ -126,7 +128,10 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
       max_tokens: 1500,
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const rawResponse = response.choices[0].message.content;
+    console.log("AI RESPONSE FROM GPT-4o:", rawResponse);
+
+    const result = JSON.parse(rawResponse || "{}");
     
     return {
       documentType: result.documentType || "unknown",
