@@ -199,8 +199,28 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
   const updateFormWithExtractedData = (extractedData: any) => {
     if (!extractedData) return;
 
-    // Helper to convert values to string
-    const toString = (val: any) => val ? String(val) : "";
+    // Helper to clean and convert values to string
+    const toString = (val: any) => {
+      if (!val || 
+          val === 'null' || 
+          val === 'extracted_value_or_null' || 
+          String(val).includes('_or_null') ||
+          val === 'YYYY-MM-DD_or_null') {
+        return "";
+      }
+      return String(val);
+    };
+
+    // Helper to clean string values
+    const cleanString = (val: any) => {
+      if (!val || 
+          val === 'null' || 
+          val === 'extracted_value_or_null' || 
+          String(val).includes('_or_null')) {
+        return "";
+      }
+      return String(val);
+    };
     
     // Helper to normalize property type
     const normalizePropertyType = (type: string) => {
@@ -230,42 +250,42 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
     setFormData(prev => ({
       ...prev,
-      // Loan Information
-      loanNumber: extractedData.loanNumber || prev.loanNumber,
-      loanType: normalizeLoanType(extractedData.loanType) || prev.loanType,
-      originalAmount: toString(extractedData.originalAmount || extractedData.loanAmount) || prev.originalAmount,
-      principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) || prev.principalBalance,
-      interestRate: toString(extractedData.interestRate) || prev.interestRate,
-      rateType: extractedData.rateType || prev.rateType,
-      loanTerm: toString(extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
+      // Loan Information (only update if we have valid data)
+      ...(cleanString(extractedData.loanNumber) && { loanNumber: cleanString(extractedData.loanNumber) }),
+      ...(cleanString(extractedData.loanType) && { loanType: normalizeLoanType(extractedData.loanType) }),
+      ...(toString(extractedData.originalAmount || extractedData.loanAmount) && { originalAmount: toString(extractedData.originalAmount || extractedData.loanAmount) }),
+      ...(toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) && { principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) }),
+      ...(toString(extractedData.interestRate) && { interestRate: toString(extractedData.interestRate) }),
+      ...(cleanString(extractedData.rateType) && { rateType: cleanString(extractedData.rateType) }),
+      ...(toString(extractedData.loanTerm || extractedData.termMonths) && { loanTerm: toString(extractedData.loanTerm || extractedData.termMonths) }),
       
-      // Property Information
-      propertyType: normalizePropertyType(extractedData.propertyType) || prev.propertyType,
-      propertyAddress: extractedData.propertyAddress || extractedData.address || prev.propertyAddress,
-      propertyCity: extractedData.propertyCity || extractedData.city || prev.propertyCity,
-      propertyState: extractedData.propertyState || extractedData.state || prev.propertyState,
-      propertyZip: extractedData.propertyZip || extractedData.zipCode || prev.propertyZip,
-      propertyValue: toString(extractedData.propertyValue || extractedData.appraisedValue) || prev.propertyValue,
+      // Property Information (only update if we have valid data)
+      ...(cleanString(extractedData.propertyType) && { propertyType: normalizePropertyType(extractedData.propertyType) }),
+      ...(cleanString(extractedData.propertyAddress || extractedData.address) && { propertyAddress: cleanString(extractedData.propertyAddress || extractedData.address) }),
+      ...(cleanString(extractedData.propertyCity || extractedData.city) && { propertyCity: cleanString(extractedData.propertyCity || extractedData.city) }),
+      ...(cleanString(extractedData.propertyState || extractedData.state) && { propertyState: cleanString(extractedData.propertyState || extractedData.state) }),
+      ...(cleanString(extractedData.propertyZip || extractedData.zipCode) && { propertyZip: cleanString(extractedData.propertyZip || extractedData.zipCode) }),
+      ...(toString(extractedData.propertyValue || extractedData.appraisedValue) && { propertyValue: toString(extractedData.propertyValue || extractedData.appraisedValue) }),
       
-      // Borrower Information
-      borrowerName: extractedData.borrowerName || extractedData.primaryBorrower || prev.borrowerName,
-      borrowerEmail: extractedData.borrowerEmail || prev.borrowerEmail,
-      borrowerPhone: extractedData.borrowerPhone || prev.borrowerPhone,
-      coborrowerName: extractedData.coborrowerName || extractedData.coBorrower || prev.coborrowerName,
+      // Borrower Information (only update if we have valid data)
+      ...(cleanString(extractedData.borrowerName || extractedData.primaryBorrower) && { borrowerName: cleanString(extractedData.borrowerName || extractedData.primaryBorrower) }),
+      ...(cleanString(extractedData.borrowerEmail) && { borrowerEmail: cleanString(extractedData.borrowerEmail) }),
+      ...(cleanString(extractedData.borrowerPhone) && { borrowerPhone: cleanString(extractedData.borrowerPhone) }),
+      ...(cleanString(extractedData.coborrowerName || extractedData.coBorrower) && { coborrowerName: cleanString(extractedData.coborrowerName || extractedData.coBorrower) }),
       
-      // Payment Information
-      paymentAmount: toString(extractedData.paymentAmount || extractedData.monthlyPayment) || prev.paymentAmount,
-      escrowAmount: toString(extractedData.escrowAmount) || prev.escrowAmount,
-      firstPaymentDate: extractedData.firstPaymentDate || prev.firstPaymentDate,
-      nextPaymentDate: extractedData.nextPaymentDate || prev.nextPaymentDate,
-      maturityDate: extractedData.maturityDate || prev.maturityDate,
+      // Payment Information (only update if we have valid data)
+      ...(toString(extractedData.paymentAmount || extractedData.monthlyPayment) && { paymentAmount: toString(extractedData.paymentAmount || extractedData.monthlyPayment) }),
+      ...(toString(extractedData.escrowAmount) && { escrowAmount: toString(extractedData.escrowAmount) }),
+      ...(cleanString(extractedData.firstPaymentDate) && !cleanString(extractedData.firstPaymentDate).includes('YYYY-MM-DD') && { firstPaymentDate: cleanString(extractedData.firstPaymentDate) }),
+      ...(cleanString(extractedData.nextPaymentDate) && !cleanString(extractedData.nextPaymentDate).includes('YYYY-MM-DD') && { nextPaymentDate: cleanString(extractedData.nextPaymentDate) }),
+      ...(cleanString(extractedData.maturityDate) && !cleanString(extractedData.maturityDate).includes('YYYY-MM-DD') && { maturityDate: cleanString(extractedData.maturityDate) }),
       
-      // Additional Fees
-      hazardInsurance: toString(extractedData.hazardInsurance || extractedData.insuranceAmount) || prev.hazardInsurance,
-      propertyTaxes: toString(extractedData.propertyTaxes || extractedData.taxAmount) || prev.propertyTaxes,
-      hoaFees: toString(extractedData.hoaFees) || prev.hoaFees,
-      pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) || prev.pmiAmount,
-      servicingFee: toString(extractedData.servicingFee) || prev.servicingFee
+      // Additional Fees (only update if we have valid data)
+      ...(toString(extractedData.hazardInsurance || extractedData.insuranceAmount) && { hazardInsurance: toString(extractedData.hazardInsurance || extractedData.insuranceAmount) }),
+      ...(toString(extractedData.propertyTaxes || extractedData.taxAmount) && { propertyTaxes: toString(extractedData.propertyTaxes || extractedData.taxAmount) }),
+      ...(toString(extractedData.hoaFees) && { hoaFees: toString(extractedData.hoaFees) }),
+      ...(toString(extractedData.pmiAmount || extractedData.pmi) && { pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) }),
+      ...(toString(extractedData.servicingFee) && { servicingFee: toString(extractedData.servicingFee) })
     }));
 
     toast({
@@ -309,6 +329,41 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         }
       }
       
+      // Helper function to clean date values
+      const cleanDate = (dateValue: string | null | undefined): string => {
+        if (!dateValue || 
+            dateValue === 'YYYY-MM-DD_or_null' || 
+            dateValue === 'null' || 
+            dateValue === 'extracted_value_or_null' ||
+            dateValue.includes('_or_null')) {
+          return new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0];
+        }
+        
+        // Validate if it's a proper date
+        const parsedDate = new Date(dateValue);
+        if (isNaN(parsedDate.getTime())) {
+          return new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0];
+        }
+        
+        return dateValue;
+      };
+
+      // Helper function to clean string values
+      const cleanString = (value: string | null | undefined): string => {
+        if (!value || 
+            value === 'extracted_value_or_null' || 
+            value === 'null' || 
+            value.includes('_or_null')) {
+          return '';
+        }
+        return value;
+      };
+
+      // Calculate maturity date properly
+      const loanTermYears = parseInt(data.loanTerm) || 30;
+      const today = new Date();
+      const maturityDate = new Date(today.setFullYear(today.getFullYear() + loanTermYears)).toISOString().split('T')[0];
+
       // Create the loan with the property ID
       const loanData = {
         loanNumber: data.loanNumber || `LN${Date.now()}`,
@@ -322,9 +377,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         paymentAmount: monthlyPayment?.toString() || "0",
         escrowAmount: data.escrowAmount?.toString() || "0",
         status: "active",
-        maturityDate: data.maturityDate || new Date(new Date().setMonth(new Date().getMonth() + parseInt(data.loanTerm))).toISOString().split('T')[0],
-        firstPaymentDate: data.firstPaymentDate || new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
-        nextPaymentDate: data.nextPaymentDate || new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+        maturityDate: cleanDate(data.maturityDate) || maturityDate,
+        firstPaymentDate: cleanDate(data.firstPaymentDate),
+        nextPaymentDate: cleanDate(data.nextPaymentDate),
         lenderId: user?.id,
         servicerId: user?.id,
         // Additional fields
