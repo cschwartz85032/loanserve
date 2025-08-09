@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import axios, { AxiosError } from "axios";
+import { setTimeout } from "timers/promises";
 import { fromPath } from "pdf2pic";
 import { v4 as uuidv4 } from "uuid";
 
@@ -39,7 +40,7 @@ export interface DocumentAnalysisResult {
     closingDate?: string;
     firstPaymentDate?: string;
     prepaymentExpirationDate?: string;
-    // New fields from Deed of Trust
+    // Deed of Trust specific fields
     trusteeName?: string;
     trusteeStreetAddress?: string;
     trusteeCity?: string;
@@ -127,6 +128,7 @@ export class DocumentAnalysisService {
   private buildDocumentAnalysisPrompt(
     fileName: string,
     fileBuffer: Buffer,
+    documentText?: string,
   ): string {
     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
     const isPDF = /\.pdf$/i.test(fileName);
@@ -136,6 +138,7 @@ export class DocumentAnalysisService {
 Document: ${fileName}
 Size: ${Math.round(fileBuffer.length / 1024)}KB
 Type: ${isImage ? "Image" : "PDF"}
+${documentText ? `Content: ${documentText}` : ""}
 === EXTRACTION REQUIREMENTS ===
 First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
 Then extract any relevant information from the COMPLETE document including:
@@ -151,8 +154,11 @@ Then extract any relevant information from the COMPLETE document including:
 - Default conditions (key events that constitute default, summarized)
 - Insurance requirements (specific types and coverage details)
 - Cross-default parties (entities listed in cross-default clauses)
-IMPORTANT: Extract addresses with separate components - do not combine into single address field.
-The borrower's mailing address may be different from the property address.
+IMPORTANT: 
+- Extract addresses with separate components - do not combine into single address field.
+- The borrower's mailing address may be different from the property address.
+- Ensure all extracted data matches the document content exactly; do not infer or generate fictitious data.
+- If information is missing or unclear, return null for that field.
 Return a JSON object with extracted data: {
   "documentType": "document_category_here",
   "extractedData": {
@@ -161,29 +167,29 @@ Return a JSON object with extracted data: {
     "propertyState": "state_only_or_null",
     "propertyZipCode": "zip_code_only_or_null",
     "propertyType": "extracted_value_or_null",
-    "propertyValue": number_or_null,
+    "propertyValue": null,
     "borrowerName": "extracted_value_or_null",
-    "borrowerSSN": "extracted_value_or_null",
-    "borrowerIncome": number_or_null,
+    "borrowerSSN": null,
+    "borrowerIncome": null,
     "borrowerStreetAddress": "borrower_street_address_or_null",
     "borrowerCity": "borrower_city_or_null",
     "borrowerState": "borrower_state_or_null",
     "borrowerZipCode": "borrower_zip_code_or_null",
     "loanAmount": number_or_null,
-    "interestRate": number_or_null,
-    "loanTerm": number_or_null,
+    "interestRate": null,
+    "loanTerm": null,
     "loanType": "extracted_value_or_null",
-    "monthlyPayment": number_or_null,
-    "escrowAmount": number_or_null,
-    "hoaFees": number_or_null,
-    "downPayment": number_or_null,
-    "closingCosts": number_or_null,
-    "pmi": number_or_null,
-    "taxes": number_or_null,
-    "insurance": number_or_null,
+    "monthlyPayment": null,
+    "escrowAmount": null,
+    "hoaFees": null,
+    "downPayment": null,
+    "closingCosts": null,
+    "pmi": null,
+    "taxes": null,
+    "insurance": null,
     "closingDate": "YYYY-MM-DD_or_null",
     "firstPaymentDate": "YYYY-MM-DD_or_null",
-    "prepaymentExpirationDate": "YYYY-MM-DD_or_null",
+    "prepaymentExpirationDate": null,
     "trusteeName": "extracted_value_or_null",
     "trusteeStreetAddress": "street_address_only_or_null",
     "trusteeCity": "city_only_or_null",
@@ -201,17 +207,19 @@ Return a JSON object with extracted data: {
   },
   "confidence": 0.85
 }
-IMPORTANT: Include the complete document context in the analysis.`;
+IMPORTANT: Include the complete document context in the analysis and ensure accuracy with provided text.`;
   }
 
-  private async convertPDFToImages(fileBuffer: Buffer): Promise<string[]> {
+  private async convertPDFToImages(
+    fileBuffer: Buffer,
+  ): Promise<{ images: string[]; text?: string }> {
     const tempPdfPath = `/tmp/temp_${uuidv4()}.pdf`;
     const base64Images: string[] = [];
 
     try {
       await fs.writeFile(tempPdfPath, fileBuffer);
       const convert = fromPath(tempPdfPath, {
-        density: 200,
+        density: 300, // Increased density for better text extraction
         saveFilename: "page",
         savePath: "/tmp/",
         format: "png",
@@ -222,16 +230,17 @@ IMPORTANT: Include the complete document context in the analysis.`;
       for (let i = 1; i <= this.config.maxPagesToConvert; i++) {
         try {
           const page = await convert(i, { responseType: "buffer" });
-          if (page.buffer && page.buffer.length > 0) {
+          if (page.buffer && page.buffer.length > 1000) {
+            // Ensure meaningful image data
             const base64Image = page.buffer.toString("base64");
-            if (base64Image && base64Image.length > 100) { // Ensure image has content
-              base64Images.push(base64Image);
-              this.logger.info(`Successfully converted PDF page ${i}, size: ${base64Image.length}`);
-            } else {
-              this.logger.warn(`PDF page ${i} converted to empty/small image`);
-            }
+            base64Images.push(base64Image);
+            this.logger.info(`Converted PDF page ${i}`, {
+              size: base64Image.length,
+            });
           } else {
-            this.logger.warn(`PDF page ${i} conversion returned empty buffer`);
+            this.logger.warn(`PDF page ${i} has insufficient data`, {
+              size: page.buffer?.length || 0,
+            });
           }
         } catch (pageError) {
           this.logger.warn(`Failed to convert PDF page ${i}`, {
@@ -240,6 +249,22 @@ IMPORTANT: Include the complete document context in the analysis.`;
           break;
         }
       }
+
+      // Fallback: Attempt to extract text using pdf2pic's text extraction if available
+      let extractedText: string | undefined;
+      try {
+        const textOutput = await convert.bulk(-1, { responseType: "text" });
+        extractedText = textOutput.map((page: any) => page.text).join("\n");
+        this.logger.info(`Extracted text from PDF`, {
+          length: extractedText.length,
+        });
+      } catch (textError) {
+        this.logger.warn(`Failed to extract text from PDF`, {
+          error: textError.message,
+        });
+      }
+
+      return { images: base64Images, text: extractedText };
     } catch (error) {
       this.logger.error("PDF conversion failed", { error: error.message });
       throw error;
@@ -248,8 +273,6 @@ IMPORTANT: Include the complete document context in the analysis.`;
         .unlink(tempPdfPath)
         .catch(() => this.logger.warn("Failed to clean up temp PDF file"));
     }
-
-    return base64Images;
   }
 
   async analyzeDocumentWithGrok(
@@ -262,9 +285,32 @@ IMPORTANT: Include the complete document context in the analysis.`;
       size: fileBuffer.length,
     });
 
-    const prompt = this.buildDocumentAnalysisPrompt(fileName, fileBuffer);
-    const result = await this.generateDocumentAnalysisWithStreaming(prompt, fileName, fileBuffer);
-    
+    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
+    const isPDF = /\.pdf$/i.test(fileName);
+
+    let documentText: string | undefined;
+    if (isPDF) {
+      try {
+        const { text } = await this.convertPDFToImages(fileBuffer);
+        documentText = text;
+      } catch (error) {
+        this.logger.warn(
+          "Proceeding with image-only analysis due to text extraction failure",
+        );
+      }
+    }
+
+    const prompt = this.buildDocumentAnalysisPrompt(
+      fileName,
+      fileBuffer,
+      documentText,
+    );
+    const result = await this.generateDocumentAnalysisWithStreaming(
+      prompt,
+      fileName,
+      fileBuffer,
+    );
+
     return {
       documentType: result.documentType || "unknown",
       extractedData: result.extractedData || {},
@@ -276,26 +322,24 @@ IMPORTANT: Include the complete document context in the analysis.`;
     prompt: string,
     fileName: string,
     fileBuffer: Buffer,
-  ): Promise<any> {
-    const modelsToTry = ["grok-4-0709", "grok-3", "grok-2-1212"];
-    let lastError: any = null;
+  ): Promise<DocumentAnalysisResult> {
+    const modelsToTry = ["grok-3"]; // Simplified to use only available model
+    let lastError: Error | null = null;
 
     for (const model of modelsToTry) {
-      this.logger.info(`Attempting to use model: ${model}`);
-      const maxRetries = 3;
-      let retryCount = 0;
-      let delay = 500;
+      this.logger.info(`Attempting analysis with model`, { model });
 
-      while (retryCount < maxRetries) {
+      for (
+        let retryCount = 0;
+        retryCount < this.config.maxRetries;
+        retryCount++
+      ) {
         try {
           const startTime = Date.now();
-          
           const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
           const isPDF = /\.pdf$/i.test(fileName);
-          
           const content: any[] = [{ type: "text", text: prompt }];
 
-          // Add image data for images or convert PDF to images for all Grok models
           if (isImage) {
             content.push({
               type: "image_url",
@@ -304,42 +348,43 @@ IMPORTANT: Include the complete document context in the analysis.`;
               },
             });
           } else if (isPDF) {
-            try {
-              const images = await this.convertPDFToImages(fileBuffer);
-              if (images.length > 0) {
-                this.logger.info(`Adding ${images.length} PDF images to request`);
-                images.forEach((base64Image) => {
-                  if (base64Image && base64Image.length > 100) {
-                    content.push({
-                      type: "image_url",
-                      image_url: { url: `data:image/png;base64,${base64Image}` },
-                    });
-                  }
-                });
-              } else {
-                this.logger.warn('No valid images extracted from PDF, continuing with text-only analysis');
-              }
-            } catch (pdfError) {
-              this.logger.error('PDF conversion failed:', pdfError);
-              // Continue without images
+            const { images } = await this.convertPDFToImages(fileBuffer);
+            if (images.length > 0) {
+              images.forEach((base64Image) => {
+                if (base64Image && base64Image.length > 1000) {
+                  content.push({
+                    type: "image_url",
+                    image_url: { url: `data:image/png;base64,${base64Image}` },
+                  });
+                }
+              });
+              this.logger.info(`Added ${images.length} images to request`);
+            } else {
+              this.logger.warn(
+                "No valid images extracted, using text-only prompt",
+              );
             }
           }
 
           const response = await axios({
-            url: "https://api.x.ai/v1/chat/completions",
+            url: `${this.config.baseURL}/chat/completions`,
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${this.apiKey}`,
             },
             data: {
-              model: model,
+              model,
               messages: [
                 {
                   role: "system",
-                  content: "You are an expert mortgage document analysis AI. Extract all relevant loan, property, borrower, trustee, beneficiary, and related information from the provided document with high accuracy.",
+                  content:
+                    "You are an expert mortgage document analysis AI. Extract all relevant loan, property, borrower, trustee, beneficiary, and related information from the provided document with high accuracy. Do not generate fictitious data; return null for missing information.",
                 },
-                { role: "user", content },
+                {
+                  role: "user",
+                  content,
+                },
               ],
               response_format: { type: "json_object" },
               temperature: 0.1,
@@ -347,200 +392,167 @@ IMPORTANT: Include the complete document context in the analysis.`;
               stream: true,
             },
             responseType: "stream",
-            timeout: 180000,
-            validateStatus: (status) => status === 200,
+            timeout: this.config.timeout,
           });
 
-          this.logger.info({ 
-            duration: Date.now() - startTime,
-            headers: response.headers,
+          this.logger.info(`API call initiated`, {
             model,
-            promptLength: prompt.length 
-          }, `API call initiated successfully with ${model}`);
-          
+            duration: Date.now() - startTime,
+            promptLength: prompt.length,
+            contentItems: content.length,
+          });
+
           const result = await this.processDocumentStream(response);
-          
-          // Validate we got actual data
+
           if (!result || (!result.documentType && !result.extractedData)) {
-            this.logger.warn(`No valid data generated with ${model}, treating as failure`);
-            throw new Error('No valid data in response');
+            throw new Error("No valid data in response");
           }
-          
-          this.logger.info(`Successfully analyzed document with ${model}`);
+
+          this.logger.info(`Document analyzed successfully`, {
+            model,
+            documentType: result.documentType,
+          });
           return result;
-          
         } catch (error) {
-          lastError = error;
+          lastError = error as Error;
           const axiosError = error as AxiosError;
-          const errorMessage = (error as Error).message;
-          
-          // Handle empty response or no data - try next model immediately
-          if (errorMessage === 'Empty response from API' || 
-              errorMessage === 'No data received from API' ||
-              errorMessage === 'No data received from API within timeout' ||
-              errorMessage === 'No valid data in response' || 
-              errorMessage === 'Invalid response format' ||
-              errorMessage.startsWith('JSON parse error:')) {
-            this.logger.warn(`Model ${model} returned empty/invalid response, trying next model...`);
-            break; // Exit retry loop for this model, try next model
-          }
-          
-          if (axiosError.response) {
-            this.logger.error(`API error for ${model}:`, {
-              status: axiosError.response.status,
-              data: axiosError.response.data,
+
+          this.logger.error(`Analysis attempt failed`, {
+            model,
+            retry: retryCount + 1,
+            error: lastError.message,
+          });
+
+          if (axiosError.response?.status === 429) {
+            const delay =
+              this.config.initialRetryDelay * Math.pow(2, retryCount);
+            this.logger.warn(`Rate limited, retrying after ${delay}ms`, {
+              model,
+              retry: retryCount + 1,
             });
-            
-            // Model not found or invalid - try next model
-            if (axiosError.response.status === 400 || axiosError.response.status === 404) {
-              this.logger.warn(`Model ${model} not available, trying next model...`);
-              break;
-            }
-            
-            // Rate limit - retry same model
-            if (axiosError.response.status === 429) {
-              this.logger.warn(`Rate limit for ${model}, retrying in ${delay}ms...`);
-              retryCount++;
-              await new Promise(resolve => global.setTimeout(resolve, delay));
-              delay *= 2;
-              continue;
-            }
-            
-            // Server error - retry same model
-            if (axiosError.response.status >= 500) {
-              this.logger.warn(`Server error for ${model}, retrying in ${delay}ms...`);
-              retryCount++;
-              await new Promise(resolve => global.setTimeout(resolve, delay));
-              delay *= 2;
-              continue;
-            }
-          } else if (axiosError.code === "ECONNABORTED") {
-            this.logger.warn(`Timeout for ${model} attempt ${retryCount + 1}. Retrying in ${delay}ms...`);
-            retryCount++;
-            await new Promise(resolve => global.setTimeout(resolve, delay));
-            delay *= 2;
+            await setTimeout(delay);
             continue;
           }
-          
-          // Unexpected error - try next model
-          this.logger.error(`Unexpected error for ${model}:`, errorMessage);
-          break;
+
+          if (
+            axiosError.response?.status === 400 ||
+            axiosError.response?.status === 404
+          ) {
+            this.logger.warn(`Model ${model} not available, skipping`);
+            break;
+          }
+
+          if (retryCount === this.config.maxRetries - 1) {
+            this.logger.warn(`Retries exhausted for ${model}`);
+            break;
+          }
+
+          const delay = this.config.initialRetryDelay * Math.pow(2, retryCount);
+          await setTimeout(delay);
         }
       }
     }
-    
-    // All models failed
-    this.logger.error("All models failed. Last error:", lastError);
-    throw lastError || new Error("All model attempts failed");
+
+    this.logger.error("All models failed", { lastError: lastError?.message });
+    return {
+      documentType: "unknown",
+      extractedData: {},
+      confidence: 0,
+    };
   }
 
-  private async processDocumentStream(response: any): Promise<any> {
-    let buffer = '';
-    let jsonContent = '';
+  private async processDocumentStream(
+    response: any,
+  ): Promise<DocumentAnalysisResult> {
+    let jsonContent = "";
     let hasData = false;
 
     return new Promise((resolve, reject) => {
-      // Set timeout for initial data - if no data in 20 seconds, reject
-      const timeoutId = global.setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (!hasData) {
-          this.logger.error("No data received within 20 seconds, treating as failure");
+          this.logger.error("No data received within timeout");
           reject(new Error("No data received from API within timeout"));
         }
-      }, 20000); // 20-second timeout for initial data
+      }, 20000);
 
       response.data.on("data", (chunk: Buffer) => {
-        if (!hasData) clearTimeout(timeoutId); // Clear timeout on first data
-        
+        if (!hasData) clearTimeout(timeoutId);
+        hasData = true;
+
         const chunkStr = chunk.toString();
-        buffer += chunkStr;
-        
-        // Check if we have meaningful data (not just whitespace)
-        if (chunkStr.trim()) hasData = true;
-        
-        this.logger.info(`Received chunk: length=${chunkStr.length}`);
-        
-        // Process complete SSE lines
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            
-            if (data === '[DONE]') {
-              // Stream completed, parse the accumulated JSON
-              this.logger.info(`Stream completed. JSON content length: ${jsonContent.length}`);
-              
-              if (!jsonContent || jsonContent.length === 0) {
-                this.logger.error('Empty response received from API - no content accumulated');
-                reject(new Error('Empty response from API'));
-                return;
-              }
-              
-              try {
-                const result = JSON.parse(jsonContent);
-                if (result && (result.documentType || result.extractedData)) {
-                  this.logger.info(`Successfully parsed document analysis result`);
-                  resolve(result);
-                } else {
-                  this.logger.error('Response does not contain valid document analysis data');
-                  reject(new Error('Invalid response format'));
-                }
-                return;
-              } catch (e: any) {
-                this.logger.error('Failed to parse JSON:', e.message);
-                reject(new Error(`JSON parse error: ${e.message}`));
-                return;
-              }
+        jsonContent += chunkStr;
+
+        this.logger.info(`Received chunk`, { length: chunkStr.length });
+
+        if (chunkStr.includes("[DONE]")) {
+          try {
+            const jsonStart = jsonContent.indexOf("{");
+            const jsonEnd = jsonContent.lastIndexOf("}");
+            if (jsonStart === -1 || jsonEnd === -1) {
+              this.logger.error("Invalid JSON structure in stream");
+              reject(new Error("Invalid JSON structure"));
+              return;
             }
-            
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content;
-              
-              if (content) {
-                jsonContent += content;
-              }
-            } catch (e) {
-              // Not JSON, might be an error message
-              this.logger.info('Non-JSON data in stream:', data);
+
+            const jsonStr = jsonContent.slice(jsonStart, jsonEnd + 1);
+            const result = JSON.parse(jsonStr);
+            if (result && (result.documentType || result.extractedData)) {
+              this.logger.info("Stream processing completed", {
+                resultLength: jsonStr.length,
+              });
+              resolve(result);
+            } else {
+              this.logger.error("Response lacks valid document analysis data");
+              reject(new Error("Invalid response format"));
             }
+          } catch (e) {
+            this.logger.error("JSON parse error", { error: e.message });
+            reject(new Error(`JSON parse error: ${e.message}`));
           }
+          return;
         }
       });
 
       response.data.on("end", () => {
-        clearTimeout(timeoutId); // Clear timeout when stream ends
-        
+        clearTimeout(timeoutId);
         if (!hasData || !jsonContent) {
-          this.logger.error('Stream ended with no meaningful data');
-          reject(new Error('No data received from API'));
+          this.logger.error("Stream ended with no meaningful data");
+          reject(new Error("No data received from API"));
           return;
         }
-        
-        // Try to parse even if [DONE] wasn't received
-        if (jsonContent) {
-          try {
-            const result = JSON.parse(jsonContent);
-            if (result && (result.documentType || result.extractedData)) {
-              this.logger.info(`Successfully parsed final document analysis result`);
-              this.logger.info(`Full Grok analysis JSON:`, JSON.stringify(result, null, 2));
-              resolve(result);
-              return;
-            }
-          } catch (e: any) {
-            this.logger.error('Failed to parse final content:', e.message);
+
+        try {
+          const jsonStart = jsonContent.indexOf("{");
+          const jsonEnd = jsonContent.lastIndexOf("}");
+          if (jsonStart === -1 || jsonEnd === -1) {
+            this.logger.error("Invalid JSON structure in final content");
+            reject(new Error("Invalid JSON structure"));
+            return;
           }
+
+          const jsonStr = jsonContent.slice(jsonStart, jsonEnd + 1);
+          const result = JSON.parse(jsonStr);
+          if (result && (result.documentType || result.extractedData)) {
+            this.logger.info("Stream completed", {
+              resultLength: jsonStr.length,
+            });
+            resolve(result);
+          } else {
+            this.logger.error(
+              "Final response lacks valid document analysis data",
+            );
+            reject(new Error("Invalid response format"));
+          }
+        } catch (e) {
+          this.logger.error("Final JSON parse error", { error: e.message });
+          reject(new Error(`Final JSON parse error: ${e.message}`));
         }
-        
-        this.logger.error('No valid analysis result generated');
-        reject(new Error('No valid data in response'));
       });
 
-      response.data.on("error", (error: any) => {
-        clearTimeout(timeoutId); // Clear timeout on error
-        this.logger.error("Stream error:", error.message);
-        reject(error);
+      response.data.on("error", (error: Error) => {
+        clearTimeout(timeoutId);
+        this.logger.error("Stream error", { error: error.message });
+        reject(new Error(`Stream error: ${error.message}`));
       });
     });
   }
