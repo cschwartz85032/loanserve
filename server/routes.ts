@@ -268,6 +268,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/loans/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const existingLoan = await storage.getLoan(id);
+      if (!existingLoan) {
+        return res.status(404).json({ error: "Loan not found" });
+      }
+
+      await storage.deleteLoan(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting loan:", error);
+      res.status(400).json({ error: "Failed to delete loan" });
+    }
+  });
+
   app.put("/api/loans/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -664,9 +680,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get the file path from storageUrl
       let filePath = '';
-      if (document.storageUrl.startsWith('/documents/')) {
-        // Handle local file storage
-        filePath = path.join('server/uploads', document.storageUrl.replace('/documents/', ''));
+      if (document.storageUrl) {
+        // Handle local file storage - storageUrl already points to the filename
+        if (document.storageUrl.startsWith('/documents/')) {
+          filePath = path.join('server/uploads', document.storageUrl.replace('/documents/', ''));
+        } else if (document.storageUrl.startsWith('/uploads/')) {
+          filePath = path.join('server', document.storageUrl);
+        } else {
+          // Assume it's just the filename
+          filePath = path.join('server/uploads', document.storageUrl);
+        }
       } else {
         return res.status(404).json({ error: "File not found" });
       }

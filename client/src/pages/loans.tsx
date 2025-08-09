@@ -57,7 +57,18 @@ export default function Loans() {
               />
             </div>
           ) : (
-            <LoanTable onEditLoan={setEditingLoanId} />
+            <LoanTable 
+              onEditLoan={setEditingLoanId}
+              onViewLoan={setEditingLoanId}
+              onDeleteLoan={(loanId) => {
+                // Direct delete without confirmation
+                fetch(`/api/loans/${loanId}`, { method: 'DELETE' })
+                  .then(() => {
+                    window.location.reload(); // Refresh the page to show updated list
+                  })
+                  .catch(error => console.error('Error deleting loan:', error));
+              }}
+            />
           )}
         </div>
       </main>

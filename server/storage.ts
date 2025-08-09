@@ -80,6 +80,7 @@ export interface IStorage {
   getLoanByNumber(loanNumber: string): Promise<Loan | undefined>;
   createLoan(loan: InsertLoan): Promise<Loan>;
   updateLoan(id: number, loan: Partial<InsertLoan>): Promise<Loan>;
+  deleteLoan(id: number): Promise<void>;
   getLoanMetrics(userId?: number): Promise<{
     totalPortfolio: string;
     activeLoans: number;
@@ -316,6 +317,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(loans.id, id))
       .returning();
     return loan;
+  }
+
+  async deleteLoan(id: number): Promise<void> {
+    await db.delete(loans).where(eq(loans.id, id));
   }
 
   async getLoanMetrics(userId?: number): Promise<{
