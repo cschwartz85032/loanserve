@@ -253,51 +253,52 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       return 'conventional';
     };
 
+    // Always set a value for each field (never undefined) to prevent controlled/uncontrolled issues
     setFormData(prev => ({
       ...prev,
-      // Loan Information (only update if we have valid data)
-      ...(cleanString(extractedData.loanNumber) && { loanNumber: cleanString(extractedData.loanNumber) }),
-      ...(cleanString(extractedData.loanType) && { loanType: normalizeLoanType(extractedData.loanType) }),
-      ...(toString(extractedData.originalAmount || extractedData.loanAmount) && { originalAmount: toString(extractedData.originalAmount || extractedData.loanAmount) }),
-      ...(toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) && { principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) }),
-      ...(toString(extractedData.interestRate) && { interestRate: toString(extractedData.interestRate) }),
-      ...(cleanString(extractedData.rateType) && { rateType: cleanString(extractedData.rateType) }),
-      ...(toString(extractedData.loanTerm || extractedData.termMonths) && { loanTerm: toString(extractedData.loanTerm || extractedData.termMonths) }),
+      // Loan Information
+      loanNumber: cleanString(extractedData.loanNumber) || prev.loanNumber,
+      loanType: extractedData.loanType ? normalizeLoanType(extractedData.loanType) : prev.loanType,
+      originalAmount: toString(extractedData.originalAmount || extractedData.loanAmount) || prev.originalAmount,
+      principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) || prev.principalBalance,
+      interestRate: toString(extractedData.interestRate) || prev.interestRate,
+      rateType: cleanString(extractedData.rateType) || prev.rateType,
+      loanTerm: toString(extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
       
-      // Property Information (only update if we have valid data)
-      ...(cleanString(extractedData.propertyType) && { propertyType: normalizePropertyType(extractedData.propertyType) }),
-      ...(cleanString(extractedData.propertyStreetAddress || extractedData.propertyAddress || extractedData.address) && { propertyAddress: cleanString(extractedData.propertyStreetAddress || extractedData.propertyAddress || extractedData.address) }),
-      ...(cleanString(extractedData.propertyCity || extractedData.city) && { propertyCity: cleanString(extractedData.propertyCity || extractedData.city) }),
-      ...(cleanString(extractedData.propertyState || extractedData.state) && { propertyState: cleanString(extractedData.propertyState || extractedData.state) }),
-      ...(cleanString(extractedData.propertyZipCode || extractedData.propertyZip || extractedData.zipCode) && { propertyZip: cleanString(extractedData.propertyZipCode || extractedData.propertyZip || extractedData.zipCode) }),
-      ...(toString(extractedData.propertyValue || extractedData.appraisedValue) && { propertyValue: toString(extractedData.propertyValue || extractedData.appraisedValue) }),
+      // Property Information  
+      propertyType: extractedData.propertyType ? normalizePropertyType(extractedData.propertyType) : prev.propertyType,
+      propertyAddress: cleanString(extractedData.propertyStreetAddress || extractedData.propertyAddress || extractedData.address) || prev.propertyAddress,
+      propertyCity: cleanString(extractedData.propertyCity || extractedData.city) || prev.propertyCity,
+      propertyState: cleanString(extractedData.propertyState || extractedData.state) || prev.propertyState,
+      propertyZip: cleanString(extractedData.propertyZipCode || extractedData.propertyZip || extractedData.zipCode) || prev.propertyZip,
+      propertyValue: toString(extractedData.propertyValue || extractedData.appraisedValue) || prev.propertyValue,
       
-      // Borrower Information (only update if we have valid data)
-      ...(cleanString(extractedData.borrowerName || extractedData.primaryBorrower) && { borrowerName: cleanString(extractedData.borrowerName || extractedData.primaryBorrower) }),
-      ...(cleanString(extractedData.borrowerEmail) && { borrowerEmail: cleanString(extractedData.borrowerEmail) }),
-      ...(cleanString(extractedData.borrowerPhone) && { borrowerPhone: cleanString(extractedData.borrowerPhone) }),
-      ...(cleanString(extractedData.coborrowerName || extractedData.coBorrower) && { coborrowerName: cleanString(extractedData.coborrowerName || extractedData.coBorrower) }),
+      // Borrower Information
+      borrowerName: cleanString(extractedData.borrowerName || extractedData.primaryBorrower) || prev.borrowerName,
+      borrowerEmail: cleanString(extractedData.borrowerEmail) || prev.borrowerEmail,
+      borrowerPhone: cleanString(extractedData.borrowerPhone) || prev.borrowerPhone,
+      coborrowerName: cleanString(extractedData.coborrowerName || extractedData.coBorrower) || prev.coborrowerName,
       
       // Borrower Address (separate from property address)
-      ...(cleanString(extractedData.borrowerStreetAddress) && { borrowerAddress: cleanString(extractedData.borrowerStreetAddress) }),
-      ...(cleanString(extractedData.borrowerCity) && { borrowerCity: cleanString(extractedData.borrowerCity) }),
-      ...(cleanString(extractedData.borrowerState) && { borrowerState: cleanString(extractedData.borrowerState) }),
-      ...(cleanString(extractedData.borrowerZipCode) && { borrowerZip: cleanString(extractedData.borrowerZipCode) }),
+      borrowerAddress: cleanString(extractedData.borrowerStreetAddress) || prev.borrowerAddress,
+      borrowerCity: cleanString(extractedData.borrowerCity) || prev.borrowerCity,
+      borrowerState: cleanString(extractedData.borrowerState) || prev.borrowerState,
+      borrowerZip: cleanString(extractedData.borrowerZipCode) || prev.borrowerZip,
       
-      // Payment Information (only update if we have valid data)
-      ...(toString(extractedData.paymentAmount || extractedData.monthlyPayment) && { paymentAmount: toString(extractedData.paymentAmount || extractedData.monthlyPayment) }),
-      ...(toString(extractedData.escrowAmount) && { escrowAmount: toString(extractedData.escrowAmount) }),
-      ...(cleanString(extractedData.firstPaymentDate) && !cleanString(extractedData.firstPaymentDate).includes('YYYY-MM-DD') && { firstPaymentDate: cleanString(extractedData.firstPaymentDate) }),
-      ...(cleanString(extractedData.nextPaymentDate) && !cleanString(extractedData.nextPaymentDate).includes('YYYY-MM-DD') && { nextPaymentDate: cleanString(extractedData.nextPaymentDate) }),
-      ...(cleanString(extractedData.maturityDate) && !cleanString(extractedData.maturityDate).includes('YYYY-MM-DD') && { maturityDate: cleanString(extractedData.maturityDate) }),
-      ...(cleanString(extractedData.prepaymentExpirationDate) && !cleanString(extractedData.prepaymentExpirationDate).includes('YYYY-MM-DD') && { prepaymentExpirationDate: cleanString(extractedData.prepaymentExpirationDate) }),
+      // Payment Information
+      paymentAmount: toString(extractedData.paymentAmount || extractedData.monthlyPayment) || prev.paymentAmount,
+      escrowAmount: toString(extractedData.escrowAmount) || prev.escrowAmount,
+      firstPaymentDate: (cleanString(extractedData.firstPaymentDate) && !cleanString(extractedData.firstPaymentDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.firstPaymentDate) : prev.firstPaymentDate,
+      nextPaymentDate: (cleanString(extractedData.nextPaymentDate) && !cleanString(extractedData.nextPaymentDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.nextPaymentDate) : prev.nextPaymentDate,
+      maturityDate: (cleanString(extractedData.maturityDate) && !cleanString(extractedData.maturityDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.maturityDate) : prev.maturityDate,
+      prepaymentExpirationDate: (cleanString(extractedData.prepaymentExpirationDate) && !cleanString(extractedData.prepaymentExpirationDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.prepaymentExpirationDate) : prev.prepaymentExpirationDate,
       
-      // Additional Fees (only update if we have valid data)
-      ...(toString(extractedData.hazardInsurance || extractedData.insuranceAmount) && { hazardInsurance: toString(extractedData.hazardInsurance || extractedData.insuranceAmount) }),
-      ...(toString(extractedData.propertyTaxes || extractedData.taxAmount) && { propertyTaxes: toString(extractedData.propertyTaxes || extractedData.taxAmount) }),
-      ...(toString(extractedData.hoaFees) && { hoaFees: toString(extractedData.hoaFees) }),
-      ...(toString(extractedData.pmiAmount || extractedData.pmi) && { pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) }),
-      ...(toString(extractedData.servicingFee) && { servicingFee: toString(extractedData.servicingFee) })
+      // Additional Fees
+      hazardInsurance: toString(extractedData.hazardInsurance || extractedData.insuranceAmount || extractedData.insurance) || prev.hazardInsurance,
+      propertyTaxes: toString(extractedData.propertyTaxes || extractedData.taxAmount || extractedData.taxes) || prev.propertyTaxes,
+      hoaFees: toString(extractedData.hoaFees) || prev.hoaFees,
+      pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) || prev.pmiAmount,
+      servicingFee: toString(extractedData.servicingFee) || prev.servicingFee
     }));
 
     toast({
