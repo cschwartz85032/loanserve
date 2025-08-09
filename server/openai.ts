@@ -1,62 +1,18 @@
 import fs from "fs/promises";
+import pdf2pic from "pdf2pic";
 import axios, { AxiosError } from "axios";
-import { setTimeout } from "timers/promises";
-import { fromPath } from "pdf2pic";
 import { v4 as uuidv4 } from "uuid";
 
 export interface DocumentAnalysisResult {
   documentType: string;
-  extractedData: {
-    // Property details
-    propertyStreetAddress?: string;
-    propertyCity?: string;
-    propertyState?: string;
-    propertyZipCode?: string;
-    propertyType?: string;
-    propertyValue?: number;
-    // Borrower information
-    borrowerName?: string;
-    borrowerSSN?: string;
-    borrowerIncome?: number;
-    borrowerStreetAddress?: string;
-    borrowerCity?: string;
-    borrowerState?: string;
-    borrowerZipCode?: string;
-    // Loan information
-    loanAmount?: number;
-    interestRate?: number;
-    loanTerm?: number;
-    loanType?: string;
-    // Payment information
-    monthlyPayment?: number;
-    escrowAmount?: number;
-    hoaFees?: number;
-    downPayment?: number;
-    closingCosts?: number;
-    pmi?: number;
-    taxes?: number;
-    insurance?: number;
-    // Dates
-    closingDate?: string;
-    firstPaymentDate?: string;
-    prepaymentExpirationDate?: string;
-    // Deed of Trust specific fields
-    trusteeName?: string;
-    trusteeStreetAddress?: string;
-    trusteeCity?: string;
-    trusteeState?: string;
-    trusteeZipCode?: string;
-    beneficiaryName?: string;
-    beneficiaryStreetAddress?: string;
-    beneficiaryCity?: string;
-    beneficiaryState?: string;
-    beneficiaryZipCode?: string;
-    loanDocuments?: string[];
-    defaultConditions?: string[];
-    insuranceRequirements?: string[];
-    crossDefaultParties?: string[];
-  };
+  extractedData: Record<string, any>;
   confidence: number;
+}
+
+interface Logger {
+  info: (message: string, meta?: Record<string, any>) => void;
+  warn: (message: string, meta?: Record<string, any>) => void;
+  error: (message: string, meta?: Record<string, any>) => void;
 }
 
 interface ApiConfig {
@@ -71,19 +27,13 @@ interface ApiConfig {
 export class DocumentAnalysisService {
   private readonly config: ApiConfig;
   private readonly apiKey: string;
-  private readonly logger: {
-    info: (message: string, meta?: Record<string, any>) => void;
-    warn: (message: string, meta?: Record<string, any>) => void;
-    error: (message: string, meta?: Record<string, any>) => void;
-  };
+  private readonly logger: Logger;
 
   constructor() {
     const apiKey = process.env.XAI_API_KEY_NEW || process.env.XAI_API_KEY;
-
     if (!apiKey || apiKey.trim() === "") {
       throw new Error("XAI_API_KEY or XAI_API_KEY_NEW is missing or invalid");
     }
-
     this.apiKey = apiKey;
     this.config = {
       baseURL: "https://api.x.ai/v1",
@@ -93,13 +43,11 @@ export class DocumentAnalysisService {
       maxFileSize: 10 * 1024 * 1024, // 10MB
       maxPagesToConvert: 5,
     };
-
     this.logger = {
       info: (message, meta = {}) => console.log(`[INFO] ${message}`, meta),
       warn: (message, meta = {}) => console.warn(`[WARN] ${message}`, meta),
       error: (message, meta = {}) => console.error(`[ERROR] ${message}`, meta),
     };
-
     this.logger.info("DocumentAnalysisService initialized", {
       apiKeyLength: apiKey.length,
       config: this.config,
@@ -125,318 +73,218 @@ export class DocumentAnalysisService {
     }
   }
 
-  private buildDocumentAnalysisPrompt(
-    fileName: string,
-    fileBuffer: Buffer,
-    documentText?: string,
-  ): string {
-    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
-    const isPDF = /\.pdf$/i.test(fileName);
+  private buildDocumentAnalysisPrompt(): string {
+    return `Analyze this loan document image and extract ALL the loan information completely and accurately. Extract ACTUAL values from the document - DO NOT use generic placeholders.
 
-    return `Analyze this ${isImage ? "image" : "PDF document"} named "${fileName}" completely and extract all relevant mortgage loan information.
-=== DOCUMENT ANALYSIS ===
-Document: ${fileName}
-Size: ${Math.round(fileBuffer.length / 1024)}KB
-Type: ${isImage ? "Image" : "PDF"}
-${documentText ? `Content: ${documentText}` : ""}
-=== EXTRACTION REQUIREMENTS ===
-First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
-Then extract any relevant information from the COMPLETE document including:
-- Property details (separate street address, city, state, zip, type, value)
-- Loan information (amount, rate, term, type, prepayment terms)
-- Borrower information (name, income, SSN, mailing address separate from property)
-- Payment details (monthly payment, escrow, HOA)
-- Financial details (down payment, closing costs, PMI, taxes, insurance)
-- Important dates (closing, first payment, prepayment expiration)
-- Trustee information (name, street address, city, state, zip)
-- Beneficiary information (name, street address, city, state, zip)
-- Loan documents mentioned (e.g., Note, Deed of Trust, etc.)
-- Default conditions (key events that constitute default, summarized)
-- Insurance requirements (specific types and coverage details)
-- Cross-default parties (entities listed in cross-default clauses)
-IMPORTANT: 
-- Extract addresses with separate components - do not combine into single address field.
-- The borrower's mailing address may be different from the property address.
-- Ensure all extracted data matches the document content exactly; do not infer or generate fictitious data.
-- If information is missing or unclear, return null for that field.
-Return a JSON object with extracted data: {
-  "documentType": "document_category_here",
+CRITICAL INSTRUCTIONS:
+- This is a REAL document with REAL data
+- Extract the ACTUAL values you see in the document
+- DO NOT use placeholder values like "123 Main St", "John Doe", "Unknown", etc.
+- If you cannot read a specific field clearly, leave it as null
+- Be thorough and comprehensive in your extraction
+
+Extract all available information and return it in this exact JSON format:
+
+{
+  "documentType": "type of document (e.g., Deed of Trust, Promissory Note, Loan Application)",
   "extractedData": {
-    "propertyStreetAddress": "street_address_only_or_null",
-    "propertyCity": "city_only_or_null",
-    "propertyState": "state_only_or_null",
-    "propertyZipCode": "zip_code_only_or_null",
-    "propertyType": "extracted_value_or_null",
-    "propertyValue": null,
-    "borrowerName": "extracted_value_or_null",
-    "borrowerSSN": null,
-    "borrowerIncome": null,
-    "borrowerStreetAddress": "borrower_street_address_or_null",
-    "borrowerCity": "borrower_city_or_null",
-    "borrowerState": "borrower_state_or_null",
-    "borrowerZipCode": "borrower_zip_code_or_null",
-    "loanAmount": number_or_null,
-    "interestRate": null,
-    "loanTerm": null,
-    "loanType": "extracted_value_or_null",
-    "monthlyPayment": null,
-    "escrowAmount": null,
-    "hoaFees": null,
-    "downPayment": null,
-    "closingCosts": null,
-    "pmi": null,
-    "taxes": null,
-    "insurance": null,
-    "closingDate": "YYYY-MM-DD_or_null",
-    "firstPaymentDate": "YYYY-MM-DD_or_null",
-    "prepaymentExpirationDate": null,
-    "trusteeName": "extracted_value_or_null",
-    "trusteeStreetAddress": "street_address_only_or_null",
-    "trusteeCity": "city_only_or_null",
-    "trusteeState": "state_only_or_null",
-    "trusteeZipCode": "zip_code_only_or_null",
-    "beneficiaryName": "extracted_value_or_null",
-    "beneficiaryStreetAddress": "street_address_only_or_null",
-    "beneficiaryCity": "city_only_or_null",
-    "beneficiaryState": "state_only_or_null",
-    "beneficiaryZipCode": "zip_code_only_or_null",
-    "loanDocuments": ["array_of_documents_or_null"],
-    "defaultConditions": ["array_of_conditions_or_null"],
-    "insuranceRequirements": ["array_of_requirements_or_null"],
-    "crossDefaultParties": ["array_of_entities_or_null"]
+    "propertyStreetAddress": "actual street address from document",
+    "propertyCity": "actual city name",
+    "propertyState": "actual state",
+    "propertyZipCode": "actual zip code",
+    "propertyType": "Single Family Residence/Condominium/Townhouse/etc",
+    "propertyValue": numerical_value_or_null,
+    "borrowerName": "actual borrower name from document",
+    "borrowerSSN": "actual SSN if visible or null",
+    "borrowerIncome": numerical_value_or_null,
+    "borrowerStreetAddress": "borrower mailing address street",
+    "borrowerCity": "borrower mailing address city", 
+    "borrowerState": "borrower mailing address state",
+    "borrowerZipCode": "borrower mailing address zip",
+    "loanAmount": numerical_value_or_null,
+    "interestRate": numerical_percentage_or_null,
+    "loanTerm": numerical_months_or_null,
+    "loanType": "Fixed Rate Mortgage/ARM/FHA/VA/etc",
+    "monthlyPayment": numerical_value_or_null,
+    "escrowAmount": numerical_value_or_null,
+    "hoaFees": numerical_value_or_null,
+    "downPayment": numerical_value_or_null,
+    "closingCosts": numerical_value_or_null,
+    "pmi": numerical_value_or_null,
+    "taxes": numerical_value_or_null,
+    "insurance": numerical_value_or_null,
+    "closingDate": "YYYY-MM-DD format or null",
+    "firstPaymentDate": "YYYY-MM-DD format or null", 
+    "prepaymentExpirationDate": "YYYY-MM-DD format or null",
+    "trusteeName": "actual trustee name from document",
+    "trusteeStreetAddress": "trustee address street",
+    "trusteeCity": "trustee address city",
+    "trusteeState": "trustee address state", 
+    "trusteeZipCode": "trustee address zip",
+    "beneficiaryName": "actual beneficiary/lender name",
+    "beneficiaryStreetAddress": "beneficiary address street",
+    "beneficiaryCity": "beneficiary address city",
+    "beneficiaryState": "beneficiary address state",
+    "beneficiaryZipCode": "beneficiary address zip",
+    "loanDocuments": ["array", "of", "document", "types", "mentioned"],
+    "defaultConditions": ["array", "of", "default", "conditions"],
+    "insuranceRequirements": ["array", "of", "insurance", "requirements"],
+    "crossDefaultParties": ["array", "of", "cross", "default", "parties"]
   },
-  "confidence": 0.85
+  "confidence": numerical_confidence_score_0_to_1
 }
-IMPORTANT: Include the complete document context in the analysis and ensure accuracy with provided text.`;
+
+IMPORTANT: Return ONLY the JSON object, no additional text or explanation.`;
   }
 
-  private async convertPDFToImages(
+  private async convertPdfToImages(
     fileBuffer: Buffer,
-  ): Promise<{ images: string[]; text?: string }> {
-    const tempPdfPath = `/tmp/temp_${uuidv4()}.pdf`;
-    const base64Images: string[] = [];
-
+    maxPages: number = 5,
+  ): Promise<string[]> {
     try {
+      const tempId = uuidv4();
+      const tempPdfPath = `/tmp/temp_${tempId}.pdf`;
+      
       await fs.writeFile(tempPdfPath, fileBuffer);
-      const convert = fromPath(tempPdfPath, {
-        density: 300, // Increased density for better text extraction
-        saveFilename: "page",
+      
+      const convert = pdf2pic.fromPath(tempPdfPath, {
+        density: 150,
+        saveFilename: `page_${tempId}`,
         savePath: "/tmp/",
         format: "png",
-        width: 2000,
-        height: 2800,
+        width: 1200,
+        height: 1600,
       });
 
-      for (let i = 1; i <= this.config.maxPagesToConvert; i++) {
+      const images: string[] = [];
+      
+      for (let i = 1; i <= maxPages; i++) {
         try {
-          const page = await convert(i, { responseType: "buffer" });
-          if (page.buffer && page.buffer.length > 1000) {
-            // Ensure meaningful image data
-            const base64Image = page.buffer.toString("base64");
-            base64Images.push(base64Image);
-            this.logger.info(`Converted PDF page ${i}`, {
-              size: base64Image.length,
-            });
+          const result = await convert(i, { responseType: "base64" });
+          if (result && result.base64) {
+            this.logger.info(`Converted PDF page ${i}`, { size: result.base64.length });
+            images.push(result.base64);
           } else {
-            this.logger.warn(`PDF page ${i} has insufficient data`, {
-              size: page.buffer?.length || 0,
-            });
+            this.logger.warn(`PDF page ${i} has insufficient data`, { size: 0 });
           }
         } catch (pageError) {
-          this.logger.warn(`Failed to convert PDF page ${i}`, {
-            error: pageError.message,
-          });
+          this.logger.warn(`Failed to convert PDF page ${i}`, { error: pageError.message });
           break;
         }
       }
 
-      // Fallback: Attempt to extract text using pdf2pic's text extraction if available
-      let extractedText: string | undefined;
+      // Cleanup
       try {
-        const textOutput = await convert.bulk(-1, { responseType: "text" });
-        extractedText = textOutput.map((page: any) => page.text).join("\n");
-        this.logger.info(`Extracted text from PDF`, {
-          length: extractedText.length,
-        });
-      } catch (textError) {
-        this.logger.warn(`Failed to extract text from PDF`, {
-          error: textError.message,
-        });
+        await fs.unlink(tempPdfPath);
+      } catch (cleanupError) {
+        this.logger.warn("Failed to cleanup temp PDF file", { error: cleanupError.message });
       }
 
-      return { images: base64Images, text: extractedText };
+      return images;
     } catch (error) {
-      this.logger.error("PDF conversion failed", { error: error.message });
-      throw error;
-    } finally {
-      await fs
-        .unlink(tempPdfPath)
-        .catch(() => this.logger.warn("Failed to clean up temp PDF file"));
+      this.logger.warn("Failed to extract text from PDF", { error: error.message });
+      return [];
     }
+  }
+
+  private async generateDocumentAnalysisWithStreaming(
+    model: string,
+    images: string[],
+  ): Promise<DocumentAnalysisResult> {
+    const contentItems: any[] = [
+      {
+        type: "text",
+        text: this.buildDocumentAnalysisPrompt(),
+      },
+    ];
+
+    if (images.length > 0) {
+      this.logger.info("Added images to request", { count: images.length });
+      images.forEach((base64Image) => {
+        contentItems.push({
+          type: "image_url",
+          image_url: {
+            url: `data:image/png;base64,${base64Image}`,
+          },
+        });
+      });
+    } else {
+      this.logger.warn("No valid images extracted, using text-only prompt");
+    }
+
+    const apiStartTime = Date.now();
+    const response = await axios({
+      url: `${this.config.baseURL}/chat/completions`,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      data: {
+        model,
+        messages: [
+          {
+            role: "user",
+            content: contentItems,
+          },
+        ],
+        stream: true,
+        max_tokens: 4000,
+        temperature: 0.1,
+      },
+      responseType: "stream",
+      timeout: this.config.timeout,
+    });
+
+    this.logger.info("API call initiated", {
+      model,
+      duration: Date.now() - apiStartTime,
+      promptLength: this.buildDocumentAnalysisPrompt().length,
+      contentItems: contentItems.length,
+    });
+
+    return this.processDocumentStream(response);
   }
 
   async analyzeDocumentWithGrok(
     fileName: string,
     fileBuffer: Buffer,
   ): Promise<DocumentAnalysisResult> {
+    this.logger.info("Processing document", { fileName, size: fileBuffer.length });
+    
     this.validateFile(fileName, fileBuffer);
-    this.logger.info(`Processing document`, {
-      fileName,
-      size: fileBuffer.length,
-    });
-
-    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
-    const isPDF = /\.pdf$/i.test(fileName);
-
-    let documentText: string | undefined;
-    if (isPDF) {
-      try {
-        const { text } = await this.convertPDFToImages(fileBuffer);
-        documentText = text;
-      } catch (error) {
-        this.logger.warn(
-          "Proceeding with image-only analysis due to text extraction failure",
-        );
-      }
-    }
-
-    const prompt = this.buildDocumentAnalysisPrompt(
-      fileName,
-      fileBuffer,
-      documentText,
-    );
-    const result = await this.generateDocumentAnalysisWithStreaming(
-      prompt,
-      fileName,
-      fileBuffer,
-    );
-
-    return {
-      documentType: result.documentType || "unknown",
-      extractedData: result.extractedData || {},
-      confidence: result.confidence || 0.5,
-    };
-  }
-
-  private async generateDocumentAnalysisWithStreaming(
-    prompt: string,
-    fileName: string,
-    fileBuffer: Buffer,
-  ): Promise<DocumentAnalysisResult> {
-    const modelsToTry = ["grok-3"]; // Simplified to use only available model
+    
+    const models = ["grok-4-0709", "grok-3", "grok-2-1212"];
     let lastError: Error | null = null;
 
-    for (const model of modelsToTry) {
-      this.logger.info(`Attempting analysis with model`, { model });
-
-      for (
-        let retryCount = 0;
-        retryCount < this.config.maxRetries;
-        retryCount++
-      ) {
+    for (const model of models) {
+      for (let retryCount = 0; retryCount < this.config.maxRetries; retryCount++) {
         try {
-          const startTime = Date.now();
-          const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
-          const isPDF = /\.pdf$/i.test(fileName);
-          const content: any[] = [{ type: "text", text: prompt }];
+          const images = await this.convertPdfToImages(
+            fileBuffer,
+            this.config.maxPagesToConvert,
+          );
 
-          if (isImage) {
-            content.push({
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${fileBuffer.toString("base64")}`,
-              },
-            });
-          } else if (isPDF) {
-            const { images } = await this.convertPDFToImages(fileBuffer);
-            if (images.length > 0) {
-              images.forEach((base64Image) => {
-                if (base64Image && base64Image.length > 1000) {
-                  content.push({
-                    type: "image_url",
-                    image_url: { url: `data:image/png;base64,${base64Image}` },
-                  });
-                }
-              });
-              this.logger.info(`Added ${images.length} images to request`);
-            } else {
-              this.logger.warn(
-                "No valid images extracted, using text-only prompt",
-              );
-            }
-          }
-
-          const response = await axios({
-            url: `${this.config.baseURL}/chat/completions`,
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${this.apiKey}`,
-            },
-            data: {
-              model,
-              messages: [
-                {
-                  role: "system",
-                  content:
-                    "You are an expert mortgage document analysis AI. Extract all relevant loan, property, borrower, trustee, beneficiary, and related information from the provided document with high accuracy. Do not generate fictitious data; return null for missing information.",
-                },
-                {
-                  role: "user",
-                  content,
-                },
-              ],
-              response_format: { type: "json_object" },
-              temperature: 0.1,
-              max_tokens: 4000,
-              stream: true,
-            },
-            responseType: "stream",
-            timeout: this.config.timeout,
-          });
-
-          this.logger.info(`API call initiated`, {
+          this.logger.info("Attempting analysis with model", { model });
+          const result = await this.generateDocumentAnalysisWithStreaming(
             model,
-            duration: Date.now() - startTime,
-            promptLength: prompt.length,
-            contentItems: content.length,
-          });
+            images,
+          );
 
-          const result = await this.processDocumentStream(response);
-
-          if (!result || (!result.documentType && !result.extractedData)) {
-            throw new Error("No valid data in response");
+          if (result && result.documentType && result.extractedData) {
+            return result;
           }
-
-          this.logger.info(`Document analyzed successfully`, {
-            model,
-            documentType: result.documentType,
-          });
-          return result;
-        } catch (error) {
-          lastError = error as Error;
-          const axiosError = error as AxiosError;
-
-          this.logger.error(`Analysis attempt failed`, {
+        } catch (error: any) {
+          lastError = error;
+          this.logger.error("Analysis attempt failed", {
             model,
             retry: retryCount + 1,
-            error: lastError.message,
+            error: error.message,
           });
 
-          if (axiosError.response?.status === 429) {
-            const delay =
-              this.config.initialRetryDelay * Math.pow(2, retryCount);
-            this.logger.warn(`Rate limited, retrying after ${delay}ms`, {
-              model,
-              retry: retryCount + 1,
-            });
-            await setTimeout(delay);
-            continue;
-          }
-
           if (
-            axiosError.response?.status === 400 ||
-            axiosError.response?.status === 404
+            error.response?.status === 400 &&
+            error.response?.data?.error?.message?.includes("model")
           ) {
             this.logger.warn(`Model ${model} not available, skipping`);
             break;
