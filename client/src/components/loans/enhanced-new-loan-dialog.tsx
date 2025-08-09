@@ -298,7 +298,27 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       propertyTaxes: toString(extractedData.propertyTaxes || extractedData.taxAmount || extractedData.taxes) || prev.propertyTaxes,
       hoaFees: toString(extractedData.hoaFees) || prev.hoaFees,
       pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) || prev.pmiAmount,
-      servicingFee: toString(extractedData.servicingFee) || prev.servicingFee
+      servicingFee: toString(extractedData.servicingFee) || prev.servicingFee,
+      
+      // Enhanced AI-extracted fields
+      borrowerSSN: cleanString(extractedData.borrowerSSN) || prev.borrowerSSN,
+      borrowerIncome: toString(extractedData.borrowerIncome) || prev.borrowerIncome,
+      trusteeName: cleanString(extractedData.trusteeName) || prev.trusteeName,
+      trusteeStreetAddress: cleanString(extractedData.trusteeStreetAddress) || prev.trusteeStreetAddress,
+      trusteeCity: cleanString(extractedData.trusteeCity) || prev.trusteeCity,
+      trusteeState: cleanString(extractedData.trusteeState) || prev.trusteeState,
+      trusteeZipCode: cleanString(extractedData.trusteeZipCode) || prev.trusteeZipCode,
+      beneficiaryName: cleanString(extractedData.beneficiaryName) || prev.beneficiaryName,
+      beneficiaryStreetAddress: cleanString(extractedData.beneficiaryStreetAddress) || prev.beneficiaryStreetAddress,
+      beneficiaryCity: cleanString(extractedData.beneficiaryCity) || prev.beneficiaryCity,
+      beneficiaryState: cleanString(extractedData.beneficiaryState) || prev.beneficiaryState,
+      beneficiaryZipCode: cleanString(extractedData.beneficiaryZipCode) || prev.beneficiaryZipCode,
+      loanDocuments: extractedData.loanDocuments || prev.loanDocuments,
+      defaultConditions: extractedData.defaultConditions || prev.defaultConditions,
+      insuranceRequirements: extractedData.insuranceRequirements || prev.insuranceRequirements,
+      crossDefaultParties: extractedData.crossDefaultParties || prev.crossDefaultParties,
+      closingCosts: toString(extractedData.closingCosts) || prev.closingCosts,
+      downPayment: toString(extractedData.downPayment) || prev.downPayment
     }));
 
     toast({

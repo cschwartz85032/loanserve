@@ -524,6 +524,7 @@ IMPORTANT: Include the complete document context in the analysis.`;
             const result = JSON.parse(jsonContent);
             if (result && (result.documentType || result.extractedData)) {
               this.logger.info(`Successfully parsed final document analysis result`);
+              this.logger.info(`Full Grok analysis JSON:`, JSON.stringify(result, null, 2));
               resolve(result);
               return;
             }
