@@ -5,7 +5,7 @@ import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { PortfolioOverview } from "@/components/dashboard/portfolio-overview";
 import { LoanTable } from "@/components/loans/loan-table";
 import { EscrowSummary } from "@/components/escrow/escrow-summary";
-import { SimpleNewLoanDialog } from "@/components/loans/simple-new-loan-dialog";
+import { EnhancedNewLoanDialog } from "@/components/loans/enhanced-new-loan-dialog";
 import { Bell, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -59,7 +59,15 @@ export default function Dashboard() {
         </div>
       </main>
       
-      <SimpleNewLoanDialog open={newLoanOpen} onOpenChange={setNewLoanOpen} />
+      <EnhancedNewLoanDialog 
+        open={newLoanOpen} 
+        onOpenChange={setNewLoanOpen}
+        onLoanCreated={(loanId) => {
+          setNewLoanOpen(false);
+          // Optionally redirect to loan edit page
+          console.log('Loan created with ID:', loanId);
+        }}
+      />
     </div>
   );
 }
