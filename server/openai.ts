@@ -132,89 +132,104 @@ export class DocumentAnalysisService {
     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
     const isPDF = /\.pdf$/i.test(fileName);
     return `Analyze this ${isImage ? "image" : "PDF document"} named "${fileName}" completely and extract all relevant mortgage loan information.
-=== DOCUMENT ANALYSIS ===
-Document: ${fileName}
-Size: ${Math.round(fileBuffer.length / 1024)}KB
-Type: ${isImage ? "Image" : "PDF"}
-${documentText ? `Content: ${documentText.substring(0, 5000)}` : ""}
-=== EXTRACTION REQUIREMENTS ===
-First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
-Then extract any relevant information from the COMPLETE document including:
-- Property details (separate street address, city, state, zip, type, value)
-- Loan information (amount, rate, term, type, prepayment terms)
-- Borrower information (name, income, SSN, mailing address separate from property)
-- Payment details (monthly payment, escrow, HOA)
-- Financial details (down payment, closing costs, PMI, taxes, insurance)
-- Important dates (closing, first payment, prepayment expiration)
-- Trustee information (name, street address, city, state, zip)
-- Beneficiary information (name, street address, city, state, zip)
-- Loan documents mentioned (e.g., Note, Deed of Trust, etc.)
-- Default conditions (key events that constitute default, summarized)
-- Insurance requirements (specific types and coverage details)
-- Cross-default parties (entities listed in cross-default clauses)
-IMPORTANT:
-- Extract addresses with separate components - do not combine into single address field.
-- The borrower's mailing address may be different from the property address.
-- Ensure all extracted data matches the document content exactly; do not infer or generate fictitious data.
-- If information is missing or unclear, return null for that field.
-- For PDF documents, prioritize text content provided in the prompt over image analysis if available.
-Return a JSON object with extracted data: {
-  "documentType": "document_category_here",
-  "extractedData": {
-    "propertyStreetAddress": "street_address_only_or_null",
-    "propertyCity": "city_only_or_null",
-    "propertyState": "state_only_or_null",
-    "propertyZipCode": "zip_code_only_or_null",
-    "propertyType": "extracted_value_or_null",
-    "propertyValue": null,
-    "borrowerName": "extracted_value_or_null",
-    "borrowerSSN": null,
-    "borrowerIncome": null,
-    "borrowerStreetAddress": "borrower_street_address_or_null",
-    "borrowerCity": "borrower_city_or_null",
-    "borrowerState": "borrower_state_or_null",
-    "borrowerZipCode": "borrower_zip_code_or_null",
-    "loanAmount": number_or_null,
-    "interestRate": null,
-    "loanTerm": null,
-    "loanType": "extracted_value_or_null",
-    "monthlyPayment": null,
-    "escrowAmount": null,
-    "hoaFees": null,
-    "downPayment": null,
-    "closingCosts": null,
-    "pmi": null,
-    "taxes": null,
-    "insurance": null,
-    "closingDate": "YYYY-MM-DD_or_null",
-    "firstPaymentDate": "YYYY-MM-DD_or_null",
-    "prepaymentExpirationDate": null,
-    "trusteeName": "extracted_value_or_null",
-    "trusteeStreetAddress": "street_address_only_or_null",
-    "trusteeCity": "city_only_or_null",
-    "trusteeState": "state_only_or_null",
-    "trusteeZipCode": "zip_code_only_or_null",
-    "beneficiaryName": "extracted_value_or_null",
-    "beneficiaryStreetAddress": "street_address_only_or_null",
-    "beneficiaryCity": "city_only_or_null",
-    "beneficiaryState": "state_only_or_null",
-    "beneficiaryZipCode": "zip_code_only_or_null",
-    "loanDocuments": ["array_of_documents_or_null"],
-    "defaultConditions": ["array_of_conditions_or_null"],
-    "insuranceRequirements": ["array_of_requirements_or_null"],
-    "crossDefaultParties": ["array_of_entities_or_null"]
-  },
-  "confidence": 0.85
-}
-IMPORTANT: Include the complete document context in the analysis and ensure accuracy with provided text.`;
+              === DOCUMENT ANALYSIS ===
+              Document: ${fileName}
+              Size: ${Math.round(fileBuffer.length / 1024)}KB
+              Type: ${isImage ? "Image" : "PDF"}
+              ${documentText ? `Content: ${documentText.substring(0, 5000)}` : ""}
+              === EXTRACTION REQUIREMENTS ===
+              First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
+              Then extract any relevant information from the COMPLETE document including:
+              - Property details (separate street address, city, state, zip, type, value)
+              - Loan information (amount, rate, term, type, prepayment terms)
+              - Borrower information (name, income, SSN, mailing address separate from property)
+              - Payment details (monthly payment, escrow, HOA)
+              - Financial details (down payment, closing costs, PMI, taxes, insurance)
+              - Important dates (closing, first payment, prepayment expiration)
+              - Trustee information (name, street address, city, state, zip)
+              - Beneficiary information (name, street address, city, state, zip)
+              - Loan documents mentioned (e.g., Note, Deed of Trust, etc.)
+              - Default conditions (key events that constitute default, summarized)
+              - Insurance requirements (specific types and coverage details)
+              - Cross-default parties (entities listed in cross-default clauses)
+              IMPORTANT:
+              - Extract addresses with separate components - do not combine into single address field.
+              - The borrower's mailing address may be different from the property address.
+              - Ensure all extracted data matches the document content exactly; do not infer or generate fictitious data.
+              - If information is missing or unclear, return null for that field.
+              - For PDF documents, prioritize text content provided in the prompt over image analysis if available.
+              Return a JSON object with extracted data: {
+                "documentType": "document_category_here",
+                "extractedData": {
+                  "propertyStreetAddress": "street_address_only_or_null",
+                  "propertyCity": "city_only_or_null",
+                  "propertyState": "state_only_or_null",
+                  "propertyZipCode": "zip_code_only_or_null",
+                  "propertyType": "extracted_value_or_null",
+                  "propertyValue": null,
+                  "borrowerName": "extracted_value_or_null",
+                  "borrowerSSN": null,
+                  "borrowerIncome": null,
+                  "borrowerStreetAddress": "borrower_street_address_or_null",
+                  "borrowerCity": "borrower_city_or_null",
+                  "borrowerState": "borrower_state_or_null",
+                  "borrowerZipCode": "borrower_zip_code_or_null",
+                  "loanAmount": number_or_null,
+                  "interestRate": null,
+                  "loanTerm": null,
+                  "loanType": "extracted_value_or_null",
+                  "monthlyPayment": null,
+                  "escrowAmount": null,
+                  "hoaFees": null,
+                  "downPayment": null,
+                  "closingCosts": null,
+                  "pmi": null,
+                  "taxes": null,
+                  "insurance": null,
+                  "closingDate": "YYYY-MM-DD_or_null",
+                  "firstPaymentDate": "YYYY-MM-DD_or_null",
+                  "prepaymentExpirationDate": null,
+                  "trusteeName": "extracted_value_or_null",
+                  "trusteeStreetAddress": "street_address_only_or_null",
+                  "trusteeCity": "city_only_or_null",
+                  "trusteeState": "state_only_or_null",
+                  "trusteeZipCode": "zip_code_only_or_null",
+                  "beneficiaryName": "extracted_value_or_null",
+                  "beneficiaryStreetAddress": "street_address_only_or_null",
+                  "beneficiaryCity": "city_only_or_null",
+                  "beneficiaryState": "state_only_or_null",
+                  "beneficiaryZipCode": "zip_code_only_or_null",
+                  "loanDocuments": ["array_of_documents_or_null"],
+                  "defaultConditions": ["array_of_conditions_or_null"],
+                  "insuranceRequirements": ["array_of_requirements_or_null"],
+                  "crossDefaultParties": ["array_of_entities_or_null"]
+                },
+                "confidence": 0.85
+              }
+              IMPORTANT: Include the complete document context in the analysis and ensure accuracy with provided text.`;
   }
 
   private async extractPDFText(
     fileBuffer: Buffer,
   ): Promise<string | undefined> {
     try {
-      const pdf = await PDFParser(fileBuffer);
-      const text = pdf.text.trim();
+      const pdf = await getDocument({ data: fileBuffer }).promise;
+      let text = "";
+      const numPages = pdf.numPages;
+      for (
+        let i = 1;
+        i <= numPages && i <= this.config.maxPagesToConvert;
+        i++
+      ) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const pageText = content.items
+          .map((item: any) => item.str)
+          .join(" ")
+          .trim();
+        text += pageText + "\n";
+      }
+      text = text.trim();
       if (text.length > 0) {
         this.logger.info("Successfully extracted text from PDF", {
           length: text.length,
@@ -238,12 +253,12 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
     let extractedText: string | undefined;
 
     try {
-      // First attempt text extraction with pdf-parse
+      // First attempt text extraction with pdfjs-dist
       extractedText = await this.extractPDFText(fileBuffer);
 
       // Attempt image conversion with pdf2pic
       await fs.writeFile(tempPdfPath, fileBuffer);
-      const convert = pdf2pic.fromPath(tempPdfPath, {
+      const convert = fromPath(tempPdfPath, {
         density: 300,
         saveFilename: "page",
         savePath: "/tmp/",
@@ -298,48 +313,46 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
     fileName: string,
     fileBuffer: Buffer,
   ): Promise<DocumentAnalysisResult> {
-    this.validateFile(fileName, fileBuffer);
-    this.logger.info(`Processing document`, {
-      fileName,
-      size: fileBuffer.length,
-    });
+    try {
+      this.validateFile(fileName, fileBuffer);
+      this.logger.info(`Processing document`, {
+        fileName,
+        size: fileBuffer.length,
+      });
 
-    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
-    const isPDF = /\.pdf$/i.test(fileName);
-    let documentText: string | undefined;
+      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
+      const isPDF = /\.pdf$/i.test(fileName);
+      let documentText: string | undefined;
 
-    if (isPDF) {
-      try {
+      if (isPDF) {
         const { text } = await this.convertPDFToImages(fileBuffer);
         documentText = text;
-      } catch (error) {
-        this.logger.error("PDF processing failed completely", {
-          error: error.message,
-        });
-        return {
-          documentType: "unknown",
-          extractedData: {},
-          confidence: 0,
-        };
       }
+
+      const prompt = this.buildDocumentAnalysisPrompt(
+        fileName,
+        fileBuffer,
+        documentText,
+      );
+      const result = await this.generateDocumentAnalysisWithStreaming(
+        prompt,
+        fileName,
+        fileBuffer,
+      );
+
+      return {
+        documentType: result.documentType || "unknown",
+        extractedData: result.extractedData || {},
+        confidence: result.confidence || 0.5,
+      };
+    } catch (error) {
+      this.logger.error("Failed to analyze document", { error: error.message });
+      return {
+        documentType: "unknown",
+        extractedData: {},
+        confidence: 0,
+      };
     }
-
-    const prompt = this.buildDocumentAnalysisPrompt(
-      fileName,
-      fileBuffer,
-      documentText,
-    );
-    const result = await this.generateDocumentAnalysisWithStreaming(
-      prompt,
-      fileName,
-      fileBuffer,
-    );
-
-    return {
-      documentType: result.documentType || "unknown",
-      extractedData: result.extractedData || {},
-      confidence: result.confidence || 0.5,
-    };
   }
 
   private async generateDocumentAnalysisWithStreaming(
@@ -527,30 +540,34 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
           return;
         }
 
-        jsonContent += chunkStr;
-
+        // Accumulate only valid JSON content
         const lines = chunkStr.split("\n");
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             const data = line.slice(6);
             if (data === "[DONE]") {
               try {
-                const jsonStart = jsonContent.indexOf("{");
-                const jsonEnd = jsonContent.lastIndexOf("}");
+                // Strip any trailing [DONE] or newlines
+                const cleanContent = jsonContent.replace(
+                  /data: \[DONE\]\s*$/,
+                  "",
+                );
+                const jsonStart = cleanContent.indexOf("{");
+                const jsonEnd = cleanContent.lastIndexOf("}");
                 if (
                   jsonStart === -1 ||
                   jsonEnd === -1 ||
                   jsonEnd <= jsonStart
                 ) {
                   this.logger.error("Invalid JSON structure in stream", {
-                    contentLength: jsonContent.length,
-                    contentSnippet: jsonContent.substring(0, 200),
+                    contentLength: cleanContent.length,
+                    contentSnippet: cleanContent.substring(0, 200),
                   });
                   reject(new Error("Invalid JSON structure"));
                   return;
                 }
 
-                const jsonStr = jsonContent.slice(jsonStart, jsonEnd + 1);
+                const jsonStr = cleanContent.slice(jsonStart, jsonEnd + 1);
                 const result = JSON.parse(jsonStr);
                 if (result && (result.documentType || result.extractedData)) {
                   this.logger.info("Stream processing completed", {
@@ -603,18 +620,20 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
         }
 
         try {
-          const jsonStart = jsonContent.indexOf("{");
-          const jsonEnd = jsonContent.lastIndexOf("}");
+          // Strip any trailing [DONE] or newlines
+          const cleanContent = jsonContent.replace(/data: \[DONE\]\s*$/, "");
+          const jsonStart = cleanContent.indexOf("{");
+          const jsonEnd = cleanContent.lastIndexOf("}");
           if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
             this.logger.error("Invalid JSON structure in final content", {
-              contentLength: jsonContent.length,
-              contentSnippet: jsonContent.substring(0, 200),
+              contentLength: cleanContent.length,
+              contentSnippet: cleanContent.substring(0, 200),
             });
             reject(new Error("Invalid JSON structure"));
             return;
           }
 
-          const jsonStr = jsonContent.slice(jsonStart, jsonEnd + 1);
+          const jsonStr = cleanContent.slice(jsonStart, jsonEnd + 1);
           const result = JSON.parse(jsonStr);
           if (result && (result.documentType || result.extractedData)) {
             this.logger.info("Stream completed", {
