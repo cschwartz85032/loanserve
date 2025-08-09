@@ -1,29 +1,17 @@
 import fs from "fs/promises";
 import axios, { AxiosError } from "axios";
 import { setTimeout } from "timers/promises";
+import { fromPath } from "pdf2pic";
 import { v4 as uuidv4 } from "uuid";
+import PDFParser from "pdf-parse";
 
-// Use require for pdf-parse and pdf2pic to avoid import issues
-let PDFParser: any;
-let fromPath: any;
-
-try {
-  PDFParser = require("pdf-parse");
-} catch (error) {
-  console.error("[FATAL] Failed to load pdf-parse module", {
-    error: error.message,
-  });
+// Verify module availability at runtime
+if (!PDFParser) {
   throw new Error(
     "pdf-parse module is not installed. Run `npm install pdf-parse`",
   );
 }
-
-try {
-  ({ fromPath } = require("pdf2pic"));
-} catch (error) {
-  console.error("[FATAL] Failed to load pdf2pic module", {
-    error: error.message,
-  });
+if (!fromPath) {
   throw new Error("pdf2pic module is not installed. Run `npm install pdf2pic`");
 }
 
@@ -660,7 +648,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
       response.data.on("error", (error: Error) => {
         clearTimeout(timeoutId);
         this.logger.error("Stream error", { error: error.message });
-        reject(new Error(`Stream error: ${e.message}`));
+        reject(new Error(`Stream error: ${error.message}`));
       });
     });
   }
