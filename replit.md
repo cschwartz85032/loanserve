@@ -13,6 +13,10 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 - **Fallback Pattern**: Implemented `extractedValue || previousValue` to prevent undefined values
 - **Dependencies**: Added axios dependency for Grok API calls
 - **Working Pattern**: Maintained user's exact class structure, validation methods, and prompt building approach
+- **Model Fallback System**: Implemented sophisticated model fallback with ["grok-vision-beta", "grok-beta", "grok-2-vision-1212", "grok-2-1212"]
+- **Retry Logic**: 3 retries per model with exponential backoff (500ms initial delay)
+- **Error Handling**: Comprehensive error categorization matching user's original implementation
+- **Vision Model Support**: Automatic image data attachment for vision-capable models
 
 ## Recent Changes (January 10, 2025) - Previous Updates
 

@@ -161,94 +161,181 @@ IMPORTANT: Include the complete document context in the analysis.`;
   async analyzeDocumentWithGrok(fileName: string, fileBuffer: Buffer): Promise<DocumentAnalysisResult> {
     console.log(`Processing document: ${fileName}, size: ${fileBuffer.length} bytes`);
 
-    if (!(await this.validateApiKeyAndModel("grok-beta"))) {
-      throw new Error("API key validation failed for grok-beta model");
-    }
-
     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
     const isPDF = /\.pdf$/i.test(fileName);
     
     const prompt = this.buildDocumentAnalysisPrompt(fileName, fileBuffer);
     
-    try {
-      let content: any[] = [{
-        type: "text",
-        text: prompt
-      }];
+    // Use your model fallback system
+    const modelsToTry = ["grok-vision-beta", "grok-beta", "grok-2-vision-1212", "grok-2-1212"];
+    let lastError: any = null;
 
-      if (isImage) {
-        const base64File = fileBuffer.toString('base64');
-        content.push({
-          type: "image_url",
-          image_url: {
-            url: `data:image/jpeg;base64,${base64File}`
+    for (const model of modelsToTry) {
+      console.log(`Attempting to use model: ${model}`);
+      const maxRetries = 3;
+      let retryCount = 0;
+      let delay = 500;
+
+      while (retryCount < maxRetries) {
+        try {
+          // Skip validation and let the API call fail if model doesn't exist
+          // This allows us to try the next model in the fallback chain
+          const startTime = Date.now();
+          
+          let content: any[] = [{
+            type: "text",
+            text: prompt
+          }];
+
+          // Add image data for vision models or if it's an image
+          if (isImage && (model.includes('vision') || model === 'grok-beta')) {
+            const base64File = fileBuffer.toString('base64');
+            content.push({
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${base64File}`
+              }
+            });
           }
-        });
+
+          console.log("AI PROMPT SENT TO GROK:", {
+            contentType: isImage ? 'image' : isPDF ? 'pdf' : 'document',
+            fileName,
+            textPromptLength: prompt.length,
+            hasImageData: isImage && (model.includes('vision') || model === 'grok-beta'),
+            fileSize: fileBuffer.length,
+            model: model
+          });
+
+          const response = await axios({
+            url: `${this.baseURL}/chat/completions`,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${this.apiKey}`,
+            },
+            data: {
+              model: model,
+              messages: [{
+                role: "system",
+                content: "You are an expert mortgage document analysis AI. Extract all relevant loan, property, and borrower information from the provided document with high accuracy."
+              }, {
+                role: "user",
+                content: content
+              }],
+              response_format: { type: "json_object" },
+              temperature: 0.1, // Very low for consistency
+              max_tokens: 2000,
+            },
+            timeout: this.timeout,
+            validateStatus: (status) => status === 200,
+          });
+
+          console.log({
+            duration: Date.now() - startTime,
+            model,
+            promptLength: prompt.length
+          }, `API call completed successfully with ${model}`);
+
+          const rawResponse = response.data?.choices?.[0]?.message?.content;
+          console.log("AI RESPONSE FROM GROK:", rawResponse);
+
+          if (!rawResponse) {
+            throw new Error('Empty response from API');
+          }
+
+          const result = JSON.parse(rawResponse);
+          
+          // Validate we got actual data
+          if (!result || (!result.documentType && !result.extractedData)) {
+            console.warn(`No valid data extracted with ${model}, treating as failure`);
+            throw new Error('No valid data in response');
+          }
+          
+          console.log(`Successfully analyzed document with ${model}`);
+          return {
+            documentType: result.documentType || "unknown",
+            extractedData: result.extractedData || {},
+            confidence: result.confidence || 0.5
+          };
+
+        } catch (error) {
+          lastError = error;
+          const axiosError = error as AxiosError;
+          const errorMessage = (error as Error).message;
+          
+          // Handle empty response or no data - try next model immediately
+          if (errorMessage === 'Empty response from API' || 
+              errorMessage === 'No data received from API' ||
+              errorMessage === 'No valid data in response' || 
+              errorMessage.startsWith('JSON parse error:')) {
+            console.warn(`Model ${model} returned empty/invalid response, trying next model...`);
+            break; // Exit retry loop for this model, try next model
+          }
+          
+          if (axiosError.response) {
+            console.error(`API error for ${model}:`, {
+              status: axiosError.response.status,
+              data: axiosError.response.data,
+            });
+            
+            // Model not found or invalid - try next model
+            if (axiosError.response.status === 400 || axiosError.response.status === 404) {
+              console.warn(`Model ${model} not available, trying next model...`);
+              break; // Exit retry loop for this model, try next model
+            }
+            
+            // Rate limit - wait and retry
+            if (axiosError.response.status === 429) {
+              console.warn(`Rate limited for ${model}, retrying in ${delay}ms...`);
+              retryCount++;
+              if (retryCount < maxRetries) {
+                await setTimeout(delay);
+                delay *= 2; // Exponential backoff
+                continue;
+              }
+            }
+            
+            // Server error - retry
+            if (axiosError.response.status >= 500) {
+              console.warn(`Server error for ${model}, retrying...`);
+              retryCount++;
+              if (retryCount < maxRetries) {
+                await setTimeout(delay);
+                continue;
+              }
+            }
+          }
+          
+          console.error(`Request failed for ${model}:`, errorMessage);
+          retryCount++;
+          if (retryCount < maxRetries) {
+            console.info(`Retrying ${model} in ${delay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+            await setTimeout(delay);
+          }
+        }
       }
-
-      console.log("AI PROMPT SENT TO GROK:", {
-        contentType: isImage ? 'image' : isPDF ? 'pdf' : 'document',
-        fileName,
-        textPromptLength: prompt.length,
-        hasImageData: isImage,
-        fileSize: fileBuffer.length
-      });
-
-      const response = await axios({
-        url: `${this.baseURL}/chat/completions`,
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        data: {
-          messages: [{
-            role: "user",
-            content: content
-          }],
-          model: "grok-beta",
-          stream: false,
-          temperature: 0,
-        },
-        timeout: this.timeout,
-      });
-
-      const rawResponse = response.data?.choices?.[0]?.message?.content;
-      console.log("AI RESPONSE FROM GROK:", rawResponse);
-
-      const result = JSON.parse(rawResponse || "{}");
       
+      console.warn(`All retries exhausted for ${model}, trying next model...`);
+    }
+    
+    console.error("All models failed, returning empty result");
+    console.error("Last error:", lastError);
+    
+    // Return appropriate fallback based on file type
+    if (isPDF) {
       return {
-        documentType: result.documentType || "unknown",
-        extractedData: result.extractedData || {},
-        confidence: result.confidence || 0.5
-      };
-
-    } catch (error) {
-      console.error("Error analyzing document:", error);
-      
-      if (error instanceof AxiosError) {
-        console.error("Axios error details:", {
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data
-        });
-      }
-      
-      if (isPDF) {
-        return {
-          documentType: "pdf_document",
-          extractedData: {},
-          confidence: 0.0
-        };
-      }
-      
-      return {
-        documentType: "unknown",
+        documentType: "pdf_document",
         extractedData: {},
-        confidence: 0
+        confidence: 0.0
       };
     }
+    
+    return {
+      documentType: "unknown",
+      extractedData: {},
+      confidence: 0
+    };
   }
 }
 
