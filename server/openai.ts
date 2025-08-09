@@ -448,7 +448,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
           }
 
           const delay = this.config.initialRetryDelay * Math.pow(2, retryCount);
-          await setTimeout(delay);
+          await new Promise(resolve => global.setTimeout(resolve, delay));
         }
       }
     }
@@ -468,7 +468,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
     let hasData = false;
 
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+      const timeoutId = global.setTimeout(() => {
         if (!hasData) {
           this.logger.error("No data received within timeout");
           reject(new Error("No data received from API within timeout"));
@@ -476,7 +476,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
       }, 20000);
 
       response.data.on("data", (chunk: Buffer) => {
-        if (!hasData) clearTimeout(timeoutId);
+        if (!hasData) global.clearTimeout(timeoutId);
         hasData = true;
 
         const chunkStr = chunk.toString();
@@ -514,7 +514,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
       });
 
       response.data.on("end", () => {
-        clearTimeout(timeoutId);
+        global.clearTimeout(timeoutId);
         if (!hasData || !jsonContent) {
           this.logger.error("Stream ended with no meaningful data");
           reject(new Error("No data received from API"));
@@ -550,7 +550,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
       });
 
       response.data.on("error", (error: Error) => {
-        clearTimeout(timeoutId);
+        global.clearTimeout(timeoutId);
         this.logger.error("Stream error", { error: error.message });
         reject(new Error(`Stream error: ${error.message}`));
       });
