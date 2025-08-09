@@ -144,13 +144,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertPropertySchema.parse(req.body);
       const property = await storage.createProperty(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
-        action: "CREATE_PROPERTY",
-        entityType: "property",
-        entityId: property.id,
-        newValues: property
-      });
+      // Temporarily skip audit log until database schema is updated
+      // await storage.createAuditLog({
+      //   userId: req.user?.id,
+      //   action: "CREATE_PROPERTY",
+      //   entityType: "property",
+      //   entityId: property.id,
+      //   newValues: property
+      // });
 
       res.status(201).json(property);
     } catch (error) {
@@ -182,17 +183,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating property:", error);
       res.status(400).json({ error: "Failed to update property" });
-    }
-  });
-
-  // ============= PROPERTY ROUTES =============
-  app.post("/api/properties", isAuthenticated, async (req, res) => {
-    try {
-      const property = await storage.createProperty(req.body);
-      res.status(201).json(property);
-    } catch (error) {
-      console.error("Error creating property:", error);
-      res.status(400).json({ error: "Failed to create property" });
     }
   });
 
