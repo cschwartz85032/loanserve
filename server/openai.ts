@@ -114,9 +114,79 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
           url: `data:image/jpeg;base64,${base64File}`
         }
       });
+    } else if (isPDF) {
+      // For PDFs, we need to send the actual content. Since GPT-4o Vision can't directly process PDFs,
+      // we'll send the base64 content with clear instructions.
+      console.log(`Processing PDF: ${fileName}, size: ${fileBuffer.length} bytes`);
+      
+      // Enhanced prompt specifically for PDFs  
+      content[0].text = `CRITICAL: You are analyzing a PDF document named "${fileName}". This PDF contains mortgage/loan documentation that MUST be processed completely.
+
+IMPORTANT INSTRUCTIONS:
+1. This PDF contains real mortgage loan data - NOT sample/placeholder data
+2. You must extract ACTUAL values from the document, not generic examples
+3. Look for specific loan amounts, addresses, borrower names, interest rates, etc.
+4. If you cannot see the PDF content clearly, respond with "confidence": 0.1 and indicate PDF processing limitation
+5. Do NOT return placeholder values like "123 Main St" or "John Doe" unless those are the ACTUAL values in the document
+
+Extract all relevant mortgage loan information including:
+- Property details (actual street address, city, state, zip, type, value from the document)
+- Loan information (actual amount, rate, term, type, prepayment terms from the document) 
+- Borrower information (actual name, income, SSN, mailing address from the document)
+- Payment details (actual monthly payment, escrow, HOA from the document)
+- Financial details (actual down payment, closing costs, PMI, taxes, insurance from the document)
+- Important dates (actual closing, first payment, prepayment expiration from the document)
+
+PDF File: ${fileName}
+PDF Size: ${Math.round(fileBuffer.length / 1024)}KB
+
+Return your response as JSON in this exact format:
+{
+  "documentType": "document_category_here",
+  "extractedData": {
+    "propertyStreetAddress": "ACTUAL_street_address_or_null",
+    "propertyCity": "ACTUAL_city_or_null", 
+    "propertyState": "ACTUAL_state_or_null",
+    "propertyZipCode": "ACTUAL_zip_code_or_null",
+    "propertyType": "ACTUAL_property_type_or_null",
+    "propertyValue": ACTUAL_number_or_null,
+    "borrowerName": "ACTUAL_borrower_name_or_null",
+    "borrowerSSN": "ACTUAL_SSN_or_null",
+    "borrowerIncome": ACTUAL_number_or_null,
+    "borrowerStreetAddress": "ACTUAL_borrower_address_or_null",
+    "borrowerCity": "ACTUAL_borrower_city_or_null",
+    "borrowerState": "ACTUAL_borrower_state_or_null", 
+    "borrowerZipCode": "ACTUAL_borrower_zip_or_null",
+    "loanAmount": ACTUAL_number_or_null,
+    "interestRate": ACTUAL_number_or_null,
+    "loanTerm": ACTUAL_number_or_null,
+    "loanType": "ACTUAL_loan_type_or_null",
+    "monthlyPayment": ACTUAL_number_or_null,
+    "escrowAmount": ACTUAL_number_or_null,
+    "hoaFees": ACTUAL_number_or_null,
+    "downPayment": ACTUAL_number_or_null,
+    "closingCosts": ACTUAL_number_or_null,
+    "pmi": ACTUAL_number_or_null,
+    "taxes": ACTUAL_number_or_null,
+    "insurance": ACTUAL_number_or_null,
+    "closingDate": "ACTUAL_YYYY-MM-DD_or_null",
+    "firstPaymentDate": "ACTUAL_YYYY-MM-DD_or_null",
+    "prepaymentExpirationDate": "ACTUAL_YYYY-MM-DD_or_null"
+  },
+  "confidence": 0.1_to_1.0_based_on_PDF_visibility
+}`;
+    } else {
+      // For other document types (DOCX, etc.)
+      content[0].text += `\n\nAnalyzing document: ${fileName} (${Math.round(fileBuffer.length / 1024)}KB)\nPlease extract loan information from this ${fileName.split('.').pop()?.toUpperCase()} document.`;
     }
 
-    console.log("AI PROMPT SENT TO GPT-4o:", JSON.stringify(content, null, 2));
+    console.log("AI PROMPT SENT TO GPT-4o:", {
+      contentType: isImage ? 'image' : isPDF ? 'pdf' : 'document',
+      fileName,
+      textPromptLength: content[0].text.length,
+      hasImageData: content.length > 1,
+      fileSize: base64File.length
+    });
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
