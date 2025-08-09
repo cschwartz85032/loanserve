@@ -351,7 +351,7 @@ IMPORTANT: Include the complete document context in the analysis.`;
 
     return new Promise((resolve, reject) => {
       // Set timeout for initial data - if no data in 20 seconds, reject
-      const timeoutId = setTimeout(() => {
+      const timeoutId = global.setTimeout(() => {
         if (!hasData) {
           console.error("No data received within 20 seconds, treating as failure");
           reject(new Error("No data received from API within timeout"));
@@ -359,7 +359,7 @@ IMPORTANT: Include the complete document context in the analysis.`;
       }, 20000);
 
       response.data.on("data", (chunk: Buffer) => {
-        if (!hasData) clearTimeout(timeoutId);
+        if (!hasData) global.clearTimeout(timeoutId);
         
         const chunkStr = chunk.toString();
         buffer += chunkStr;
