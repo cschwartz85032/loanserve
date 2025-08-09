@@ -151,17 +151,17 @@ export function LoanTable({ onEditLoan }: LoanTableProps) {
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm text-slate-900">
-                        {loan.propertyAddress}, {loan.propertyCity}, {loan.propertyState} {loan.propertyZip}
+                        {loan.property?.address || '...'}, {loan.property?.city || ''}, {loan.property?.state || ''} {loan.property?.zipCode || ''}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-slate-900">
-                        {formatCurrency(loan.currentBalance)}
+                        {formatCurrency(loan.principalBalance)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm text-slate-900">
-                        {formatCurrency(loan.monthlyPayment)}
+                        {formatCurrency(loan.paymentAmount)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">

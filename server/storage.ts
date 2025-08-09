@@ -250,8 +250,9 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     limit?: number;
     offset?: number;
-  } = {}): Promise<Loan[]> {
-    let query = db.select().from(loans);
+  } = {}): Promise<any[]> {
+    let query = db.select().from(loans)
+      .leftJoin(properties, eq(loans.propertyId, properties.id));
 
     const conditions = [];
     if (filters.lenderId) conditions.push(eq(loans.lenderId, filters.lenderId));
@@ -273,7 +274,11 @@ export class DatabaseStorage implements IStorage {
     }
 
     const result = await query;
-    return result as Loan[];
+    // Transform the result to include property data at the right level
+    return result.map(row => ({
+      ...row.loans,
+      property: row.properties
+    })) as any[];
   }
 
   async getLoan(id: number): Promise<Loan | undefined> {
