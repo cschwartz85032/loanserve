@@ -28,18 +28,22 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  console.log("NewLoanDialog - open state:", open);
 
   const [formData, setFormData] = useState({
     loanNumber: "",
     propertyId: null as number | null,
-    lenderId: user?.id || null,
-    servicerId: user?.id || null,
-    investorId: null as number | null,
+    borrowerId: "",
+    lenderId: user?.id ? String(user.id) : "",
+    servicerId: user?.id ? String(user.id) : "",
+    investorId: "",
     originalAmount: "",
     principalBalance: "",
     interestRate: "",
     termMonths: "",
     monthlyPaymentAmount: "",
+    monthlyPayment: "",
     nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
     maturityDate: "",
     status: "active",
@@ -129,6 +133,7 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
         if (principal > 0 && rate > 0 && months > 0) {
           const monthlyPayment = (principal * rate * Math.pow(1 + rate, months)) / (Math.pow(1 + rate, months) - 1);
           updated.monthlyPaymentAmount = monthlyPayment.toFixed(2);
+          updated.monthlyPayment = monthlyPayment.toFixed(2);
           updated.currentPaymentAmount = monthlyPayment.toFixed(2);
           updated.principalBalance = updated.originalAmount;
           
@@ -163,14 +168,16 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
     setFormData({
       loanNumber: "",
       propertyId: null,
-      lenderId: user?.id || null,
-      servicerId: user?.id || null,
-      investorId: null,
+      borrowerId: "",
+      lenderId: user?.id ? String(user.id) : "",
+      servicerId: user?.id ? String(user.id) : "",
+      investorId: "",
       originalAmount: "",
       principalBalance: "",
       interestRate: "",
       termMonths: "",
       monthlyPaymentAmount: "",
+      monthlyPayment: "",
       nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
       maturityDate: "",
       status: "active",
@@ -208,8 +215,9 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
       currentPaymentAmount: parseFloat(formData.currentPaymentAmount || formData.monthlyPaymentAmount),
       propertyValue: formData.propertyValue ? parseFloat(formData.propertyValue) : null,
       loanToValue: formData.loanToValue ? parseFloat(formData.loanToValue) : null,
-      lenderId: formData.lenderId || user?.id,
-      servicerId: formData.servicerId || user?.id
+      lenderId: formData.lenderId ? parseInt(formData.lenderId) : user?.id,
+      servicerId: formData.servicerId ? parseInt(formData.servicerId) : user?.id,
+      investorId: formData.investorId ? parseInt(formData.investorId) : null
     };
     
     createLoanMutation.mutate(submitData);
