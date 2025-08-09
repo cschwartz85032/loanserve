@@ -81,6 +81,7 @@ export default function Documents() {
   };
 
   const getFileTypeIcon = (fileType: string) => {
+    if (!fileType) return '📎';
     if (fileType.includes('pdf')) return '📄';
     if (fileType.includes('image')) return '🖼️';
     if (fileType.includes('word') || fileType.includes('doc')) return '📝';
