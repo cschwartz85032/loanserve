@@ -60,27 +60,37 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
       First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
       
       Then extract any relevant information including:
-      - Property details (address, type, value)
-      - Loan information (amount, rate, term, type)
-      - Borrower information (name, income, SSN)
+      - Property details (separate street address, city, state, zip, type, value)
+      - Loan information (amount, rate, term, type, prepayment terms)
+      - Borrower information (name, income, SSN, mailing address separate from property)
       - Payment details (monthly payment, escrow, HOA)
       - Financial details (down payment, closing costs, PMI, taxes, insurance)
-      - Important dates (closing, first payment)
+      - Important dates (closing, first payment, prepayment expiration)
+      
+      IMPORTANT: Extract addresses with separate components - do not combine into single address field.
+      The borrower's mailing address may be different from the property address.
       
       Return your response as JSON in this exact format:
       {
         "documentType": "document_category_here",
         "extractedData": {
-          "propertyAddress": "extracted_value_or_null",
+          "propertyStreetAddress": "street_address_only_or_null",
+          "propertyCity": "city_only_or_null",
+          "propertyState": "state_only_or_null",
+          "propertyZipCode": "zip_code_only_or_null",
           "propertyType": "extracted_value_or_null",
           "propertyValue": number_or_null,
+          "borrowerName": "extracted_value_or_null",
+          "borrowerSSN": "extracted_value_or_null",
+          "borrowerIncome": number_or_null,
+          "borrowerStreetAddress": "borrower_street_address_or_null",
+          "borrowerCity": "borrower_city_or_null",
+          "borrowerState": "borrower_state_or_null",
+          "borrowerZipCode": "borrower_zip_code_or_null",
           "loanAmount": number_or_null,
           "interestRate": number_or_null,
           "loanTerm": number_or_null,
           "loanType": "extracted_value_or_null",
-          "borrowerName": "extracted_value_or_null",
-          "borrowerSSN": "extracted_value_or_null",
-          "borrowerIncome": number_or_null,
           "monthlyPayment": number_or_null,
           "escrowAmount": number_or_null,
           "hoaFees": number_or_null,
@@ -90,7 +100,8 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
           "taxes": number_or_null,
           "insurance": number_or_null,
           "closingDate": "YYYY-MM-DD_or_null",
-          "firstPaymentDate": "YYYY-MM-DD_or_null"
+          "firstPaymentDate": "YYYY-MM-DD_or_null",
+          "prepaymentExpirationDate": "YYYY-MM-DD_or_null"
         },
         "confidence": 0.85
       }`

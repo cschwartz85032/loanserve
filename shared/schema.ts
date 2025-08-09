@@ -361,6 +361,7 @@ export const loans = pgTable("loans", {
   prepaymentPenalty: boolean("prepayment_penalty").default(false),
   prepaymentPenaltyTerm: integer("prepayment_penalty_term"), // months
   prepaymentPenaltyAmount: decimal("prepayment_penalty_amount", { precision: 10, scale: 2 }),
+  prepaymentExpirationDate: date("prepayment_expiration_date"),
   // Dates
   applicationDate: date("application_date"),
   approvalDate: date("approval_date"),

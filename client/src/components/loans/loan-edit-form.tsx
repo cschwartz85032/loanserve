@@ -132,6 +132,9 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       if (cleanData.maturityDate && typeof cleanData.maturityDate === 'string') {
         cleanData.maturityDate = cleanData.maturityDate;
       }
+      if (cleanData.prepaymentExpirationDate && typeof cleanData.prepaymentExpirationDate === 'string') {
+        cleanData.prepaymentExpirationDate = cleanData.prepaymentExpirationDate;
+      }
       
       const res = await apiRequest("PUT", `/api/loans/${loanId}`, cleanData);
       if (!res.ok) throw new Error('Failed to update loan');

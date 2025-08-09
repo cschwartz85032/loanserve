@@ -76,10 +76,14 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     propertyZip: "",
     propertyValue: "",
     
-    // Borrower Information
+    // Borrower Information (separate from property)
     borrowerName: "",
     borrowerEmail: "",
     borrowerPhone: "",
+    borrowerAddress: "",
+    borrowerCity: "",
+    borrowerState: "",
+    borrowerZip: "",
     coborrowerName: "",
     
     // Payment Information
@@ -88,6 +92,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     firstPaymentDate: "",
     nextPaymentDate: "",
     maturityDate: "",
+    prepaymentExpirationDate: "",
     
     // Additional Fees
     hazardInsurance: "",
@@ -261,10 +266,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       
       // Property Information (only update if we have valid data)
       ...(cleanString(extractedData.propertyType) && { propertyType: normalizePropertyType(extractedData.propertyType) }),
-      ...(cleanString(extractedData.propertyAddress || extractedData.address) && { propertyAddress: cleanString(extractedData.propertyAddress || extractedData.address) }),
+      ...(cleanString(extractedData.propertyStreetAddress || extractedData.propertyAddress || extractedData.address) && { propertyAddress: cleanString(extractedData.propertyStreetAddress || extractedData.propertyAddress || extractedData.address) }),
       ...(cleanString(extractedData.propertyCity || extractedData.city) && { propertyCity: cleanString(extractedData.propertyCity || extractedData.city) }),
       ...(cleanString(extractedData.propertyState || extractedData.state) && { propertyState: cleanString(extractedData.propertyState || extractedData.state) }),
-      ...(cleanString(extractedData.propertyZip || extractedData.zipCode) && { propertyZip: cleanString(extractedData.propertyZip || extractedData.zipCode) }),
+      ...(cleanString(extractedData.propertyZipCode || extractedData.propertyZip || extractedData.zipCode) && { propertyZip: cleanString(extractedData.propertyZipCode || extractedData.propertyZip || extractedData.zipCode) }),
       ...(toString(extractedData.propertyValue || extractedData.appraisedValue) && { propertyValue: toString(extractedData.propertyValue || extractedData.appraisedValue) }),
       
       // Borrower Information (only update if we have valid data)
@@ -273,12 +278,19 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       ...(cleanString(extractedData.borrowerPhone) && { borrowerPhone: cleanString(extractedData.borrowerPhone) }),
       ...(cleanString(extractedData.coborrowerName || extractedData.coBorrower) && { coborrowerName: cleanString(extractedData.coborrowerName || extractedData.coBorrower) }),
       
+      // Borrower Address (separate from property address)
+      ...(cleanString(extractedData.borrowerStreetAddress) && { borrowerAddress: cleanString(extractedData.borrowerStreetAddress) }),
+      ...(cleanString(extractedData.borrowerCity) && { borrowerCity: cleanString(extractedData.borrowerCity) }),
+      ...(cleanString(extractedData.borrowerState) && { borrowerState: cleanString(extractedData.borrowerState) }),
+      ...(cleanString(extractedData.borrowerZipCode) && { borrowerZip: cleanString(extractedData.borrowerZipCode) }),
+      
       // Payment Information (only update if we have valid data)
       ...(toString(extractedData.paymentAmount || extractedData.monthlyPayment) && { paymentAmount: toString(extractedData.paymentAmount || extractedData.monthlyPayment) }),
       ...(toString(extractedData.escrowAmount) && { escrowAmount: toString(extractedData.escrowAmount) }),
       ...(cleanString(extractedData.firstPaymentDate) && !cleanString(extractedData.firstPaymentDate).includes('YYYY-MM-DD') && { firstPaymentDate: cleanString(extractedData.firstPaymentDate) }),
       ...(cleanString(extractedData.nextPaymentDate) && !cleanString(extractedData.nextPaymentDate).includes('YYYY-MM-DD') && { nextPaymentDate: cleanString(extractedData.nextPaymentDate) }),
       ...(cleanString(extractedData.maturityDate) && !cleanString(extractedData.maturityDate).includes('YYYY-MM-DD') && { maturityDate: cleanString(extractedData.maturityDate) }),
+      ...(cleanString(extractedData.prepaymentExpirationDate) && !cleanString(extractedData.prepaymentExpirationDate).includes('YYYY-MM-DD') && { prepaymentExpirationDate: cleanString(extractedData.prepaymentExpirationDate) }),
       
       // Additional Fees (only update if we have valid data)
       ...(toString(extractedData.hazardInsurance || extractedData.insuranceAmount) && { hazardInsurance: toString(extractedData.hazardInsurance || extractedData.insuranceAmount) }),
@@ -380,8 +392,18 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         maturityDate: cleanDate(data.maturityDate) || maturityDate,
         firstPaymentDate: cleanDate(data.firstPaymentDate),
         nextPaymentDate: cleanDate(data.nextPaymentDate),
+        prepaymentExpirationDate: data.prepaymentExpirationDate ? cleanDate(data.prepaymentExpirationDate) : null,
         lenderId: user?.id,
         servicerId: user?.id,
+        // Borrower information
+        borrowerName: cleanString(data.borrowerName) || null,
+        borrowerEmail: cleanString(data.borrowerEmail) || null,  
+        borrowerPhone: cleanString(data.borrowerPhone) || null,
+        // Borrower mailing address (separate from property)
+        borrowerAddress: cleanString(data.borrowerAddress) || null,
+        borrowerCity: cleanString(data.borrowerCity) || null,
+        borrowerState: cleanString(data.borrowerState) || null,
+        borrowerZip: cleanString(data.borrowerZip) || null,
         // Additional fields
         hazardInsurance: data.hazardInsurance?.toString() || "0",
         propertyTaxes: data.propertyTaxes?.toString() || "0",
@@ -825,6 +847,45 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                         id="borrowerPhone"
                         value={formData.borrowerPhone}
                         onChange={(e) => handleInputChange('borrowerPhone', e.target.value)}
+                      />
+                    </div>
+                    
+                    {/* Borrower Mailing Address Section */}
+                    <div className="col-span-2">
+                      <h4 className="text-md font-medium mb-3 text-gray-700">Borrower Mailing Address (if different from property)</h4>
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="borrowerAddress">Street Address</Label>
+                      <Input
+                        id="borrowerAddress"
+                        value={formData.borrowerAddress}
+                        onChange={(e) => handleInputChange('borrowerAddress', e.target.value)}
+                        placeholder="Leave blank if same as property address"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="borrowerCity">City</Label>
+                      <Input
+                        id="borrowerCity"
+                        value={formData.borrowerCity}
+                        onChange={(e) => handleInputChange('borrowerCity', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="borrowerState">State</Label>
+                      <Input
+                        id="borrowerState"
+                        value={formData.borrowerState}
+                        onChange={(e) => handleInputChange('borrowerState', e.target.value)}
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="borrowerZip">ZIP Code</Label>
+                      <Input
+                        id="borrowerZip"
+                        value={formData.borrowerZip}
+                        onChange={(e) => handleInputChange('borrowerZip', e.target.value)}
                       />
                     </div>
                   </div>
