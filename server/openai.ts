@@ -2,7 +2,10 @@ import OpenAI from "openai";
 import fs from "fs/promises";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: 180000 // 3 minutes timeout like the working example
+});
 
 export interface DocumentAnalysisResult {
   documentType: string;
@@ -70,7 +73,7 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
       IMPORTANT: Extract addresses with separate components - do not combine into single address field.
       The borrower's mailing address may be different from the property address.
       
-      Return your response as JSON in this exact format:
+      CRITICAL: You must respond with valid JSON format. Return your response as JSON in this exact format:
       {
         "documentType": "document_category_here",
         "extractedData": {
@@ -104,7 +107,9 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
           "prepaymentExpirationDate": "YYYY-MM-DD_or_null"
         },
         "confidence": 0.85
-      }`
+      }
+      
+      Your response must be valid JSON only. Do not include any other text outside the JSON object.`
     }];
 
     if (isImage) {
@@ -120,7 +125,7 @@ export async function analyzeDocument(filePath: string, fileName: string): Promi
       
       content[0].text = `IMPORTANT: I have received a PDF document named "${fileName}" (${Math.round(fileBuffer.length / 1024)}KB).
 
-Unfortunately, I cannot directly extract text from PDF documents in this environment. Since you cannot see the PDF content, please respond with:
+Unfortunately, I cannot directly extract text from PDF documents in this environment. Since you cannot see the PDF content, please respond with JSON format containing:
 
 {
   "documentType": "pdf_document",
@@ -158,11 +163,13 @@ Unfortunately, I cannot directly extract text from PDF documents in this environ
   "error": "Cannot process PDF files - text extraction not available in current environment"
 }
 
+CRITICAL: You must respond with valid JSON format only. Do not include any other text.
+
 File: ${fileName}
 Size: ${Math.round(fileBuffer.length / 1024)}KB`;
     } else {
       // For other document types (DOCX, etc.)
-      content[0].text += `\n\nAnalyzing document: ${fileName} (${Math.round(fileBuffer.length / 1024)}KB)\nPlease extract loan information from this ${fileName.split('.').pop()?.toUpperCase()} document.`;
+      content[0].text += `\n\nAnalyzing document: ${fileName} (${Math.round(fileBuffer.length / 1024)}KB)\nPlease extract loan information from this ${fileName.split('.').pop()?.toUpperCase()} document and respond in JSON format.`;
     }
 
     console.log("AI PROMPT SENT TO GPT-4o:", {
