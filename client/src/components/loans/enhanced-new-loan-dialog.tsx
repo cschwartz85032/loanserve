@@ -201,12 +201,38 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
     // Helper to convert values to string
     const toString = (val: any) => val ? String(val) : "";
+    
+    // Helper to normalize property type
+    const normalizePropertyType = (type: string) => {
+      if (!type) return "single_family";
+      const normalized = type.toLowerCase();
+      if (normalized.includes('single') || normalized.includes('family')) return 'single_family';
+      if (normalized.includes('condo')) return 'condo';
+      if (normalized.includes('town')) return 'townhouse';
+      if (normalized.includes('multi')) return 'multi_family';
+      if (normalized.includes('manufactured')) return 'manufactured';
+      if (normalized.includes('commercial')) return 'commercial';
+      if (normalized.includes('land')) return 'land';
+      if (normalized.includes('mixed')) return 'mixed_use';
+      return 'single_family';
+    };
+    
+    // Helper to normalize loan type
+    const normalizeLoanType = (type: string) => {
+      if (!type) return "conventional";
+      const normalized = type.toLowerCase();
+      if (normalized.includes('conventional') || normalized.includes('fixed')) return 'conventional';
+      if (normalized.includes('fha')) return 'fha';
+      if (normalized.includes('va')) return 'va';
+      if (normalized.includes('usda')) return 'usda';
+      return 'conventional';
+    };
 
     setFormData(prev => ({
       ...prev,
       // Loan Information
       loanNumber: extractedData.loanNumber || prev.loanNumber,
-      loanType: extractedData.loanType || prev.loanType,
+      loanType: normalizeLoanType(extractedData.loanType) || prev.loanType,
       originalAmount: toString(extractedData.originalAmount || extractedData.loanAmount) || prev.originalAmount,
       principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) || prev.principalBalance,
       interestRate: toString(extractedData.interestRate) || prev.interestRate,
@@ -214,7 +240,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       loanTerm: toString(extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
       
       // Property Information
-      propertyType: extractedData.propertyType || prev.propertyType,
+      propertyType: normalizePropertyType(extractedData.propertyType) || prev.propertyType,
       propertyAddress: extractedData.propertyAddress || extractedData.address || prev.propertyAddress,
       propertyCity: extractedData.propertyCity || extractedData.city || prev.propertyCity,
       propertyState: extractedData.propertyState || extractedData.state || prev.propertyState,
@@ -584,6 +610,33 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Property Information</h3>
                   <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="propertyType">Property Type</Label>
+                      <Select value={formData.propertyType} onValueChange={(value) => handleInputChange('propertyType', value)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="single_family">Single Family</SelectItem>
+                          <SelectItem value="condo">Condo</SelectItem>
+                          <SelectItem value="townhouse">Townhouse</SelectItem>
+                          <SelectItem value="multi_family">Multi-Family</SelectItem>
+                          <SelectItem value="manufactured">Manufactured</SelectItem>
+                          <SelectItem value="commercial">Commercial</SelectItem>
+                          <SelectItem value="land">Land</SelectItem>
+                          <SelectItem value="mixed_use">Mixed Use</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="propertyValue">Property Value</Label>
+                      <Input
+                        id="propertyValue"
+                        type="number"
+                        value={formData.propertyValue}
+                        onChange={(e) => handleInputChange('propertyValue', e.target.value)}
+                      />
+                    </div>
                     <div className="col-span-2 space-y-2">
                       <Label htmlFor="propertyAddress">Property Address</Label>
                       <Input
@@ -619,15 +672,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                         value={formData.propertyZip}
                         onChange={(e) => handleInputChange('propertyZip', e.target.value)}
                         required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="propertyValue">Property Value</Label>
-                      <Input
-                        id="propertyValue"
-                        type="number"
-                        value={formData.propertyValue}
-                        onChange={(e) => handleInputChange('propertyValue', e.target.value)}
                       />
                     </div>
                   </div>
