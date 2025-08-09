@@ -50,12 +50,23 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
       const property = await propertyResponse.json();
       
       // Then create the loan with the property ID
+      // Convert numbers to strings for decimal fields as required by database
       const loanData = {
-        ...data,
+        loanNumber: data.loanNumber,
+        loanType: "conventional",
         propertyId: property.id,
+        originalAmount: data.originalAmount.toString(),
+        principalBalance: data.principalBalance.toString(),
+        interestRate: data.interestRate.toString(),
         rateType: "fixed",
+        loanTerm: data.loanTerm,
+        paymentAmount: data.paymentAmount.toString(),
         status: "active",
-        maturityDate: new Date(new Date().setMonth(new Date().getMonth() + parseInt(data.termMonths))).toISOString().split('T')[0]
+        maturityDate: new Date(new Date().setMonth(new Date().getMonth() + parseInt(data.termMonths))).toISOString().split('T')[0],
+        firstPaymentDate: data.firstPaymentDate,
+        nextPaymentDate: data.nextPaymentDate,
+        lenderId: data.lenderId,
+        servicerId: data.servicerId
       };
       
       const response = await apiRequest("POST", "/api/loans", loanData);
@@ -108,12 +119,12 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
     
     const submitData = {
       loanNumber: formData.loanNumber,
-      originalAmount: parseFloat(formData.originalAmount),
-      principalBalance: parseFloat(formData.originalAmount),
-      interestRate: parseFloat(formData.interestRate),
+      originalAmount: formData.originalAmount,
+      principalBalance: formData.originalAmount,
+      interestRate: formData.interestRate,
       loanTerm: parseInt(formData.termMonths),
-      termMonths: parseInt(formData.termMonths),
-      paymentAmount: monthlyPayment,
+      termMonths: formData.termMonths,
+      paymentAmount: monthlyPayment.toFixed(2),
       propertyAddress: formData.propertyAddress,
       propertyCity: formData.propertyCity,
       propertyState: formData.propertyState,
