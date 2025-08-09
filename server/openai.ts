@@ -1,14 +1,18 @@
 import fs from "fs/promises";
-import pdf2pic from "pdf2pic";
 import axios, { AxiosError } from "axios";
+import { setTimeout } from "timers/promises";
+import { fromPath } from "pdf2pic";
 import { v4 as uuidv4 } from "uuid";
+import { getDocument } from "pdfjs-dist";
 
-// Dynamic import for pdf-parse to handle ESM compatibility
-let PDFParser: any;
-try {
-  PDFParser = (await import("pdf-parse")).default;
-} catch (error) {
-  console.warn("pdf-parse not available, text extraction disabled");
+// Verify module availability at runtime
+if (!fromPath) {
+  throw new Error("pdf2pic module is not installed. Run `npm install pdf2pic`");
+}
+if (!getDocument) {
+  throw new Error(
+    "pdfjs-dist module is not installed. Run `npm install pdfjs-dist`",
+  );
 }
 
 export interface DocumentAnalysisResult {
@@ -132,81 +136,81 @@ export class DocumentAnalysisService {
     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
     const isPDF = /\.pdf$/i.test(fileName);
     return `Analyze this ${isImage ? "image" : "PDF document"} named "${fileName}" completely and extract all relevant mortgage loan information.
-              === DOCUMENT ANALYSIS ===
-              Document: ${fileName}
-              Size: ${Math.round(fileBuffer.length / 1024)}KB
-              Type: ${isImage ? "Image" : "PDF"}
-              ${documentText ? `Content: ${documentText.substring(0, 5000)}` : ""}
-              === EXTRACTION REQUIREMENTS ===
-              First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
-              Then extract any relevant information from the COMPLETE document including:
-              - Property details (separate street address, city, state, zip, type, value)
-              - Loan information (amount, rate, term, type, prepayment terms)
-              - Borrower information (name, income, SSN, mailing address separate from property)
-              - Payment details (monthly payment, escrow, HOA)
-              - Financial details (down payment, closing costs, PMI, taxes, insurance)
-              - Important dates (closing, first payment, prepayment expiration)
-              - Trustee information (name, street address, city, state, zip)
-              - Beneficiary information (name, street address, city, state, zip)
-              - Loan documents mentioned (e.g., Note, Deed of Trust, etc.)
-              - Default conditions (key events that constitute default, summarized)
-              - Insurance requirements (specific types and coverage details)
-              - Cross-default parties (entities listed in cross-default clauses)
-              IMPORTANT:
-              - Extract addresses with separate components - do not combine into single address field.
-              - The borrower's mailing address may be different from the property address.
-              - Ensure all extracted data matches the document content exactly; do not infer or generate fictitious data.
-              - If information is missing or unclear, return null for that field.
-              - For PDF documents, prioritize text content provided in the prompt over image analysis if available.
-              Return a JSON object with extracted data: {
-                "documentType": "document_category_here",
-                "extractedData": {
-                  "propertyStreetAddress": "street_address_only_or_null",
-                  "propertyCity": "city_only_or_null",
-                  "propertyState": "state_only_or_null",
-                  "propertyZipCode": "zip_code_only_or_null",
-                  "propertyType": "extracted_value_or_null",
-                  "propertyValue": null,
-                  "borrowerName": "extracted_value_or_null",
-                  "borrowerSSN": null,
-                  "borrowerIncome": null,
-                  "borrowerStreetAddress": "borrower_street_address_or_null",
-                  "borrowerCity": "borrower_city_or_null",
-                  "borrowerState": "borrower_state_or_null",
-                  "borrowerZipCode": "borrower_zip_code_or_null",
-                  "loanAmount": number_or_null,
-                  "interestRate": null,
-                  "loanTerm": null,
-                  "loanType": "extracted_value_or_null",
-                  "monthlyPayment": null,
-                  "escrowAmount": null,
-                  "hoaFees": null,
-                  "downPayment": null,
-                  "closingCosts": null,
-                  "pmi": null,
-                  "taxes": null,
-                  "insurance": null,
-                  "closingDate": "YYYY-MM-DD_or_null",
-                  "firstPaymentDate": "YYYY-MM-DD_or_null",
-                  "prepaymentExpirationDate": null,
-                  "trusteeName": "extracted_value_or_null",
-                  "trusteeStreetAddress": "street_address_only_or_null",
-                  "trusteeCity": "city_only_or_null",
-                  "trusteeState": "state_only_or_null",
-                  "trusteeZipCode": "zip_code_only_or_null",
-                  "beneficiaryName": "extracted_value_or_null",
-                  "beneficiaryStreetAddress": "street_address_only_or_null",
-                  "beneficiaryCity": "city_only_or_null",
-                  "beneficiaryState": "state_only_or_null",
-                  "beneficiaryZipCode": "zip_code_only_or_null",
-                  "loanDocuments": ["array_of_documents_or_null"],
-                  "defaultConditions": ["array_of_conditions_or_null"],
-                  "insuranceRequirements": ["array_of_requirements_or_null"],
-                  "crossDefaultParties": ["array_of_entities_or_null"]
-                },
-                "confidence": 0.85
-              }
-              IMPORTANT: Include the complete document context in the analysis and ensure accuracy with provided text.`;
+=== DOCUMENT ANALYSIS ===
+Document: ${fileName}
+Size: ${Math.round(fileBuffer.length / 1024)}KB
+Type: ${isImage ? "Image" : "PDF"}
+${documentText ? `Content: ${documentText.substring(0, 5000)}` : ""}
+=== EXTRACTION REQUIREMENTS ===
+First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).
+Then extract any relevant information from the COMPLETE document including:
+- Property details (separate street address, city, state, zip, type, value)
+- Loan information (amount, rate, term, type, prepayment terms)
+- Borrower information (name, income, SSN, mailing address separate from property)
+- Payment details (monthly payment, escrow, HOA)
+- Financial details (down payment, closing costs, PMI, taxes, insurance)
+- Important dates (closing, first payment, prepayment expiration)
+- Trustee information (name, street address, city, state, zip)
+- Beneficiary information (name, street address, city, state, zip)
+- Loan documents mentioned (e.g., Note, Deed of Trust, etc.)
+- Default conditions (key events that constitute default, summarized)
+- Insurance requirements (specific types and coverage details)
+- Cross-default parties (entities listed in cross-default clauses)
+IMPORTANT:
+- Extract addresses with separate components - do not combine into single address field.
+- The borrower's mailing address may be different from the property address.
+- Ensure all extracted data matches the document content exactly; do not infer or generate fictitious data.
+- If information is missing or unclear, return null for that field.
+- For PDF documents, prioritize text content provided in the prompt over image analysis if available.
+Return a JSON object with extracted data: {
+  "documentType": "document_category_here",
+  "extractedData": {
+    "propertyStreetAddress": "street_address_only_or_null",
+    "propertyCity": "city_only_or_null",
+    "propertyState": "state_only_or_null",
+    "propertyZipCode": "zip_code_only_or_null",
+    "propertyType": "extracted_value_or_null",
+    "propertyValue": null,
+    "borrowerName": "extracted_value_or_null",
+    "borrowerSSN": null,
+    "borrowerIncome": null,
+    "borrowerStreetAddress": "borrower_street_address_or_null",
+    "borrowerCity": "borrower_city_or_null",
+    "borrowerState": "borrower_state_or_null",
+    "borrowerZipCode": "borrower_zip_code_or_null",
+    "loanAmount": number_or_null,
+    "interestRate": null,
+    "loanTerm": null,
+    "loanType": "extracted_value_or_null",
+    "monthlyPayment": null,
+    "escrowAmount": null,
+    "hoaFees": null,
+    "downPayment": null,
+    "closingCosts": null,
+    "pmi": null,
+    "taxes": null,
+    "insurance": null,
+    "closingDate": "YYYY-MM-DD_or_null",
+    "firstPaymentDate": "YYYY-MM-DD_or_null",
+    "prepaymentExpirationDate": null,
+    "trusteeName": "extracted_value_or_null",
+    "trusteeStreetAddress": "street_address_only_or_null",
+    "trusteeCity": "city_only_or_null",
+    "trusteeState": "state_only_or_null",
+    "trusteeZipCode": "zip_code_only_or_null",
+    "beneficiaryName": "extracted_value_or_null",
+    "beneficiaryStreetAddress": "street_address_only_or_null",
+    "beneficiaryCity": "city_only_or_null",
+    "beneficiaryState": "state_only_or_null",
+    "beneficiaryZipCode": "zip_code_only_or_null",
+    "loanDocuments": ["array_of_documents_or_null"],
+    "defaultConditions": ["array_of_conditions_or_null"],
+    "insuranceRequirements": ["array_of_requirements_or_null"],
+    "crossDefaultParties": ["array_of_entities_or_null"]
+  },
+  "confidence": 0.85
+}
+IMPORTANT: Include the complete document context in the analysis and ensure accuracy with provided text.`;
   }
 
   private async extractPDFText(
