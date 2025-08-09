@@ -3,7 +3,7 @@ import axios, { AxiosError } from "axios";
 import { setTimeout } from "timers/promises";
 import { v4 as uuidv4 } from "uuid";
 
-// Import pdf2pic and pdfjs-dist with runtime checks
+// Use dynamic imports for pdf2pic and pdfjs-dist (legacy build)
 let fromPath: any;
 let getDocument: any;
 
@@ -17,9 +17,9 @@ try {
 }
 
 try {
-  ({ getDocument } = await import("pdfjs-dist"));
+  ({ getDocument } = await import("pdfjs-dist/legacy/build/pdf.js"));
 } catch (error) {
-  console.error("[FATAL] Failed to load pdfjs-dist module", {
+  console.error("[FATAL] Failed to load pdfjs-dist legacy build", {
     error: error.message,
   });
   throw new Error(
