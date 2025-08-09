@@ -234,27 +234,23 @@ IMPORTANT: Include the complete document context in the analysis.`;
                 content: content
               }],
               response_format: { type: "json_object" },
-              temperature: 0.1, // Very low for consistency
+              temperature: 0.1,
               max_tokens: 2000,
+              stream: true,
             },
+            responseType: "stream",
             timeout: this.timeout,
             validateStatus: (status) => status === 200,
           });
 
           console.log({
             duration: Date.now() - startTime,
+            headers: response.headers,
             model,
             promptLength: prompt.length
-          }, `API call completed successfully with ${model}`);
+          }, `API call initiated successfully with ${model}`);
 
-          const rawResponse = response.data?.choices?.[0]?.message?.content;
-          console.log("AI RESPONSE FROM GROK:", rawResponse);
-
-          if (!rawResponse) {
-            throw new Error('Empty response from API');
-          }
-
-          const result = JSON.parse(rawResponse);
+          const result = await this.processDocumentStream(response);
           
           // Validate we got actual data
           if (!result || (!result.documentType && !result.extractedData)) {
@@ -346,6 +342,95 @@ IMPORTANT: Include the complete document context in the analysis.`;
       extractedData: {},
       confidence: 0
     };
+  }
+
+  private async processDocumentStream(response: any): Promise<any> {
+    let buffer = '';
+    let jsonContent = '';
+    let hasData = false;
+
+    return new Promise((resolve, reject) => {
+      // Set timeout for initial data - if no data in 20 seconds, reject
+      const timeoutId = setTimeout(() => {
+        if (!hasData) {
+          console.error("No data received within 20 seconds, treating as failure");
+          reject(new Error("No data received from API within timeout"));
+        }
+      }, 20000);
+
+      response.data.on("data", (chunk: Buffer) => {
+        if (!hasData) clearTimeout(timeoutId);
+        
+        const chunkStr = chunk.toString();
+        buffer += chunkStr;
+        
+        // Check if we have meaningful data (not just whitespace)
+        if (chunkStr.trim()) hasData = true;
+        
+        // Process complete SSE lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            
+            if (data === '[DONE]') {
+              // Stream completed, parse the accumulated JSON
+              console.log(`Stream completed. JSON content length: ${jsonContent.length}`);
+              
+              if (!jsonContent || jsonContent.length === 0) {
+                console.error('Empty response received from API - no content accumulated');
+                reject(new Error('Empty response from API'));
+                return;
+              }
+              
+              try {
+                const result = JSON.parse(jsonContent);
+                console.log("AI RESPONSE FROM GROK:", JSON.stringify(result));
+                resolve(result);
+                return;
+              } catch (e: any) {
+                console.error('Failed to parse JSON:', e.message);
+                reject(new Error(`JSON parse error: ${e.message}`));
+                return;
+              }
+            }
+            
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+              
+              if (content) {
+                jsonContent += content;
+              }
+            } catch (e) {
+              // Skip invalid JSON chunks
+            }
+          }
+        }
+      });
+
+      response.data.on("end", () => {
+        if (jsonContent) {
+          try {
+            const result = JSON.parse(jsonContent);
+            console.log("AI RESPONSE FROM GROK:", JSON.stringify(result));
+            resolve(result);
+          } catch (e: any) {
+            console.error('Failed to parse final JSON:', e.message);
+            reject(new Error(`Final JSON parse error: ${e.message}`));
+          }
+        } else {
+          reject(new Error('No content received from stream'));
+        }
+      });
+
+      response.data.on("error", (error: any) => {
+        console.error('Stream error:', error);
+        reject(new Error(`Stream error: ${error.message}`));
+      });
+    });
   }
 }
 
