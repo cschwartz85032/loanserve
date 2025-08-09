@@ -751,6 +751,13 @@ To implement full file serving:
     }
   });
 
+  // Helper function to safely parse numeric values
+  function safeParseNumber(value: any, defaultValue: number = 0): number {
+    if (value === null || value === undefined || value === '') return defaultValue;
+    const parsed = typeof value === 'string' ? parseFloat(value) : Number(value);
+    return isNaN(parsed) ? defaultValue : parsed;
+  }
+
   // Helper function to determine document category
   function determineCategory(fileName: string): string {
     const lowerName = fileName.toLowerCase();
@@ -968,32 +975,35 @@ To implement full file serving:
     try {
       const { extractedData, documentTypes } = req.body;
       
-      // Create loan with AI-extracted data
+      // Create loan with AI-extracted data using safe numeric parsing
+      const loanAmount = safeParseNumber(extractedData.loanAmount);
+      const loanTerm = safeParseNumber(extractedData.loanTerm, 30);
+      
       const loanData = {
         borrowerName: extractedData.borrowerName || "Unknown",
         propertyAddress: extractedData.propertyAddress || "Unknown",
-        loanAmount: extractedData.loanAmount || 0,
-        interestRate: extractedData.interestRate || 0,
-        loanTerm: extractedData.loanTerm || 30,
-        monthlyPayment: extractedData.monthlyPayment || 0,
+        loanAmount: loanAmount,
+        interestRate: safeParseNumber(extractedData.interestRate),
+        loanTerm: loanTerm,
+        monthlyPayment: safeParseNumber(extractedData.monthlyPayment),
         loanStatus: "active" as const,
         originationDate: new Date().toISOString().split('T')[0],
-        maturityDate: new Date(Date.now() + (extractedData.loanTerm || 30) * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        remainingBalance: extractedData.loanAmount || 0,
+        maturityDate: new Date(Date.now() + loanTerm * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        remainingBalance: loanAmount,
         nextPaymentDate: extractedData.firstPaymentDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        nextPaymentAmount: extractedData.monthlyPayment || 0,
+        nextPaymentAmount: safeParseNumber(extractedData.monthlyPayment),
         servicingFee: 25, // Default servicing fee
         // Additional extracted fields
         loanType: extractedData.loanType || "conventional",
         propertyType: extractedData.propertyType || "single_family",
-        propertyValue: extractedData.propertyValue || 0,
-        downPayment: extractedData.downPayment || 0,
-        closingCosts: extractedData.closingCosts || 0,
-        pmiAmount: extractedData.pmi || 0,
-        hazardInsurance: extractedData.insurance || 0,
-        propertyTaxes: extractedData.taxes || 0,
-        hoaFees: extractedData.hoaFees || 0,
-        escrowAmount: extractedData.escrowAmount || 0,
+        propertyValue: safeParseNumber(extractedData.propertyValue),
+        downPayment: safeParseNumber(extractedData.downPayment),
+        closingCosts: safeParseNumber(extractedData.closingCosts),
+        pmiAmount: safeParseNumber(extractedData.pmi),
+        hazardInsurance: safeParseNumber(extractedData.insurance),
+        propertyTaxes: safeParseNumber(extractedData.taxes),
+        hoaFees: safeParseNumber(extractedData.hoaFees),
+        escrowAmount: safeParseNumber(extractedData.escrowAmount),
       };
 
       const validatedData = insertLoanSchema.parse(loanData);

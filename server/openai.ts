@@ -486,20 +486,30 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
 
         if (chunkStr.includes("[DONE]")) {
           try {
-            const jsonStart = jsonContent.indexOf("{");
-            const jsonEnd = jsonContent.lastIndexOf("}");
+            // Clean the JSON content by removing any streaming artifacts
+            let cleanContent = jsonContent.replace(/data:\s*\{/g, '{');
+            cleanContent = cleanContent.replace(/data:\s*/g, '');
+            cleanContent = cleanContent.replace(/\[DONE\]/g, '');
+            cleanContent = cleanContent.trim();
+            
+            const jsonStart = cleanContent.indexOf("{");
+            const jsonEnd = cleanContent.lastIndexOf("}");
             if (jsonStart === -1 || jsonEnd === -1) {
               this.logger.error("Invalid JSON structure in stream");
               reject(new Error("Invalid JSON structure"));
               return;
             }
 
-            const jsonStr = jsonContent.slice(jsonStart, jsonEnd + 1);
+            const jsonStr = cleanContent.slice(jsonStart, jsonEnd + 1);
+            this.logger.info("Stream completed. JSON content length:", jsonStr.length);
+            this.logger.info("Successfully parsed document analysis result");
+            
             const result = JSON.parse(jsonStr);
+            this.logger.info("Full Grok analysis JSON:", JSON.stringify(result, null, 2));
+            
             if (result && (result.documentType || result.extractedData)) {
-              this.logger.info("Stream processing completed", {
-                resultLength: jsonStr.length,
-              });
+              this.logger.info("Successfully analyzed document with grok-4-0709");
+              this.logger.info("Successfully parsed final document analysis result");
               resolve(result);
             } else {
               this.logger.error("Response lacks valid document analysis data");
@@ -522,20 +532,30 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
         }
 
         try {
-          const jsonStart = jsonContent.indexOf("{");
-          const jsonEnd = jsonContent.lastIndexOf("}");
+          // Clean the JSON content by removing any streaming artifacts
+          let cleanContent = jsonContent.replace(/data:\s*\{/g, '{');
+          cleanContent = cleanContent.replace(/data:\s*/g, '');
+          cleanContent = cleanContent.replace(/\[DONE\]/g, '');
+          cleanContent = cleanContent.trim();
+          
+          const jsonStart = cleanContent.indexOf("{");
+          const jsonEnd = cleanContent.lastIndexOf("}");
           if (jsonStart === -1 || jsonEnd === -1) {
             this.logger.error("Invalid JSON structure in final content");
             reject(new Error("Invalid JSON structure"));
             return;
           }
 
-          const jsonStr = jsonContent.slice(jsonStart, jsonEnd + 1);
+          const jsonStr = cleanContent.slice(jsonStart, jsonEnd + 1);
+          this.logger.info("Stream completed. JSON content length:", jsonStr.length);
+          this.logger.info("Successfully parsed document analysis result");
+          
           const result = JSON.parse(jsonStr);
+          this.logger.info("Full Grok analysis JSON:", JSON.stringify(result, null, 2));
+          
           if (result && (result.documentType || result.extractedData)) {
-            this.logger.info("Stream completed", {
-              resultLength: jsonStr.length,
-            });
+            this.logger.info("Successfully analyzed document with grok-4-0709");
+            this.logger.info("Successfully parsed final document analysis result");
             resolve(result);
           } else {
             this.logger.error(
