@@ -1,7 +1,31 @@
 import fs from "fs/promises";
-import pdf2pic from "pdf2pic";
 import axios, { AxiosError } from "axios";
+import { setTimeout } from "timers/promises";
 import { v4 as uuidv4 } from "uuid";
+
+// Use require for pdf-parse and pdf2pic to avoid import issues
+let PDFParser: any;
+let fromPath: any;
+
+try {
+  PDFParser = require("pdf-parse");
+} catch (error) {
+  console.error("[FATAL] Failed to load pdf-parse module", {
+    error: error.message,
+  });
+  throw new Error(
+    "pdf-parse module is not installed. Run `npm install pdf-parse`",
+  );
+}
+
+try {
+  ({ fromPath } = require("pdf2pic"));
+} catch (error) {
+  console.error("[FATAL] Failed to load pdf2pic module", {
+    error: error.message,
+  });
+  throw new Error("pdf2pic module is not installed. Run `npm install pdf2pic`");
+}
 
 export interface DocumentAnalysisResult {
   documentType: string;
@@ -84,7 +108,7 @@ export class DocumentAnalysisService {
       initialRetryDelay: 500,
       maxFileSize: 10 * 1024 * 1024, // 10MB
       maxPagesToConvert: 5,
-      maxJsonContentSize: 1000000, // 1MB limit for JSON content
+      maxJsonContentSize: 1000000, // 1MB
     };
     this.logger = {
       info: (message, meta = {}) => console.log(`[INFO] ${message}`, meta),
@@ -507,7 +531,6 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
           chunkCount,
         });
 
-        // Avoid accumulating too much data
         if (
           jsonContent.length + chunkStr.length >
           this.config.maxJsonContentSize
@@ -522,7 +545,6 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
 
         jsonContent += chunkStr;
 
-        // Process Server-Sent Events (SSE)
         const lines = chunkStr.split("\n");
         for (const line of lines) {
           if (line.startsWith("data: ")) {
@@ -573,7 +595,6 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
               }
             }
 
-            // Try parsing individual data chunk
             try {
               const parsed = JSON.parse(data);
               const content = parsed.choices?.[0]?.delta?.content;
@@ -639,7 +660,7 @@ IMPORTANT: Include the complete document context in the analysis and ensure accu
       response.data.on("error", (error: Error) => {
         clearTimeout(timeoutId);
         this.logger.error("Stream error", { error: error.message });
-        reject(new Error(`Stream error: ${error.message}`));
+        reject(new Error(`Stream error: ${e.message}`));
       });
     });
   }
