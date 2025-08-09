@@ -342,10 +342,38 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       }
       return response.json();
     },
-    onSuccess: (loan) => {
+    onSuccess: async (loan) => {
+      // If there are uploaded files, create document records
+      if (files.length > 0) {
+        try {
+          for (const fileData of files) {
+            if (fileData.status === 'completed' && fileData.file) {
+              const formData = new FormData();
+              formData.append('file', fileData.file);
+              formData.append('loanId', loan.id.toString());
+              formData.append('category', 'loan_document');
+              formData.append('description', `AI-analyzed: ${fileData.documentType || 'Unknown document type'}`);
+
+              const response = await fetch('/api/documents/upload', {
+                method: 'POST',
+                credentials: 'include',
+                body: formData
+              });
+
+              if (!response.ok) {
+                console.error('Failed to save document:', fileData.file.name);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error saving documents:', error);
+          // Don't show error to user as loan was created successfully
+        }
+      }
+
       toast({
         title: "Success",
-        description: "Loan created successfully",
+        description: "Loan created successfully with documents",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
       queryClient.invalidateQueries({ queryKey: ["/api/loans/metrics"] });

@@ -594,14 +594,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create document record in database
       const document = await storage.createDocument({
         loanId: parseInt(loanId),
-        fileName: req.file.originalname,
-        fileType: req.file.mimetype,
-        fileSize: req.file.size.toString(),
-        filePath: `/uploads/${req.file.filename}`,
         category: category || 'loan_document',
+        title: req.file.originalname,
         description: description || `Uploaded ${req.file.originalname}`,
-        uploadedBy: req.user?.id,
-        uploadedAt: new Date()
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        storageUrl: `/uploads/${req.file.filename}`,
+        uploadedBy: req.user?.id
       });
 
       res.status(201).json(document);

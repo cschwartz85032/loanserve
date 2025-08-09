@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, Calculator, DollarSign, Home, Calendar, FileText } from "lucide-react";
+import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2 } from "lucide-react";
 import { DocumentUploader } from "@/components/documents/document-uploader";
 
 interface LoanEditFormProps {
@@ -42,6 +42,19 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Fetch loan data
   const { data: loan, isLoading } = useQuery({
     queryKey: [`/api/loans/${loanId}`],
+    enabled: !!loanId
+  });
+
+  // Fetch documents for this loan
+  const { data: documents, refetch: refetchDocuments } = useQuery({
+    queryKey: [`/api/documents`, { loanId }],
+    queryFn: async () => {
+      const response = await fetch(`/api/documents?loanId=${loanId}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch documents');
+      return response.json();
+    },
     enabled: !!loanId
   });
 
@@ -455,15 +468,61 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </div>
             </div>
 
-            {/* Document Upload Section */}
+            {/* Document Management Section */}
             <div className="space-y-4 border-t pt-6 mt-6">
               <h3 className="text-lg font-semibold flex items-center text-blue-600">
                 <FileText className="mr-2 h-5 w-5" />
                 Document Management
               </h3>
+              
+              {/* Existing Documents */}
+              {documents && documents.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-md font-medium text-gray-700">Attached Documents</h4>
+                  <div className="grid gap-3">
+                    {documents.map((doc: any) => (
+                      <div key={doc.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex items-center space-x-3">
+                          <FileText className="h-5 w-5 text-blue-500" />
+                          <div>
+                            <p className="font-medium text-gray-900">{doc.title || doc.fileName}</p>
+                            <p className="text-sm text-gray-500">{doc.description}</p>
+                            <p className="text-xs text-gray-400">
+                              {doc.mimeType} • {Math.round((doc.fileSize || 0) / 1024)}KB
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => window.open(doc.storageUrl, '_blank')}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = doc.storageUrl;
+                              link.download = doc.fileName;
+                              link.click();
+                            }}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Upload New Documents */}
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                 <p className="text-sm text-blue-700 mb-3">
-                  Upload loan documents, contracts, and supporting files here
+                  Upload additional loan documents, contracts, and supporting files
                 </p>
                 <DocumentUploader 
                   loanId={parseInt(loanId)} 
@@ -472,6 +531,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       title: "Documents uploaded",
                       description: "All documents have been attached to this loan.",
                     });
+                    refetchDocuments();
                   }}
                 />
               </div>
