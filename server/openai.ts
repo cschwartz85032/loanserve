@@ -166,8 +166,8 @@ IMPORTANT: Include the complete document context in the analysis.`;
     
     const prompt = this.buildDocumentAnalysisPrompt(fileName, fileBuffer);
     
-    // Use your model fallback system
-    const modelsToTry = ["grok-vision-beta", "grok-beta", "grok-2-vision-1212", "grok-2-1212"];
+    // Use your exact model fallback system
+    const modelsToTry = ["grok-4-0709", "grok-3", "grok-2-1212"];
     let lastError: any = null;
 
     for (const model of modelsToTry) {
@@ -187,8 +187,8 @@ IMPORTANT: Include the complete document context in the analysis.`;
             text: prompt
           }];
 
-          // Add image data for vision models or if it's an image
-          if (isImage && (model.includes('vision') || model === 'grok-beta')) {
+          // Add image data if it's an image
+          if (isImage) {
             const base64File = fileBuffer.toString('base64');
             content.push({
               type: "image_url",
@@ -202,7 +202,7 @@ IMPORTANT: Include the complete document context in the analysis.`;
             contentType: isImage ? 'image' : isPDF ? 'pdf' : 'document',
             fileName,
             textPromptLength: prompt.length,
-            hasImageData: isImage && (model.includes('vision') || model === 'grok-beta'),
+            hasImageData: isImage,
             fileSize: fileBuffer.length,
             model: model
           });
