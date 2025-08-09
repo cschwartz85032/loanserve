@@ -1,5 +1,6 @@
-import OpenAI from "openai";
 import fs from "fs/promises";
+import axios, { AxiosError } from "axios";
+import { setTimeout } from "timers/promises";
 
 export interface DocumentAnalysisResult {
   documentType: string;
@@ -46,32 +47,44 @@ export interface DocumentAnalysisResult {
 }
 
 /**
- * Document analysis service using OpenAI GPT-4o - adapted from working Grok implementation
+ * Document analysis service using Grok - based on your working implementation
  */
 export class DocumentAnalysisService {
-  private openai: OpenAI;
+  private apiKey: string;
+  private baseURL: string;
+  private timeout: number;
 
   constructor() {
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.trim() === "") {
       throw new Error("OPENAI_API_KEY is missing or invalid");
     }
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      timeout: 180000,
-    });
+    this.apiKey = process.env.OPENAI_API_KEY;
+    this.baseURL = "https://api.x.ai/v1";
+    this.timeout = 180000;
   }
 
   private async validateApiKeyAndModel(model: string): Promise<boolean> {
     try {
-      // Simple validation - just check if API key exists
-      if (!process.env.OPENAI_API_KEY) {
-        console.error("OPENAI_API_KEY not found");
+      const response = await axios({
+        url: `${this.baseURL}/models`,
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        timeout: 5000,
+      });
+      const availableModels = response.data.data || [];
+      console.log("Available models:", availableModels.map((m: any) => m.id));
+      if (!availableModels.find((m: any) => m.id === model)) {
+        console.warn(
+          `Model ${model} not available. Available models:`,
+          availableModels.map((m: any) => m.id),
+        );
         return false;
       }
-      console.log(`Using model: ${model}`);
       return true;
     } catch (error) {
-      console.error("Failed to validate API key:", error.message);
+      console.error("Failed to validate API key or model:", error.message);
       return false;
     }
   }
@@ -145,11 +158,11 @@ IMPORTANT: Include the complete document context in the analysis.`;
     return prompt;
   }
 
-  async analyzeDocumentWithOpenAI(fileName: string, fileBuffer: Buffer): Promise<DocumentAnalysisResult> {
+  async analyzeDocumentWithGrok(fileName: string, fileBuffer: Buffer): Promise<DocumentAnalysisResult> {
     console.log(`Processing document: ${fileName}, size: ${fileBuffer.length} bytes`);
 
-    if (!(await this.validateApiKeyAndModel("gpt-4o"))) {
-      throw new Error("API key validation failed for gpt-4o model");
+    if (!(await this.validateApiKeyAndModel("grok-beta"))) {
+      throw new Error("API key validation failed for grok-beta model");
     }
 
     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
@@ -173,7 +186,7 @@ IMPORTANT: Include the complete document context in the analysis.`;
         });
       }
 
-      console.log("AI PROMPT SENT TO GPT-4o:", {
+      console.log("AI PROMPT SENT TO GROK:", {
         contentType: isImage ? 'image' : isPDF ? 'pdf' : 'document',
         fileName,
         textPromptLength: prompt.length,
@@ -181,18 +194,27 @@ IMPORTANT: Include the complete document context in the analysis.`;
         fileSize: fileBuffer.length
       });
 
-      const response = await this.openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{
-          role: "user",
-          content: content
-        }],
-        response_format: { type: "json_object" },
-        max_tokens: 1500,
+      const response = await axios({
+        url: `${this.baseURL}/chat/completions`,
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        data: {
+          messages: [{
+            role: "user",
+            content: content
+          }],
+          model: "grok-beta",
+          stream: false,
+          temperature: 0,
+        },
+        timeout: this.timeout,
       });
 
-      const rawResponse = response.choices[0].message.content;
-      console.log("AI RESPONSE FROM GPT-4o:", rawResponse);
+      const rawResponse = response.data?.choices?.[0]?.message?.content;
+      console.log("AI RESPONSE FROM GROK:", rawResponse);
 
       const result = JSON.parse(rawResponse || "{}");
       
@@ -204,6 +226,14 @@ IMPORTANT: Include the complete document context in the analysis.`;
 
     } catch (error) {
       console.error("Error analyzing document:", error);
+      
+      if (error instanceof AxiosError) {
+        console.error("Axios error details:", {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data
+        });
+      }
       
       if (isPDF) {
         return {
@@ -227,7 +257,7 @@ const documentAnalysisService = new DocumentAnalysisService();
 export async function analyzeDocument(filePath: string, fileName: string): Promise<DocumentAnalysisResult> {
   try {
     const fileBuffer = await fs.readFile(filePath);
-    return await documentAnalysisService.analyzeDocumentWithOpenAI(fileName, fileBuffer);
+    return await documentAnalysisService.analyzeDocumentWithGrok(fileName, fileBuffer);
   } catch (error) {
     console.error("Error reading document file:", error);
     return {
