@@ -127,6 +127,17 @@ export function DocumentManager() {
 
   const uploadFile = async (file: File) => {
     try {
+      // First, prompt user to select a loan
+      const loanId = prompt("Enter the Loan ID to attach this document to:");
+      if (!loanId) {
+        toast({
+          title: "Upload cancelled",
+          description: "A loan must be selected to upload documents",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Show uploading state
       toast({
         title: "Uploading",
@@ -138,6 +149,7 @@ export function DocumentManager() {
       formData.append('file', file);
       formData.append('title', file.name.split('.')[0]);
       formData.append('description', 'Uploaded via drag and drop');
+      formData.append('loanId', loanId);
       
       // Upload file to server
       const res = await fetch('/api/documents/upload', {
@@ -155,7 +167,7 @@ export function DocumentManager() {
 
       toast({
         title: "Upload Complete",
-        description: `${file.name} has been added to the document library`,
+        description: `${file.name} has been attached to loan #${loanId}`,
       });
 
       // Refresh document list
@@ -249,7 +261,7 @@ export function DocumentManager() {
           <div className="text-center">
             <CloudUpload className="w-16 h-16 text-primary-600 mx-auto mb-4" />
             <p className="text-xl font-semibold text-primary-900">Drop files to upload</p>
-            <p className="text-sm text-primary-700 mt-2">Files will be automatically added to the document library</p>
+            <p className="text-sm text-primary-700 mt-2">You'll be prompted to select a loan to attach the documents to</p>
           </div>
         </div>
       )}
@@ -271,46 +283,7 @@ export function DocumentManager() {
         </Card>
       )}
 
-      {/* Document Categories */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Document Library</CardTitle>
-          <p className="text-sm text-slate-600">Drag and drop files anywhere to upload</p>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Drag and Drop Instructions */}
-            <div className="col-span-1">
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center bg-slate-50">
-                <CloudUpload className="mx-auto h-12 w-12 text-slate-400 mb-4" />
-                <div>
-                  <p className="text-sm font-medium text-slate-900 mb-1">Drag & Drop Files</p>
-                  <p className="text-xs text-slate-600">Drop files anywhere on this page</p>
-                  <p className="text-xs text-slate-600 mt-1">PDF, DOC, JPG up to 10MB</p>
-                </div>
-              </div>
-            </div>
 
-            {/* Document Categories */}
-            <div className="col-span-2">
-              <h4 className="text-sm font-medium text-slate-900 mb-3">Document Categories</h4>
-              <div className="grid grid-cols-2 gap-3">
-                {documentCategories.map((category) => (
-                  <div key={category.type} className="p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer">
-                    <div className="flex items-center space-x-3">
-                      <category.icon className={`w-5 h-5 ${category.color}`} />
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{category.label}</p>
-                        <p className="text-xs text-slate-500">{category.count.toLocaleString()} documents</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Document List */}
       <Card>
