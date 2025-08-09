@@ -55,10 +55,20 @@ export class DocumentAnalysisService {
   private timeout: number;
 
   constructor() {
-    if (!process.env.XAI_API_KEY || process.env.XAI_API_KEY.trim() === "") {
-      throw new Error("XAI_API_KEY is missing or invalid");
+    // Try both environment variable names to handle caching issues
+    const apiKey = process.env.XAI_API_KEY_NEW || process.env.XAI_API_KEY;
+    
+    console.log("XAI API KEY environment check:", {
+      XAI_API_KEY: !!process.env.XAI_API_KEY,
+      XAI_API_KEY_NEW: !!process.env.XAI_API_KEY_NEW,
+      usingKey: apiKey?.substring(0, 8) + "...",
+      length: apiKey?.length
+    });
+    
+    if (!apiKey || apiKey.trim() === "") {
+      throw new Error("XAI_API_KEY or XAI_API_KEY_NEW is missing or invalid");
     }
-    this.apiKey = process.env.XAI_API_KEY;
+    this.apiKey = apiKey;
     this.baseURL = "https://api.x.ai/v1";
     this.timeout = 180000;
   }
