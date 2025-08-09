@@ -1,6 +1,5 @@
 import fs from "fs/promises";
 import axios, { AxiosError } from "axios";
-import { setTimeout } from "timers/promises";
 import { fromPath } from "pdf2pic";
 import { v4 as uuidv4 } from "uuid";
 
@@ -253,24 +252,40 @@ IMPORTANT: Include the complete document context in the analysis.`;
       size: fileBuffer.length,
     });
 
-    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
-    const isPDF = /\.pdf$/i.test(fileName);
     const prompt = this.buildDocumentAnalysisPrompt(fileName, fileBuffer);
+    const result = await this.generateDocumentAnalysisWithStreaming(prompt, fileName, fileBuffer);
+    
+    return {
+      documentType: result.documentType || "unknown",
+      extractedData: result.extractedData || {},
+      confidence: result.confidence || 0.5,
+    };
+  }
+
+  private async generateDocumentAnalysisWithStreaming(
+    prompt: string,
+    fileName: string,
+    fileBuffer: Buffer,
+  ): Promise<any> {
     const modelsToTry = ["grok-4-0709", "grok-3", "grok-2-1212"];
-    let lastError: Error | null = null;
+    let lastError: any = null;
 
     for (const model of modelsToTry) {
-      this.logger.info(`Attempting analysis with model`, { model });
+      this.logger.info(`Attempting to use model: ${model}`);
+      const maxRetries = 3;
+      let retryCount = 0;
+      let delay = 500;
 
-      for (
-        let retryCount = 0;
-        retryCount < this.config.maxRetries;
-        retryCount++
-      ) {
+      while (retryCount < maxRetries) {
         try {
           const startTime = Date.now();
+          
+          const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
+          const isPDF = /\.pdf$/i.test(fileName);
+          
           const content: any[] = [{ type: "text", text: prompt }];
 
+          // Add image data for images or convert PDF to images for all Grok models
           if (isImage) {
             content.push({
               type: "image_url",
@@ -279,188 +294,235 @@ IMPORTANT: Include the complete document context in the analysis.`;
               },
             });
           } else if (isPDF) {
-            const images = await this.convertPDFToImages(fileBuffer);
-            images.forEach((base64Image) => {
-              content.push({
-                type: "image_url",
-                image_url: { url: `data:image/png;base64,${base64Image}` },
+            try {
+              const images = await this.convertPDFToImages(fileBuffer);
+              images.forEach((base64Image) => {
+                content.push({
+                  type: "image_url",
+                  image_url: { url: `data:image/png;base64,${base64Image}` },
+                });
               });
-            });
+            } catch (pdfError) {
+              this.logger.error('PDF conversion failed:', pdfError);
+              // Continue without images
+            }
           }
 
           const response = await axios({
-            url: `${this.config.baseURL}/chat/completions`,
+            url: "https://api.x.ai/v1/chat/completions",
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${this.apiKey}`,
             },
             data: {
-              model,
+              model: model,
               messages: [
                 {
                   role: "system",
-                  content:
-                    "You are an expert mortgage document analysis AI. Extract all relevant loan, property, borrower, trustee, beneficiary, and related information from the provided document with high accuracy.",
+                  content: "You are an expert mortgage document analysis AI. Extract all relevant loan, property, borrower, trustee, beneficiary, and related information from the provided document with high accuracy.",
                 },
-                {
-                  role: "user",
-                  content,
-                },
+                { role: "user", content },
               ],
               response_format: { type: "json_object" },
               temperature: 0.1,
-              max_tokens: 3000, // Increased to accommodate additional data
+              max_tokens: 4000,
               stream: true,
             },
             responseType: "stream",
-            timeout: this.config.timeout,
+            timeout: 180000,
+            validateStatus: (status) => status === 200,
           });
 
-          this.logger.info(`API call initiated`, {
-            model,
+          this.logger.info({ 
             duration: Date.now() - startTime,
-            promptLength: prompt.length,
-          });
-
+            headers: response.headers,
+            model,
+            promptLength: prompt.length 
+          }, `API call initiated successfully with ${model}`);
+          
           const result = await this.processDocumentStream(response);
-
+          
+          // Validate we got actual data
           if (!result || (!result.documentType && !result.extractedData)) {
-            throw new Error("No valid data in response");
+            this.logger.warn(`No valid data generated with ${model}, treating as failure`);
+            throw new Error('No valid data in response');
           }
-
-          this.logger.info(`Document analyzed successfully`, {
-            model,
-            documentType: result.documentType,
-          });
-          return {
-            documentType: result.documentType || "unknown",
-            extractedData: result.extractedData || {},
-            confidence: result.confidence || 0.5,
-          };
+          
+          this.logger.info(`Successfully analyzed document with ${model}`);
+          return result;
+          
         } catch (error) {
-          lastError = error as Error;
+          lastError = error;
           const axiosError = error as AxiosError;
-
-          this.logger.error(`Analysis attempt failed`, {
-            model,
-            retry: retryCount + 1,
-            error: lastError.message,
-          });
-
-          if (axiosError.response?.status === 429) {
-            const delay =
-              this.config.initialRetryDelay * Math.pow(2, retryCount);
-            this.logger.warn(`Rate limited, retrying after ${delay}ms`, {
-              model,
-              retry: retryCount + 1,
+          const errorMessage = (error as Error).message;
+          
+          // Handle empty response or no data - try next model immediately
+          if (errorMessage === 'Empty response from API' || 
+              errorMessage === 'No data received from API' ||
+              errorMessage === 'No data received from API within timeout' ||
+              errorMessage === 'No valid data in response' || 
+              errorMessage === 'Invalid response format' ||
+              errorMessage.startsWith('JSON parse error:')) {
+            this.logger.warn(`Model ${model} returned empty/invalid response, trying next model...`);
+            break; // Exit retry loop for this model, try next model
+          }
+          
+          if (axiosError.response) {
+            this.logger.error(`API error for ${model}:`, {
+              status: axiosError.response.status,
+              data: axiosError.response.data,
             });
-            await setTimeout(delay);
+            
+            // Model not found or invalid - try next model
+            if (axiosError.response.status === 400 || axiosError.response.status === 404) {
+              this.logger.warn(`Model ${model} not available, trying next model...`);
+              break;
+            }
+            
+            // Rate limit - retry same model
+            if (axiosError.response.status === 429) {
+              this.logger.warn(`Rate limit for ${model}, retrying in ${delay}ms...`);
+              retryCount++;
+              await new Promise(resolve => global.setTimeout(resolve, delay));
+              delay *= 2;
+              continue;
+            }
+            
+            // Server error - retry same model
+            if (axiosError.response.status >= 500) {
+              this.logger.warn(`Server error for ${model}, retrying in ${delay}ms...`);
+              retryCount++;
+              await new Promise(resolve => global.setTimeout(resolve, delay));
+              delay *= 2;
+              continue;
+            }
+          } else if (axiosError.code === "ECONNABORTED") {
+            this.logger.warn(`Timeout for ${model} attempt ${retryCount + 1}. Retrying in ${delay}ms...`);
+            retryCount++;
+            await new Promise(resolve => global.setTimeout(resolve, delay));
+            delay *= 2;
             continue;
           }
-
-          if (
-            axiosError.response?.status === 400 ||
-            axiosError.response?.status === 404
-          ) {
-            this.logger.warn(`Model ${model} not available, trying next model`);
-            break;
-          }
-
-          if (retryCount === this.config.maxRetries - 1) {
-            this.logger.warn(
-              `Retries exhausted for ${model}, trying next model`,
-            );
-            break;
-          }
-
-          const delay = this.config.initialRetryDelay * Math.pow(2, retryCount);
-          await setTimeout(delay);
+          
+          // Unexpected error - try next model
+          this.logger.error(`Unexpected error for ${model}:`, errorMessage);
+          break;
         }
       }
     }
-
-    this.logger.error("All models failed", { lastError: lastError?.message });
-    return {
-      documentType: isPDF ? "pdf_document" : "unknown",
-      extractedData: {},
-      confidence: 0,
-    };
+    
+    // All models failed
+    this.logger.error("All models failed. Last error:", lastError);
+    throw lastError || new Error("All model attempts failed");
   }
 
   private async processDocumentStream(response: any): Promise<any> {
-    let jsonContent = "";
+    let buffer = '';
+    let jsonContent = '';
     let hasData = false;
 
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+      // Set timeout for initial data - if no data in 20 seconds, reject
+      const timeoutId = global.setTimeout(() => {
         if (!hasData) {
-          this.logger.error("No data received within timeout");
+          this.logger.error("No data received within 20 seconds, treating as failure");
           reject(new Error("No data received from API within timeout"));
         }
-      }, 20000);
+      }, 20000); // 20-second timeout for initial data
 
       response.data.on("data", (chunk: Buffer) => {
-        if (!hasData) clearTimeout(timeoutId);
-        hasData = true;
-
-        const lines = chunk.toString().split("\n");
+        if (!hasData) clearTimeout(timeoutId); // Clear timeout on first data
+        
+        const chunkStr = chunk.toString();
+        buffer += chunkStr;
+        
+        // Check if we have meaningful data (not just whitespace)
+        if (chunkStr.trim()) hasData = true;
+        
+        this.logger.info(`Received chunk: length=${chunkStr.length}`);
+        
+        // Process complete SSE lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+        
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
+          if (line.startsWith('data: ')) {
             const data = line.slice(6);
-            if (data === "[DONE]") {
-              if (!jsonContent) {
-                this.logger.error("Empty response received from API");
-                reject(new Error("Empty response from API"));
+            
+            if (data === '[DONE]') {
+              // Stream completed, parse the accumulated JSON
+              this.logger.info(`Stream completed. JSON content length: ${jsonContent.length}`);
+              
+              if (!jsonContent || jsonContent.length === 0) {
+                this.logger.error('Empty response received from API - no content accumulated');
+                reject(new Error('Empty response from API'));
                 return;
               }
-
+              
               try {
                 const result = JSON.parse(jsonContent);
-                this.logger.info("Stream processing completed", {
-                  resultLength: jsonContent.length,
-                });
-                resolve(result);
+                if (result && (result.documentType || result.extractedData)) {
+                  this.logger.info(`Successfully parsed document analysis result`);
+                  resolve(result);
+                } else {
+                  this.logger.error('Response does not contain valid document analysis data');
+                  reject(new Error('Invalid response format'));
+                }
                 return;
-              } catch (e) {
-                this.logger.error("JSON parse error", { error: e.message });
+              } catch (e: any) {
+                this.logger.error('Failed to parse JSON:', e.message);
                 reject(new Error(`JSON parse error: ${e.message}`));
                 return;
               }
             }
-
+            
             try {
               const parsed = JSON.parse(data);
               const content = parsed.choices?.[0]?.delta?.content;
-              if (content) jsonContent += content;
+              
+              if (content) {
+                jsonContent += content;
+              }
             } catch (e) {
-              this.logger.warn("Invalid JSON chunk in stream", { chunk: data });
+              // Not JSON, might be an error message
+              this.logger.info('Non-JSON data in stream:', data);
             }
           }
         }
       });
 
       response.data.on("end", () => {
+        clearTimeout(timeoutId); // Clear timeout when stream ends
+        
+        if (!hasData || !jsonContent) {
+          this.logger.error('Stream ended with no meaningful data');
+          reject(new Error('No data received from API'));
+          return;
+        }
+        
+        // Try to parse even if [DONE] wasn't received
         if (jsonContent) {
           try {
             const result = JSON.parse(jsonContent);
-            this.logger.info("Stream completed", {
-              resultLength: jsonContent.length,
-            });
-            resolve(result);
-          } catch (e) {
-            this.logger.error("Final JSON parse error", { error: e.message });
-            reject(new Error(`Final JSON parse error: ${e.message}`));
+            if (result && (result.documentType || result.extractedData)) {
+              this.logger.info(`Successfully parsed final document analysis result`);
+              resolve(result);
+              return;
+            }
+          } catch (e: any) {
+            this.logger.error('Failed to parse final content:', e.message);
           }
-        } else {
-          this.logger.error("No content received from stream");
-          reject(new Error("No content received from stream"));
         }
+        
+        this.logger.error('No valid analysis result generated');
+        reject(new Error('No valid data in response'));
       });
 
-      response.data.on("error", (error: Error) => {
-        this.logger.error("Stream error", { error: error.message });
-        reject(new Error(`Stream error: ${error.message}`));
+      response.data.on("error", (error: any) => {
+        clearTimeout(timeoutId); // Clear timeout on error
+        this.logger.error("Stream error:", error.message);
+        reject(error);
       });
     });
   }
