@@ -160,9 +160,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // });
 
       res.status(201).json(property);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating property:", error);
-      res.status(400).json({ error: "Invalid property data" });
+      const errorMessage = error.issues ? error.issues[0].message : error.message || "Invalid property data";
+      res.status(400).json({ error: errorMessage, details: error.issues || error.message });
     }
   });
 
@@ -260,9 +261,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // });
 
       res.status(201).json(loan);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating loan:", error);
-      res.status(400).json({ error: "Invalid loan data" });
+      const errorMessage = error.issues ? error.issues[0].message : error.message || "Invalid loan data";
+      res.status(400).json({ error: errorMessage, details: error.issues || error.message });
     }
   });
 

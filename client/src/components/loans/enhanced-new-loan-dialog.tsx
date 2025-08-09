@@ -291,6 +291,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       };
       
       const propertyResponse = await apiRequest("POST", "/api/properties", propertyData);
+      if (!propertyResponse.ok) {
+        const errorData = await propertyResponse.json();
+        throw new Error(errorData.error || errorData.message || 'Failed to create property');
+      }
       const property = await propertyResponse.json();
       
       // Calculate monthly payment if not provided
@@ -332,6 +336,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       };
       
       const response = await apiRequest("POST", "/api/loans", loanData);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.message || 'Failed to create loan');
+      }
       return response.json();
     },
     onSuccess: (loan) => {
