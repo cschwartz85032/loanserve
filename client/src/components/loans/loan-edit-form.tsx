@@ -122,18 +122,37 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       // Convert date strings to proper format for database
       const cleanData = { ...data };
       
-      // Convert date fields to proper format if they exist
-      if (cleanData.firstPaymentDate && typeof cleanData.firstPaymentDate === 'string') {
-        cleanData.firstPaymentDate = cleanData.firstPaymentDate;
+      // Convert date fields to proper format if they exist - ensure they are valid date strings
+      const formatDateForDb = (dateValue: any): string | null => {
+        if (!dateValue) return null;
+        if (typeof dateValue === 'string') {
+          // Check if it's already in YYYY-MM-DD format
+          if (dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            return dateValue;
+          }
+          // Try to parse and format the date
+          const parsedDate = new Date(dateValue);
+          if (!isNaN(parsedDate.getTime())) {
+            return parsedDate.toISOString().split('T')[0];
+          }
+        }
+        if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+          return dateValue.toISOString().split('T')[0];
+        }
+        return null;
+      };
+
+      if (cleanData.firstPaymentDate) {
+        cleanData.firstPaymentDate = formatDateForDb(cleanData.firstPaymentDate);
       }
-      if (cleanData.nextPaymentDate && typeof cleanData.nextPaymentDate === 'string') {
-        cleanData.nextPaymentDate = cleanData.nextPaymentDate;
+      if (cleanData.nextPaymentDate) {
+        cleanData.nextPaymentDate = formatDateForDb(cleanData.nextPaymentDate);
       }
-      if (cleanData.maturityDate && typeof cleanData.maturityDate === 'string') {
-        cleanData.maturityDate = cleanData.maturityDate;
+      if (cleanData.maturityDate) {
+        cleanData.maturityDate = formatDateForDb(cleanData.maturityDate);
       }
-      if (cleanData.prepaymentExpirationDate && typeof cleanData.prepaymentExpirationDate === 'string') {
-        cleanData.prepaymentExpirationDate = cleanData.prepaymentExpirationDate;
+      if (cleanData.prepaymentExpirationDate) {
+        cleanData.prepaymentExpirationDate = formatDateForDb(cleanData.prepaymentExpirationDate);
       }
       
       const res = await apiRequest("PUT", `/api/loans/${loanId}`, cleanData);
@@ -428,6 +447,49 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                     type="number"
                     value={formData.closingCosts || ''}
                     onChange={(e) => handleInputChange('closingCosts', parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Important Dates */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Important Dates</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstPaymentDate">First Payment Date</Label>
+                  <Input
+                    id="firstPaymentDate"
+                    type="date"
+                    value={formData.firstPaymentDate || ''}
+                    onChange={(e) => handleInputChange('firstPaymentDate', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="nextPaymentDate">Next Payment Date</Label>
+                  <Input
+                    id="nextPaymentDate"
+                    type="date"
+                    value={formData.nextPaymentDate || ''}
+                    onChange={(e) => handleInputChange('nextPaymentDate', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="maturityDate">Maturity Date</Label>
+                  <Input
+                    id="maturityDate"
+                    type="date"
+                    value={formData.maturityDate || ''}
+                    onChange={(e) => handleInputChange('maturityDate', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="prepaymentExpirationDate">Prepayment Penalty Expiration</Label>
+                  <Input
+                    id="prepaymentExpirationDate"
+                    type="date"
+                    value={formData.prepaymentExpirationDate || ''}
+                    onChange={(e) => handleInputChange('prepaymentExpirationDate', e.target.value)}
                   />
                 </div>
               </div>
