@@ -67,11 +67,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   }, [loan]);
 
   const calculatePayments = (loanData: any) => {
-    console.log('Calculating payments with loan data:', loanData);
-    const principal = parseFloat(loanData.loanAmount) || 0;
+    // Use originalAmount if loanAmount is not available
+    const principal = parseFloat(loanData.loanAmount || loanData.originalAmount) || 0;
     const annualRate = parseFloat(loanData.interestRate) || 0;
     const termYears = parseFloat(loanData.loanTerm) || 30;
-    console.log('Principal:', principal, 'Rate:', annualRate, 'Term:', termYears);
     
     const monthlyRate = annualRate / 100 / 12;
     const numPayments = termYears * 12;
@@ -125,6 +124,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       // Convert date strings to proper format for database
       const cleanData = { ...data };
       
+      // Remove any timestamp fields that might cause issues
+      delete cleanData.createdAt;
+      delete cleanData.updatedAt;
+      delete cleanData.statusDate;
+      
       // Convert date fields to proper format if they exist - ensure they are valid date strings
       const formatDateForDb = (dateValue: any): string | null => {
         if (!dateValue) return null;
@@ -145,18 +149,17 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         return null;
       };
 
-      if (cleanData.firstPaymentDate) {
-        cleanData.firstPaymentDate = formatDateForDb(cleanData.firstPaymentDate);
-      }
-      if (cleanData.nextPaymentDate) {
-        cleanData.nextPaymentDate = formatDateForDb(cleanData.nextPaymentDate);
-      }
-      if (cleanData.maturityDate) {
-        cleanData.maturityDate = formatDateForDb(cleanData.maturityDate);
-      }
-      if (cleanData.prepaymentExpirationDate) {
-        cleanData.prepaymentExpirationDate = formatDateForDb(cleanData.prepaymentExpirationDate);
-      }
+      // Only set date fields if they have values
+      ['firstPaymentDate', 'nextPaymentDate', 'maturityDate', 'prepaymentExpirationDate'].forEach(field => {
+        if (cleanData[field]) {
+          const formattedDate = formatDateForDb(cleanData[field]);
+          if (formattedDate) {
+            cleanData[field] = formattedDate;
+          } else {
+            delete cleanData[field]; // Remove invalid dates
+          }
+        }
+      });
       
       const res = await apiRequest("PUT", `/api/loans/${loanId}`, cleanData);
       if (!res.ok) throw new Error('Failed to update loan');
@@ -283,7 +286,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
                     <DollarSign className="h-4 w-4 text-gray-500" />
-                    <span>Loan Amount: {formatCurrency(parseFloat(formData.loanAmount) || 0)}</span>
+                    <span>Loan Amount: {formatCurrency(parseFloat(formData.loanAmount || formData.originalAmount) || 0)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{formData.interestRate || 0}% APR</Badge>
@@ -309,7 +312,23 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       <div className="lg:col-span-2">
         <Card>
           <CardHeader>
-            <CardTitle>Edit Loan Details</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              <span>Edit Loan Details</span>
+              <div className="flex gap-4 text-sm text-gray-600">
+                {formData.loanNumber && (
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium">Loan #:</span>
+                    <Badge variant="outline">{formData.loanNumber}</Badge>
+                  </div>
+                )}
+                {formData.escrowNumber && (
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium">Escrow #:</span>
+                    <Badge variant="outline">{formData.escrowNumber}</Badge>
+                  </div>
+                )}
+              </div>
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Basic Information */}

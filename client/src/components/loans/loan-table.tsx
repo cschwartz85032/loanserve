@@ -5,13 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, MoreHorizontal } from "lucide-react";
+import { Search, Edit2, Trash2, Eye } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface LoanTableProps {
   onEditLoan?: (loanId: string) => void;
+  onViewLoan?: (loanId: string) => void;
+  onDeleteLoan?: (loanId: string) => void;
 }
 
-export function LoanTable({ onEditLoan }: LoanTableProps) {
+export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
@@ -147,7 +150,12 @@ export function LoanTable({ onEditLoan }: LoanTableProps) {
                 loans.map((loan: any) => (
                   <tr key={loan.id} className="hover:bg-slate-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-primary-600">#{loan.loanNumber}</span>
+                      <button
+                        onClick={() => onEditLoan?.(loan.id.toString())}
+                        className="text-sm font-medium text-primary-600 hover:text-primary-800 hover:underline"
+                      >
+                        #{loan.loanNumber}
+                      </button>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm text-slate-900">
@@ -175,18 +183,55 @@ export function LoanTable({ onEditLoan }: LoanTableProps) {
                       </Badge>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex items-center space-x-2">
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => onEditLoan?.(loan.id.toString())}
-                        >
-                          Edit
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <TooltipProvider>
+                        <div className="flex items-center space-x-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => onViewLoan?.(loan.id.toString())}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>View Loan</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => onEditLoan?.(loan.id.toString())}
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Edit Loan</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => onDeleteLoan?.(loan.id.toString())}
+                                className="text-red-600 hover:text-red-800"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Delete Loan</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
                     </td>
                   </tr>
                 ))
