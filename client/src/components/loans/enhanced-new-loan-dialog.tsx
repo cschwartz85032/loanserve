@@ -403,10 +403,33 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         try {
           for (const fileData of files) {
             if (fileData.status === 'completed' && fileData.file) {
+              // Map document type to valid category
+              const mapDocumentCategory = (docType: string): string => {
+                if (!docType) return 'other';
+                const lowerType = docType.toLowerCase();
+                if (lowerType.includes('application')) return 'loan_application';
+                if (lowerType.includes('agreement') || lowerType.includes('contract')) return 'loan_agreement';
+                if (lowerType.includes('note') || lowerType.includes('promissory')) return 'promissory_note';
+                if (lowerType.includes('deed')) return 'deed_of_trust';
+                if (lowerType.includes('mortgage')) return 'mortgage';
+                if (lowerType.includes('security')) return 'security_agreement';
+                if (lowerType.includes('ucc')) return 'ucc_filing';
+                if (lowerType.includes('assignment')) return 'assignment';
+                if (lowerType.includes('modification')) return 'modification';
+                if (lowerType.includes('insurance')) return 'insurance_policy';
+                if (lowerType.includes('tax')) return 'tax_document';
+                if (lowerType.includes('escrow')) return 'escrow_statement';
+                if (lowerType.includes('title')) return 'title_report';
+                if (lowerType.includes('appraisal')) return 'appraisal';
+                if (lowerType.includes('closing')) return 'closing_disclosure';
+                if (lowerType.includes('settlement')) return 'settlement_statement';
+                return 'other';
+              };
+
               const formData = new FormData();
               formData.append('file', fileData.file);
               formData.append('loanId', loan.id.toString());
-              formData.append('category', 'loan_document');
+              formData.append('category', mapDocumentCategory(fileData.documentType || ''));
               formData.append('description', `AI-analyzed: ${fileData.documentType || 'Unknown document type'}`);
 
               const response = await fetch('/api/documents/upload', {
