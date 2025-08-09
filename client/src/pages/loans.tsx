@@ -1,16 +1,14 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { LoanTable } from "@/components/loans/loan-table";
-import { NewLoanDialog } from "@/components/loans/new-loan-dialog";
-import { AILoanCreator } from "@/components/loans/ai-loan-creator";
+import { EnhancedNewLoanDialog } from "@/components/loans/enhanced-new-loan-dialog";
 import { LoanEditForm } from "@/components/loans/loan-edit-form";
 import { Button } from "@/components/ui/button";
-import { Plus, Filter, Bot, Edit } from "lucide-react";
+import { Plus, Filter } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function Loans() {
   const [showNewLoanDialog, setShowNewLoanDialog] = useState(false);
-  const [showAICreator, setShowAICreator] = useState(false);
   const [editingLoanId, setEditingLoanId] = useState<string | null>(null);
   const [, setLocation] = useLocation();
 
@@ -31,13 +29,9 @@ export default function Loans() {
                 <Filter className="h-4 w-4 mr-2" />
                 Advanced Filters
               </Button>
-              <Button variant="outline" onClick={() => setShowAICreator(true)}>
-                <Bot className="h-4 w-4 mr-2" />
-                AI Loan Creation
-              </Button>
               <Button onClick={() => setShowNewLoanDialog(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Manual Entry
+                Create New Loan
               </Button>
             </div>
           </div>
@@ -68,18 +62,12 @@ export default function Loans() {
         </div>
       </main>
 
-      {/* New Loan Dialog */}
-      <NewLoanDialog 
+      {/* Enhanced New Loan Dialog with AI */}
+      <EnhancedNewLoanDialog 
         open={showNewLoanDialog} 
-        onOpenChange={setShowNewLoanDialog} 
-      />
-
-      {/* AI Loan Creator */}
-      <AILoanCreator 
-        open={showAICreator}
-        onClose={() => setShowAICreator(false)}
+        onOpenChange={setShowNewLoanDialog}
         onLoanCreated={(loanId) => {
-          setShowAICreator(false);
+          setShowNewLoanDialog(false);
           setEditingLoanId(loanId);
         }}
       />

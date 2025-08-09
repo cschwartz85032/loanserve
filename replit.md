@@ -4,6 +4,15 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 
 ## Recent Changes (January 10, 2025)
 
+**Enhanced Loan Creation with AI Document Analysis - IN PROGRESS**
+- Created unified loan creation dialog with dual modes: AI document analysis and manual entry
+- Drag-and-drop functionality directly in creation form for automatic data extraction
+- AI analyzes documents one-by-one and fills ALL loan fields automatically
+- Form fields auto-populate as documents are processed with extracted data
+- Combined TabView interface for seamless switching between AI and manual modes
+- Document processing shows real-time status with visual feedback
+- Successful test of document analysis endpoint (confirmed working in logs)
+
 **Loan Creation Dialog Fixed - COMPLETED**
 - Fixed critical validation issues preventing loan creation
 - Implemented two-step creation: property first, then loan with property ID
