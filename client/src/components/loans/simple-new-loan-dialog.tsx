@@ -37,7 +37,28 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
 
   const createLoanMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest("POST", "/api/loans", data);
+      // First create the property
+      const propertyData = {
+        propertyType: "single_family",
+        address: data.propertyAddress,
+        city: data.propertyCity,
+        state: data.propertyState,
+        zipCode: data.propertyZip
+      };
+      
+      const propertyResponse = await apiRequest("POST", "/api/properties", propertyData);
+      const property = await propertyResponse.json();
+      
+      // Then create the loan with the property ID
+      const loanData = {
+        ...data,
+        propertyId: property.id,
+        rateType: "fixed",
+        status: "active",
+        maturityDate: new Date(new Date().setMonth(new Date().getMonth() + parseInt(data.termMonths))).toISOString().split('T')[0]
+      };
+      
+      const response = await apiRequest("POST", "/api/loans", loanData);
       return response.json();
     },
     onSuccess: () => {
@@ -90,17 +111,14 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
       originalAmount: parseFloat(formData.originalAmount),
       principalBalance: parseFloat(formData.originalAmount),
       interestRate: parseFloat(formData.interestRate),
-      currentInterestRate: parseFloat(formData.interestRate),
+      loanTerm: parseInt(formData.termMonths),
       termMonths: parseInt(formData.termMonths),
-      monthlyPaymentAmount: monthlyPayment,
-      currentPaymentAmount: monthlyPayment,
+      paymentAmount: monthlyPayment,
       propertyAddress: formData.propertyAddress,
       propertyCity: formData.propertyCity,
       propertyState: formData.propertyState,
       propertyZip: formData.propertyZip,
-      status: "active",
       loanType: "conventional",
-      originationDate: new Date().toISOString().split('T')[0],
       firstPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
       nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
       lenderId: user?.id,

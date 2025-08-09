@@ -185,6 +185,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============= PROPERTY ROUTES =============
+  app.post("/api/properties", isAuthenticated, async (req, res) => {
+    try {
+      const property = await storage.createProperty(req.body);
+      res.status(201).json(property);
+    } catch (error) {
+      console.error("Error creating property:", error);
+      res.status(400).json({ error: "Failed to create property" });
+    }
+  });
+
   // ============= LOAN ROUTES =============
   app.get("/api/loans", async (req, res) => {
     try {
