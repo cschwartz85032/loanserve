@@ -405,6 +405,15 @@ export const loans = pgTable("loans", {
   hmda: boolean("hmda").default(false),
   hoepa: boolean("hoepa").default(false),
   qm: boolean("qm").default(false), // Qualified Mortgage
+  // Borrower Information (basic contact info stored in loan for quick access)
+  borrowerName: text("borrower_name"),
+  borrowerEmail: text("borrower_email"),
+  borrowerPhone: text("borrower_phone"),
+  // Borrower mailing address (separate from property address)
+  borrowerAddress: text("borrower_address"),
+  borrowerCity: text("borrower_city"),
+  borrowerState: text("borrower_state"),
+  borrowerZip: text("borrower_zip"),
   // Additional fields
   notes: text("notes"),
   metadata: jsonb("metadata"),

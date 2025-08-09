@@ -4,6 +4,16 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 
 ## Recent Changes (January 10, 2025)
 
+**Enhanced AI Document Analysis with Granular Address Extraction - COMPLETED**
+- **Advanced Address Parsing**: AI now extracts separate address components (street, city, state, zip)  
+- **Borrower vs Property Addresses**: AI distinguishes between borrower mailing address and property address
+- **Prepayment Expiration Dates**: Added prepayment expiration date extraction and database field
+- **Enhanced AI Prompt**: Updated OpenAI GPT-4o prompt for more detailed property and borrower data extraction
+- **Database Schema Updates**: Added borrower address fields and prepayment expiration date to loans table
+- **Form Enhancements**: Loan creation forms now include separate borrower mailing address section
+- **JSON Response Format**: AI returns structured data with propertyStreetAddress, borrowerStreetAddress, etc.
+- **Data Validation**: Enhanced date and address field cleaning to prevent database errors
+
 **AI Loan Creation Document Management Issues Fixed - COMPLETED**
 - **Critical Fix**: Resolved database enum mismatch preventing document saves  
 - **Document Category Mapping**: AI document types now map to valid database enum values
