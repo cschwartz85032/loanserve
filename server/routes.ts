@@ -29,8 +29,14 @@ function isAuthenticated(req: any, res: any, next: any) {
 
 // Configure multer for file uploads
 const uploadStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'server/uploads/');
+  destination: async function (req, file, cb) {
+    const uploadDir = 'server/uploads';
+    try {
+      await fs.mkdir(uploadDir, { recursive: true });
+    } catch (error) {
+      console.error('Error creating upload directory:', error);
+    }
+    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     // Generate unique filename with timestamp
@@ -569,6 +575,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============= DOCUMENT ROUTES =============
+  
+  // Document upload endpoint with multipart/form-data support
+  app.post("/api/documents/upload", isAuthenticated, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file provided" });
+      }
+
+      const { loanId, category, description } = req.body;
+      
+      if (!loanId) {
+        return res.status(400).json({ error: "Loan ID is required" });
+      }
+
+      // Create document record in database
+      const document = await storage.createDocument({
+        loanId: parseInt(loanId),
+        fileName: req.file.originalname,
+        fileType: req.file.mimetype,
+        fileSize: req.file.size.toString(),
+        filePath: `/uploads/${req.file.filename}`,
+        category: category || 'loan_document',
+        description: description || `Uploaded ${req.file.originalname}`,
+        uploadedBy: req.user?.id,
+        uploadedAt: new Date()
+      });
+
+      res.status(201).json(document);
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      res.status(500).json({ error: "Failed to upload document" });
+    }
+  });
+
   app.get("/api/documents", async (req, res) => {
     try {
       const { loanId, borrowerId, category } = req.query as Record<string, string>;
@@ -594,6 +634,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching document:", error);
       res.status(500).json({ error: "Failed to fetch document" });
+    }
+  });
+
+  app.delete("/api/documents/:id", isAuthenticated, async (req, res) => {
+    try {
+      const document = await storage.getDocument(parseInt(req.params.id));
+      if (!document) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+      
+      await storage.deleteDocument(parseInt(req.params.id));
+      res.json({ message: "Document deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      res.status(500).json({ error: "Failed to delete document" });
     }
   });
 

@@ -11,7 +11,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, Calculator, DollarSign, Home, Calendar } from "lucide-react";
+import { Loader2, Calculator, DollarSign, Home, Calendar, FileText } from "lucide-react";
+import { DocumentUploader } from "@/components/documents/document-uploader";
 
 interface LoanEditFormProps {
   loanId: string;
@@ -452,6 +453,23 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   onChange={(e) => handleInputChange('servicingFee', parseFloat(e.target.value) || 25)}
                 />
               </div>
+            </div>
+
+            {/* Document Upload Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold flex items-center">
+                <FileText className="mr-2 h-5 w-5" />
+                Documents
+              </h3>
+              <DocumentUploader 
+                loanId={parseInt(loanId)} 
+                onUploadComplete={() => {
+                  toast({
+                    title: "Documents uploaded",
+                    description: "All documents have been attached to this loan.",
+                  });
+                }}
+              />
             </div>
 
             {/* Actions */}
