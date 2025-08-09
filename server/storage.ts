@@ -300,9 +300,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateLoan(id: number, updateLoan: Partial<InsertLoan>): Promise<Loan> {
+    // Remove any undefined values and convert dates properly
+    const cleanUpdateData = { ...updateLoan };
+    
+    // Remove undefined values to avoid database errors
+    Object.keys(cleanUpdateData).forEach(key => {
+      if (cleanUpdateData[key as keyof typeof cleanUpdateData] === undefined) {
+        delete cleanUpdateData[key as keyof typeof cleanUpdateData];
+      }
+    });
+
     const [loan] = await db
       .update(loans)
-      .set({ ...updateLoan, updatedAt: new Date() })
+      .set(cleanUpdateData)
       .where(eq(loans.id, id))
       .returning();
     return loan;

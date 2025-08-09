@@ -67,9 +67,12 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   }, [loan]);
 
   const calculatePayments = (loanData: any) => {
+    console.log('Calculating payments with loan data:', loanData);
     const principal = parseFloat(loanData.loanAmount) || 0;
     const annualRate = parseFloat(loanData.interestRate) || 0;
     const termYears = parseFloat(loanData.loanTerm) || 30;
+    console.log('Principal:', principal, 'Rate:', annualRate, 'Term:', termYears);
+    
     const monthlyRate = annualRate / 100 / 12;
     const numPayments = termYears * 12;
 
