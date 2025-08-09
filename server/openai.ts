@@ -222,7 +222,17 @@ IMPORTANT: Include the complete document context in the analysis.`;
       for (let i = 1; i <= this.config.maxPagesToConvert; i++) {
         try {
           const page = await convert(i, { responseType: "buffer" });
-          base64Images.push(page.buffer.toString("base64"));
+          if (page.buffer && page.buffer.length > 0) {
+            const base64Image = page.buffer.toString("base64");
+            if (base64Image && base64Image.length > 100) { // Ensure image has content
+              base64Images.push(base64Image);
+              this.logger.info(`Successfully converted PDF page ${i}, size: ${base64Image.length}`);
+            } else {
+              this.logger.warn(`PDF page ${i} converted to empty/small image`);
+            }
+          } else {
+            this.logger.warn(`PDF page ${i} conversion returned empty buffer`);
+          }
         } catch (pageError) {
           this.logger.warn(`Failed to convert PDF page ${i}`, {
             error: pageError.message,
@@ -296,12 +306,19 @@ IMPORTANT: Include the complete document context in the analysis.`;
           } else if (isPDF) {
             try {
               const images = await this.convertPDFToImages(fileBuffer);
-              images.forEach((base64Image) => {
-                content.push({
-                  type: "image_url",
-                  image_url: { url: `data:image/png;base64,${base64Image}` },
+              if (images.length > 0) {
+                this.logger.info(`Adding ${images.length} PDF images to request`);
+                images.forEach((base64Image) => {
+                  if (base64Image && base64Image.length > 100) {
+                    content.push({
+                      type: "image_url",
+                      image_url: { url: `data:image/png;base64,${base64Image}` },
+                    });
+                  }
                 });
-              });
+              } else {
+                this.logger.warn('No valid images extracted from PDF, continuing with text-only analysis');
+              }
             } catch (pdfError) {
               this.logger.error('PDF conversion failed:', pdfError);
               // Continue without images
