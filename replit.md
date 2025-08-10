@@ -17,6 +17,8 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 - **Production Ready**: System successfully processed Deed of Trust ($350K) and Promissory Note ($50K) documents
 - **AI Extraction Notes Storage**: Added notes field to documents table to store complete AI extraction JSON for transparency
 - **Document Viewer Enhanced**: Document preview now displays AI extraction data in a formatted JSON view for review
+- **Document Display Fixed**: Documents now show in Documents section and open in modal viewer instead of new tabs
+- **PDF.js Worker Fixed**: Updated to use CDN version for proper module compatibility
 
 ## Recent Changes (January 10, 2025) - Previous Updates
 
