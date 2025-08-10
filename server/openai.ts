@@ -25,7 +25,7 @@ try {
     error: error.message,
   });
   throw new Error(
-    "pdfjs-dist module is not installed. Run `npm install pdfjs-dist@4`",
+    "pdfjs-dist module is not installed. Run `npm install pdfjs-dist@3.11.174`",
   );
 }
 
@@ -150,7 +150,6 @@ export class DocumentAnalysisService {
     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
     const isPDF = /\.pdf$/i.test(fileName);
 
-    // Break the prompt into smaller parts to avoid syntax errors
     const promptParts = [
       `Analyze this ${isImage ? "image" : "PDF document"} named "${fileName}" completely and extract all relevant mortgage loan information.`,
       "",
@@ -509,7 +508,7 @@ export class DocumentAnalysisService {
               model,
               retry: retryCount + 1,
             });
-            await setTimeout(delay);
+            await setTimeout(delay); // Ensure delay is a number
             continue;
           }
 
@@ -529,7 +528,7 @@ export class DocumentAnalysisService {
           }
 
           const delay = this.config.initialRetryDelay * Math.pow(2, retryCount);
-          await setTimeout(delay);
+          await setTimeout(delay); // Ensure delay is a number
         }
       }
     }
@@ -550,12 +549,12 @@ export class DocumentAnalysisService {
     let chunkCount = 0;
 
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(20000, () => {
         if (!hasData) {
           this.logger.error("No data received within timeout");
           reject(new Error("No data received from API within timeout"));
         }
-      }, 20000);
+      });
 
       response.data.on("data", (chunk: Buffer) => {
         if (!hasData) clearTimeout(timeoutId);
@@ -670,7 +669,7 @@ export class DocumentAnalysisService {
               contentLength: cleanContent.length,
               contentSnippet: cleanContent.substring(0, 200),
             });
-            reject(new Error("Invalid JSON structure"));
+            reject(new Error(" iglesiaInvalid JSON structure"));
             return;
           }
 
@@ -704,7 +703,7 @@ export class DocumentAnalysisService {
       response.data.on("error", (error: Error) => {
         clearTimeout(timeoutId);
         this.logger.error("Stream error", { error: error.message });
-        reject(new Error(`Stream error: ${error.message}`));
+        reject(new Error(`Stream error: ${e.message}`));
       });
     });
   }
