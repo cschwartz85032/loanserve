@@ -13,6 +13,7 @@ import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
 import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2 } from "lucide-react";
 import { DocumentUploader } from "@/components/documents/document-uploader";
+import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 
 interface LoanEditFormProps {
   loanId: string;
@@ -38,6 +39,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   const { toast } = useToast();
   const [formData, setFormData] = useState<any>({});
   const [calculations, setCalculations] = useState<PaymentCalculation | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   // Fetch loan data
   const { data: loan, isLoading } = useQuery({
@@ -587,7 +590,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           <FileText className="h-5 w-5 text-blue-500" />
                           <div 
                             className="cursor-pointer"
-                            onClick={() => window.open(`/api/documents/${doc.id}/file`, '_blank')}
+                            onClick={() => {
+                              setSelectedDocument(doc);
+                              setPreviewOpen(true);
+                            }}
                           >
                             <p className="font-medium text-gray-900 hover:text-blue-600 underline">{doc.title || doc.fileName}</p>
                             <p className="text-sm text-gray-500 hover:text-blue-500 cursor-pointer">{doc.description}</p>
@@ -600,7 +606,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => window.open(`/api/documents/${doc.id}/file`, '_blank')}
+                            onClick={() => {
+                              setSelectedDocument(doc);
+                              setPreviewOpen(true);
+                            }}
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -660,6 +669,13 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           </CardContent>
         </Card>
       </div>
+      
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        document={selectedDocument}
+      />
     </div>
   );
 }
