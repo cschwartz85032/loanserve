@@ -43,6 +43,7 @@ interface DocumentPreviewModalProps {
     createdAt?: string;
     loanId?: string | number;
     borrowerId?: string | number;
+    notes?: string | null;
   } | null;
 }
 
@@ -207,6 +208,16 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
               <div className="bg-slate-50 rounded-lg p-4 space-y-3">
                 <h3 className="font-semibold text-sm text-slate-700">Description</h3>
                 <p className="text-sm text-slate-600">{document.description}</p>
+              </div>
+            )}
+
+            {/* AI Extraction Notes */}
+            {document.notes && (
+              <div className="bg-blue-50 rounded-lg p-4 space-y-3">
+                <h3 className="font-semibold text-sm text-blue-700">AI Extraction Data</h3>
+                <div className="text-xs text-blue-600 font-mono overflow-auto max-h-64 bg-white p-3 rounded border border-blue-200">
+                  <pre>{typeof document.notes === 'string' ? document.notes : JSON.stringify(document.notes, null, 2)}</pre>
+                </div>
               </div>
             )}
 

@@ -770,6 +770,7 @@ export const documents = pgTable("documents", {
   archivedBy: integer("archived_by").references(() => users.id),
   // Additional
   tags: text("tags").array(),
+  notes: text("notes"), // Store AI extraction JSON or other notes
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
