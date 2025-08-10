@@ -617,7 +617,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         storageUrl: `/uploads/${req.file.filename}`,
-        uploadedBy: req.user?.id
+        uploadedBy: req.user?.id,
+        notes: req.body.notes || null // Store AI extraction JSON or other notes
       });
 
       res.status(201).json(document);
@@ -803,6 +804,7 @@ To implement full file serving:
         isActive: true,
         loanId: req.body.loanId ? parseInt(req.body.loanId) : null,
         borrowerId: req.body.borrowerId ? parseInt(req.body.borrowerId) : null,
+        notes: req.body.notes || null, // Store AI extraction JSON or other notes
       };
 
       const validatedData = insertDocumentSchema.parse(documentData);

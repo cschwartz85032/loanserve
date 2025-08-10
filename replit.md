@@ -15,6 +15,8 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 - **Streaming JSON Fixed**: Properly handling chunked responses from Grok API
 - **Model Fallback System Active**: Using ["grok-4-0709", "grok-3", "grok-2-1212"] with retry logic
 - **Production Ready**: System successfully processed Deed of Trust ($350K) and Promissory Note ($50K) documents
+- **AI Extraction Notes Storage**: Added notes field to documents table to store complete AI extraction JSON for transparency
+- **Document Viewer Enhanced**: Document preview now displays AI extraction data in a formatted JSON view for review
 
 ## Recent Changes (January 10, 2025) - Previous Updates
 

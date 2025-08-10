@@ -99,7 +99,27 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     propertyTaxes: "",
     hoaFees: "",
     pmiAmount: "",
-    servicingFee: "25"
+    servicingFee: "25",
+    
+    // Enhanced AI-extracted fields
+    borrowerSSN: "",
+    borrowerIncome: "",
+    trusteeName: "",
+    trusteeStreetAddress: "",
+    trusteeCity: "",
+    trusteeState: "",
+    trusteeZipCode: "",
+    beneficiaryName: "",
+    beneficiaryStreetAddress: "",
+    beneficiaryCity: "",
+    beneficiaryState: "",
+    beneficiaryZipCode: "",
+    loanDocuments: null as any,
+    defaultConditions: null as any,
+    insuranceRequirements: null as any,
+    crossDefaultParties: null as any,
+    closingCosts: "",
+    downPayment: ""
   });
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -493,6 +513,15 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
               formData.append('loanId', loan.id.toString());
               formData.append('category', mapDocumentCategory(fileData.documentType || ''));
               formData.append('description', `AI-analyzed: ${fileData.documentType || 'Unknown document type'}`);
+              
+              // Store the AI extraction JSON in the notes field
+              if (fileData.extractedData) {
+                formData.append('notes', JSON.stringify({
+                  documentType: fileData.documentType,
+                  extractedData: fileData.extractedData,
+                  analyzedAt: new Date().toISOString()
+                }));
+              }
 
               const response = await fetch('/api/documents/upload', {
                 method: 'POST',
@@ -550,17 +579,40 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       borrowerName: "",
       borrowerEmail: "",
       borrowerPhone: "",
+      borrowerAddress: "",
+      borrowerCity: "",
+      borrowerState: "",
+      borrowerZip: "",
       coborrowerName: "",
       paymentAmount: "",
       escrowAmount: "",
       firstPaymentDate: "",
       nextPaymentDate: "",
       maturityDate: "",
+      prepaymentExpirationDate: "",
       hazardInsurance: "",
       propertyTaxes: "",
       hoaFees: "",
       pmiAmount: "",
-      servicingFee: "25"
+      servicingFee: "25",
+      borrowerSSN: "",
+      borrowerIncome: "",
+      trusteeName: "",
+      trusteeStreetAddress: "",
+      trusteeCity: "",
+      trusteeState: "",
+      trusteeZipCode: "",
+      beneficiaryName: "",
+      beneficiaryStreetAddress: "",
+      beneficiaryCity: "",
+      beneficiaryState: "",
+      beneficiaryZipCode: "",
+      loanDocuments: null,
+      defaultConditions: null,
+      insuranceRequirements: null,
+      crossDefaultParties: null,
+      closingCosts: "",
+      downPayment: ""
     });
     setFiles([]);
   };
