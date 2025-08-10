@@ -157,7 +157,7 @@ export class DocumentAnalysisService {
       `Document: ${fileName}`,
       `Size: ${Math.round(fileBuffer.length / 1024)}KB`,
       `Type: ${isImage ? "Image" : "PDF"}`,
-      documentText ? `Content: ${documentText.substring(0, 5000)}` : "",
+      documentText ? `Content: ${documentText}` : "",  // Removed 5000 character limit
       "",
       "=== EXTRACTION REQUIREMENTS ===",
       "First, identify what type of document this is (e.g., loan application, property deed, insurance policy, tax return, income statement, credit report, appraisal, etc.).",
