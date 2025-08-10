@@ -9,9 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
+import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 
 export default function Documents() {
   const [showUploader, setShowUploader] = useState(true);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const { toast } = useToast();
 
   // Fetch all documents
@@ -186,10 +189,23 @@ export default function Documents() {
                       </div>
                       
                       <div className="flex items-center space-x-2">
-                        <Button variant="ghost" size="sm">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => {
+                            setSelectedDocument(doc);
+                            setPreviewOpen(true);
+                          }}
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => {
+                            window.open(`/api/documents/${doc.id}/file`, '_blank');
+                          }}
+                        >
                           <Download className="h-4 w-4" />
                         </Button>
                         <Button 
@@ -208,6 +224,13 @@ export default function Documents() {
           </Card>
         </div>
       </main>
+      
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        document={selectedDocument}
+      />
     </div>
   );
 }
