@@ -89,8 +89,8 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0 pb-4 border-b">
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center space-x-2">
               <FileText className="w-5 h-5" />
@@ -116,16 +116,16 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
           </div>
         </DialogHeader>
 
-        <Tabs defaultValue="preview" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs defaultValue="preview" className="flex-1 flex flex-col overflow-hidden">
+          <TabsList className="grid w-full grid-cols-2 flex-shrink-0">
             <TabsTrigger value="preview">
               Preview
             </TabsTrigger>
             <TabsTrigger value="details">Details</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="preview" className="mt-4">
-            <div className="max-h-[70vh] overflow-auto">
+          <TabsContent value="preview" className="mt-4 flex-1 overflow-auto">
+            <div className="h-full">
               <DocumentViewer 
                 file={{
                   id: Number(document.id),
@@ -138,9 +138,10 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
             </div>
           </TabsContent>
 
-          <TabsContent value="details" className="mt-4 space-y-4">
-            {/* File Information */}
-            <div className="bg-slate-50 rounded-lg p-4 space-y-3">
+          <TabsContent value="details" className="mt-4 flex-1 overflow-auto">
+            <div className="px-2 pb-4 space-y-4">
+              {/* File Information */}
+              <div className="bg-slate-50 rounded-lg p-4 space-y-3">
               <h3 className="font-semibold text-sm text-slate-700">File Information</h3>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -215,21 +216,28 @@ export function DocumentPreviewModal({ open, onOpenChange, document }: DocumentP
             {document.notes && (
               <div className="bg-blue-50 rounded-lg p-4 space-y-3">
                 <h3 className="font-semibold text-sm text-blue-700">AI Extraction Data</h3>
-                <div className="text-xs text-blue-600 font-mono overflow-auto max-h-64 bg-white p-3 rounded border border-blue-200">
-                  <pre>{typeof document.notes === 'string' ? document.notes : JSON.stringify(document.notes, null, 2)}</pre>
+                <div className="relative">
+                  <ScrollArea className="h-64 w-full rounded border border-blue-200 bg-white">
+                    <div className="p-3">
+                      <pre className="text-xs text-blue-600 font-mono whitespace-pre-wrap break-words">
+                        {typeof document.notes === 'string' ? document.notes : JSON.stringify(document.notes, null, 2)}
+                      </pre>
+                    </div>
+                  </ScrollArea>
                 </div>
               </div>
             )}
 
-            {/* Actions */}
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Close
-              </Button>
-              <Button onClick={handleDownload}>
-                <Download className="w-4 h-4 mr-2" />
-                Download File
-              </Button>
+              {/* Actions */}
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
+                  Close
+                </Button>
+                <Button onClick={handleDownload}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download File
+                </Button>
+              </div>
             </div>
           </TabsContent>
         </Tabs>
