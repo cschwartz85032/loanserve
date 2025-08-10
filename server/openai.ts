@@ -245,7 +245,9 @@ export class DocumentAnalysisService {
     fileBuffer: Buffer,
   ): Promise<string | undefined> {
     try {
-      const pdf = await getDocument({ data: fileBuffer }).promise;
+      // Convert Buffer to Uint8Array for pdfjs-dist
+      const uint8Array = new Uint8Array(fileBuffer);
+      const pdf = await getDocument({ data: uint8Array }).promise;
       let text = "";
       const numPages = pdf.numPages;
       this.logger.info("Extracting text from PDF", { numPages });
@@ -399,7 +401,7 @@ export class DocumentAnalysisService {
     fileName: string,
     fileBuffer: Buffer,
   ): Promise<DocumentAnalysisResult> {
-    const modelsToTry = ["grok-4-0709", "grok-3"];
+    const modelsToTry = ["grok-4-0709"];
     let lastError: Error | null = null;
 
     for (const model of modelsToTry) {
@@ -466,11 +468,12 @@ export class DocumentAnalysisService {
               ],
               response_format: { type: "json_object" },
               temperature: 0.1,
-              max_tokens: 4000,
+              max_tokens: 8000, // Increased to avoid truncation
               stream: true,
             },
             responseType: "stream",
             timeout: this.config.timeout,
+            validateStatus: (status) => status === 200,
           });
 
           this.logger.info(`API call initiated`, {
@@ -520,6 +523,16 @@ export class DocumentAnalysisService {
             break;
           }
 
+          if (axiosError.code === "ECONNABORTED") {
+            this.logger.warn(
+              `Timeout for ${model} attempt ${retryCount + 1}. Retrying in ${delay}ms`,
+            );
+            const delay =
+              this.config.initialRetryDelay * Math.pow(2, retryCount);
+            await promiseSetTimeout(delay);
+            continue;
+          }
+
           if (retryCount === this.config.maxRetries - 1) {
             this.logger.warn(
               `Retries exhausted for ${model}, trying next model`,
@@ -534,17 +547,14 @@ export class DocumentAnalysisService {
     }
 
     this.logger.error("All models failed", { lastError: lastError?.message });
-    return {
-      documentType: "unknown",
-      extractedData: {},
-      confidence: 0,
-    };
+    throw new Error(lastError?.message || "All model attempts failed");
   }
 
   private async processDocumentStream(
     response: any,
   ): Promise<DocumentAnalysisResult> {
     let jsonContent = "";
+    let buffer = "";
     let hasData = false;
     let chunkCount = 0;
 
@@ -564,6 +574,9 @@ export class DocumentAnalysisService {
         chunkCount++;
 
         const chunkStr = chunk.toString();
+        buffer += chunkStr;
+
+        if (chunkStr.trim()) hasData = true;
         this.logger.info(`Received chunk`, {
           length: chunkStr.length,
           chunkCount,
@@ -581,46 +594,39 @@ export class DocumentAnalysisService {
           return;
         }
 
-        jsonContent += chunkStr;
+        // Process complete SSE lines
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
-        const lines = chunkStr.split("\n");
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             const data = line.slice(6);
             if (data === "[DONE]") {
+              this.logger.info(
+                `Stream completed. JSON content length: ${jsonContent.length}`,
+              );
+              if (!jsonContent || jsonContent.length === 0) {
+                this.logger.error("Empty response received from API");
+                reject(new Error("Empty response from API"));
+                return;
+              }
+
               try {
-                // Strip any trailing [DONE] or newlines
                 const cleanContent = jsonContent.replace(
                   /data: \[DONE\]\s*$/,
                   "",
                 );
-                const jsonStart = cleanContent.indexOf("{");
-                const jsonEnd = cleanContent.lastIndexOf("}");
-                if (
-                  jsonStart === -1 ||
-                  jsonEnd === -1 ||
-                  jsonEnd <= jsonStart
-                ) {
-                  this.logger.error("Invalid JSON structure in stream", {
-                    contentLength: cleanContent.length,
-                    contentSnippet: cleanContent.substring(0, 200),
-                  });
-                  reject(new Error("Invalid JSON structure"));
-                  return;
-                }
-
-                const jsonStr = cleanContent.slice(jsonStart, jsonEnd + 1);
-                const result = JSON.parse(jsonStr);
+                const result = JSON.parse(cleanContent);
                 if (result && (result.documentType || result.extractedData)) {
                   this.logger.info("Stream processing completed", {
-                    resultLength: jsonStr.length,
+                    resultLength: cleanContent.length,
                   });
                   resolve(result);
                 } else {
                   this.logger.error(
                     "Response lacks valid document analysis data",
                     {
-                      contentSnippet: jsonStr.substring(0, 200),
+                      contentSnippet: cleanContent.substring(0, 200),
                     },
                   );
                   reject(new Error("Invalid response format"));
@@ -633,7 +639,7 @@ export class DocumentAnalysisService {
                     Math.max(0, jsonContent.length - 200),
                   ),
                 });
-                reject(new Error(`JSON parse error: ${e.message}`));
+                this.extractResultFromPartialJSON(jsonContent, resolve, reject);
                 return;
               }
             }
@@ -662,31 +668,18 @@ export class DocumentAnalysisService {
         }
 
         try {
-          // Strip any trailing [DONE] or newlines
           const cleanContent = jsonContent.replace(/data: \[DONE\]\s*$/, "");
-          const jsonStart = cleanContent.indexOf("{");
-          const jsonEnd = cleanContent.lastIndexOf("}");
-          if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) {
-            this.logger.error("Invalid JSON structure in final content", {
-              contentLength: cleanContent.length,
-              contentSnippet: cleanContent.substring(0, 200),
-            });
-            reject(new Error("Invalid JSON structure"));
-            return;
-          }
-
-          const jsonStr = cleanContent.slice(jsonStart, jsonEnd + 1);
-          const result = JSON.parse(jsonStr);
+          const result = JSON.parse(cleanContent);
           if (result && (result.documentType || result.extractedData)) {
             this.logger.info("Stream completed", {
-              resultLength: jsonStr.length,
+              resultLength: cleanContent.length,
             });
             resolve(result);
           } else {
             this.logger.error(
               "Final response lacks valid document analysis data",
               {
-                contentSnippet: jsonStr.substring(0, 200),
+                contentSnippet: cleanContent.substring(0, 200),
               },
             );
             reject(new Error("Invalid response format"));
@@ -698,7 +691,7 @@ export class DocumentAnalysisService {
               Math.max(0, jsonContent.length - 200),
             ),
           });
-          reject(new Error(`Final JSON parse error: ${e.message}`));
+          this.extractResultFromPartialJSON(jsonContent, resolve, reject);
         }
       });
 
@@ -708,6 +701,48 @@ export class DocumentAnalysisService {
         reject(new Error(`Stream error: ${error.message}`));
       });
     });
+  }
+
+  private extractResultFromPartialJSON(
+    content: string,
+    resolve: (value: DocumentAnalysisResult) => void,
+    reject: (reason: any) => void,
+  ): void {
+    if (!content.trim()) {
+      this.logger.warn("No content to parse in partial JSON");
+      reject(new Error("No content to parse in partial JSON"));
+      return;
+    }
+    try {
+      const jsonStart = content.indexOf("{");
+      const jsonEnd = content.lastIndexOf("}");
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        const jsonStr = content.substring(jsonStart, jsonEnd + 1);
+        const result = JSON.parse(jsonStr);
+        if (result && (result.documentType || result.extractedData)) {
+          this.logger.info("Recovered result from partial JSON", {
+            resultLength: jsonStr.length,
+          });
+          resolve(result);
+        } else {
+          this.logger.error("Partial JSON lacks valid document analysis data", {
+            contentSnippet: jsonStr.substring(0, 200),
+          });
+          reject(new Error("Invalid partial JSON format"));
+        }
+      } else {
+        this.logger.error("No valid JSON structure in partial content", {
+          contentSnippet: content.substring(0, 200),
+        });
+        reject(new Error("No valid JSON structure in partial content"));
+      }
+    } catch (e) {
+      this.logger.error("Failed to extract result from partial JSON", {
+        error: e.message,
+        contentSnippet: content.substring(0, 200),
+      });
+      reject(new Error(`Failed to parse partial JSON: ${e.message}`));
+    }
   }
 }
 
