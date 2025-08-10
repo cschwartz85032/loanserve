@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import axios, { AxiosError } from "axios";
-import { setTimeout } from "timers/promises";
+import { setTimeout as promiseSetTimeout } from "timers/promises";
+import { setTimeout as nodeSetTimeout, clearTimeout } from "timers";
 import { v4 as uuidv4 } from "uuid";
 
 // Use dynamic imports for pdf2pic and pdfjs-dist
@@ -18,14 +19,14 @@ try {
 }
 
 try {
-  ({ getDocument } = await import("pdfjs-dist/build/pdf.mjs"));
+  ({ getDocument } = await import("pdfjs-dist/legacy/build/pdf.js"));
   console.log("[INFO] Successfully loaded pdfjs-dist module");
 } catch (error) {
   console.error("[FATAL] Failed to load pdfjs-dist module", {
     error: error.message,
   });
   throw new Error(
-    "pdfjs-dist module is not installed. Run `npm install pdfjs-dist@3.11.174`",
+    "pdfjs-dist module is not installed. Run `npm install pdfjs-dist@3.11.338`",
   );
 }
 
@@ -149,7 +150,6 @@ export class DocumentAnalysisService {
   ): string {
     const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
     const isPDF = /\.pdf$/i.test(fileName);
-
     const promptParts = [
       `Analyze this ${isImage ? "image" : "PDF document"} named "${fileName}" completely and extract all relevant mortgage loan information.`,
       "",
@@ -182,54 +182,54 @@ export class DocumentAnalysisService {
       "- If information is missing or unclear, return null for that field.",
       "- For PDF documents, prioritize text content provided in the prompt over image analysis if available.",
       "",
-      `Return a JSON object with extracted data: {`,
-      `  "documentType": "document_category_here",`,
-      `  "extractedData": {`,
-      `    "propertyStreetAddress": "street_address_only_or_null",`,
-      `    "propertyCity": "city_only_or_null",`,
-      `    "propertyState": "state_only_or_null",`,
-      `    "propertyZipCode": "zip_code_only_or_null",`,
-      `    "propertyType": "extracted_value_or_null",`,
-      `    "propertyValue": null,`,
-      `    "borrowerName": "extracted_value_or_null",`,
-      `    "borrowerSSN": null,`,
-      `    "borrowerIncome": null,`,
-      `    "borrowerStreetAddress": "borrower_street_address_or_null",`,
-      `    "borrowerCity": "borrower_city_or_null",`,
-      `    "borrowerState": "borrower_state_or_null",`,
-      `    "borrowerZipCode": "borrower_zip_code_or_null",`,
-      `    "loanAmount": number_or_null,`,
-      `    "interestRate": null,`,
-      `    "loanTerm": null,`,
-      `    "loanType": "extracted_value_or_null",`,
-      `    "monthlyPayment": null,`,
-      `    "escrowAmount": null,`,
-      `    "hoaFees": null,`,
-      `    "downPayment": null,`,
-      `    "closingCosts": null,`,
-      `    "pmi": null,`,
-      `    "taxes": null,`,
-      `    "insurance": null,`,
-      `    "closingDate": "YYYY-MM-DD_or_null",`,
-      `    "firstPaymentDate": "YYYY-MM-DD_or_null",`,
-      `    "prepaymentExpirationDate": null,`,
-      `    "trusteeName": "extracted_value_or_null",`,
-      `    "trusteeStreetAddress": "street_address_only_or_null",`,
-      `    "trusteeCity": "city_only_or_null",`,
-      `    "trusteeState": "state_only_or_null",`,
-      `    "trusteeZipCode": "zip_code_only_or_null",`,
-      `    "beneficiaryName": "extracted_value_or_null",`,
-      `    "beneficiaryStreetAddress": "street_address_only_or_null",`,
-      `    "beneficiaryCity": "city_only_or_null",`,
-      `    "beneficiaryState": "state_only_or_null",`,
-      `    "beneficiaryZipCode": "zip_code_only_or_null",`,
-      `    "loanDocuments": ["array_of_documents_or_null"],`,
-      `    "defaultConditions": ["array_of_conditions_or_null"],`,
-      `    "insuranceRequirements": ["array_of_requirements_or_null"],`,
-      `    "crossDefaultParties": ["array_of_entities_or_null"]`,
-      `  },`,
-      `  "confidence": 0.85`,
-      `}`,
+      "Return a JSON object with extracted data: {",
+      '  "documentType": "document_category_here",',
+      '  "extractedData": {',
+      '    "propertyStreetAddress": "street_address_only_or_null",',
+      '    "propertyCity": "city_only_or_null",',
+      '    "propertyState": "state_only_or_null",',
+      '    "propertyZipCode": "zip_code_only_or_null",',
+      '    "propertyType": "extracted_value_or_null",',
+      '    "propertyValue": null,',
+      '    "borrowerName": "extracted_value_or_null",',
+      '    "borrowerSSN": null,',
+      '    "borrowerIncome": null,',
+      '    "borrowerStreetAddress": "borrower_street_address_or_null",',
+      '    "borrowerCity": "borrower_city_or_null",',
+      '    "borrowerState": "borrower_state_or_null",',
+      '    "borrowerZipCode": "borrower_zip_code_or_null",',
+      '    "loanAmount": number_or_null,',
+      '    "interestRate": null,',
+      '    "loanTerm": null,',
+      '    "loanType": "extracted_value_or_null",',
+      '    "monthlyPayment": null,',
+      '    "escrowAmount": null,',
+      '    "hoaFees": null,',
+      '    "downPayment": null,',
+      '    "closingCosts": null,',
+      '    "pmi": null,',
+      '    "taxes": null,',
+      '    "insurance": null,',
+      '    "closingDate": "YYYY-MM-DD_or_null",',
+      '    "firstPaymentDate": "YYYY-MM-DD_or_null",',
+      '    "prepaymentExpirationDate": null,',
+      '    "trusteeName": "extracted_value_or_null",',
+      '    "trusteeStreetAddress": "street_address_only_or_null",',
+      '    "trusteeCity": "city_only_or_null",',
+      '    "trusteeState": "state_only_or_null",',
+      '    "trusteeZipCode": "zip_code_only_or_null",',
+      '    "beneficiaryName": "extracted_value_or_null",',
+      '    "beneficiaryStreetAddress": "street_address_only_or_null",',
+      '    "beneficiaryCity": "city_only_or_null",',
+      '    "beneficiaryState": "state_only_or_null",',
+      '    "beneficiaryZipCode": "zip_code_only_or_null",',
+      '    "loanDocuments": ["array_of_documents_or_null"],',
+      '    "defaultConditions": ["array_of_conditions_or_null"],',
+      '    "insuranceRequirements": ["array_of_requirements_or_null"],',
+      '    "crossDefaultParties": ["array_of_entities_or_null"]',
+      "  },",
+      '  "confidence": 0.85',
+      "}",
       "",
       "IMPORTANT: Include the complete document context in the analysis and ensure accuracy with provided text.",
     ];
@@ -508,7 +508,7 @@ export class DocumentAnalysisService {
               model,
               retry: retryCount + 1,
             });
-            await setTimeout(delay); // Ensure delay is a number
+            await promiseSetTimeout(delay);
             continue;
           }
 
@@ -528,7 +528,7 @@ export class DocumentAnalysisService {
           }
 
           const delay = this.config.initialRetryDelay * Math.pow(2, retryCount);
-          await setTimeout(delay); // Ensure delay is a number
+          await promiseSetTimeout(delay);
         }
       }
     }
@@ -549,12 +549,14 @@ export class DocumentAnalysisService {
     let chunkCount = 0;
 
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(20000, () => {
+      const timeoutId = nodeSetTimeout(() => {
         if (!hasData) {
-          this.logger.error("No data received within timeout");
+          this.logger.error(
+            "No data received within 20 seconds, treating as failure",
+          );
           reject(new Error("No data received from API within timeout"));
         }
-      });
+      }, 20000);
 
       response.data.on("data", (chunk: Buffer) => {
         if (!hasData) clearTimeout(timeoutId);
@@ -669,7 +671,7 @@ export class DocumentAnalysisService {
               contentLength: cleanContent.length,
               contentSnippet: cleanContent.substring(0, 200),
             });
-            reject(new Error(" iglesiaInvalid JSON structure"));
+            reject(new Error("Invalid JSON structure"));
             return;
           }
 
@@ -703,7 +705,7 @@ export class DocumentAnalysisService {
       response.data.on("error", (error: Error) => {
         clearTimeout(timeoutId);
         this.logger.error("Stream error", { error: error.message });
-        reject(new Error(`Stream error: ${e.message}`));
+        reject(new Error(`Stream error: ${error.message}`));
       });
     });
   }
