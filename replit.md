@@ -4,6 +4,13 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 
 ## Recent Changes (January 17, 2025)
 
+**Enhanced Contact Information Management**
+- **Database Schema Updated**: Added comprehensive contact fields for trustee, beneficiary, and escrow company including phone, email, and full street addresses
+- **Contact Information UI**: Added dedicated "Contact Information" section in loan edit form with four subsections
+- **Complete Address Fields**: Each contact (Borrower, Trustee, Beneficiary, Escrow Company) now has street address, city, state, and zip code fields
+- **Phone and Email Tracking**: All contacts include phone and email fields for comprehensive communication management
+- **AI Extraction Ready**: Contact fields are properly structured to receive data from AI document extraction
+
 **Fee Management System Successfully Implemented**
 - **Database Tables Created**: Added fee_templates and loan_fees tables to store fee structures and track individual loan fees
 - **Fee Templates Module**: Built comprehensive fee template management system at /fees route

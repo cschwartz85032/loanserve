@@ -477,6 +477,283 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </div>
             </div>
 
+            {/* Contact Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Contact Information</h3>
+              
+              {/* Borrower Contact */}
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-md font-medium text-gray-700">Borrower</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerName">Name</Label>
+                    <Input
+                      id="borrowerName"
+                      value={formData.borrowerName || ''}
+                      onChange={(e) => handleInputChange('borrowerName', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerPhone">Phone</Label>
+                    <Input
+                      id="borrowerPhone"
+                      value={formData.borrowerPhone || ''}
+                      onChange={(e) => handleInputChange('borrowerPhone', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerEmail">Email</Label>
+                    <Input
+                      id="borrowerEmail"
+                      type="email"
+                      value={formData.borrowerEmail || ''}
+                      onChange={(e) => handleInputChange('borrowerEmail', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerSSN">SSN</Label>
+                    <Input
+                      id="borrowerSSN"
+                      value={formData.borrowerSSN || ''}
+                      onChange={(e) => handleInputChange('borrowerSSN', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerAddress">Street Address</Label>
+                    <Input
+                      id="borrowerAddress"
+                      value={formData.borrowerAddress || ''}
+                      onChange={(e) => handleInputChange('borrowerAddress', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerCity">City</Label>
+                    <Input
+                      id="borrowerCity"
+                      value={formData.borrowerCity || ''}
+                      onChange={(e) => handleInputChange('borrowerCity', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerState">State</Label>
+                    <Input
+                      id="borrowerState"
+                      value={formData.borrowerState || ''}
+                      onChange={(e) => handleInputChange('borrowerState', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerZip">Zip Code</Label>
+                    <Input
+                      id="borrowerZip"
+                      value={formData.borrowerZip || ''}
+                      onChange={(e) => handleInputChange('borrowerZip', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Trustee Contact */}
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-md font-medium text-gray-700">Trustee</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteeName">Name</Label>
+                    <Input
+                      id="trusteeName"
+                      value={formData.trusteeName || ''}
+                      onChange={(e) => handleInputChange('trusteeName', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteePhone">Phone</Label>
+                    <Input
+                      id="trusteePhone"
+                      value={formData.trusteePhone || ''}
+                      onChange={(e) => handleInputChange('trusteePhone', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteeEmail">Email</Label>
+                    <Input
+                      id="trusteeEmail"
+                      type="email"
+                      value={formData.trusteeEmail || ''}
+                      onChange={(e) => handleInputChange('trusteeEmail', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteeStreetAddress">Street Address</Label>
+                    <Input
+                      id="trusteeStreetAddress"
+                      value={formData.trusteeStreetAddress || ''}
+                      onChange={(e) => handleInputChange('trusteeStreetAddress', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteeCity">City</Label>
+                    <Input
+                      id="trusteeCity"
+                      value={formData.trusteeCity || ''}
+                      onChange={(e) => handleInputChange('trusteeCity', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteeState">State</Label>
+                    <Input
+                      id="trusteeState"
+                      value={formData.trusteeState || ''}
+                      onChange={(e) => handleInputChange('trusteeState', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteeZipCode">Zip Code</Label>
+                    <Input
+                      id="trusteeZipCode"
+                      value={formData.trusteeZipCode || ''}
+                      onChange={(e) => handleInputChange('trusteeZipCode', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Beneficiary Contact */}
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-md font-medium text-gray-700">Beneficiary</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryName">Name</Label>
+                    <Input
+                      id="beneficiaryName"
+                      value={formData.beneficiaryName || ''}
+                      onChange={(e) => handleInputChange('beneficiaryName', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryPhone">Phone</Label>
+                    <Input
+                      id="beneficiaryPhone"
+                      value={formData.beneficiaryPhone || ''}
+                      onChange={(e) => handleInputChange('beneficiaryPhone', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryEmail">Email</Label>
+                    <Input
+                      id="beneficiaryEmail"
+                      type="email"
+                      value={formData.beneficiaryEmail || ''}
+                      onChange={(e) => handleInputChange('beneficiaryEmail', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryStreetAddress">Street Address</Label>
+                    <Input
+                      id="beneficiaryStreetAddress"
+                      value={formData.beneficiaryStreetAddress || ''}
+                      onChange={(e) => handleInputChange('beneficiaryStreetAddress', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryCity">City</Label>
+                    <Input
+                      id="beneficiaryCity"
+                      value={formData.beneficiaryCity || ''}
+                      onChange={(e) => handleInputChange('beneficiaryCity', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryState">State</Label>
+                    <Input
+                      id="beneficiaryState"
+                      value={formData.beneficiaryState || ''}
+                      onChange={(e) => handleInputChange('beneficiaryState', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryZipCode">Zip Code</Label>
+                    <Input
+                      id="beneficiaryZipCode"
+                      value={formData.beneficiaryZipCode || ''}
+                      onChange={(e) => handleInputChange('beneficiaryZipCode', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Escrow Company Contact */}
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                <h4 className="text-md font-medium text-gray-700">Escrow Company</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="escrowCompanyName">Company Name</Label>
+                    <Input
+                      id="escrowCompanyName"
+                      value={formData.escrowCompanyName || ''}
+                      onChange={(e) => handleInputChange('escrowCompanyName', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="escrowCompanyPhone">Phone</Label>
+                    <Input
+                      id="escrowCompanyPhone"
+                      value={formData.escrowCompanyPhone || ''}
+                      onChange={(e) => handleInputChange('escrowCompanyPhone', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="escrowCompanyEmail">Email</Label>
+                    <Input
+                      id="escrowCompanyEmail"
+                      type="email"
+                      value={formData.escrowCompanyEmail || ''}
+                      onChange={(e) => handleInputChange('escrowCompanyEmail', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="escrowCompanyStreetAddress">Street Address</Label>
+                    <Input
+                      id="escrowCompanyStreetAddress"
+                      value={formData.escrowCompanyStreetAddress || ''}
+                      onChange={(e) => handleInputChange('escrowCompanyStreetAddress', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="escrowCompanyCity">City</Label>
+                    <Input
+                      id="escrowCompanyCity"
+                      value={formData.escrowCompanyCity || ''}
+                      onChange={(e) => handleInputChange('escrowCompanyCity', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="escrowCompanyState">State</Label>
+                    <Input
+                      id="escrowCompanyState"
+                      value={formData.escrowCompanyState || ''}
+                      onChange={(e) => handleInputChange('escrowCompanyState', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="escrowCompanyZipCode">Zip Code</Label>
+                    <Input
+                      id="escrowCompanyZipCode"
+                      value={formData.escrowCompanyZipCode || ''}
+                      onChange={(e) => handleInputChange('escrowCompanyZipCode', e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Important Dates */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Important Dates</h3>
