@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { LoanTable } from "@/components/loans/loan-table";
 import { EnhancedNewLoanDialog } from "@/components/loans/enhanced-new-loan-dialog";
-import { LoanEditForm } from "@/components/loans/loan-edit-form";
+import { LoanEditForm } from "@/components/loans/loan-edit-form-tabbed";
 import { Button } from "@/components/ui/button";
 import { Plus, Filter } from "lucide-react";
 import { useLocation } from "wouter";

@@ -7,11 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2 } from "lucide-react";
+import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2, Users, ClipboardList, History } from "lucide-react";
 import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 
@@ -210,17 +211,29 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-7xl mx-auto">
-      {/* Left Panel - Payment Calculations */}
-      <div className="lg:col-span-1">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calculator className="h-5 w-5" />
-              Payment Breakdown
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+    <div className="max-w-7xl mx-auto">
+      <Tabs defaultValue="details" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
+          <TabsTrigger value="contacts">Contacts</TabsTrigger>
+          <TabsTrigger value="documents">Document Management</TabsTrigger>
+          <TabsTrigger value="accounting">Accounting</TabsTrigger>
+          <TabsTrigger value="audit">Audit Trail</TabsTrigger>
+        </TabsList>
+
+        {/* Edit Loan Details Tab */}
+        <TabsContent value="details">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Panel - Payment Calculations */}
+            <div className="lg:col-span-1">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calculator className="h-5 w-5" />
+                    Payment Breakdown
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
             {calculations ? (
               <>
                 {/* Total Payment */}
