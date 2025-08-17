@@ -227,7 +227,7 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-500">Current Balance</p>
-              <p className="text-2xl font-bold">${summary.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-2xl font-bold">${summary.currentBalance.toFixed(2)}</p>
             </div>
           </div>
 
@@ -270,13 +270,13 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                         {getTransactionTypeBadge(entry.transactionType)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-red-600">
-                        {entry.debitAmount ? `$${parseFloat(entry.debitAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                        {entry.debitAmount ? `$${parseFloat(entry.debitAmount).toFixed(2)}` : '-'}
                       </TableCell>
                       <TableCell className="text-right font-mono text-green-600">
-                        {entry.creditAmount ? `$${parseFloat(entry.creditAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                        {entry.creditAmount ? `$${parseFloat(entry.creditAmount).toFixed(2)}` : '-'}
                       </TableCell>
                       <TableCell className="text-right font-mono font-bold">
-                        ${parseFloat(entry.runningBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${parseFloat(entry.runningBalance).toFixed(2)}
                       </TableCell>
                       <TableCell className="text-center">
                         {getStatusBadge(entry.status)}
@@ -311,19 +311,19 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
             <Card>
               <CardContent className="pt-6">
                 <div className="text-sm text-gray-500">Total Debits</div>
-                <div className="text-xl font-bold text-red-600">${summary.totalDebits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-xl font-bold text-red-600">${summary.totalDebits.toFixed(2)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6">
                 <div className="text-sm text-gray-500">Total Credits</div>
-                <div className="text-xl font-bold text-green-600">${summary.totalCredits.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-xl font-bold text-green-600">${summary.totalCredits.toFixed(2)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-6">
                 <div className="text-sm text-gray-500">Principal Balance</div>
-                <div className="text-xl font-bold text-blue-600">${summary.principalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-xl font-bold text-blue-600">${summary.principalBalance.toFixed(2)}</div>
               </CardContent>
             </Card>
             <Card>
@@ -335,7 +335,7 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
             <Card>
               <CardContent className="pt-6">
                 <div className="text-sm text-gray-500">Current Balance</div>
-                <div className="text-xl font-bold">${summary.currentBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div className="text-xl font-bold">${summary.currentBalance.toFixed(2)}</div>
               </CardContent>
             </Card>
           </div>

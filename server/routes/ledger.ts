@@ -113,6 +113,22 @@ export async function approveLedgerTransaction(req: Request, res: Response) {
     const { approvalNotes } = req.body;
     const userId = (req.user as any)?.id;
     
+    // First get the transaction to check its current status
+    const [transaction] = await db
+      .select()
+      .from(loanLedger)
+      .where(eq(loanLedger.id, parseInt(transactionId)))
+      .limit(1);
+    
+    if (!transaction) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    if (transaction.status !== 'pending_approval') {
+      return res.status(400).json({ error: 'Transaction is not pending approval' });
+    }
+    
+    // Update the transaction status to posted
     const [updated] = await db
       .update(loanLedger)
       .set({
@@ -122,15 +138,8 @@ export async function approveLedgerTransaction(req: Request, res: Response) {
         approvalNotes,
         updatedAt: new Date(),
       })
-      .where(and(
-        eq(loanLedger.id, parseInt(transactionId)),
-        eq(loanLedger.status, 'pending_approval')
-      ))
+      .where(eq(loanLedger.id, parseInt(transactionId)))
       .returning();
-    
-    if (!updated) {
-      return res.status(404).json({ error: 'Transaction not found or already approved' });
-    }
     
     res.json(updated);
   } catch (error) {
@@ -150,6 +159,23 @@ export async function exportLedgerToCSV(req: Request, res: Response) {
       .where(eq(loanLedger.loanId, parseInt(loanId)))
       .orderBy(loanLedger.transactionDate, loanLedger.id);
     
+    // Format data for CSV export with proper date formatting and number formatting
+    const formattedEntries = entries.map(entry => ({
+      transactionDate: new Date(entry.transactionDate).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit' 
+      }),
+      transactionId: entry.transactionId,
+      description: entry.description,
+      transactionType: entry.transactionType,
+      debitAmount: entry.debitAmount ? parseFloat(entry.debitAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+      creditAmount: entry.creditAmount ? parseFloat(entry.creditAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
+      runningBalance: parseFloat(entry.runningBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      principalBalance: parseFloat(entry.principalBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      status: entry.status
+    }));
+    
     const fields = [
       'transactionDate',
       'transactionId',
@@ -162,7 +188,7 @@ export async function exportLedgerToCSV(req: Request, res: Response) {
       'status'
     ];
     
-    const csv = parse(entries, { fields });
+    const csv = parse(formattedEntries, { fields });
     
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="loan-${loanId}-ledger.csv"`);
@@ -213,10 +239,14 @@ export async function exportLedgerToPDF(req: Request, res: Response) {
     
     // Add entries
     entries.forEach(entry => {
-      const date = new Date(entry.transactionDate).toLocaleDateString();
-      const debit = entry.debitAmount || '-';
-      const credit = entry.creditAmount || '-';
-      const balance = entry.runningBalance;
+      const date = new Date(entry.transactionDate).toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit' 
+      });
+      const debit = entry.debitAmount ? parseFloat(entry.debitAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+      const credit = entry.creditAmount ? parseFloat(entry.creditAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
+      const balance = parseFloat(entry.runningBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       
       doc.text(`${date} | ${entry.transactionId} | ${entry.description} | ${debit} | ${credit} | ${balance}`);
     });
@@ -333,4 +363,8 @@ export function registerLedgerRoutes(app: any) {
   app.get('/api/loans/:loanId/ledger/export/csv', isAuthenticated, exportLedgerToCSV);
   app.get('/api/loans/:loanId/ledger/export/pdf', isAuthenticated, exportLedgerToPDF);
   app.post('/api/loans/:loanId/ledger/email', isAuthenticated, emailLedger);
+  // Also register without /api prefix for the frontend calls
+  app.get('/api/ledger/:transactionId/approve', isAuthenticated, (req: any, res: any) => {
+    res.json({ message: 'Use POST method for approval' });
+  });
 }
