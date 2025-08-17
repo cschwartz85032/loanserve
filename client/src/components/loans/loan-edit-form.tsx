@@ -73,10 +73,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     // Use originalAmount if loanAmount is not available
     const principal = parseFloat(loanData.loanAmount || loanData.originalAmount) || 0;
     const annualRate = parseFloat(loanData.interestRate) || 0;
-    const termYears = parseFloat(loanData.loanTerm) || 30;
+    const termMonths = parseFloat(loanData.loanTerm) || 360; // loanTerm is stored in MONTHS
     
     const monthlyRate = annualRate / 100 / 12;
-    const numPayments = termYears * 12;
+    const numPayments = termMonths; // Already in months
 
     // Principal & Interest calculation
     let principalAndInterest = 0;
@@ -293,7 +293,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">{formData.interestRate || 0}% APR</Badge>
-                    <Badge variant="outline">{formData.loanTerm || 30} years</Badge>
+                    <Badge variant="outline">{formData.loanTerm || 360} months</Badge>
                   </div>
                   <div className="flex items-center gap-2">
                     <Home className="h-4 w-4 text-gray-500" />
@@ -438,12 +438,12 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="loanTerm">Loan Term (Years)</Label>
+                  <Label htmlFor="loanTerm">Loan Term (Months)</Label>
                   <Input
                     id="loanTerm"
                     type="number"
                     value={formData.loanTerm || ''}
-                    onChange={(e) => handleInputChange('loanTerm', parseFloat(e.target.value) || 30)}
+                    onChange={(e) => handleInputChange('loanTerm', parseFloat(e.target.value) || 360)}
                   />
                 </div>
               </div>

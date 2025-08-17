@@ -883,6 +883,49 @@ export const legalProceedings = pgTable("legal_proceedings", {
   };
 });
 
+// Fee Templates (Default fee schedules for lenders)
+export const feeTemplates = pgTable("fee_templates", {
+  id: serial("id").primaryKey(),
+  lenderId: integer("lender_id").references(() => users.id).notNull(),
+  templateName: text("template_name").notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").default(false),
+  fees: jsonb("fees").notNull(), // Array of fee definitions
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    lenderIdx: index("fee_template_lender_idx").on(table.lenderId),
+    defaultIdx: index("fee_template_default_idx").on(table.isDefault),
+  };
+});
+
+// Loan Fees (Fees applied to specific loans)
+export const loanFees = pgTable("loan_fees", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  feeType: text("fee_type").notNull(), // 'origination', 'servicing', 'late', 'nsf', 'modification', 'payoff', 'recording', etc.
+  feeName: text("fee_name").notNull(),
+  feeAmount: decimal("fee_amount", { precision: 10, scale: 2 }).notNull(),
+  feePercentage: decimal("fee_percentage", { precision: 5, scale: 3 }), // For percentage-based fees
+  frequency: text("frequency"), // 'one-time', 'monthly', 'quarterly', 'annual'
+  chargeDate: date("charge_date"),
+  dueDate: date("due_date"),
+  paidDate: date("paid_date"),
+  waived: boolean("waived").default(false),
+  waivedBy: integer("waived_by").references(() => users.id),
+  waivedReason: text("waived_reason"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("loan_fee_loan_idx").on(table.loanId),
+    typeIdx: index("loan_fee_type_idx").on(table.feeType),
+    dueDateIdx: index("loan_fee_due_date_idx").on(table.dueDate),
+  };
+});
+
 // Insurance Policies
 export const insurancePolicies = pgTable("insurance_policies", {
   id: serial("id").primaryKey(),
@@ -1101,6 +1144,12 @@ export const insertCollectionActivitySchema = createInsertSchema(collectionActiv
 
 // Legal schemas
 export const insertLegalProceedingSchema = createInsertSchema(legalProceedings).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Fee schemas
+export const insertFeeTemplateSchema = createInsertSchema(feeTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertLoanFeeSchema = createInsertSchema(loanFees).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Insurance schemas
 export const insertInsurancePolicySchema = createInsertSchema(insurancePolicies).omit({ id: true, createdAt: true, updatedAt: true });
 
 // System schemas
@@ -1144,6 +1193,10 @@ export type CollectionActivity = typeof collectionActivities.$inferSelect;
 export type InsertCollectionActivity = z.infer<typeof insertCollectionActivitySchema>;
 export type LegalProceeding = typeof legalProceedings.$inferSelect;
 export type InsertLegalProceeding = z.infer<typeof insertLegalProceedingSchema>;
+export type FeeTemplate = typeof feeTemplates.$inferSelect;
+export type InsertFeeTemplate = z.infer<typeof insertFeeTemplateSchema>;
+export type LoanFee = typeof loanFees.$inferSelect;
+export type InsertLoanFee = z.infer<typeof insertLoanFeeSchema>;
 export type InsurancePolicy = typeof insurancePolicies.$inferSelect;
 export type InsertInsurancePolicy = z.infer<typeof insertInsurancePolicySchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;

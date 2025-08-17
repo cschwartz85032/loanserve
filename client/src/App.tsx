@@ -13,6 +13,7 @@ import Documents from "@/pages/documents";
 import Escrow from "@/pages/escrow";
 import Reports from "@/pages/reports";
 import Compliance from "@/pages/compliance";
+import FeeManagement from "@/pages/FeeManagement";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -25,6 +26,7 @@ function Router() {
       <ProtectedRoute path="/escrow" component={Escrow} />
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/compliance" component={Compliance} />
+      <ProtectedRoute path="/fees" component={FeeManagement} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>

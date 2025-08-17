@@ -6,6 +6,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
 import { analyzeDocument } from "./openai";
+import feeRoutes from "./routes/fees";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -956,6 +957,9 @@ To implement full file serving:
       res.status(500).json({ error: "Failed to fetch audit logs" });
     }
   });
+
+  // ============= FEE MANAGEMENT ROUTES =============
+  app.use("/api/fees", feeRoutes);
 
   // ============= AI DOCUMENT ANALYSIS ROUTES =============
   app.post("/api/documents/analyze", upload.single('file'), isAuthenticated, async (req, res) => {
