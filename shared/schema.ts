@@ -917,6 +917,41 @@ export const feeTemplates = pgTable("fee_templates", {
   };
 });
 
+// Loan Ledger (Complete accounting ledger for all loan transactions)
+export const loanLedger = pgTable("loan_ledger", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  transactionDate: timestamp("transaction_date").notNull(),
+  transactionId: text("transaction_id").notNull().unique(),
+  description: text("description").notNull(),
+  transactionType: text("transaction_type").notNull(), // 'principal', 'interest', 'fee', 'payment', 'escrow', 'penalty', 'reversal'
+  category: text("category"), // 'origination', 'servicing', 'late_fee', 'nsf', 'modification', 'payoff', 'recording', etc.
+  debitAmount: decimal("debit_amount", { precision: 12, scale: 2 }),
+  creditAmount: decimal("credit_amount", { precision: 12, scale: 2 }),
+  runningBalance: decimal("running_balance", { precision: 12, scale: 2 }).notNull(),
+  principalBalance: decimal("principal_balance", { precision: 12, scale: 2 }).notNull(),
+  interestBalance: decimal("interest_balance", { precision: 12, scale: 2 }).default('0'),
+  status: text("status").notNull().default('posted'), // 'pending', 'posted', 'pending_approval', 'reversed'
+  reversalOf: integer("reversal_of").references(() => loanLedger.id),
+  reversedBy: integer("reversed_by").references(() => loanLedger.id),
+  approvalRequired: boolean("approval_required").default(false),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvalDate: timestamp("approval_date"),
+  approvalNotes: text("approval_notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  notes: text("notes"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("ledger_loan_idx").on(table.loanId),
+    dateIdx: index("ledger_date_idx").on(table.transactionDate),
+    statusIdx: index("ledger_status_idx").on(table.status),
+    typeIdx: index("ledger_type_idx").on(table.transactionType),
+  };
+});
+
 // Loan Fees (Fees applied to specific loans)
 export const loanFees = pgTable("loan_fees", {
   id: serial("id").primaryKey(),
@@ -1166,6 +1201,9 @@ export const insertLegalProceedingSchema = createInsertSchema(legalProceedings).
 export const insertFeeTemplateSchema = createInsertSchema(feeTemplates).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertLoanFeeSchema = createInsertSchema(loanFees).omit({ id: true, createdAt: true, updatedAt: true });
 
+// Ledger schemas
+export const insertLoanLedgerSchema = createInsertSchema(loanLedger).omit({ id: true, createdAt: true, updatedAt: true });
+
 // Insurance schemas
 export const insertInsurancePolicySchema = createInsertSchema(insurancePolicies).omit({ id: true, createdAt: true, updatedAt: true });
 
@@ -1214,6 +1252,8 @@ export type FeeTemplate = typeof feeTemplates.$inferSelect;
 export type InsertFeeTemplate = z.infer<typeof insertFeeTemplateSchema>;
 export type LoanFee = typeof loanFees.$inferSelect;
 export type InsertLoanFee = z.infer<typeof insertLoanFeeSchema>;
+export type LoanLedger = typeof loanLedger.$inferSelect;
+export type InsertLoanLedger = z.infer<typeof insertLoanLedgerSchema>;
 export type InsurancePolicy = typeof insurancePolicies.$inferSelect;
 export type InsertInsurancePolicy = z.infer<typeof insertInsurancePolicySchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
