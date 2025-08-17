@@ -7,6 +7,7 @@ import path from "path";
 import fs from "fs/promises";
 import { analyzeDocument } from "./openai";
 import feeRoutes from "./routes/fees";
+import { registerLedgerRoutes } from "./routes/ledger";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -960,6 +961,9 @@ To implement full file serving:
 
   // ============= FEE MANAGEMENT ROUTES =============
   app.use("/api/fees", feeRoutes);
+  
+  // Register ledger routes
+  registerLedgerRoutes(app);
 
   // ============= AI DOCUMENT ANALYSIS ROUTES =============
   app.post("/api/documents/analyze", upload.single('file'), isAuthenticated, async (req, res) => {
