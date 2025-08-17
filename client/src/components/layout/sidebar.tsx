@@ -12,7 +12,8 @@ import {
   DollarSign, 
   BarChart3, 
   Shield, 
-  LogOut 
+  LogOut,
+  Receipt
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ const navigation = [
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Documents", href: "/documents", icon: FolderOpen },
   { name: "Escrow Management", href: "/escrow", icon: DollarSign },
+  { name: "Fee Management", href: "/fees", icon: Receipt },
   { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
   { name: "Compliance", href: "/compliance", icon: Shield },
 ];

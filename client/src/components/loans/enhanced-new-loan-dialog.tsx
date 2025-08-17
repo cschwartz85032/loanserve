@@ -283,7 +283,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) || prev.principalBalance,
       interestRate: toString(extractedData.interestRate) || prev.interestRate,
       rateType: cleanString(extractedData.rateType) || prev.rateType,
-      loanTerm: toString(extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
+      loanTerm: toString(extractedData.loanTermMonths || extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
       
       // Property Information  
       propertyType: extractedData.propertyType ? normalizePropertyType(extractedData.propertyType) : prev.propertyType,
@@ -323,16 +323,33 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       // Enhanced AI-extracted fields
       borrowerSSN: cleanString(extractedData.borrowerSSN) || prev.borrowerSSN,
       borrowerIncome: toString(extractedData.borrowerIncome) || prev.borrowerIncome,
+      
+      // Trustee complete contact info
       trusteeName: cleanString(extractedData.trusteeName) || prev.trusteeName,
+      trusteePhone: cleanString(extractedData.trusteePhone) || prev.trusteePhone,
+      trusteeEmail: cleanString(extractedData.trusteeEmail) || prev.trusteeEmail,
       trusteeStreetAddress: cleanString(extractedData.trusteeStreetAddress) || prev.trusteeStreetAddress,
       trusteeCity: cleanString(extractedData.trusteeCity) || prev.trusteeCity,
       trusteeState: cleanString(extractedData.trusteeState) || prev.trusteeState,
       trusteeZipCode: cleanString(extractedData.trusteeZipCode) || prev.trusteeZipCode,
+      
+      // Beneficiary complete contact info
       beneficiaryName: cleanString(extractedData.beneficiaryName) || prev.beneficiaryName,
+      beneficiaryPhone: cleanString(extractedData.beneficiaryPhone) || prev.beneficiaryPhone,
+      beneficiaryEmail: cleanString(extractedData.beneficiaryEmail) || prev.beneficiaryEmail,
       beneficiaryStreetAddress: cleanString(extractedData.beneficiaryStreetAddress) || prev.beneficiaryStreetAddress,
       beneficiaryCity: cleanString(extractedData.beneficiaryCity) || prev.beneficiaryCity,
       beneficiaryState: cleanString(extractedData.beneficiaryState) || prev.beneficiaryState,
       beneficiaryZipCode: cleanString(extractedData.beneficiaryZipCode) || prev.beneficiaryZipCode,
+      
+      // Escrow Company complete contact info
+      escrowCompanyName: cleanString(extractedData.escrowCompanyName) || prev.escrowCompanyName,
+      escrowCompanyPhone: cleanString(extractedData.escrowCompanyPhone) || prev.escrowCompanyPhone,
+      escrowCompanyEmail: cleanString(extractedData.escrowCompanyEmail) || prev.escrowCompanyEmail,
+      escrowCompanyStreetAddress: cleanString(extractedData.escrowCompanyStreetAddress) || prev.escrowCompanyStreetAddress,
+      escrowCompanyCity: cleanString(extractedData.escrowCompanyCity) || prev.escrowCompanyCity,
+      escrowCompanyState: cleanString(extractedData.escrowCompanyState) || prev.escrowCompanyState,
+      escrowCompanyZipCode: cleanString(extractedData.escrowCompanyZipCode) || prev.escrowCompanyZipCode,
       loanDocuments: extractedData.loanDocuments || prev.loanDocuments,
       defaultConditions: extractedData.defaultConditions || prev.defaultConditions,
       insuranceRequirements: extractedData.insuranceRequirements || prev.insuranceRequirements,
@@ -412,10 +429,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         return value;
       };
 
-      // Calculate maturity date properly
-      const loanTermYears = parseInt(data.loanTerm) || 30;
+      // Calculate maturity date properly (loan term is in MONTHS)
+      const loanTermMonths = parseInt(data.loanTerm) || 360; // Default to 360 months (30 years)
       const today = new Date();
-      const maturityDate = new Date(today.setFullYear(today.getFullYear() + loanTermYears)).toISOString().split('T')[0];
+      const maturityDate = new Date(today.setMonth(today.getMonth() + loanTermMonths)).toISOString().split('T')[0];
 
       // Create the loan with the property ID
       const loanData = {
