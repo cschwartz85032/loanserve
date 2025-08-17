@@ -554,6 +554,107 @@ export default function FeeManagement() {
         </TabsContent>
       </Tabs>
 
+      {/* Edit Template Dialog */}
+      {editingTemplate && (
+        <Dialog open={!!editingTemplate} onOpenChange={() => setEditingTemplate(null)}>
+          <DialogContent className="max-w-4xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle>Edit Fee Template</DialogTitle>
+              <DialogDescription>
+                Modify the fee template details and fees
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="editTemplateName">Template Name</Label>
+                  <Input
+                    id="editTemplateName"
+                    value={editingTemplate.templateName}
+                    onChange={(e) => setEditingTemplate({ ...editingTemplate, templateName: e.target.value })}
+                  />
+                </div>
+                <div className="flex items-center space-x-2 mt-6">
+                  <Switch
+                    id="editIsDefault"
+                    checked={editingTemplate.isDefault}
+                    onCheckedChange={(checked) => setEditingTemplate({ ...editingTemplate, isDefault: checked })}
+                  />
+                  <Label htmlFor="editIsDefault">Set as default template</Label>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="editDescription">Description</Label>
+                <Textarea
+                  id="editDescription"
+                  value={editingTemplate.description || ''}
+                  onChange={(e) => setEditingTemplate({ ...editingTemplate, description: e.target.value })}
+                  rows={2}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Fees ({editingTemplate.fees.length})</Label>
+                <ScrollArea className="h-[300px] border rounded-md p-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Frequency</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editingTemplate.fees.map((fee, index) => (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Badge variant="outline">{fee.type}</Badge>
+                          </TableCell>
+                          <TableCell>{fee.name}</TableCell>
+                          <TableCell>${fee.amount}</TableCell>
+                          <TableCell>{fee.frequency}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                const newFees = editingTemplate.fees.filter((_, i) => i !== index);
+                                setEditingTemplate({ ...editingTemplate, fees: newFees });
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setEditingTemplate(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => updateTemplateMutation.mutate(editingTemplate)}
+                disabled={!editingTemplate.templateName || editingTemplate.fees.length === 0}
+              >
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* View Template Dialog */}
       {selectedTemplate && (
         <Dialog open={!!selectedTemplate} onOpenChange={() => setSelectedTemplate(null)}>
