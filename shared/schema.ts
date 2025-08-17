@@ -407,6 +407,7 @@ export const loans = pgTable("loans", {
   qm: boolean("qm").default(false), // Qualified Mortgage
   // Borrower Information (basic contact info stored in loan for quick access)
   borrowerName: text("borrower_name"),
+  borrowerCompanyName: text("borrower_company_name"),
   borrowerEmail: text("borrower_email"),
   borrowerPhone: text("borrower_phone"),
   // Borrower mailing address (separate from property address)
@@ -419,6 +420,7 @@ export const loans = pgTable("loans", {
   borrowerIncome: decimal("borrower_income", { precision: 15, scale: 2 }),
   // Trustee information
   trusteeName: text("trustee_name"),
+  trusteeCompanyName: text("trustee_company_name"),
   trusteePhone: text("trustee_phone"),
   trusteeEmail: text("trustee_email"),
   trusteeStreetAddress: text("trustee_street_address"),
@@ -427,6 +429,7 @@ export const loans = pgTable("loans", {
   trusteeZipCode: text("trustee_zip_code"),
   // Beneficiary information
   beneficiaryName: text("beneficiary_name"),
+  beneficiaryCompanyName: text("beneficiary_company_name"),
   beneficiaryPhone: text("beneficiary_phone"),
   beneficiaryEmail: text("beneficiary_email"),
   beneficiaryStreetAddress: text("beneficiary_street_address"),
