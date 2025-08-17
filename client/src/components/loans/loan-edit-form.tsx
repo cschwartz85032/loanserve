@@ -486,11 +486,19 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                 <h4 className="text-md font-medium text-gray-700">Borrower</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="borrowerName">Name</Label>
+                    <Label htmlFor="borrowerName">Contact Name</Label>
                     <Input
                       id="borrowerName"
                       value={formData.borrowerName || ''}
                       onChange={(e) => handleInputChange('borrowerName', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerCompanyName">Company Name</Label>
+                    <Input
+                      id="borrowerCompanyName"
+                      value={formData.borrowerCompanyName || ''}
+                      onChange={(e) => handleInputChange('borrowerCompanyName', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
@@ -510,12 +518,23 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       onChange={(e) => handleInputChange('borrowerEmail', e.target.value)}
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="borrowerSSN">SSN</Label>
                     <Input
                       id="borrowerSSN"
                       value={formData.borrowerSSN || ''}
                       onChange={(e) => handleInputChange('borrowerSSN', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="borrowerIncome">Monthly Income</Label>
+                    <Input
+                      id="borrowerIncome"
+                      type="number"
+                      value={formData.borrowerIncome || ''}
+                      onChange={(e) => handleInputChange('borrowerIncome', e.target.value)}
                     />
                   </div>
                 </div>
@@ -558,13 +577,21 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               {/* Trustee Contact */}
               <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
                 <h4 className="text-md font-medium text-gray-700">Trustee</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="trusteeName">Name</Label>
+                    <Label htmlFor="trusteeName">Contact Name</Label>
                     <Input
                       id="trusteeName"
                       value={formData.trusteeName || ''}
                       onChange={(e) => handleInputChange('trusteeName', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="trusteeCompanyName">Company Name</Label>
+                    <Input
+                      id="trusteeCompanyName"
+                      value={formData.trusteeCompanyName || ''}
+                      onChange={(e) => handleInputChange('trusteeCompanyName', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
@@ -624,13 +651,21 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               {/* Beneficiary Contact */}
               <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
                 <h4 className="text-md font-medium text-gray-700">Beneficiary</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="beneficiaryName">Name</Label>
+                    <Label htmlFor="beneficiaryName">Contact Name</Label>
                     <Input
                       id="beneficiaryName"
                       value={formData.beneficiaryName || ''}
                       onChange={(e) => handleInputChange('beneficiaryName', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryCompanyName">Company Name</Label>
+                    <Input
+                      id="beneficiaryCompanyName"
+                      value={formData.beneficiaryCompanyName || ''}
+                      onChange={(e) => handleInputChange('beneficiaryCompanyName', e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
