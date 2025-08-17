@@ -16,7 +16,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { 
   Loader2, Calculator, DollarSign, Home, Calendar, FileText, 
   Download, Eye, Users, ClipboardList, History, Building2,
-  Phone, Mail, MapPin, User
+  Phone, Mail, MapPin, User, Info, Plus
 } from "lucide-react";
 import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
@@ -449,6 +449,76 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Monthly Expenses */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Monthly Expenses</CardTitle>
+                  <CardDescription>Additional costs included in monthly payment</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="propertyTax">Property Tax</Label>
+                      <Input
+                        id="propertyTax"
+                        type="number"
+                        value={formData.propertyTax || ''}
+                        onChange={(e) => handleInputChange('propertyTax', parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="homeInsurance">Home Insurance</Label>
+                      <Input
+                        id="homeInsurance"
+                        type="number"
+                        value={formData.homeInsurance || ''}
+                        onChange={(e) => handleInputChange('homeInsurance', parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="hoaFees">HOA Fees</Label>
+                      <Input
+                        id="hoaFees"
+                        type="number"
+                        value={formData.hoaFees || ''}
+                        onChange={(e) => handleInputChange('hoaFees', parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="pmi">PMI</Label>
+                      <Input
+                        id="pmi"
+                        type="number"
+                        value={formData.pmi || ''}
+                        onChange={(e) => handleInputChange('pmi', parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="servicingFee">Servicing Fee</Label>
+                      <Input
+                        id="servicingFee"
+                        type="number"
+                        value={formData.servicingFee || ''}
+                        onChange={(e) => handleInputChange('servicingFee', parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="otherMonthly">Other Monthly</Label>
+                      <Input
+                        id="otherMonthly"
+                        type="number"
+                        value={formData.otherMonthly || ''}
+                        onChange={(e) => handleInputChange('otherMonthly', parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </TabsContent>
@@ -864,74 +934,210 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5" />
-                Fee Management
+                General Ledger
               </CardTitle>
               <CardDescription>
-                Manage fees associated with this loan
+                Complete transaction history with debit/credit entries and running balance
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-gray-500">
-                <DollarSign className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Fee management system coming soon</p>
-                <p className="text-sm mt-2">You can manage fee templates in the Fee Management page</p>
+              {/* Ledger Actions Bar */}
+              <div className="flex justify-between items-center mb-6">
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Transaction
+                  </Button>
+                  <Button variant="outline" size="sm">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export Ledger
+                  </Button>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">Current Balance</p>
+                  <p className="text-2xl font-bold">$0.00</p>
+                </div>
               </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calculator className="h-5 w-5" />
-                Monthly Expenses
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="hazardInsurance">Hazard Insurance</Label>
-                  <Input
-                    id="hazardInsurance"
-                    type="number"
-                    value={formData.hazardInsurance || ''}
-                    onChange={(e) => handleInputChange('hazardInsurance', parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="propertyTaxes">Property Taxes</Label>
-                  <Input
-                    id="propertyTaxes"
-                    type="number"
-                    value={formData.propertyTaxes || ''}
-                    onChange={(e) => handleInputChange('propertyTaxes', parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="hoaFees">HOA Fees</Label>
-                  <Input
-                    id="hoaFees"
-                    type="number"
-                    value={formData.hoaFees || ''}
-                    onChange={(e) => handleInputChange('hoaFees', parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pmiAmount">PMI Amount</Label>
-                  <Input
-                    id="pmiAmount"
-                    type="number"
-                    value={formData.pmiAmount || ''}
-                    onChange={(e) => handleInputChange('pmiAmount', parseFloat(e.target.value) || 0)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="servicingFee">Servicing Fee</Label>
-                  <Input
-                    id="servicingFee"
-                    type="number"
-                    value={formData.servicingFee || ''}
-                    onChange={(e) => handleInputChange('servicingFee', parseFloat(e.target.value) || 25)}
-                  />
+              {/* Ledger Table */}
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="w-24">Date</TableHead>
+                      <TableHead className="w-32">Transaction ID</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-center">Type</TableHead>
+                      <TableHead className="text-right">Debit</TableHead>
+                      <TableHead className="text-right">Credit</TableHead>
+                      <TableHead className="text-right font-bold">Balance</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
+                      <TableHead className="w-20">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {/* Sample ledger entries - these would come from the database */}
+                    <TableRow>
+                      <TableCell className="font-mono text-sm">{formData.originationDate || '01/01/2024'}</TableCell>
+                      <TableCell className="font-mono text-xs">TXN-001</TableCell>
+                      <TableCell>Loan Origination</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-green-50">Principal</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">-</TableCell>
+                      <TableCell className="text-right font-mono text-green-600">${formData.loanAmount || '0.00'}</TableCell>
+                      <TableCell className="text-right font-mono font-bold">${formData.loanAmount || '0.00'}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-500">Posted</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" disabled>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    
+                    {/* Example of additional transaction types */}
+                    <TableRow className="bg-gray-50/50">
+                      <TableCell className="font-mono text-sm">01/15/2024</TableCell>
+                      <TableCell className="font-mono text-xs">TXN-002</TableCell>
+                      <TableCell>Origination Fee</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-yellow-50">Fee</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-red-600">$1,500.00</TableCell>
+                      <TableCell className="text-right font-mono">-</TableCell>
+                      <TableCell className="text-right font-mono font-bold">${((parseFloat(formData.loanAmount) || 0) - 1500).toFixed(2)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-500">Posted</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" disabled>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+
+                    <TableRow>
+                      <TableCell className="font-mono text-sm">02/01/2024</TableCell>
+                      <TableCell className="font-mono text-xs">TXN-003</TableCell>
+                      <TableCell>Monthly Payment - Principal</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-blue-50">Payment</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-red-600">$500.00</TableCell>
+                      <TableCell className="text-right font-mono">-</TableCell>
+                      <TableCell className="text-right font-mono font-bold">${((parseFloat(formData.loanAmount) || 0) - 2000).toFixed(2)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-500">Posted</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" disabled>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+
+                    <TableRow className="bg-gray-50/50">
+                      <TableCell className="font-mono text-sm">02/01/2024</TableCell>
+                      <TableCell className="font-mono text-xs">TXN-004</TableCell>
+                      <TableCell>Monthly Payment - Interest</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-purple-50">Interest</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-red-600">$291.67</TableCell>
+                      <TableCell className="text-right font-mono">-</TableCell>
+                      <TableCell className="text-right font-mono font-bold">${((parseFloat(formData.loanAmount) || 0) - 2291.67).toFixed(2)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-500">Posted</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" disabled>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+
+                    <TableRow>
+                      <TableCell className="font-mono text-sm">02/15/2024</TableCell>
+                      <TableCell className="font-mono text-xs">TXN-005</TableCell>
+                      <TableCell>Late Fee</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-red-50">Penalty</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-red-600">$50.00</TableCell>
+                      <TableCell className="text-right font-mono">-</TableCell>
+                      <TableCell className="text-right font-mono font-bold">${((parseFloat(formData.loanAmount) || 0) - 2341.67).toFixed(2)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-500">Posted</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" disabled>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+
+                    <TableRow className="bg-yellow-50">
+                      <TableCell className="font-mono text-sm">02/20/2024</TableCell>
+                      <TableCell className="font-mono text-xs">TXN-006</TableCell>
+                      <TableCell>Late Fee Reversal (Error Correction)</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline" className="bg-orange-50">Reversal</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">-</TableCell>
+                      <TableCell className="text-right font-mono text-green-600">$50.00</TableCell>
+                      <TableCell className="text-right font-mono font-bold">${((parseFloat(formData.loanAmount) || 0) - 2291.67).toFixed(2)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="secondary">Pending Approval</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-4 gap-4 mt-6">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-sm text-gray-500">Total Debits</div>
+                    <div className="text-xl font-bold text-red-600">$2,341.67</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-sm text-gray-500">Total Credits</div>
+                    <div className="text-xl font-bold text-green-600">${formData.loanAmount || '0.00'}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-sm text-gray-500">Pending Transactions</div>
+                    <div className="text-xl font-bold text-yellow-600">1</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="text-sm text-gray-500">Current Balance</div>
+                    <div className="text-xl font-bold">${((parseFloat(formData.loanAmount) || 0) - 2291.67).toFixed(2)}</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Note about non-destructive accounting */}
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-start space-x-3">
+                  <Info className="h-5 w-5 text-blue-500 mt-0.5" />
+                  <div className="text-sm text-blue-900">
+                    <p className="font-semibold mb-1">Non-Destructive Accounting Policy</p>
+                    <p>All corrections are made through reversing entries. Original transactions cannot be deleted. 
+                    Deletions require senior officer approval and are logged in the audit trail.</p>
+                  </div>
                 </div>
               </div>
             </CardContent>
