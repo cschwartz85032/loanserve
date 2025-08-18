@@ -104,6 +104,15 @@ interface EscrowDisbursement {
   createdAt: string;
 }
 
+interface EscrowSummaryResponse {
+  summary: {
+    totalDisbursements: number;
+    activeDisbursements: number;
+    onHoldDisbursements: number;
+    totalAnnualAmount: string;
+  };
+}
+
 export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingDisbursement, setEditingDisbursement] = useState<EscrowDisbursement | null>(null);
@@ -112,10 +121,13 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
 
   const { data: disbursements = [], isLoading } = useQuery({
     queryKey: ['/api/loans', loanId, 'escrow-disbursements'],
-    queryFn: () => apiRequest(`/api/loans/${loanId}/escrow-disbursements`),
+    queryFn: async () => {
+      const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
+      return Array.isArray(response) ? response : [];
+    },
   });
 
-  const { data: escrowSummary } = useQuery({
+  const { data: escrowSummary } = useQuery<EscrowSummaryResponse>({
     queryKey: ['/api/loans', loanId, 'escrow-summary'],
     queryFn: () => apiRequest(`/api/loans/${loanId}/escrow-summary`),
   });
@@ -798,7 +810,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {disbursements.map((disbursement: EscrowDisbursement) => (
+                {Array.isArray(disbursements) && disbursements.map((disbursement: EscrowDisbursement) => (
                   <TableRow key={disbursement.id}>
                     <TableCell>
                       <div>
@@ -864,8 +876,16 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           onClick={() => {
                             setEditingDisbursement(disbursement);
                             form.reset({
-                              ...disbursement,
-                              nextDueDate: disbursement.nextDueDate.split('T')[0]
+                              disbursementType: disbursement.disbursementType as any,
+                              description: disbursement.description,
+                              payeeName: disbursement.payeeName,
+                              paymentMethod: disbursement.paymentMethod as any,
+                              frequency: disbursement.frequency as any,
+                              annualAmount: disbursement.annualAmount,
+                              paymentAmount: disbursement.paymentAmount,
+                              nextDueDate: disbursement.nextDueDate.split('T')[0],
+                              autoPayEnabled: disbursement.autoPayEnabled,
+                              notes: disbursement.notes || undefined
                             });
                             setIsAddDialogOpen(true);
                           }}
@@ -877,7 +897,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           size="sm"
                           onClick={() => {
                             const action = disbursement.isOnHold ? 'release' : 'hold';
-                            const reason = action === 'hold' ? prompt('Reason for hold:') : undefined;
+                            const reason = action === 'hold' ? prompt('Reason for hold:') || '' : undefined;
                             if (action === 'release' || (action === 'hold' && reason)) {
                               holdMutation.mutate({ 
                                 id: disbursement.id, 
