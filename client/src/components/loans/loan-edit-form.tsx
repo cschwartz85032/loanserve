@@ -46,22 +46,33 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   });
 
   // Fetch escrow disbursements with custom query function
-  const { data: escrowDisbursements, isLoading: isDisbursementsLoading } = useQuery({
+  const { data: escrowDisbursements, isLoading: isDisbursementsLoading, refetch: refetchDisbursements } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     queryFn: async () => {
-      console.log('Fetching escrow disbursements for loan:', loanId);
-      const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
-        credentials: 'include'
-      });
-      if (!response.ok) {
-        console.error('Failed to fetch escrow disbursements');
+      console.log('=== FETCHING ESCROW DISBURSEMENTS ===');
+      console.log('Loan ID:', loanId);
+      try {
+        const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
+          credentials: 'include'
+        });
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+          console.error('Failed to fetch escrow disbursements, status:', response.status);
+          return [];
+        }
+        const data = await response.json();
+        console.log('=== FETCHED ESCROW DISBURSEMENTS ===');
+        console.log('Number of disbursements:', data.length);
+        console.log('Disbursements data:', data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching disbursements:', error);
         return [];
       }
-      const data = await response.json();
-      console.log('Fetched escrow disbursements:', data);
-      return data;
     },
-    enabled: !!loanId
+    enabled: !!loanId,
+    staleTime: 0,
+    refetchOnMount: true
   });
 
   // Fetch documents for this loan
@@ -77,17 +88,27 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
+  // Force fetch disbursements when loan is loaded
+  useEffect(() => {
+    if (loanId && loan) {
+      console.log('=== LOAN LOADED, TRIGGERING DISBURSEMENTS FETCH ===');
+      refetchDisbursements();
+    }
+  }, [loanId, loan]);
+
   // Update form data when loan is loaded
   useEffect(() => {
     if (loan) {
-      console.log('Loan data loaded:', loan);
-      console.log('Disbursements loading status:', isDisbursementsLoading);
-      console.log('Current escrow disbursements:', escrowDisbursements);
+      console.log('=== UPDATING FORM DATA ===');
+      console.log('Loan data:', loan);
+      console.log('Disbursements loading?:', isDisbursementsLoading);
+      console.log('Escrow disbursements:', escrowDisbursements);
       setFormData(loan);
       // Calculate payments once both loan and disbursements are available
       if (!isDisbursementsLoading) {
         const disbursementsArray = Array.isArray(escrowDisbursements) ? escrowDisbursements : [];
-        console.log('Escrow disbursements ready:', disbursementsArray);
+        console.log('=== CALCULATING PAYMENTS ===');
+        console.log('Disbursements array:', disbursementsArray);
         calculatePayments(loan, disbursementsArray);
       }
     }
