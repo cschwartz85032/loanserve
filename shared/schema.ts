@@ -438,6 +438,7 @@ export const loans = pgTable("loans", {
   beneficiaryZipCode: text("beneficiary_zip_code"),
   // Escrow company information
   escrowCompanyName: text("escrow_company_name"),
+  escrowNumber: text("escrow_number"),
   escrowCompanyPhone: text("escrow_company_phone"),
   escrowCompanyEmail: text("escrow_company_email"),
   escrowCompanyStreetAddress: text("escrow_company_street_address"),

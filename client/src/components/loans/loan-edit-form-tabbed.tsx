@@ -220,7 +220,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiary</TabsTrigger>
-          <TabsTrigger value="documents">Document Management</TabsTrigger>
+          <TabsTrigger value="documents">Doc Management</TabsTrigger>
           <TabsTrigger value="accounting">Accounting</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
         </TabsList>
@@ -693,13 +693,22 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="escrowCompanyName">Company Name</Label>
                   <Input
                     id="escrowCompanyName"
                     value={formData.escrowCompanyName || ''}
                     onChange={(e) => handleInputChange('escrowCompanyName', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="escrowNumber">Escrow Number</Label>
+                  <Input
+                    id="escrowNumber"
+                    value={formData.escrowNumber || ''}
+                    onChange={(e) => handleInputChange('escrowNumber', e.target.value)}
+                    placeholder="ESC-123456"
                   />
                 </div>
                 <div className="space-y-2">
