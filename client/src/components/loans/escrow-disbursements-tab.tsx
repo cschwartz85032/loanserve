@@ -172,10 +172,30 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
     resolver: zodResolver(disbursementSchema),
     defaultValues: {
       disbursementType: 'taxes',
+      description: '',
+      payeeName: '',
+      payeeContactName: '',
+      payeePhone: '',
+      payeeEmail: '',
+      payeeStreetAddress: '',
+      payeeCity: '',
+      payeeState: '',
+      payeeZipCode: '',
+      accountNumber: '',
+      policyNumber: '',
       paymentMethod: 'check',
+      bankAccountNumber: '',
+      achRoutingNumber: '',
+      wireRoutingNumber: '',
+      bankName: '',
       frequency: 'annual',
+      paymentAmount: '',
+      nextDueDate: '',
+      annualAmount: '',
+      monthlyAmount: '',
       autoPayEnabled: true,
       daysBeforeDue: 10,
+      notes: '',
     },
   });
 
@@ -486,7 +506,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                       name="notes"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Notes (Optional)</FormLabel>
+                          <FormLabel>Notes</FormLabel>
                           <FormControl>
                             <Textarea placeholder="Additional notes..." {...field} />
                           </FormControl>
@@ -516,7 +536,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeContactName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Contact Person (Optional)</FormLabel>
+                            <FormLabel>Contact Person</FormLabel>
                             <FormControl>
                               <Input placeholder="John Smith" {...field} />
                             </FormControl>
@@ -531,7 +551,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeePhone"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Phone (Optional)</FormLabel>
+                            <FormLabel>Phone</FormLabel>
                             <FormControl>
                               <Input placeholder="(555) 123-4567" {...field} />
                             </FormControl>
@@ -544,7 +564,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeEmail"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Email (Optional)</FormLabel>
+                            <FormLabel>Email</FormLabel>
                             <FormControl>
                               <Input placeholder="contact@taxcollector.gov" {...field} />
                             </FormControl>
@@ -557,7 +577,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeFax"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Fax (Optional)</FormLabel>
+                            <FormLabel>Fax</FormLabel>
                             <FormControl>
                               <Input placeholder="(555) 123-4568" {...field} />
                             </FormControl>
@@ -916,7 +936,33 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                     onClick={() => {
                       setIsAddDialogOpen(false);
                       setEditingDisbursement(null);
-                      form.reset();
+                      form.reset({
+                        disbursementType: 'taxes',
+                        description: '',
+                        payeeName: '',
+                        payeeContactName: '',
+                        payeePhone: '',
+                        payeeEmail: '',
+                        payeeStreetAddress: '',
+                        payeeCity: '',
+                        payeeState: '',
+                        payeeZipCode: '',
+                        accountNumber: '',
+                        policyNumber: '',
+                        paymentMethod: 'check',
+                        bankAccountNumber: '',
+                        achRoutingNumber: '',
+                        wireRoutingNumber: '',
+                        bankName: '',
+                        frequency: 'annual',
+                        paymentAmount: '',
+                        nextDueDate: '',
+                        annualAmount: '',
+                        monthlyAmount: '',
+                        autoPayEnabled: true,
+                        daysBeforeDue: 10,
+                        notes: '',
+                      });
                     }}
                   >
                     Cancel
@@ -1026,45 +1072,49 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           size="sm"
                           onClick={() => {
                             setEditingDisbursement(disbursement);
-                            form.reset({
-                              disbursementType: disbursement.disbursementType as any,
-                              description: disbursement.description,
-                              payeeName: disbursement.payeeName,
-                              payeeContactName: disbursement.payeeContactName || undefined,
-                              payeePhone: disbursement.payeePhone || undefined,
-                              payeeEmail: disbursement.payeeEmail || undefined,
-                              payeeStreetAddress: disbursement.payeeStreetAddress || undefined,
-                              payeeCity: disbursement.payeeCity || undefined,
-                              payeeState: disbursement.payeeState || undefined,
-                              payeeZipCode: disbursement.payeeZipCode || undefined,
-                              accountNumber: disbursement.accountNumber || undefined,
-                              policyNumber: disbursement.policyNumber || undefined,
-                              paymentMethod: disbursement.paymentMethod as any,
-                              bankAccountNumber: disbursement.bankAccountNumber || undefined,
-                              achRoutingNumber: disbursement.achRoutingNumber || undefined,
-                              wireRoutingNumber: disbursement.wireRoutingNumber || undefined,
-                              accountType: disbursement.accountType as any,
-                              bankName: disbursement.bankName || undefined,
-                              wireInstructions: disbursement.wireInstructions || undefined,
-                              frequency: disbursement.frequency as any,
-                              paymentAmount: disbursement.paymentAmount,
-                              nextDueDate: disbursement.nextDueDate ? disbursement.nextDueDate.split('T')[0] : '',
-                              autoPayEnabled: disbursement.autoPayEnabled,
-                              daysBeforeDue: disbursement.daysBeforeDue || 10,
-                              notes: disbursement.notes || undefined
-                            });
                             
-                            // Recalculate amounts based on payment amount and frequency
-                            const amount = parseFloat(disbursement.paymentAmount);
+                            // Prepare form values with proper defaults to avoid undefined values
+                            const formValues = {
+                              disbursementType: disbursement.disbursementType as any,
+                              description: disbursement.description || '',
+                              payeeName: disbursement.payeeName || '',
+                              payeeContactName: disbursement.payeeContactName || '',
+                              payeePhone: disbursement.payeePhone || '',
+                              payeeEmail: disbursement.payeeEmail || '',
+                              payeeStreetAddress: disbursement.payeeStreetAddress || '',
+                              payeeCity: disbursement.payeeCity || '',
+                              payeeState: disbursement.payeeState || '',
+                              payeeZipCode: disbursement.payeeZipCode || '',
+                              accountNumber: disbursement.accountNumber || '',
+                              policyNumber: disbursement.policyNumber || '',
+                              paymentMethod: disbursement.paymentMethod as any,
+                              bankAccountNumber: disbursement.bankAccountNumber || '',
+                              achRoutingNumber: disbursement.achRoutingNumber || '',
+                              wireRoutingNumber: disbursement.wireRoutingNumber || '',
+                              bankName: disbursement.bankName || '',
+                              frequency: disbursement.frequency as any,
+                              paymentAmount: disbursement.paymentAmount || '',
+                              nextDueDate: disbursement.nextDueDate ? disbursement.nextDueDate.split('T')[0] : '',
+                              autoPayEnabled: disbursement.autoPayEnabled || false,
+                              daysBeforeDue: disbursement.daysBeforeDue || 10,
+                              notes: disbursement.notes || ''
+                            };
+                            
+                            // Calculate derived amounts
+                            const amount = parseFloat(disbursement.paymentAmount || '0');
                             const multiplier = getFrequencyMultiplier(disbursement.frequency);
                             
-                            if (!isNaN(amount)) {
+                            if (!isNaN(amount) && amount > 0) {
                               const annualAmount = (amount * multiplier).toFixed(2);
                               const monthlyAmount = (parseFloat(annualAmount) / 12).toFixed(2);
-                              
-                              form.setValue('annualAmount', annualAmount);
-                              form.setValue('monthlyAmount', monthlyAmount);
+                              formValues.annualAmount = annualAmount;
+                              formValues.monthlyAmount = monthlyAmount;
+                            } else {
+                              formValues.annualAmount = '';
+                              formValues.monthlyAmount = '';
                             }
+                            
+                            form.reset(formValues);
                             setIsAddDialogOpen(true);
                           }}
                         >
