@@ -60,7 +60,10 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
   // Add transaction mutation
   const addTransactionMutation = useMutation({
     mutationFn: (transaction: any) => 
-      apiRequest(`/api/loans/${loanId}/ledger`, 'POST', transaction),
+      apiRequest(`/api/loans/${loanId}/ledger`, {
+        method: 'POST',
+        body: JSON.stringify(transaction)
+      }),
     onSuccess: () => {
       toast({ title: "Transaction added", description: "The transaction has been recorded in the ledger." });
       setShowAddTransaction(false);
@@ -80,7 +83,10 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
   // Approve transaction mutation
   const approveTransactionMutation = useMutation({
     mutationFn: ({ id, notes }: { id: number; notes: string }) => 
-      apiRequest(`/api/ledger/${id}/approve`, 'POST', { approvalNotes: notes }),
+      apiRequest(`/api/ledger/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ approvalNotes: notes })
+      }),
     onSuccess: () => {
       toast({ title: "Transaction approved", description: "The transaction has been posted to the ledger." });
       setShowApprovalDialog(false);
@@ -118,7 +124,10 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
   // Email ledger
   const emailLedgerMutation = useMutation({
     mutationFn: (data: any) => 
-      apiRequest(`/api/loans/${loanId}/ledger/email`, 'POST', data),
+      apiRequest(`/api/loans/${loanId}/ledger/email`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
     onSuccess: () => {
       toast({ title: "Email sent", description: "Ledger report has been emailed successfully." });
       setShowEmailDialog(false);
