@@ -45,25 +45,61 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch escrow disbursements with explicit queryFn
-  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading } = useQuery({
+  // Fetch escrow disbursements - force fresh fetch with aggressive settings
+  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, error: disbursementsError } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     queryFn: async () => {
-      if (!loanId) return [];
-      console.log('Fetching escrow disbursements for loan:', loanId);
-      const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
-        credentials: 'include'
-      });
-      if (!response.ok) {
-        console.error('Failed to fetch disbursements:', response.status);
+      console.log('=== DISBURSEMENTS QUERYFN CALLED ===');
+      console.log('LoanId in queryFn:', loanId);
+      
+      if (!loanId) {
+        console.log('No loanId, returning empty array');
         return [];
       }
-      const data = await response.json();
-      console.log('Fetched disbursements:', data);
-      return data;
+      
+      const url = `/api/loans/${loanId}/escrow-disbursements`;
+      console.log('Fetching from URL:', url);
+      
+      try {
+        const response = await fetch(url, {
+          credentials: 'include',
+          cache: 'no-cache'
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+          console.error('Failed to fetch disbursements:', response.status);
+          return [];
+        }
+        
+        const data = await response.json();
+        console.log('Successfully fetched disbursements:', data);
+        console.log('Number of disbursements:', data.length);
+        
+        return data;
+      } catch (error) {
+        console.error('Error in disbursements queryFn:', error);
+        return [];
+      }
     },
-    enabled: !!loanId
+    enabled: !!loanId,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    retry: false
   });
+  
+  // Log query state
+  useEffect(() => {
+    console.log('=== DISBURSEMENTS QUERY STATE ===');
+    console.log('loanId:', loanId);
+    console.log('enabled:', !!loanId);
+    console.log('isLoading:', isDisbursementsLoading);
+    console.log('error:', disbursementsError);
+    console.log('data:', escrowDisbursements);
+  }, [loanId, isDisbursementsLoading, disbursementsError, escrowDisbursements]);
   
   // Fetch documents for this loan
   const { data: documents, refetch: refetchDocuments } = useQuery({
