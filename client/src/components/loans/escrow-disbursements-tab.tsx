@@ -63,7 +63,7 @@ const disbursementSchema = z.object({
   // Payment schedule
   frequency: z.enum(['once', 'monthly', 'quarterly', 'semi_annual', 'annual']),
   monthlyAmount: z.string().optional(),
-  annualAmount: z.string().min(1, "Annual amount is required"),
+  annualAmount: z.string().optional(), // Will be calculated
   paymentAmount: z.string().min(1, "Payment amount is required"),
   nextDueDate: z.string().min(1, "Next due date is required"),
   firstDueDate: z.string().optional(),
@@ -157,6 +157,37 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       daysBeforeDue: 10,
     },
   });
+
+  // Helper function to get frequency multiplier
+  const getFrequencyMultiplier = (frequency: string) => {
+    switch (frequency) {
+      case 'once': return 1;
+      case 'monthly': return 12;
+      case 'quarterly': return 4;
+      case 'semi_annual': return 2;
+      case 'annual': return 1;
+      default: return 1;
+    }
+  };
+
+  // Watch for changes in payment amount and frequency to calculate annual and monthly amounts
+  const paymentAmount = form.watch('paymentAmount');
+  const frequency = form.watch('frequency');
+
+  useEffect(() => {
+    if (paymentAmount && frequency) {
+      const amount = parseFloat(paymentAmount);
+      const multiplier = getFrequencyMultiplier(frequency);
+      
+      if (!isNaN(amount)) {
+        const annualAmount = (amount * multiplier).toFixed(2);
+        const monthlyAmount = (parseFloat(annualAmount) / 12).toFixed(2);
+        
+        form.setValue('annualAmount', annualAmount);
+        form.setValue('monthlyAmount', monthlyAmount);
+      }
+    }
+  }, [paymentAmount, frequency, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: DisbursementFormData) =>
@@ -763,9 +794,16 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="annualAmount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Annual Amount *</FormLabel>
+                            <FormLabel>Annual Amount (Calculated)</FormLabel>
                             <FormControl>
-                              <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field} 
+                                readOnly
+                                className="bg-muted"
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -776,9 +814,16 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="monthlyAmount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Monthly Amount (Optional)</FormLabel>
+                            <FormLabel>Monthly Amount (Calculated)</FormLabel>
                             <FormControl>
-                              <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                              <Input 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                {...field} 
+                                readOnly
+                                className="bg-muted"
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -951,14 +996,42 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                               disbursementType: disbursement.disbursementType as any,
                               description: disbursement.description,
                               payeeName: disbursement.payeeName,
+                              payeeContactName: disbursement.payeeContactName || undefined,
+                              payeePhone: disbursement.payeePhone || undefined,
+                              payeeEmail: disbursement.payeeEmail || undefined,
+                              payeeStreetAddress: disbursement.payeeStreetAddress || undefined,
+                              payeeCity: disbursement.payeeCity || undefined,
+                              payeeState: disbursement.payeeState || undefined,
+                              payeeZipCode: disbursement.payeeZipCode || undefined,
+                              parcelNumber: disbursement.parcelNumber || undefined,
+                              accountNumber: disbursement.accountNumber || undefined,
+                              policyNumber: disbursement.policyNumber || undefined,
                               paymentMethod: disbursement.paymentMethod as any,
+                              bankAccountNumber: disbursement.bankAccountNumber || undefined,
+                              achRoutingNumber: disbursement.achRoutingNumber || undefined,
+                              wireRoutingNumber: disbursement.wireRoutingNumber || undefined,
+                              accountType: disbursement.accountType as any,
+                              bankName: disbursement.bankName || undefined,
+                              wireInstructions: disbursement.wireInstructions || undefined,
                               frequency: disbursement.frequency as any,
-                              annualAmount: disbursement.annualAmount,
                               paymentAmount: disbursement.paymentAmount,
                               nextDueDate: disbursement.nextDueDate.split('T')[0],
                               autoPayEnabled: disbursement.autoPayEnabled,
+                              daysBeforeDue: disbursement.daysBeforeDue || 10,
                               notes: disbursement.notes || undefined
                             });
+                            
+                            // Recalculate amounts based on payment amount and frequency
+                            const amount = parseFloat(disbursement.paymentAmount);
+                            const multiplier = getFrequencyMultiplier(disbursement.frequency);
+                            
+                            if (!isNaN(amount)) {
+                              const annualAmount = (amount * multiplier).toFixed(2);
+                              const monthlyAmount = (parseFloat(annualAmount) / 12).toFixed(2);
+                              
+                              form.setValue('annualAmount', annualAmount);
+                              form.setValue('monthlyAmount', monthlyAmount);
+                            }
                             setIsAddDialogOpen(true);
                           }}
                         >
