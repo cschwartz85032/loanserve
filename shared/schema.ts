@@ -190,7 +190,8 @@ export const disbursementStatusEnum = pgEnum('disbursement_status', [
   'on_hold',
   'suspended',
   'cancelled',
-  'completed'
+  'completed',
+  'terminated' // For historical records that are no longer active (e.g., old insurance policies)
 ]);
 
 export const collectionStatusEnum = pgEnum('collection_status', [
@@ -734,7 +735,34 @@ export const escrowDisbursements = pgTable("escrow_disbursements", {
   
   // Type-specific fields
   parcelNumber: text("parcel_number"), // For property taxes
+  
+  // Insurance-specific fields
   policyNumber: text("policy_number"), // For insurance
+  insuredName: text("insured_name"), // Name of the insured party
+  insuranceCompanyName: text("insurance_company_name"), // Insurance company name
+  policyDescription: text("policy_description"), // Type of insurance (Hazard, Flood, etc.)
+  policyExpirationDate: date("policy_expiration_date"), // Policy expiration date
+  coverageAmount: decimal("coverage_amount", { precision: 12, scale: 2 }), // Coverage amount in dollars
+  
+  // Insurance property information
+  insurancePropertyAddress: text("insurance_property_address"), // Property covered by insurance
+  insurancePropertyCity: text("insurance_property_city"),
+  insurancePropertyState: text("insurance_property_state"),
+  insurancePropertyZipCode: text("insurance_property_zip_code"),
+  
+  // Insurance agent information
+  agentName: text("agent_name"), // Insurance agent's name
+  agentBusinessAddress: text("agent_business_address"), // Agent's business address
+  agentCity: text("agent_city"),
+  agentState: text("agent_state"),
+  agentZipCode: text("agent_zip_code"),
+  agentPhone: text("agent_phone"), // Agent's phone number
+  agentFax: text("agent_fax"), // Agent's fax number
+  agentEmail: text("agent_email"), // Agent's email
+  
+  // Insurance document reference
+  insuranceDocumentId: integer("insurance_document_id").references(() => documents.id), // Link to uploaded insurance document
+  insuranceTracking: boolean("insurance_tracking").default(true), // Active insurance tracking status
   
   // Payment method and banking information
   paymentMethod: disbursementPaymentMethodEnum("payment_method").notNull().default('check'),
