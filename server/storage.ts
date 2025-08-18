@@ -371,8 +371,8 @@ export class DatabaseStorage implements IStorage {
     });
     
     // Always remove createdAt and updatedAt as they're managed by the database
-    delete cleanUpdateData.createdAt;
-    delete cleanUpdateData.updatedAt;
+    delete (cleanUpdateData as any).createdAt;
+    delete (cleanUpdateData as any).updatedAt;
 
     const [loan] = await db
       .update(loans)
@@ -511,8 +511,8 @@ export class DatabaseStorage implements IStorage {
     });
     
     // Remove managed timestamp fields
-    delete cleanUpdateData.createdAt;
-    delete cleanUpdateData.updatedAt;
+    delete (cleanUpdateData as any).createdAt;
+    delete (cleanUpdateData as any).updatedAt;
     
     const [inv] = await db
       .update(investors)
