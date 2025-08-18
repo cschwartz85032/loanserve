@@ -299,27 +299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Remove timestamp fields that are automatically managed
       const { createdAt, updatedAt, ...updateData } = req.body;
       
-      // Log contact fields to debug
-      console.log('Updating loan with contact fields:', {
-        escrow: {
-          escrowNumber: updateData.escrowNumber,
-          escrowCompanyName: updateData.escrowCompanyName,
-          escrowCompanyPhone: updateData.escrowCompanyPhone,
-          escrowCompanyEmail: updateData.escrowCompanyEmail
-        },
-        trustee: {
-          trusteeName: updateData.trusteeName,
-          trusteeCompanyName: updateData.trusteeCompanyName,
-          trusteePhone: updateData.trusteePhone,
-          trusteeEmail: updateData.trusteeEmail
-        },
-        beneficiary: {
-          beneficiaryName: updateData.beneficiaryName,
-          beneficiaryCompanyName: updateData.beneficiaryCompanyName,
-          beneficiaryPhone: updateData.beneficiaryPhone,
-          beneficiaryEmail: updateData.beneficiaryEmail
-        }
-      });
+      // Contact fields are now saving correctly
       
       const loan = await storage.updateLoan(id, updateData);
       

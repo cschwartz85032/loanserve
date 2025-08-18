@@ -220,7 +220,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiary</TabsTrigger>
-          <TabsTrigger value="documents">Doc Management</TabsTrigger>
+          <TabsTrigger value="documents">Docs</TabsTrigger>
           <TabsTrigger value="accounting">Accounting</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
         </TabsList>
