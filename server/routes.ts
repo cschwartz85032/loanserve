@@ -19,7 +19,8 @@ import {
   insertPropertySchema,
   insertLoanBorrowerSchema,
   insertPaymentScheduleSchema,
-  insertEscrowItemSchema
+  insertEscrowItemSchema,
+  insertInvestorSchema
 } from "@shared/schema";
 
 function isAuthenticated(req: any, res: any, next: any) {
@@ -352,6 +353,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting loan borrower:", error);
       res.status(400).json({ error: "Failed to delete loan borrower" });
+    }
+  });
+
+  // ============= INVESTOR ROUTES =============
+  app.get("/api/loans/:loanId/investors", async (req, res) => {
+    try {
+      const investors = await storage.getInvestorsByLoan(parseInt(req.params.loanId));
+      res.json(investors);
+    } catch (error) {
+      console.error("Error fetching investors:", error);
+      res.status(500).json({ error: "Failed to fetch investors" });
+    }
+  });
+
+  app.post("/api/loans/:loanId/investors", isAuthenticated, async (req, res) => {
+    try {
+      const loanId = parseInt(req.params.loanId);
+      
+      // Generate unique investor ID if not provided
+      const investorId = req.body.investorId || `INV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      const validatedData = insertInvestorSchema.parse({
+        ...req.body,
+        loanId,
+        investorId
+      });
+      
+      const investor = await storage.createInvestor(validatedData);
+      res.status(201).json(investor);
+    } catch (error) {
+      console.error("Error creating investor:", error);
+      res.status(400).json({ error: "Invalid investor data" });
+    }
+  });
+
+  app.put("/api/investors/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const investor = await storage.updateInvestor(id, req.body);
+      res.json(investor);
+    } catch (error) {
+      console.error("Error updating investor:", error);
+      res.status(400).json({ error: "Failed to update investor" });
+    }
+  });
+
+  app.delete("/api/investors/:id", isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteInvestor(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting investor:", error);
+      res.status(400).json({ error: "Failed to delete investor" });
     }
   });
 

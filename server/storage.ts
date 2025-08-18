@@ -37,7 +37,10 @@ import {
   type PaymentSchedule,
   type InsertPaymentSchedule,
   type EscrowItem,
-  type InsertEscrowItem
+  type InsertEscrowItem,
+  investors,
+  type Investor,
+  type InsertInvestor
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql, count, sum, isNull, gte } from "drizzle-orm";
@@ -92,6 +95,12 @@ export interface IStorage {
   getLoanBorrowers(loanId: number): Promise<LoanBorrower[]>;
   createLoanBorrower(loanBorrower: InsertLoanBorrower): Promise<LoanBorrower>;
   deleteLoanBorrower(id: number): Promise<void>;
+
+  // Investor methods
+  getInvestorsByLoan(loanId: number): Promise<Investor[]>;
+  createInvestor(investor: InsertInvestor): Promise<Investor>;
+  updateInvestor(id: number, investor: Partial<InsertInvestor>): Promise<Investor>;
+  deleteInvestor(id: number): Promise<void>;
 
   // Payment methods
   getPayments(loanId: number, limit?: number): Promise<Payment[]>;
@@ -324,6 +333,8 @@ export class DatabaseStorage implements IStorage {
     await db.delete(documents).where(eq(documents.loanId, id));
     // Delete related loan borrowers
     await db.delete(loanBorrowers).where(eq(loanBorrowers.loanId, id));
+    // Delete related investors
+    await db.delete(investors).where(eq(investors.loanId, id));
     // Delete related payments
     await db.delete(payments).where(eq(payments.loanId, id));
     // Delete related payment schedule
@@ -406,6 +417,32 @@ export class DatabaseStorage implements IStorage {
 
   async deleteLoanBorrower(id: number): Promise<void> {
     await db.delete(loanBorrowers).where(eq(loanBorrowers.id, id));
+  }
+
+  // Investor methods
+  async getInvestorsByLoan(loanId: number): Promise<Investor[]> {
+    return await db.select().from(investors).where(eq(investors.loanId, loanId));
+  }
+
+  async createInvestor(investor: InsertInvestor): Promise<Investor> {
+    const [inv] = await db
+      .insert(investors)
+      .values(investor)
+      .returning();
+    return inv;
+  }
+
+  async updateInvestor(id: number, investor: Partial<InsertInvestor>): Promise<Investor> {
+    const [inv] = await db
+      .update(investors)
+      .set(investor)
+      .where(eq(investors.id, id))
+      .returning();
+    return inv;
+  }
+
+  async deleteInvestor(id: number): Promise<void> {
+    await db.delete(investors).where(eq(investors.id, id));
   }
 
   // Payment methods
