@@ -49,16 +49,28 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, refetch: refetchDisbursements } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     queryFn: async () => {
-      const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
-      const data = await response.json();
-      console.log('=== FETCHED ESCROW DISBURSEMENTS FROM API ===');
-      console.log('Number of disbursements:', data.length);
-      console.log('Disbursements data:', data);
-      return Array.isArray(data) ? data : [];
+      console.log('=== STARTING ESCROW DISBURSEMENTS FETCH ===');
+      console.log('Loan ID:', loanId);
+      console.log('URL:', `/api/loans/${loanId}/escrow-disbursements`);
+      
+      try {
+        const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
+        const data = await response.json();
+        console.log('=== SUCCESSFULLY FETCHED ESCROW DISBURSEMENTS ===');
+        console.log('Number of disbursements:', data.length);
+        console.log('Disbursements data:', data);
+        return Array.isArray(data) ? data : [];
+      } catch (error) {
+        console.error('=== ERROR FETCHING ESCROW DISBURSEMENTS ===');
+        console.error('Error:', error);
+        return [];
+      }
     },
     enabled: !!loanId,
     staleTime: 0,
-    gcTime: 0
+    gcTime: 0,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false
   });
 
   // Fetch documents for this loan
