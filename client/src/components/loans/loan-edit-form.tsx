@@ -45,24 +45,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch escrow disbursements - use proper query key format
+  // Fetch escrow disbursements - use the standard query format
   const { data: escrowDisbursements, isLoading: isDisbursementsLoading } = useQuery({
-    queryKey: ['/api/loans', loanId, 'escrow-disbursements'],
-    queryFn: async () => {
-      console.log('Fetching escrow disbursements for loan:', loanId);
-      const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
-        credentials: 'include'
-      });
-      if (!response.ok) {
-        console.error('Failed to fetch escrow disbursements, status:', response.status);
-        return [];
-      }
-      const data = await response.json();
-      console.log('Fetched escrow disbursements:', data);
-      return data;
-    },
-    enabled: !!loanId,
-    staleTime: 0 // Force fresh fetch
+    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
+    enabled: !!loanId
   });
 
   // Fetch documents for this loan
@@ -87,8 +73,9 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       setFormData(loan);
       // Calculate payments once both loan and disbursements are available
       if (!isDisbursementsLoading) {
-        console.log('Escrow disbursements ready:', escrowDisbursements);
-        calculatePayments(loan, escrowDisbursements || []);
+        const disbursementsArray = Array.isArray(escrowDisbursements) ? escrowDisbursements : [];
+        console.log('Escrow disbursements ready:', disbursementsArray);
+        calculatePayments(loan, disbursementsArray);
       }
     }
   }, [loan, escrowDisbursements, isDisbursementsLoading]);
@@ -169,7 +156,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Recalculate when form data changes
   useEffect(() => {
     if (formData.loanAmount || formData.interestRate || formData.loanTerm) {
-      calculatePayments(formData, escrowDisbursements || []);
+      const disbursementsArray = Array.isArray(escrowDisbursements) ? escrowDisbursements : [];
+      calculatePayments(formData, disbursementsArray);
     }
   }, [formData.loanAmount, formData.interestRate, formData.loanTerm, formData.hazardInsurance, formData.propertyTaxes, formData.hoaFees, formData.pmiAmount, formData.servicingFee, escrowDisbursements]);
 
