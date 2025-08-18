@@ -312,8 +312,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLoan(id: number): Promise<Loan | undefined> {
-    const [loan] = await db.select().from(loans).where(eq(loans.id, id));
-    return loan || undefined;
+    const [result] = await db.select()
+      .from(loans)
+      .leftJoin(properties, eq(loans.propertyId, properties.id))
+      .where(eq(loans.id, id));
+    
+    if (!result) return undefined;
+    
+    // Combine loan and property data
+    return {
+      ...result.loans,
+      // Include property fields at the loan level for easy access
+      parcelNumber: result.properties?.apn,
+      legalDescription: result.properties?.legalDescription,
+      propertyAddress: result.properties?.address,
+      propertyType: result.properties?.propertyType,
+      propertyValue: result.properties?.purchasePrice || result.properties?.currentValue,
+      property: result.properties
+    } as any;
   }
 
   async getLoanByNumber(loanNumber: string): Promise<Loan | undefined> {

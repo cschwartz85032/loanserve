@@ -38,8 +38,7 @@ const disbursementSchema = z.object({
   payeeState: z.string().optional(),
   payeeZipCode: z.string().optional(),
   
-  // Type-specific fields
-  parcelNumber: z.string().optional(), // For taxes
+  // Type-specific fields (parcel number will come from property data)
   accountNumber: z.string().optional(), // For taxes
   policyNumber: z.string().optional(), // For insurance
   
@@ -94,7 +93,6 @@ interface EscrowDisbursement {
   payeeState?: string;
   payeeZipCode?: string;
   // Type-specific fields
-  parcelNumber?: string;
   accountNumber?: string;
   policyNumber?: string;
   // Payment details
@@ -130,6 +128,12 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   const [editingDisbursement, setEditingDisbursement] = useState<EscrowDisbursement | null>(null);
   const [showSensitive, setShowSensitive] = useState<{ [key: number]: boolean }>({});
   const queryClient = useQueryClient();
+
+  // Fetch loan data to get property information
+  const { data: loan } = useQuery({
+    queryKey: [`/api/loans/${loanId}`],
+    enabled: !!loanId
+  });
 
   const { data: disbursements = [], isLoading } = useQuery({
     queryKey: ['/api/loans', loanId, 'escrow-disbursements'],
@@ -401,20 +405,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                     
                     {/* Type-specific fields */}
                     {form.watch('disbursementType') === 'taxes' && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="parcelNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Parcel Number *</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Enter parcel number" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                      <div className="space-y-4">
                         <FormField
                           control={form.control}
                           name="accountNumber"
@@ -428,6 +419,11 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                             </FormItem>
                           )}
                         />
+                        {loan && (
+                          <div className="text-sm text-muted-foreground">
+                            <strong>Parcel Number:</strong> {loan.parcelNumber || 'Not available - please update property information'}
+                          </div>
+                        )}
                       </div>
                     )}
                     
@@ -1003,7 +999,6 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                               payeeCity: disbursement.payeeCity || undefined,
                               payeeState: disbursement.payeeState || undefined,
                               payeeZipCode: disbursement.payeeZipCode || undefined,
-                              parcelNumber: disbursement.parcelNumber || undefined,
                               accountNumber: disbursement.accountNumber || undefined,
                               policyNumber: disbursement.policyNumber || undefined,
                               paymentMethod: disbursement.paymentMethod as any,
