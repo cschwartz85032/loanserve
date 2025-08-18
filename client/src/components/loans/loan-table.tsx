@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, Edit2, Trash2, Eye } from "lucide-react";
+import { Search, Edit2, Trash2, Eye, ChevronUp, ChevronDown } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface LoanTableProps {
   onEditLoan?: (loanId: string) => void;
@@ -18,7 +19,9 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
-  const limit = 10;
+  const [selectedLoans, setSelectedLoans] = useState<Set<number>>(new Set());
+  const [holdLoans, setHoldLoans] = useState<Set<number>>(new Set());
+  const limit = 50; // Show more loans like in the image
 
   const { data: loans, isLoading } = useQuery({
     queryKey: ["/api/loans", { limit, offset: page * limit, status: statusFilter === "all" ? undefined : statusFilter }],
@@ -62,14 +65,44 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      minimumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(num);
   };
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString();
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}/${date.getFullYear()}`;
   };
+
+  const toggleACH = (loanId: number) => {
+    const newSelected = new Set(selectedLoans);
+    if (newSelected.has(loanId)) {
+      newSelected.delete(loanId);
+    } else {
+      newSelected.add(loanId);
+    }
+    setSelectedLoans(newSelected);
+  };
+
+  const toggleHold = (loanId: number) => {
+    const newHold = new Set(holdLoans);
+    if (newHold.has(loanId)) {
+      newHold.delete(loanId);
+    } else {
+      newHold.add(loanId);
+    }
+    setHoldLoans(newHold);
+  };
+
+  // Calculate totals
+  const totals = loans && Array.isArray(loans) ? loans.reduce((acc: any, loan: any) => {
+    acc.principal += parseFloat(loan.principalBalance || 0);
+    acc.payment += parseFloat(loan.paymentAmount || 0);
+    acc.count += 1;
+    return acc;
+  }, { principal: 0, payment: 0, count: 0 }) : { principal: 0, payment: 0, count: 0 };
 
   if (isLoading) {
     return (
@@ -85,194 +118,156 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
     );
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>Active Loans</CardTitle>
-          <div className="flex items-center space-x-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-              <Input
-                placeholder="Search loans..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 w-64"
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="current">Current</SelectItem>
-                <SelectItem value="delinquent_30">30+ Days Late</SelectItem>
-                <SelectItem value="delinquent_60">60+ Days Late</SelectItem>
-                <SelectItem value="delinquent_90">90+ Days Late</SelectItem>
-                <SelectItem value="foreclosure">In Foreclosure</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </CardHeader>
+  const loansList = Array.isArray(loans) ? loans : [];
 
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-50 border-y border-slate-200">
-              <tr>
-                <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Loan ID
-                </th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Property Address
-                </th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Balance
-                </th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Payment
-                </th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Next Due
-                </th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="text-left px-6 py-3 text-xs font-medium text-slate-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-slate-200">
-              {loans && loans.length > 0 ? (
-                loans.map((loan: any) => (
-                  <tr key={loan.id} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+  return (
+    <div className="w-full bg-white">
+      <div className="px-6 py-4 border-b border-gray-200">
+        <h2 className="text-xl font-semibold text-gray-900">All Loans</h2>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-100 border-y border-gray-300">
+              <th className="border-r border-gray-300 px-2 py-2 text-xs font-medium text-gray-700 text-center">
+                ACH
+              </th>
+              <th className="border-r border-gray-300 px-2 py-2 text-xs font-medium text-gray-700 text-center">
+                HOLD
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
+                <div className="flex items-center">
+                  ACCOUNT
+                  <ChevronUp className="w-3 h-3 ml-1" />
+                </div>
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
+                BORROWER NAME
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
+                BY LAST NAME
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
+                FIRST NAME
+              </th>
+              <th className="border-r border-gray-300 px-2 py-2 text-xs font-medium text-gray-700 text-center">
+                MI
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
+                LAST NAME
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-center">
+                INTEREST PAID TO
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-center">
+                PAYMENT DUE DATE
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-center">
+                PAYMENT FREQUENCY
+              </th>
+              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-right">
+                REGULAR PAYMENT
+              </th>
+              <th className="px-3 py-2 text-xs font-medium text-gray-700 text-right">
+                APPLY TO P & I
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white">
+            {loansList.length > 0 ? (
+              loansList.map((loan: any, index: number) => {
+                // Parse borrower name
+                const borrowerName = loan.borrower?.borrowerName || '';
+                const nameParts = borrowerName.split(' ');
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
+                const middleInitial = nameParts.length > 2 ? nameParts[1].charAt(0) : '';
+                
+                return (
+                  <tr 
+                    key={loan.id} 
+                    className={`border-b border-gray-200 ${index % 2 === 0 ? 'bg-blue-50' : 'bg-white'}`}
+                  >
+                    <td className="border-r border-gray-200 px-2 py-2 text-center">
+                      <Checkbox 
+                        checked={selectedLoans.has(loan.id)}
+                        onCheckedChange={() => toggleACH(loan.id)}
+                      />
+                    </td>
+                    <td className="border-r border-gray-200 px-2 py-2 text-center">
+                      <Checkbox 
+                        checked={holdLoans.has(loan.id)}
+                        onCheckedChange={() => toggleHold(loan.id)}
+                      />
+                    </td>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
                       <button
                         onClick={() => onEditLoan?.(loan.id.toString())}
-                        className="text-sm font-medium text-primary-600 hover:text-primary-800 hover:underline"
+                        className="text-blue-600 hover:underline"
                       >
-                        #{loan.loanNumber}
+                        {loan.loanNumber}
                       </button>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-sm text-slate-900">
-                        {loan.property?.address || '...'}, {loan.property?.city || ''}, {loan.property?.state || ''} {loan.property?.zipCode || ''}
-                      </span>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
+                      {borrowerName}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-slate-900">
-                        {formatCurrency(loan.principalBalance)}
-                      </span>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
+                      {lastName}, {firstName}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-slate-900">
-                        {formatCurrency(loan.paymentAmount)}
-                      </span>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
+                      {firstName}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm text-slate-900">
-                        {formatDate(loan.nextPaymentDate)}
-                      </span>
+                    <td className="border-r border-gray-200 px-2 py-2 text-sm text-center">
+                      {middleInitial}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant={getStatusBadgeVariant(loan.status)}>
-                        {getStatusLabel(loan.status)}
-                      </Badge>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
+                      {lastName}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <TooltipProvider>
-                        <div className="flex items-center space-x-1">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => onViewLoan?.(loan.id.toString())}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>View Loan</p>
-                            </TooltipContent>
-                          </Tooltip>
-                          
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => onEditLoan?.(loan.id.toString())}
-                              >
-                                <Edit2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Edit Loan</p>
-                            </TooltipContent>
-                          </Tooltip>
-                          
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="sm"
-                                onClick={() => onDeleteLoan?.(loan.id.toString())}
-                                className="text-red-600 hover:text-red-800"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Delete Loan</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TooltipProvider>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm text-center">
+                      {formatDate(loan.interestPaidTo)}
+                    </td>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm text-center">
+                      {formatDate(loan.nextPaymentDate)}
+                    </td>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm text-center">
+                      {loan.paymentFrequency || 'Monthly'}
+                    </td>
+                    <td className="border-r border-gray-200 px-3 py-2 text-sm text-right">
+                      {formatCurrency(loan.paymentAmount)}
+                    </td>
+                    <td className="px-3 py-2 text-sm text-right">
+                      {formatCurrency(loan.principalBalance)}
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    No loans found. {statusFilter !== "all" && "Try adjusting your filter."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between">
-          <div className="text-sm text-slate-700">
-            Showing <span className="font-medium">{page * limit + 1}</span> to{" "}
-            <span className="font-medium">{Math.min((page + 1) * limit, loans?.length || 0)}</span> of{" "}
-            <span className="font-medium">{loans?.length || 0}</span> results
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(Math.max(0, page - 1))}
-              disabled={page === 0}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(page + 1)}
-              disabled={!loans || loans.length < limit}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={13} className="px-6 py-12 text-center text-gray-500">
+                  No loans found
+                </td>
+              </tr>
+            )}
+          </tbody>
+          {loansList.length > 0 && (
+            <tfoot className="bg-gray-100 border-t-2 border-gray-400">
+              <tr>
+                <td colSpan={3} className="border-r border-gray-300 px-3 py-2 text-sm font-semibold">
+                  {totals.count} loans
+                </td>
+                <td colSpan={8} className="border-r border-gray-300"></td>
+                <td className="border-r border-gray-300 px-3 py-2 text-sm font-semibold text-right">
+                  {formatCurrency(totals.payment)}
+                </td>
+                <td className="px-3 py-2 text-sm font-semibold text-right">
+                  {formatCurrency(totals.principal)}
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
   );
 }
