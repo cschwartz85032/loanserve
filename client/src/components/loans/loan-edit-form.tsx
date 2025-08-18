@@ -45,34 +45,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch escrow disbursements with custom query function
-  const { data: escrowDisbursements, isLoading: isDisbursementsLoading, refetch: refetchDisbursements } = useQuery({
+  // Fetch escrow disbursements - use standard pattern
+  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, refetch: refetchDisbursements } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
-    queryFn: async () => {
-      console.log('=== FETCHING ESCROW DISBURSEMENTS ===');
-      console.log('Loan ID:', loanId);
-      try {
-        const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
-          credentials: 'include'
-        });
-        console.log('Response status:', response.status);
-        if (!response.ok) {
-          console.error('Failed to fetch escrow disbursements, status:', response.status);
-          return [];
-        }
-        const data = await response.json();
-        console.log('=== FETCHED ESCROW DISBURSEMENTS ===');
-        console.log('Number of disbursements:', data.length);
-        console.log('Disbursements data:', data);
-        return data;
-      } catch (error) {
-        console.error('Error fetching disbursements:', error);
-        return [];
-      }
-    },
-    enabled: !!loanId,
-    staleTime: 0,
-    refetchOnMount: true
+    enabled: !!loanId
   });
 
   // Fetch documents for this loan
@@ -88,13 +64,14 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Force fetch disbursements when loan is loaded
+  // Log when disbursements are fetched
   useEffect(() => {
-    if (loanId && loan) {
-      console.log('=== LOAN LOADED, TRIGGERING DISBURSEMENTS FETCH ===');
-      refetchDisbursements();
+    if (escrowDisbursements && escrowDisbursements.length > 0) {
+      console.log('=== ESCROW DISBURSEMENTS LOADED ===');
+      console.log('Number of disbursements:', escrowDisbursements.length);
+      console.log('Disbursements data:', escrowDisbursements);
     }
-  }, [loanId, loan, refetchDisbursements]);
+  }, [escrowDisbursements]);
 
   // Update form data when loan is loaded
   useEffect(() => {
@@ -102,15 +79,17 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       console.log('=== UPDATING FORM DATA ===');
       console.log('Loan data:', loan);
       console.log('Disbursements loading?:', isDisbursementsLoading);
-      console.log('Escrow disbursements:', escrowDisbursements);
+      console.log('Escrow disbursements available?:', escrowDisbursements ? escrowDisbursements.length : 'No');
       setFormData(loan);
-      // Calculate payments once both loan and disbursements are available
-      if (!isDisbursementsLoading) {
-        const disbursementsArray = Array.isArray(escrowDisbursements) ? escrowDisbursements : [];
-        console.log('=== CALCULATING PAYMENTS ===');
-        console.log('Disbursements array:', disbursementsArray);
-        calculatePayments(loan, disbursementsArray);
+      // Always calculate payments, even if disbursements are still loading
+      // The disbursements will be an empty array if not loaded yet
+      const disbursementsArray = Array.isArray(escrowDisbursements) ? escrowDisbursements : [];
+      console.log('=== CALCULATING PAYMENTS ===');
+      console.log('Disbursements array length:', disbursementsArray.length);
+      if (disbursementsArray.length > 0) {
+        console.log('First disbursement:', disbursementsArray[0]);
       }
+      calculatePayments(loan, disbursementsArray);
     }
   }, [loan, escrowDisbursements, isDisbursementsLoading]);
 
