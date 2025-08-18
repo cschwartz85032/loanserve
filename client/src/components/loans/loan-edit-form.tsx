@@ -48,6 +48,18 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Fetch escrow disbursements
   const { data: escrowDisbursements } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
+    queryFn: async () => {
+      const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        console.error('Failed to fetch escrow disbursements');
+        return [];
+      }
+      const data = await response.json();
+      console.log('Fetched escrow disbursements:', data);
+      return data;
+    },
     enabled: !!loanId
   });
 
@@ -67,12 +79,19 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Update form data when loan is loaded
   useEffect(() => {
     if (loan) {
+      console.log('Loan data loaded:', loan);
       setFormData(loan);
-      calculatePayments(loan, escrowDisbursements);
+      // Calculate payments once both loan and disbursements are available
+      if (escrowDisbursements !== undefined) {
+        console.log('Escrow disbursements loaded:', escrowDisbursements);
+        calculatePayments(loan, escrowDisbursements);
+      }
     }
   }, [loan, escrowDisbursements]);
 
   const calculatePayments = (loanData: any, disbursements?: any[]) => {
+    console.log('calculatePayments called with:', { loanData, disbursements });
+    
     // Use the actual payment amount from the database, not calculated
     const principalAndInterest = parseFloat(loanData.paymentAmount) || 0;
 
@@ -80,7 +99,9 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     let escrowBreakdown: Record<string, number> = {};
     let totalEscrow = 0;
     
-    if (disbursements && Array.isArray(disbursements)) {
+    if (disbursements && Array.isArray(disbursements) && disbursements.length > 0) {
+      console.log('Processing disbursements:', disbursements.length);
+      
       // Group disbursements by type
       const grouped = disbursements.reduce((acc: any, disbursement: any) => {
         if (!disbursement.isOnHold && disbursement.status !== 'terminated') {
@@ -88,16 +109,21 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           if (!acc[type]) {
             acc[type] = 0;
           }
-          // Convert annual to monthly
-          const annualAmount = parseFloat(disbursement.annualAmount || 0);
-          acc[type] += annualAmount / 12;
+          // Convert annual to monthly - use monthlyAmount if available, otherwise calculate
+          const monthlyAmount = disbursement.monthlyAmount 
+            ? parseFloat(disbursement.monthlyAmount) 
+            : parseFloat(disbursement.annualAmount || 0) / 12;
+          
+          acc[type] += monthlyAmount;
         }
         return acc;
       }, {});
 
+      console.log('Grouped disbursements:', grouped);
       escrowBreakdown = grouped;
       totalEscrow = Object.values(grouped).reduce((sum: number, amount: any) => sum + amount, 0);
     } else {
+      console.log('No disbursements available, using fallback method');
       // Fallback to old method if no disbursements data
       const hazardInsurance = parseFloat(loanData.hazardInsurance) || 0;
       const propertyTaxes = parseFloat(loanData.propertyTaxes) || 0;
@@ -111,12 +137,19 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       };
     }
 
-    // Other fees
+    // Other fees  
     const hoaFees = parseFloat(loanData.hoaFees) || 0;
     const pmi = parseFloat(loanData.pmiAmount) || 0;
     const servicingFee = parseFloat(loanData.servicingFee) || 0;
 
     const totalMonthlyPayment = principalAndInterest + totalEscrow + hoaFees + pmi + servicingFee;
+
+    console.log('Final calculations:', {
+      principalAndInterest,
+      escrow: totalEscrow,
+      breakdown: escrowBreakdown,
+      totalMonthlyPayment
+    });
 
     setCalculations({
       principalAndInterest,
@@ -274,18 +307,23 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   </div>
                   
                   {/* Escrow Breakdown - Group by class */}
-                  <div className="ml-4 space-y-1 text-sm text-gray-600">
-                    {Object.entries(calculations.breakdown).map(([type, amount]) => (
-                      <div key={type} className="flex justify-between">
-                        <span>• {type === 'insurance' ? 'Insurance' : 
-                               type === 'taxes' ? 'Property Taxes' : 
-                               type === 'hoa' ? 'HOA' :
-                               type === 'other' ? 'Other' :
-                               type.charAt(0).toUpperCase() + type.slice(1)}</span>
-                        <span>{formatCurrency(amount)}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {calculations.breakdown && Object.keys(calculations.breakdown).length > 0 && (
+                    <div className="ml-4 space-y-1 text-sm text-gray-600">
+                      {Object.entries(calculations.breakdown).map(([type, amount]) => (
+                        <div key={type} className="flex justify-between">
+                          <span>• {type === 'insurance' ? 'Insurance' : 
+                                 type === 'taxes' ? 'Property Taxes' : 
+                                 type === 'hoa' ? 'HOA' :
+                                 type === 'other' ? 'Other' :
+                                 type === 'hazardInsurance' ? 'Hazard Insurance' :
+                                 type === 'propertyTaxes' ? 'Property Taxes' :
+                                 type === 'escrowCushion' ? 'Escrow Cushion' :
+                                 type.charAt(0).toUpperCase() + type.slice(1)}</span>
+                          <span>{formatCurrency(amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {calculations.hoaFees > 0 && (
                     <div className="flex justify-between items-center">
