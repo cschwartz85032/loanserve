@@ -45,7 +45,13 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch documents for this loan - THIS WORKS
+  // Fetch escrow disbursements - SIMPLE APPROACH LIKE OTHER QUERIES
+  const { data: escrowDisbursements = [] } = useQuery({
+    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
+    enabled: !!loanId
+  });
+  
+  // Fetch documents for this loan
   const { data: documents, refetch: refetchDocuments } = useQuery({
     queryKey: [`/api/documents`, { loanId }],
     queryFn: async () => {
@@ -57,52 +63,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     },
     enabled: !!loanId
   });
-  
-  // Fetch escrow disbursements - MATCH THE WORKING DOCUMENTS PATTERN
-  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, refetch: refetchDisbursements } = useQuery({
-    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
-    queryFn: async () => {
-      console.log('=== FETCHING ESCROW DISBURSEMENTS ===');
-      const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
-        credentials: 'include'
-      });
-      if (!response.ok) {
-        console.error('Failed to fetch disbursements:', response.status);
-        return [];
-      }
-      const data = await response.json();
-      console.log('Fetched disbursements:', data.length, 'items');
-      return data;
-    },
-    enabled: !!loanId
-  });
 
-  // Force fetch disbursements when loan loads
-  useEffect(() => {
-    console.log('=== REFETCH EFFECT TRIGGERED ===');
-    console.log('LoanId:', loanId, 'Loan:', !!loan);
-    console.log('isDisbursementsLoading:', isDisbursementsLoading);
-    console.log('refetchDisbursements type:', typeof refetchDisbursements);
-    
-    if (loanId && loan && refetchDisbursements) {
-      console.log('=== CALLING REFETCH DISBURSEMENTS NOW ===');
-      refetchDisbursements().then((result) => {
-        console.log('=== REFETCH RESULT ===', result);
-      }).catch((error) => {
-        console.error('=== REFETCH ERROR ===', error);
-      });
-    }
-  }, [loanId, loan, refetchDisbursements]);
-  
   // Log when disbursements are fetched
   useEffect(() => {
-    console.log('=== ESCROW DISBURSEMENTS CHECK ===');
-    console.log('Disbursements:', escrowDisbursements);
     if (escrowDisbursements && Array.isArray(escrowDisbursements) && escrowDisbursements.length > 0) {
-      console.log('Number of disbursements:', escrowDisbursements.length);
-      console.log('First disbursement:', escrowDisbursements[0]);
-    } else {
-      console.log('No disbursements available or still loading');
+      console.log('Escrow disbursements loaded:', escrowDisbursements.length, 'items');
     }
   }, [escrowDisbursements]);
 
