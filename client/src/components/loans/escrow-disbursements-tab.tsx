@@ -200,8 +200,13 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
+      console.log('Disbursement created successfully, invalidating cache for loanId:', loanId);
+      // Invalidate and refetch the disbursements
       queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      // Invalidate and refetch the summary
       queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
+      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
       setIsAddDialogOpen(false);
       form.reset();
       toast({ title: "Disbursement created successfully" });
@@ -222,8 +227,11 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
+      console.log('Disbursement updated successfully, invalidating cache for loanId:', loanId);
       queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
       queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
+      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
       setEditingDisbursement(null);
       toast({ title: "Disbursement updated successfully" });
     },
@@ -236,7 +244,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify({ reason, requestedBy }),
       }),
     onSuccess: () => {
+      console.log('Disbursement hold status updated, invalidating cache for loanId:', loanId);
       queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
       toast({ title: "Disbursement status updated successfully" });
     },
   });
@@ -245,8 +255,11 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
     mutationFn: (id: number) =>
       apiRequest(`/api/escrow-disbursements/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
+      console.log('Disbursement deleted successfully, invalidating cache for loanId:', loanId);
       queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
       queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
+      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
       toast({ title: "Disbursement deleted successfully" });
     },
   });
