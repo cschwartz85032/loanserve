@@ -144,8 +144,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     queryFn: async () => {
       const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
-      console.log('Fetched disbursements from API:', response);
-      return Array.isArray(response) ? response : [];
+      const data = await response.json();
+      console.log('Fetched disbursements from API:', data);
+      return Array.isArray(data) ? data : [];
     },
     staleTime: 0, // Always consider data stale
     gcTime: 0, // Don't cache the data (updated API)
@@ -165,7 +166,8 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
     queryKey: [`/api/loans/${loanId}/escrow-summary`],
     queryFn: async () => {
       const response = await apiRequest(`/api/loans/${loanId}/escrow-summary`);
-      return response as unknown as EscrowSummaryResponse;
+      const data = await response.json();
+      return data as EscrowSummaryResponse;
     },
     staleTime: 0, // Always consider data stale
     gcTime: 0, // Don't cache the data (updated API)
@@ -234,11 +236,13 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   }, [paymentAmount, frequency, form]);
 
   const createMutation = useMutation({
-    mutationFn: (data: DisbursementFormData) =>
-      apiRequest(`/api/loans/${loanId}/escrow-disbursements`, {
+    mutationFn: async (data: DisbursementFormData) => {
+      const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`, {
         method: 'POST',
         body: JSON.stringify(data),
-      }),
+      });
+      return await response.json();
+    },
     onSuccess: (newDisbursement) => {
       console.log('Disbursement created successfully, updating local state and refetching for loanId:', loanId);
       
@@ -264,11 +268,13 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<DisbursementFormData> }) =>
-      apiRequest(`/api/escrow-disbursements/${id}`, {
+    mutationFn: async ({ id, data }: { id: number; data: Partial<DisbursementFormData> }) => {
+      const response = await apiRequest(`/api/escrow-disbursements/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
-      }),
+      });
+      return await response.json();
+    },
     onSuccess: () => {
       console.log('Disbursement updated successfully, manually refetching data for loanId:', loanId);
       refetchDisbursements();
@@ -281,11 +287,13 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   });
 
   const holdMutation = useMutation({
-    mutationFn: ({ id, action, reason, requestedBy }: { id: number; action: 'hold' | 'release'; reason?: string; requestedBy?: string }) =>
-      apiRequest(`/api/escrow-disbursements/${id}/hold`, {
+    mutationFn: async ({ id, action, reason, requestedBy }: { id: number; action: 'hold' | 'release'; reason?: string; requestedBy?: string }) => {
+      const response = await apiRequest(`/api/escrow-disbursements/${id}/hold`, {
         method: 'POST',
         body: JSON.stringify({ action, reason, requestedBy }),
-      }),
+      });
+      return await response.json();
+    },
     onSuccess: (updatedDisbursement) => {
       console.log('Disbursement hold status updated, updating local state and refetching data for loanId:', loanId);
       
@@ -301,8 +309,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiRequest(`/api/escrow-disbursements/${id}`, { method: 'DELETE' }),
+    mutationFn: async (id: number) => {
+      const response = await apiRequest(`/api/escrow-disbursements/${id}`, { method: 'DELETE' });
+      return await response.json();
+    },
     onSuccess: () => {
       console.log('Disbursement deleted successfully, manually refetching data for loanId:', loanId);
       refetchDisbursements();
