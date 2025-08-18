@@ -209,9 +209,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       </div>
 
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
+          <TabsTrigger value="beneficiaries">Beneficiaries</TabsTrigger>
           <TabsTrigger value="documents">Document Management</TabsTrigger>
           <TabsTrigger value="accounting">Accounting</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
@@ -676,87 +677,6 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
             </CardContent>
           </Card>
 
-          {/* Beneficiary Contact */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Beneficiary Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryName">Contact Name</Label>
-                  <Input
-                    id="beneficiaryName"
-                    value={formData.beneficiaryName || ''}
-                    onChange={(e) => handleInputChange('beneficiaryName', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryCompanyName">Company Name</Label>
-                  <Input
-                    id="beneficiaryCompanyName"
-                    value={formData.beneficiaryCompanyName || ''}
-                    onChange={(e) => handleInputChange('beneficiaryCompanyName', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryPhone">Phone</Label>
-                  <Input
-                    id="beneficiaryPhone"
-                    value={formData.beneficiaryPhone || ''}
-                    onChange={(e) => handleInputChange('beneficiaryPhone', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryEmail">Email</Label>
-                  <Input
-                    id="beneficiaryEmail"
-                    type="email"
-                    value={formData.beneficiaryEmail || ''}
-                    onChange={(e) => handleInputChange('beneficiaryEmail', e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryStreetAddress">Street Address</Label>
-                  <Input
-                    id="beneficiaryStreetAddress"
-                    value={formData.beneficiaryStreetAddress || ''}
-                    onChange={(e) => handleInputChange('beneficiaryStreetAddress', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryCity">City</Label>
-                  <Input
-                    id="beneficiaryCity"
-                    value={formData.beneficiaryCity || ''}
-                    onChange={(e) => handleInputChange('beneficiaryCity', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryState">State</Label>
-                  <Input
-                    id="beneficiaryState"
-                    value={formData.beneficiaryState || ''}
-                    onChange={(e) => handleInputChange('beneficiaryState', e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="beneficiaryZipCode">Zip Code</Label>
-                  <Input
-                    id="beneficiaryZipCode"
-                    value={formData.beneficiaryZipCode || ''}
-                    onChange={(e) => handleInputChange('beneficiaryZipCode', e.target.value)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Escrow Company Contact */}
           <Card>
             <CardHeader>
@@ -816,6 +736,96 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                     value={formData.escrowCompanyZipCode || ''}
                     onChange={(e) => handleInputChange('escrowCompanyZipCode', e.target.value)}
                   />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Beneficiaries Tab */}
+        <TabsContent value="beneficiaries" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Beneficiary Information
+              </CardTitle>
+              <CardDescription>
+                Manage beneficiary details for this loan
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="beneficiaryName">Contact Name</Label>
+                  <Input
+                    id="beneficiaryName"
+                    value={formData.beneficiaryName || ''}
+                    onChange={(e) => handleInputChange('beneficiaryName', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="beneficiaryCompanyName">Company Name</Label>
+                  <Input
+                    id="beneficiaryCompanyName"
+                    value={formData.beneficiaryCompanyName || ''}
+                    onChange={(e) => handleInputChange('beneficiaryCompanyName', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="beneficiaryPhone">Phone</Label>
+                  <Input
+                    id="beneficiaryPhone"
+                    value={formData.beneficiaryPhone || ''}
+                    onChange={(e) => handleInputChange('beneficiaryPhone', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="beneficiaryEmail">Email</Label>
+                  <Input
+                    id="beneficiaryEmail"
+                    type="email"
+                    value={formData.beneficiaryEmail || ''}
+                    onChange={(e) => handleInputChange('beneficiaryEmail', e.target.value)}
+                  />
+                </div>
+              </div>
+              <Separator />
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">Beneficiary Address</h4>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryStreetAddress">Street Address</Label>
+                    <Input
+                      id="beneficiaryStreetAddress"
+                      value={formData.beneficiaryStreetAddress || ''}
+                      onChange={(e) => handleInputChange('beneficiaryStreetAddress', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryCity">City</Label>
+                    <Input
+                      id="beneficiaryCity"
+                      value={formData.beneficiaryCity || ''}
+                      onChange={(e) => handleInputChange('beneficiaryCity', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryState">State</Label>
+                    <Input
+                      id="beneficiaryState"
+                      value={formData.beneficiaryState || ''}
+                      onChange={(e) => handleInputChange('beneficiaryState', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="beneficiaryZipCode">Zip Code</Label>
+                    <Input
+                      id="beneficiaryZipCode"
+                      value={formData.beneficiaryZipCode || ''}
+                      onChange={(e) => handleInputChange('beneficiaryZipCode', e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
             </CardContent>
