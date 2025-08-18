@@ -1026,7 +1026,56 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           {disbursement.disbursementType}
                         </Badge>
                         <div className="text-sm text-muted-foreground mt-1">
-                          {disbursement.description}
+                          <button
+                            onClick={() => {
+                              console.log('Opening edit dialog for disbursement:', disbursement.id);
+                              setEditingDisbursement(disbursement);
+                              
+                              // Populate form with disbursement data
+                              form.setValue('disbursementType', disbursement.disbursementType as any);
+                              form.setValue('description', disbursement.description || '');
+                              form.setValue('payeeName', disbursement.payeeName || '');
+                              form.setValue('payeeContactName', disbursement.payeeContactName || '');
+                              form.setValue('payeePhone', disbursement.payeePhone || '');
+                              form.setValue('payeeEmail', disbursement.payeeEmail || '');
+                              form.setValue('payeeStreetAddress', disbursement.payeeStreetAddress || '');
+                              form.setValue('payeeCity', disbursement.payeeCity || '');
+                              form.setValue('payeeState', disbursement.payeeState || '');
+                              form.setValue('payeeZipCode', disbursement.payeeZipCode || '');
+                              form.setValue('accountNumber', disbursement.accountNumber || '');
+                              form.setValue('policyNumber', disbursement.policyNumber || '');
+                              form.setValue('paymentMethod', disbursement.paymentMethod as any);
+                              form.setValue('bankAccountNumber', disbursement.bankAccountNumber || '');
+                              form.setValue('achRoutingNumber', disbursement.achRoutingNumber || '');
+                              form.setValue('wireRoutingNumber', disbursement.wireRoutingNumber || '');
+                              form.setValue('bankName', disbursement.bankName || '');
+                              form.setValue('frequency', disbursement.frequency as any);
+                              form.setValue('paymentAmount', disbursement.paymentAmount || '');
+                              form.setValue('nextDueDate', disbursement.nextDueDate ? disbursement.nextDueDate.split('T')[0] : '');
+                              form.setValue('autoPayEnabled', disbursement.autoPayEnabled || false);
+                              form.setValue('daysBeforeDue', disbursement.daysBeforeDue || 10);
+                              form.setValue('notes', disbursement.notes || '');
+                              
+                              // Calculate and set derived amounts
+                              const amount = parseFloat(disbursement.paymentAmount || '0');
+                              const multiplier = getFrequencyMultiplier(disbursement.frequency);
+                              
+                              if (!isNaN(amount) && amount > 0) {
+                                const annualAmount = (amount * multiplier).toFixed(2);
+                                const monthlyAmount = (parseFloat(annualAmount) / 12).toFixed(2);
+                                form.setValue('annualAmount', annualAmount);
+                                form.setValue('monthlyAmount', monthlyAmount);
+                              } else {
+                                form.setValue('annualAmount', '');
+                                form.setValue('monthlyAmount', '');
+                              }
+                              
+                              setIsAddDialogOpen(true);
+                            }}
+                            className="text-blue-600 underline hover:text-blue-800 text-left"
+                          >
+                            {disbursement.description}
+                          </button>
                         </div>
                       </div>
                     </TableCell>

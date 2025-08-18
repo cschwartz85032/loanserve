@@ -107,34 +107,8 @@ router.delete("/api/escrow-disbursements/:id", async (req, res) => {
   }
 });
 
-// Put disbursement on hold
-router.post("/api/escrow-disbursements/:id/hold", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const { reason, requestedBy } = req.body;
-    
-    const updatedDisbursement = await storage.holdEscrowDisbursement(id, reason, requestedBy);
-    
-    res.json(updatedDisbursement);
-  } catch (error) {
-    console.error("Error putting disbursement on hold:", error);
-    res.status(400).json({ error: "Failed to put disbursement on hold" });
-  }
-});
-
-// Release disbursement from hold
-router.post("/api/escrow-disbursements/:id/release", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    
-    const updatedDisbursement = await storage.releaseEscrowDisbursement(id);
-    
-    res.json(updatedDisbursement);
-  } catch (error) {
-    console.error("Error releasing disbursement from hold:", error);
-    res.status(400).json({ error: "Failed to release disbursement from hold" });
-  }
-});
+// Combined hold/release endpoint - removed old separate endpoints
+// This unified endpoint handles both hold and release actions based on the action parameter
 
 // Record a disbursement payment
 router.post("/api/escrow-disbursements/:id/payments", async (req, res) => {
