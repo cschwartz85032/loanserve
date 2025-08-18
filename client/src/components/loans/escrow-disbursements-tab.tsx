@@ -144,6 +144,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     queryFn: async () => {
       const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
+      console.log('Fetched disbursements from API:', response);
       return Array.isArray(response) ? response : [];
     },
     staleTime: 0, // Always consider data stale
@@ -155,10 +156,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
 
   // Update local state when query data changes - avoid infinite loops
   useEffect(() => {
-    if (disbursements && disbursements !== localDisbursements) {
+    if (Array.isArray(disbursements)) {
       setLocalDisbursements(disbursements);
     }
-  }, [disbursements]); // Remove localDisbursements from dependencies to avoid infinite loop
+  }, [disbursements]);
 
   const { data: escrowSummary, refetch: refetchSummary } = useQuery<EscrowSummaryResponse>({
     queryKey: [`/api/loans/${loanId}/escrow-summary`],
@@ -985,8 +986,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {Array.isArray(localDisbursements) && localDisbursements.map((disbursement: EscrowDisbursement) => (
-                  <TableRow key={disbursement.id}>
+                {Array.isArray(localDisbursements) && localDisbursements.map((disbursement: EscrowDisbursement) => {
+                  console.log('Rendering disbursement in table:', disbursement);
+                  return (
+                    <TableRow key={disbursement.id}>
                     <TableCell>
                       <div>
                         <Badge variant="outline" className="capitalize">
@@ -1138,8 +1141,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         </Button>
                       </div>
                     </TableCell>
-                  </TableRow>
-                ))}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
