@@ -45,10 +45,20 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch escrow disbursements - use standard pattern
+  // Fetch escrow disbursements - use the same pattern as Escrows tab
   const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, refetch: refetchDisbursements } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
-    enabled: !!loanId
+    queryFn: async () => {
+      const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
+      const data = await response.json();
+      console.log('=== FETCHED ESCROW DISBURSEMENTS FROM API ===');
+      console.log('Number of disbursements:', data.length);
+      console.log('Disbursements data:', data);
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!loanId,
+    staleTime: 0,
+    gcTime: 0
   });
 
   // Fetch documents for this loan
@@ -66,10 +76,13 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
   // Log when disbursements are fetched
   useEffect(() => {
-    if (escrowDisbursements && escrowDisbursements.length > 0) {
-      console.log('=== ESCROW DISBURSEMENTS LOADED ===');
+    console.log('=== ESCROW DISBURSEMENTS CHECK ===');
+    console.log('Disbursements:', escrowDisbursements);
+    if (escrowDisbursements && Array.isArray(escrowDisbursements) && escrowDisbursements.length > 0) {
       console.log('Number of disbursements:', escrowDisbursements.length);
-      console.log('Disbursements data:', escrowDisbursements);
+      console.log('First disbursement:', escrowDisbursements[0]);
+    } else {
+      console.log('No disbursements available or still loading');
     }
   }, [escrowDisbursements]);
 
@@ -79,10 +92,9 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       console.log('=== UPDATING FORM DATA ===');
       console.log('Loan data:', loan);
       console.log('Disbursements loading?:', isDisbursementsLoading);
-      console.log('Escrow disbursements available?:', escrowDisbursements ? escrowDisbursements.length : 'No');
+      console.log('Escrow disbursements:', escrowDisbursements);
       setFormData(loan);
-      // Always calculate payments, even if disbursements are still loading
-      // The disbursements will be an empty array if not loaded yet
+      // Calculate payments with disbursements if available
       const disbursementsArray = Array.isArray(escrowDisbursements) ? escrowDisbursements : [];
       console.log('=== CALCULATING PAYMENTS ===');
       console.log('Disbursements array length:', disbursementsArray.length);
