@@ -298,6 +298,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Remove timestamp fields that are automatically managed
       const { createdAt, updatedAt, ...updateData } = req.body;
+      
+      // Log escrow fields to debug
+      console.log('Updating loan with escrow fields:', {
+        escrowNumber: updateData.escrowNumber,
+        escrowCompanyName: updateData.escrowCompanyName,
+        escrowCompanyPhone: updateData.escrowCompanyPhone,
+        escrowCompanyEmail: updateData.escrowCompanyEmail
+      });
+      
       const loan = await storage.updateLoan(id, updateData);
       
       // Temporarily skip audit log until database schema is updated
