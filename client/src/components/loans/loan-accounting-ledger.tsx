@@ -48,7 +48,7 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
 
   // Fetch loan fees for dropdown
   const { data: loanFees = [] } = useQuery({
-    queryKey: [`/api/loans/${loanId}/fees`],
+    queryKey: [`/api/fees/loan/${loanId}`],
     enabled: !!loanId,
   });
 
