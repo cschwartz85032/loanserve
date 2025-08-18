@@ -45,12 +45,24 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
+  // Debug query setup
+  console.log('=== QUERY SETUP DEBUG ===');
+  console.log('loanId for disbursements query:', loanId);
+  console.log('enabled condition:', !!loanId);
+  
   // Fetch escrow disbursements - use the same pattern as Escrows tab
-  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, refetch: refetchDisbursements } = useQuery({
+  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, refetch: refetchDisbursements, error: disbursementsError } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     queryFn: async () => {
+      console.log('=== QUERYFN EXECUTING ===');
+      console.log('Inside queryFn, loanId:', loanId);
+      
+      if (!loanId) {
+        console.log('No loanId, returning empty array');
+        return [];
+      }
+      
       console.log('=== STARTING ESCROW DISBURSEMENTS FETCH ===');
-      console.log('Loan ID:', loanId);
       console.log('URL:', `/api/loans/${loanId}/escrow-disbursements`);
       
       try {
@@ -69,9 +81,14 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId,
     staleTime: 0,
     gcTime: 0,
-    refetchOnMount: true,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: false
   });
+  
+  // Log query error if any
+  if (disbursementsError) {
+    console.error('=== DISBURSEMENTS QUERY ERROR ===', disbursementsError);
+  }
 
   // Fetch documents for this loan
   const { data: documents, refetch: refetchDocuments } = useQuery({
@@ -88,13 +105,20 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
   // Force fetch disbursements when loan loads
   useEffect(() => {
-    if (loanId && loan) {
-      console.log('=== LOAN LOADED, FORCING DISBURSEMENTS FETCH ===');
-      console.log('Loan ID:', loanId);
-      console.log('Refetching disbursements...');
-      refetchDisbursements();
+    console.log('=== REFETCH EFFECT TRIGGERED ===');
+    console.log('LoanId:', loanId, 'Loan:', !!loan);
+    console.log('isDisbursementsLoading:', isDisbursementsLoading);
+    console.log('refetchDisbursements type:', typeof refetchDisbursements);
+    
+    if (loanId && loan && refetchDisbursements) {
+      console.log('=== CALLING REFETCH DISBURSEMENTS NOW ===');
+      refetchDisbursements().then((result) => {
+        console.log('=== REFETCH RESULT ===', result);
+      }).catch((error) => {
+        console.error('=== REFETCH ERROR ===', error);
+      });
     }
-  }, [loanId, loan]);
+  }, [loanId, loan, refetchDisbursements]);
   
   // Log when disbursements are fetched
   useEffect(() => {
