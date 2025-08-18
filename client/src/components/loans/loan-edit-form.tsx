@@ -51,20 +51,29 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   
   // Manually fetch escrow disbursements when loan loads
   useEffect(() => {
+    console.log('=== DISBURSEMENTS USEEFFECT TRIGGERED ===');
+    console.log('loanId value:', loanId);
+    console.log('loanId type:', typeof loanId);
+    console.log('loanId truthy?:', !!loanId);
+    
     if (loanId) {
-      console.log('Fetching disbursements for loan:', loanId);
+      console.log('Starting disbursements fetch for loan:', loanId);
       setIsDisbursementsLoading(true);
       
-      fetch(`/api/loans/${loanId}/escrow-disbursements`, {
+      const url = `/api/loans/${loanId}/escrow-disbursements`;
+      console.log('Fetching from URL:', url);
+      
+      fetch(url, {
         credentials: 'include'
       })
         .then(response => {
-          console.log('Disbursements response status:', response.status);
-          if (!response.ok) throw new Error('Failed to fetch disbursements');
+          console.log('Disbursements response received, status:', response.status);
+          if (!response.ok) throw new Error(`Failed to fetch disbursements: ${response.status}`);
           return response.json();
         })
         .then(data => {
-          console.log('Fetched disbursements:', data);
+          console.log('Disbursements data received:', data);
+          console.log('Number of disbursements:', data.length);
           setEscrowDisbursements(Array.isArray(data) ? data : []);
           setIsDisbursementsLoading(false);
         })
@@ -73,6 +82,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           setEscrowDisbursements([]);
           setIsDisbursementsLoading(false);
         });
+    } else {
+      console.log('No loanId, skipping disbursements fetch');
     }
   }, [loanId]);
   

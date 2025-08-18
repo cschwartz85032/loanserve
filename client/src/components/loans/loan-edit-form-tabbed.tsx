@@ -57,6 +57,25 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
+  // Fetch escrow disbursements for payment calculations
+  const { data: escrowDisbursements = [] } = useQuery({
+    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
+    queryFn: async () => {
+      console.log('Fetching escrow disbursements for loan:', loanId);
+      const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        console.error('Failed to fetch disbursements');
+        return [];
+      }
+      const data = await response.json();
+      console.log('Fetched disbursements:', data.length, 'items');
+      return data;
+    },
+    enabled: !!loanId
+  });
+  
   // Fetch documents for this loan
   const { data: documents, refetch: refetchDocuments } = useQuery({
     queryKey: [`/api/documents`, { loanId }],
@@ -87,25 +106,56 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   useEffect(() => {
     if (loan) {
       console.log('Loading loan data into form:', loan);
+      console.log('Escrow disbursements available:', escrowDisbursements?.length || 0);
       setFormData(loan);
-      calculatePayments(loan);
+      calculatePayments(loan, escrowDisbursements);
     }
-  }, [loan]);
+  }, [loan, escrowDisbursements]);
 
-  const calculatePayments = (loanData: any) => {
+  const calculatePayments = (loanData: any, disbursements?: any[]) => {
+    console.log('calculatePayments called with disbursements:', disbursements?.length || 0);
+    
     // Use the actual payment amount from the database, not calculated
     const principalAndInterest = parseFloat(loanData.paymentAmount) || 0;
 
-    const hazardInsurance = parseFloat(loanData.hazardInsurance) || 0;
-    const propertyTaxes = parseFloat(loanData.propertyTaxes) || 0;
+    // Calculate escrow from actual disbursements if available
+    let hazardInsurance = 0;
+    let propertyTaxes = 0;
+    let hoaFees = 0;
+    
+    if (disbursements && disbursements.length > 0) {
+      console.log('Calculating from disbursements:', disbursements);
+      
+      disbursements.forEach(d => {
+        const monthlyAmount = parseFloat(d.monthlyAmount) || 0;
+        console.log(`Disbursement: ${d.disbursementType} - ${d.description}: $${monthlyAmount}/month`);
+        
+        if (d.disbursementType === 'insurance') {
+          hazardInsurance += monthlyAmount;
+        } else if (d.disbursementType === 'taxes') {
+          propertyTaxes += monthlyAmount;
+        } else if (d.disbursementType === 'hoa') {
+          hoaFees += monthlyAmount;
+        }
+      });
+      
+      console.log('Calculated totals - Insurance:', hazardInsurance, 'Taxes:', propertyTaxes, 'HOA:', hoaFees);
+    } else {
+      // Fallback to loan data if no disbursements
+      hazardInsurance = parseFloat(loanData.hazardInsurance) || 0;
+      propertyTaxes = parseFloat(loanData.propertyTaxes) || 0;
+      hoaFees = parseFloat(loanData.hoaFees) || 0;
+    }
+    
     const escrowCushion = (hazardInsurance + propertyTaxes) * 0.1667;
     const escrow = hazardInsurance + propertyTaxes + escrowCushion;
 
-    const hoaFees = parseFloat(loanData.hoaFees) || 0;
     const pmi = parseFloat(loanData.pmiAmount) || 0;
     const servicingFee = parseFloat(loanData.servicingFee) || 0;
 
     const totalMonthlyPayment = principalAndInterest + escrow + hoaFees + pmi + servicingFee;
+    
+    console.log('Final calculation - Total escrow:', escrow, 'Total payment:', totalMonthlyPayment);
 
     setCalculations({
       principalAndInterest,
