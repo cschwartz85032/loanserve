@@ -45,9 +45,22 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch escrow disbursements - use the standard query format
+  // Fetch escrow disbursements with custom query function
   const { data: escrowDisbursements, isLoading: isDisbursementsLoading } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
+    queryFn: async () => {
+      console.log('Fetching escrow disbursements for loan:', loanId);
+      const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        console.error('Failed to fetch escrow disbursements');
+        return [];
+      }
+      const data = await response.json();
+      console.log('Fetched escrow disbursements:', data);
+      return data;
+    },
     enabled: !!loanId
   });
 
