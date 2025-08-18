@@ -29,11 +29,7 @@ interface PaymentCalculation {
   pmi: number;
   servicingFee: number;
   totalMonthlyPayment: number;
-  breakdown: {
-    hazardInsurance: number;
-    propertyTaxes: number;
-    escrowCushion: number;
-  };
+  breakdown: Record<string, number>;
 }
 
 export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
@@ -46,6 +42,12 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Fetch loan data
   const { data: loan, isLoading } = useQuery({
     queryKey: [`/api/loans/${loanId}`],
+    enabled: !!loanId
+  });
+
+  // Fetch escrow disbursements
+  const { data: escrowDisbursements } = useQuery({
+    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     enabled: !!loanId
   });
 
@@ -66,48 +68,73 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   useEffect(() => {
     if (loan) {
       setFormData(loan);
-      calculatePayments(loan);
+      calculatePayments(loan, escrowDisbursements);
     }
-  }, [loan]);
+  }, [loan, escrowDisbursements]);
 
-  const calculatePayments = (loanData: any) => {
+  const calculatePayments = (loanData: any, disbursements?: any[]) => {
     // Use the actual payment amount from the database, not calculated
     const principalAndInterest = parseFloat(loanData.paymentAmount) || 0;
 
-    // Escrow breakdown
-    const hazardInsurance = parseFloat(loanData.hazardInsurance) || 0;
-    const propertyTaxes = parseFloat(loanData.propertyTaxes) || 0;
-    const escrowCushion = (hazardInsurance + propertyTaxes) * 0.1667; // 2 months cushion
-    const escrow = hazardInsurance + propertyTaxes + escrowCushion;
+    // Group disbursements by type and calculate monthly amounts
+    let escrowBreakdown: Record<string, number> = {};
+    let totalEscrow = 0;
+    
+    if (disbursements && Array.isArray(disbursements)) {
+      // Group disbursements by type
+      const grouped = disbursements.reduce((acc: any, disbursement: any) => {
+        if (!disbursement.isOnHold && disbursement.status !== 'terminated') {
+          const type = disbursement.disbursementType;
+          if (!acc[type]) {
+            acc[type] = 0;
+          }
+          // Convert annual to monthly
+          const annualAmount = parseFloat(disbursement.annualAmount || 0);
+          acc[type] += annualAmount / 12;
+        }
+        return acc;
+      }, {});
+
+      escrowBreakdown = grouped;
+      totalEscrow = Object.values(grouped).reduce((sum: number, amount: any) => sum + amount, 0);
+    } else {
+      // Fallback to old method if no disbursements data
+      const hazardInsurance = parseFloat(loanData.hazardInsurance) || 0;
+      const propertyTaxes = parseFloat(loanData.propertyTaxes) || 0;
+      const escrowCushion = (hazardInsurance + propertyTaxes) * 0.1667; // 2 months cushion
+      totalEscrow = hazardInsurance + propertyTaxes + escrowCushion;
+      
+      escrowBreakdown = {
+        hazardInsurance,
+        propertyTaxes,
+        escrowCushion
+      };
+    }
 
     // Other fees
     const hoaFees = parseFloat(loanData.hoaFees) || 0;
     const pmi = parseFloat(loanData.pmiAmount) || 0;
     const servicingFee = parseFloat(loanData.servicingFee) || 0;
 
-    const totalMonthlyPayment = principalAndInterest + escrow + hoaFees + pmi + servicingFee;
+    const totalMonthlyPayment = principalAndInterest + totalEscrow + hoaFees + pmi + servicingFee;
 
     setCalculations({
       principalAndInterest,
-      escrow,
+      escrow: totalEscrow,
       hoaFees,
       pmi,
       servicingFee,
       totalMonthlyPayment,
-      breakdown: {
-        hazardInsurance,
-        propertyTaxes,
-        escrowCushion
-      }
+      breakdown: escrowBreakdown
     });
   };
 
   // Recalculate when form data changes
   useEffect(() => {
     if (formData.loanAmount || formData.interestRate || formData.loanTerm) {
-      calculatePayments(formData);
+      calculatePayments(formData, escrowDisbursements);
     }
-  }, [formData.loanAmount, formData.interestRate, formData.loanTerm, formData.hazardInsurance, formData.propertyTaxes, formData.hoaFees, formData.pmiAmount, formData.servicingFee]);
+  }, [formData.loanAmount, formData.interestRate, formData.loanTerm, formData.hazardInsurance, formData.propertyTaxes, formData.hoaFees, formData.pmiAmount, formData.servicingFee, escrowDisbursements]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -246,20 +273,18 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                     <span className="font-semibold">{formatCurrency(calculations.escrow)}</span>
                   </div>
                   
-                  {/* Escrow Breakdown */}
+                  {/* Escrow Breakdown - Group by class */}
                   <div className="ml-4 space-y-1 text-sm text-gray-600">
-                    <div className="flex justify-between">
-                      <span>• Hazard Insurance</span>
-                      <span>{formatCurrency(calculations.breakdown.hazardInsurance)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• Property Taxes</span>
-                      <span>{formatCurrency(calculations.breakdown.propertyTaxes)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• Escrow Cushion</span>
-                      <span>{formatCurrency(calculations.breakdown.escrowCushion)}</span>
-                    </div>
+                    {Object.entries(calculations.breakdown).map(([type, amount]) => (
+                      <div key={type} className="flex justify-between">
+                        <span>• {type === 'insurance' ? 'Insurance' : 
+                               type === 'taxes' ? 'Property Taxes' : 
+                               type === 'hoa' ? 'HOA' :
+                               type === 'other' ? 'Other' :
+                               type.charAt(0).toUpperCase() + type.slice(1)}</span>
+                        <span>{formatCurrency(amount)}</span>
+                      </div>
+                    ))}
                   </div>
 
                   {calculations.hoaFees > 0 && (

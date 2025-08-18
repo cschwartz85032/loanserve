@@ -21,6 +21,8 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
   const [page, setPage] = useState(0);
   const [selectedLoans, setSelectedLoans] = useState<Set<number>>(new Set());
   const [holdLoans, setHoldLoans] = useState<Set<number>>(new Set());
+  const [sortField, setSortField] = useState<string>("loanNumber");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const limit = 50; // Show more loans like in the image
 
   const { data: loans, isLoading } = useQuery({
@@ -118,7 +120,52 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
     );
   }
 
-  const loansList = Array.isArray(loans) ? loans : [];
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  // Sort loans
+  const sortedLoans = Array.isArray(loans) ? [...loans].sort((a: any, b: any) => {
+    let aValue = a;
+    let bValue = b;
+
+    // Navigate to nested values
+    if (sortField === "borrowerName") {
+      aValue = a.borrower?.borrowerName || '';
+      bValue = b.borrower?.borrowerName || '';
+    } else if (sortField === "lastName") {
+      aValue = (a.borrower?.borrowerName || '').split(' ').pop() || '';
+      bValue = (b.borrower?.borrowerName || '').split(' ').pop() || '';
+    } else if (sortField === "firstName") {
+      aValue = (a.borrower?.borrowerName || '').split(' ')[0] || '';
+      bValue = (b.borrower?.borrowerName || '').split(' ')[0] || '';
+    } else if (sortField.includes('.')) {
+      const fields = sortField.split('.');
+      aValue = fields.reduce((obj, field) => obj?.[field], a);
+      bValue = fields.reduce((obj, field) => obj?.[field], b);
+    } else {
+      aValue = a[sortField];
+      bValue = b[sortField];
+    }
+
+    // Handle different data types
+    if (typeof aValue === 'string' && typeof bValue === 'string') {
+      return sortDirection === "asc" 
+        ? aValue.localeCompare(bValue)
+        : bValue.localeCompare(aValue);
+    }
+    
+    if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+    if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+    return 0;
+  }) : [];
+
+  const loansList = sortedLoans;
 
   return (
     <div className="w-full bg-white">
@@ -137,19 +184,48 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
                 HOLD
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
-                <div className="flex items-center">
+                <button
+                  onClick={() => handleSort("loanNumber")}
+                  className="flex items-center hover:text-gray-900"
+                >
                   ACCOUNT
-                  <ChevronUp className="w-3 h-3 ml-1" />
-                </div>
+                  {sortField === "loanNumber" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
+                  )}
+                </button>
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
-                BORROWER NAME
+                <button
+                  onClick={() => handleSort("borrowerName")}
+                  className="flex items-center hover:text-gray-900"
+                >
+                  BORROWER NAME
+                  {sortField === "borrowerName" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
+                  )}
+                </button>
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
-                BY LAST NAME
+                <button
+                  onClick={() => handleSort("lastName")}
+                  className="flex items-center hover:text-gray-900"
+                >
+                  BY LAST NAME
+                  {sortField === "lastName" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
+                  )}
+                </button>
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
-                FIRST NAME
+                <button
+                  onClick={() => handleSort("firstName")}
+                  className="flex items-center hover:text-gray-900"
+                >
+                  FIRST NAME
+                  {sortField === "firstName" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
+                  )}
+                </button>
               </th>
               <th className="border-r border-gray-300 px-2 py-2 text-xs font-medium text-gray-700 text-center">
                 MI
@@ -158,31 +234,63 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
                 LAST NAME
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-center">
-                INTEREST PAID TO
+                <button
+                  onClick={() => handleSort("interestPaidTo")}
+                  className="hover:text-gray-900"
+                >
+                  INTEREST PAID TO
+                  {sortField === "interestPaidTo" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1 inline" /> : <ChevronDown className="w-3 h-3 ml-1 inline" />
+                  )}
+                </button>
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-center">
-                PAYMENT DUE DATE
+                <button
+                  onClick={() => handleSort("nextPaymentDate")}
+                  className="hover:text-gray-900"
+                >
+                  PAYMENT DUE DATE
+                  {sortField === "nextPaymentDate" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1 inline" /> : <ChevronDown className="w-3 h-3 ml-1 inline" />
+                  )}
+                </button>
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-center">
                 PAYMENT FREQUENCY
               </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-right">
-                REGULAR PAYMENT
+                <button
+                  onClick={() => handleSort("paymentAmount")}
+                  className="hover:text-gray-900"
+                >
+                  REGULAR PAYMENT
+                  {sortField === "paymentAmount" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1 inline" /> : <ChevronDown className="w-3 h-3 ml-1 inline" />
+                  )}
+                </button>
               </th>
               <th className="px-3 py-2 text-xs font-medium text-gray-700 text-right">
-                APPLY TO P & I
+                <button
+                  onClick={() => handleSort("principalBalance")}
+                  className="hover:text-gray-900"
+                >
+                  APPLY TO P & I
+                  {sortField === "principalBalance" && (
+                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1 inline" /> : <ChevronDown className="w-3 h-3 ml-1 inline" />
+                  )}
+                </button>
               </th>
             </tr>
           </thead>
           <tbody className="bg-white">
             {loansList.length > 0 ? (
               loansList.map((loan: any, index: number) => {
-                // Parse borrower name
-                const borrowerName = loan.borrower?.borrowerName || '';
-                const nameParts = borrowerName.split(' ');
-                const firstName = nameParts[0] || '';
-                const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : '';
-                const middleInitial = nameParts.length > 2 ? nameParts[1].charAt(0) : '';
+                // Use the firstName and lastName directly from borrower if available
+                const firstName = loan.borrower?.firstName || '';
+                const lastName = loan.borrower?.lastName || '';
+                const middleInitial = loan.borrower?.middleInitial || '';
+                // Fallback to parsing borrowerName if individual fields aren't available
+                const borrowerName = loan.borrower?.borrowerName || `${firstName} ${lastName}`.trim() || '';
                 
                 return (
                   <tr 
