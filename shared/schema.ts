@@ -178,6 +178,13 @@ export const paymentMethodEnum = pgEnum('payment_method', [
   'online'
 ]);
 
+// For outbound disbursements only (check, ACH, wire)
+export const disbursementPaymentMethodEnum = pgEnum('disbursement_payment_method', [
+  'check',
+  'ach',
+  'wire'
+]);
+
 export const disbursementStatusEnum = pgEnum('disbursement_status', [
   'active',
   'on_hold',
@@ -730,7 +737,7 @@ export const escrowDisbursements = pgTable("escrow_disbursements", {
   policyNumber: text("policy_number"), // For insurance
   
   // Payment method and banking information
-  paymentMethod: paymentMethodEnum("payment_method").notNull().default('check'),
+  paymentMethod: disbursementPaymentMethodEnum("payment_method").notNull().default('check'),
   bankAccountNumber: text("bank_account_number"), // Encrypted - replaces accountNumber
   achRoutingNumber: text("ach_routing_number"),
   wireRoutingNumber: text("wire_routing_number"),
@@ -1349,7 +1356,9 @@ export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true,
 
 // Escrow schemas
 export const insertEscrowAccountSchema = createInsertSchema(escrowAccounts).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertEscrowDisbursementSchema = createInsertSchema(escrowDisbursements).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertEscrowDisbursementSchema = createInsertSchema(escrowDisbursements).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  paymentMethod: z.enum(['check', 'ach', 'wire'])
+});
 export const insertEscrowDisbursementPaymentSchema = createInsertSchema(escrowDisbursementPayments).omit({ id: true, createdAt: true });
 export const insertEscrowTransactionSchema = createInsertSchema(escrowTransactions).omit({ id: true, createdAt: true });
 export const insertPayeeSchema = createInsertSchema(payees).omit({ id: true, createdAt: true, updatedAt: true });

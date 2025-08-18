@@ -45,7 +45,7 @@ const disbursementSchema = z.object({
   policyNumber: z.string().optional(), // For insurance
   
   // Payment details
-  paymentMethod: z.enum(['check', 'ach', 'wire', 'cash', 'credit_card', 'online']),
+  paymentMethod: z.enum(['check', 'ach', 'wire']),
   bankAccountNumber: z.string().optional(),
   achRoutingNumber: z.string().optional(),
   wireRoutingNumber: z.string().optional(),
@@ -142,7 +142,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
 
   const { data: escrowSummary } = useQuery<EscrowSummaryResponse>({
     queryKey: ['/api/loans', loanId, 'escrow-summary'],
-    queryFn: () => apiRequest(`/api/loans/${loanId}/escrow-summary`),
+    queryFn: async () => {
+      const response = await apiRequest(`/api/loans/${loanId}/escrow-summary`);
+      return response as EscrowSummaryResponse;
+    },
   });
 
   const form = useForm<DisbursementFormData>({
@@ -237,7 +240,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       case 'active': return 'default';
       case 'suspended': return 'secondary';
       case 'cancelled': return 'destructive';
-      case 'completed': return 'success';
+      case 'completed': return 'outline'; // Changed from 'success' to 'outline'
       default: return 'default';
     }
   };
@@ -580,7 +583,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                             <RadioGroup
                               onValueChange={field.onChange}
                               defaultValue={field.value}
-                              className="flex flex-col space-y-1"
+                              className="flex flex-row space-x-6"
                             >
                               <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="check" id="check" />
@@ -593,18 +596,6 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                               <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="wire" id="wire" />
                                 <label htmlFor="wire">Wire Transfer</label>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="cash" id="cash" />
-                                <label htmlFor="cash">Cash</label>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="credit_card" id="credit_card" />
-                                <label htmlFor="credit_card">Credit Card</label>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <RadioGroupItem value="online" id="online" />
-                                <label htmlFor="online">Online Payment</label>
                               </div>
                             </RadioGroup>
                           </FormControl>
