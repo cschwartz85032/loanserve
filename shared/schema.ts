@@ -518,6 +518,7 @@ export const investors = pgTable("investors", {
   entityType: entityTypeEnum("entity_type").notNull(), // 'individual' or 'entity'
   name: text("name").notNull(), // Individual or entity name
   contactName: text("contact_name"), // Contact person if entity
+  ssnOrEin: text("ssn_or_ein"), // SSN for individuals or EIN for entities
   email: text("email"),
   phone: text("phone"),
   
