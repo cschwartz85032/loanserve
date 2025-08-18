@@ -217,7 +217,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
       <Tabs defaultValue="details" className="w-full">
         <TabsList className="grid w-full grid-cols-7">
-          <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
+          <TabsTrigger value="details">Overview</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiary</TabsTrigger>
           <TabsTrigger value="escrows">Escrows</TabsTrigger>
