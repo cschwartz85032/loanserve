@@ -155,8 +155,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
 
   // Update local state when query data changes - avoid infinite loops
   useEffect(() => {
-    setLocalDisbursements(disbursements);
-  }, [disbursements]);
+    if (disbursements && disbursements !== localDisbursements) {
+      setLocalDisbursements(disbursements);
+    }
+  }, [disbursements]); // Remove localDisbursements from dependencies to avoid infinite loop
 
   const { data: escrowSummary, refetch: refetchSummary } = useQuery<EscrowSummaryResponse>({
     queryKey: [`/api/loans/${loanId}/escrow-summary`],
@@ -247,6 +249,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       refetchSummary();
       
       setIsAddDialogOpen(false);
+      setEditingDisbursement(null);
       form.reset();
       toast({ title: "Disbursement created successfully" });
     },
@@ -936,33 +939,8 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                     onClick={() => {
                       setIsAddDialogOpen(false);
                       setEditingDisbursement(null);
-                      form.reset({
-                        disbursementType: 'taxes',
-                        description: '',
-                        payeeName: '',
-                        payeeContactName: '',
-                        payeePhone: '',
-                        payeeEmail: '',
-                        payeeStreetAddress: '',
-                        payeeCity: '',
-                        payeeState: '',
-                        payeeZipCode: '',
-                        accountNumber: '',
-                        policyNumber: '',
-                        paymentMethod: 'check',
-                        bankAccountNumber: '',
-                        achRoutingNumber: '',
-                        wireRoutingNumber: '',
-                        bankName: '',
-                        frequency: 'annual',
-                        paymentAmount: '',
-                        nextDueDate: '',
-                        annualAmount: '',
-                        monthlyAmount: '',
-                        autoPayEnabled: true,
-                        daysBeforeDue: 10,
-                        notes: '',
-                      });
+                      // Clear form for new disbursement
+                      form.reset();
                     }}
                   >
                     Cancel
@@ -1071,50 +1049,49 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           variant="ghost"
                           size="sm"
                           onClick={() => {
+                            console.log('Edit button clicked for disbursement:', disbursement);
                             setEditingDisbursement(disbursement);
                             
-                            // Prepare form values with proper defaults to avoid undefined values
-                            const formValues = {
-                              disbursementType: disbursement.disbursementType as any,
-                              description: disbursement.description || '',
-                              payeeName: disbursement.payeeName || '',
-                              payeeContactName: disbursement.payeeContactName || '',
-                              payeePhone: disbursement.payeePhone || '',
-                              payeeEmail: disbursement.payeeEmail || '',
-                              payeeStreetAddress: disbursement.payeeStreetAddress || '',
-                              payeeCity: disbursement.payeeCity || '',
-                              payeeState: disbursement.payeeState || '',
-                              payeeZipCode: disbursement.payeeZipCode || '',
-                              accountNumber: disbursement.accountNumber || '',
-                              policyNumber: disbursement.policyNumber || '',
-                              paymentMethod: disbursement.paymentMethod as any,
-                              bankAccountNumber: disbursement.bankAccountNumber || '',
-                              achRoutingNumber: disbursement.achRoutingNumber || '',
-                              wireRoutingNumber: disbursement.wireRoutingNumber || '',
-                              bankName: disbursement.bankName || '',
-                              frequency: disbursement.frequency as any,
-                              paymentAmount: disbursement.paymentAmount || '',
-                              nextDueDate: disbursement.nextDueDate ? disbursement.nextDueDate.split('T')[0] : '',
-                              autoPayEnabled: disbursement.autoPayEnabled || false,
-                              daysBeforeDue: disbursement.daysBeforeDue || 10,
-                              notes: disbursement.notes || ''
-                            };
+                            // Use setValue for each field individually for better control
+                            form.setValue('disbursementType', disbursement.disbursementType as any);
+                            form.setValue('description', disbursement.description || '');
+                            form.setValue('payeeName', disbursement.payeeName || '');
+                            form.setValue('payeeContactName', disbursement.payeeContactName || '');
+                            form.setValue('payeePhone', disbursement.payeePhone || '');
+                            form.setValue('payeeEmail', disbursement.payeeEmail || '');
+                            form.setValue('payeeStreetAddress', disbursement.payeeStreetAddress || '');
+                            form.setValue('payeeCity', disbursement.payeeCity || '');
+                            form.setValue('payeeState', disbursement.payeeState || '');
+                            form.setValue('payeeZipCode', disbursement.payeeZipCode || '');
+                            form.setValue('accountNumber', disbursement.accountNumber || '');
+                            form.setValue('policyNumber', disbursement.policyNumber || '');
+                            form.setValue('paymentMethod', disbursement.paymentMethod as any);
+                            form.setValue('bankAccountNumber', disbursement.bankAccountNumber || '');
+                            form.setValue('achRoutingNumber', disbursement.achRoutingNumber || '');
+                            form.setValue('wireRoutingNumber', disbursement.wireRoutingNumber || '');
+                            form.setValue('bankName', disbursement.bankName || '');
+                            form.setValue('frequency', disbursement.frequency as any);
+                            form.setValue('paymentAmount', disbursement.paymentAmount || '');
+                            form.setValue('nextDueDate', disbursement.nextDueDate ? disbursement.nextDueDate.split('T')[0] : '');
+                            form.setValue('autoPayEnabled', disbursement.autoPayEnabled || false);
+                            form.setValue('daysBeforeDue', disbursement.daysBeforeDue || 10);
+                            form.setValue('notes', disbursement.notes || '');
                             
-                            // Calculate derived amounts
+                            // Calculate and set derived amounts
                             const amount = parseFloat(disbursement.paymentAmount || '0');
                             const multiplier = getFrequencyMultiplier(disbursement.frequency);
                             
                             if (!isNaN(amount) && amount > 0) {
                               const annualAmount = (amount * multiplier).toFixed(2);
                               const monthlyAmount = (parseFloat(annualAmount) / 12).toFixed(2);
-                              formValues.annualAmount = annualAmount;
-                              formValues.monthlyAmount = monthlyAmount;
+                              form.setValue('annualAmount', annualAmount);
+                              form.setValue('monthlyAmount', monthlyAmount);
                             } else {
-                              formValues.annualAmount = '';
-                              formValues.monthlyAmount = '';
+                              form.setValue('annualAmount', '');
+                              form.setValue('monthlyAmount', '');
                             }
                             
-                            form.reset(formValues);
+                            console.log('Form values set, opening dialog');
                             setIsAddDialogOpen(true);
                           }}
                         >
