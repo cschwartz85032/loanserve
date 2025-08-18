@@ -202,4 +202,30 @@ router.get("/api/loans/:loanId/escrow-summary", async (req, res) => {
   }
 });
 
+// Put escrow disbursement on hold or release from hold  
+router.post("/api/escrow-disbursements/:id/hold", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: "Invalid disbursement ID" });
+    }
+    
+    const { action, reason, requestedBy } = req.body;
+    
+    let result;
+    if (action === 'hold') {
+      result = await storage.holdEscrowDisbursement(id, reason, requestedBy);
+    } else if (action === 'release') {
+      result = await storage.releaseEscrowDisbursement(id);
+    } else {
+      return res.status(400).json({ error: "Action must be 'hold' or 'release'" });
+    }
+    
+    res.json(result);
+  } catch (error) {
+    console.error("Error putting disbursement on hold:", error);
+    res.status(400).json({ error: "Failed to update disbursement hold status" });
+  }
+});
+
 export default router;
