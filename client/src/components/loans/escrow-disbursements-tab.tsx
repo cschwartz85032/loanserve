@@ -281,7 +281,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       refetchSummary();
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
+      setIsAddDialogOpen(false);
       setEditingDisbursement(null);
+      form.reset();
       toast({ title: "Disbursement updated successfully" });
     },
   });
