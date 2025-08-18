@@ -15,7 +15,7 @@ import { queryClient } from "@/lib/queryClient";
 import { 
   Loader2, Users, Building2, DollarSign, Percent, Landmark,
   MapPin, Phone, Mail, Plus, Edit2, Trash2, AlertCircle,
-  CheckCircle
+  CheckCircle, Eye, EyeOff
 } from "lucide-react";
 
 interface Investor {
@@ -61,6 +61,27 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     accountType: 'checking'
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [showSensitiveData, setShowSensitiveData] = useState<Record<string, boolean>>({});
+
+  // Helper function to mask sensitive data
+  const maskSensitiveData = (value: string | undefined, field: string): string => {
+    if (!value) return '';
+    if (showSensitiveData[field]) return value;
+    
+    // For SSN/EIN: show last 4 digits
+    if (field.includes('ssnOrEin')) {
+      return '***-**-' + value.slice(-4);
+    }
+    // For account numbers: show last 4 digits  
+    if (field.includes('accountNumber')) {
+      return '**** **** **** ' + value.slice(-4);
+    }
+    // For routing numbers: show last 4 digits
+    if (field.includes('routingNumber')) {
+      return '*****' + value.slice(-4);
+    }
+    return value;
+  };
 
   // Fetch loan details for amount and origination date
   const { data: loanData } = useQuery({
@@ -170,8 +191,13 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     if (investor) {
       setEditingInvestor(investor);
       // Recalculate investment amount for existing investor
-      const investmentAmount = calculateInvestmentAmount(investor.ownershipPercentage || 0);
-      setFormData({ ...investor, investmentAmount });
+      const percentage = parseFloat(investor.ownershipPercentage?.toString() || '0');
+      const investmentAmount = calculateInvestmentAmount(percentage);
+      setFormData({ 
+        ...investor, 
+        ownershipPercentage: percentage,
+        investmentAmount 
+      });
     } else {
       setEditingInvestor(null);
       // Set initial investment date to loan origination date
@@ -348,12 +374,18 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
               <TableBody>
                 {investors.map((investor: Investor) => (
                   <TableRow key={investor.id}>
-                    <TableCell className="font-mono text-sm">
+                    <TableCell 
+                      className="font-mono text-sm cursor-pointer hover:text-blue-600 hover:underline"
+                      onClick={() => handleOpenDialog(investor)}
+                    >
                       {investor.investorId}
                     </TableCell>
-                    <TableCell>
+                    <TableCell 
+                      className="cursor-pointer hover:text-blue-600"
+                      onClick={() => handleOpenDialog(investor)}
+                    >
                       <div>
-                        <p className="font-medium">{investor.name}</p>
+                        <p className="font-medium hover:underline">{investor.name}</p>
                         {investor.contactName && (
                           <p className="text-sm text-gray-500">{investor.contactName}</p>
                         )}
@@ -490,12 +522,25 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                   <Label htmlFor="ssnOrEin">
                     {formData.entityType === 'individual' ? 'SSN' : 'EIN'}
                   </Label>
-                  <Input
-                    id="ssnOrEin"
-                    value={formData.ssnOrEin || ''}
-                    onChange={(e) => handleInputChange('ssnOrEin', e.target.value)}
-                    placeholder={formData.entityType === 'individual' ? '123-45-6789' : '12-3456789'}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="ssnOrEin"
+                      type={showSensitiveData['ssnOrEin'] ? 'text' : 'password'}
+                      value={formData.ssnOrEin || ''}
+                      onChange={(e) => handleInputChange('ssnOrEin', e.target.value)}
+                      placeholder={formData.entityType === 'individual' ? '123-45-6789' : '12-3456789'}
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                      onClick={() => setShowSensitiveData(prev => ({ ...prev, ssnOrEin: !prev.ssnOrEin }))}
+                    >
+                      {showSensitiveData['ssnOrEin'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
                 {formData.entityType !== 'individual' && (
                   <div className="space-y-2">
@@ -673,21 +718,47 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="accountNumber">Account Number</Label>
-                  <Input
-                    id="accountNumber"
-                    value={formData.accountNumber || ''}
-                    onChange={(e) => handleInputChange('accountNumber', e.target.value)}
-                    placeholder="****1234"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="accountNumber"
+                      type={showSensitiveData['accountNumber'] ? 'text' : 'password'}
+                      value={formData.accountNumber || ''}
+                      onChange={(e) => handleInputChange('accountNumber', e.target.value)}
+                      placeholder="****1234"
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                      onClick={() => setShowSensitiveData(prev => ({ ...prev, accountNumber: !prev.accountNumber }))}
+                    >
+                      {showSensitiveData['accountNumber'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="routingNumber">Routing Number</Label>
-                  <Input
-                    id="routingNumber"
-                    value={formData.routingNumber || ''}
-                    onChange={(e) => handleInputChange('routingNumber', e.target.value)}
-                    placeholder="123456789"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="routingNumber"
+                      type={showSensitiveData['routingNumber'] ? 'text' : 'password'}
+                      value={formData.routingNumber || ''}
+                      onChange={(e) => handleInputChange('routingNumber', e.target.value)}
+                      placeholder="123456789"
+                      className="pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                      onClick={() => setShowSensitiveData(prev => ({ ...prev, routingNumber: !prev.routingNumber }))}
+                    >
+                      {showSensitiveData['routingNumber'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-4">
