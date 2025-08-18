@@ -136,8 +136,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         body: JSON.stringify(data),
       }).then(res => res.json());
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
+      console.log('Update response:', response);
       queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
       toast({
         title: "Loan Updated",
         description: "Loan information has been successfully updated",
@@ -158,6 +160,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   };
 
   const handleSave = () => {
+    console.log('Saving form data:', formData);
     updateMutation.mutate(formData);
   };
 
