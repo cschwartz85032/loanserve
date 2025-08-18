@@ -8,6 +8,13 @@
       "when": 1754666214978,
       "tag": "0000_comprehensive-schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1755492304736,
+      "tag": "0001_tiresome_luckman",
+      "breakpoints": true
     }
   ]
 }

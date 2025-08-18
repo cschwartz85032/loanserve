@@ -137,10 +137,17 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   // Update investor mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Investor> }) => {
+      // Ensure dates are properly formatted as strings
+      const formattedData = {
+        ...data,
+        investmentDate: data.investmentDate ? 
+          (typeof data.investmentDate === 'string' ? data.investmentDate : new Date(data.investmentDate).toISOString().split('T')[0]) 
+          : undefined
+      };
       const response = await fetch(`/api/investors/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(formattedData),
       });
       if (!response.ok) throw new Error('Failed to update investor');
       return response.json();
@@ -375,17 +382,17 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 {investors.map((investor: Investor) => (
                   <TableRow key={investor.id}>
                     <TableCell 
-                      className="font-mono text-sm cursor-pointer hover:text-blue-600 hover:underline"
+                      className="font-mono text-sm cursor-pointer text-blue-600 underline"
                       onClick={() => handleOpenDialog(investor)}
                     >
                       {investor.investorId}
                     </TableCell>
                     <TableCell 
-                      className="cursor-pointer hover:text-blue-600"
+                      className="cursor-pointer"
                       onClick={() => handleOpenDialog(investor)}
                     >
                       <div>
-                        <p className="font-medium hover:underline">{investor.name}</p>
+                        <p className="font-medium text-blue-600 underline">{investor.name}</p>
                         {investor.contactName && (
                           <p className="text-sm text-gray-500">{investor.contactName}</p>
                         )}
