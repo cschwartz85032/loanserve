@@ -313,12 +313,30 @@ export class DatabaseStorage implements IStorage {
     // Remove any undefined values and convert dates properly
     const cleanUpdateData = { ...updateLoan };
     
-    // Remove undefined values to avoid database errors
+    // Handle date conversions and remove problematic fields
     Object.keys(cleanUpdateData).forEach(key => {
-      if (cleanUpdateData[key as keyof typeof cleanUpdateData] === undefined) {
+      const value = cleanUpdateData[key as keyof typeof cleanUpdateData];
+      
+      // Remove undefined values
+      if (value === undefined) {
         delete cleanUpdateData[key as keyof typeof cleanUpdateData];
       }
+      
+      // Convert date strings to Date objects for timestamp fields
+      if (value && typeof value === 'string' && 
+          (key.includes('Date') || key === 'createdAt' || key === 'updatedAt')) {
+        try {
+          cleanUpdateData[key as keyof typeof cleanUpdateData] = new Date(value) as any;
+        } catch (e) {
+          // If date conversion fails, remove the field
+          delete cleanUpdateData[key as keyof typeof cleanUpdateData];
+        }
+      }
     });
+    
+    // Always remove createdAt and updatedAt as they're managed by the database
+    delete cleanUpdateData.createdAt;
+    delete cleanUpdateData.updatedAt;
 
     const [loan] = await db
       .update(loans)
@@ -433,9 +451,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateInvestor(id: number, investor: Partial<InsertInvestor>): Promise<Investor> {
+    // Remove timestamp fields and handle date conversions
+    const cleanUpdateData = { ...investor };
+    
+    // Handle date conversions
+    Object.keys(cleanUpdateData).forEach(key => {
+      const value = cleanUpdateData[key as keyof typeof cleanUpdateData];
+      
+      // Remove undefined values
+      if (value === undefined) {
+        delete cleanUpdateData[key as keyof typeof cleanUpdateData];
+      }
+      
+      // Convert date strings to Date objects
+      if (value && typeof value === 'string' && 
+          (key.includes('Date') || key === 'createdAt' || key === 'updatedAt')) {
+        try {
+          cleanUpdateData[key as keyof typeof cleanUpdateData] = new Date(value) as any;
+        } catch (e) {
+          delete cleanUpdateData[key as keyof typeof cleanUpdateData];
+        }
+      }
+    });
+    
+    // Remove managed timestamp fields
+    delete cleanUpdateData.createdAt;
+    delete cleanUpdateData.updatedAt;
+    
     const [inv] = await db
       .update(investors)
-      .set(investor)
+      .set(cleanUpdateData)
       .where(eq(investors.id, id))
       .returning();
     return inv;
