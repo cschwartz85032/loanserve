@@ -25,6 +25,7 @@ interface Investor {
   entityType: 'individual' | 'corporation' | 'llc' | 'partnership' | 'trust' | 'estate';
   name: string;
   contactName?: string;
+  ssnOrEin?: string;
   email?: string;
   phone?: string;
   streetAddress?: string;
@@ -59,6 +60,12 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     accountType: 'checking'
   });
 
+  // Fetch loan details for amount and origination date
+  const { data: loanData } = useQuery({
+    queryKey: [`/api/loans/${loanId}`],
+    enabled: !!loanId
+  });
+
   // Fetch investors for this loan
   const { data: investors = [], isLoading, refetch } = useQuery({
     queryKey: [`/api/loans/${loanId}/investors`],
@@ -69,6 +76,12 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   const totalOwnership = investors.reduce((sum: number, inv: Investor) => 
     sum + parseFloat(inv.ownershipPercentage?.toString() || '0'), 0
   );
+
+  // Calculate investment amount based on ownership percentage
+  const calculateInvestmentAmount = (percentage: number) => {
+    if (!loanData?.loanAmount) return 0;
+    return (parseFloat(loanData.loanAmount) * percentage / 100);
+  };
 
   // Create investor mutation
   const createMutation = useMutation({
@@ -154,14 +167,20 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   const handleOpenDialog = (investor?: Investor) => {
     if (investor) {
       setEditingInvestor(investor);
-      setFormData(investor);
+      // Recalculate investment amount for existing investor
+      const investmentAmount = calculateInvestmentAmount(investor.ownershipPercentage || 0);
+      setFormData({ ...investor, investmentAmount });
     } else {
       setEditingInvestor(null);
-      setFormData({
+      // Set initial investment date to loan origination date
+      const initialData: Partial<Investor> = {
         entityType: 'individual',
         ownershipPercentage: 0,
-        accountType: 'checking'
-      });
+        accountType: 'checking',
+        investmentDate: loanData?.originationDate || new Date().toISOString().split('T')[0],
+        investmentAmount: 0
+      };
+      setFormData(initialData);
     }
     setIsDialogOpen(true);
   };
@@ -200,7 +219,17 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   };
 
   const handleInputChange = (field: keyof Investor, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    if (field === 'ownershipPercentage') {
+      // Calculate investment amount when percentage changes
+      const investmentAmount = calculateInvestmentAmount(parseFloat(value) || 0);
+      setFormData(prev => ({ 
+        ...prev, 
+        [field]: value,
+        investmentAmount 
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, [field]: value }));
+    }
   };
 
   // Determine ownership status styling
@@ -396,7 +425,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 <Users className="h-4 w-4" />
                 Basic Information
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="entityType">Entity Type *</Label>
                   <Select
@@ -427,6 +456,17 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                     placeholder={formData.entityType === 'individual' ? 'John Doe' : 'ABC Corporation'}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ssnOrEin">
+                    {formData.entityType === 'individual' ? 'SSN' : 'EIN'}
+                  </Label>
+                  <Input
+                    id="ssnOrEin"
+                    value={formData.ssnOrEin || ''}
+                    onChange={(e) => handleInputChange('ssnOrEin', e.target.value)}
+                    placeholder={formData.entityType === 'individual' ? '123-45-6789' : '12-3456789'}
+                  />
+                </div>
                 {formData.entityType !== 'individual' && (
                   <div className="space-y-2">
                     <Label htmlFor="contactName">Contact Person</Label>
@@ -449,6 +489,13 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 <Percent className="h-4 w-4" />
                 Investment Details
               </h3>
+              {loanData?.loanAmount && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    Total Loan Amount: <span className="font-semibold">${parseFloat(loanData.loanAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="ownershipPercentage">Ownership Percentage *</Label>
@@ -464,15 +511,14 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="investmentAmount">Investment Amount</Label>
+                  <Label htmlFor="investmentAmount">Investment Amount (Calculated)</Label>
                   <Input
                     id="investmentAmount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.investmentAmount || ''}
-                    onChange={(e) => handleInputChange('investmentAmount', parseFloat(e.target.value))}
-                    placeholder="100000.00"
+                    type="text"
+                    value={formData.investmentAmount ? `$${formData.investmentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
+                    readOnly
+                    className="bg-gray-50"
+                    title="Automatically calculated based on ownership percentage"
                   />
                 </div>
                 <div className="space-y-2">
