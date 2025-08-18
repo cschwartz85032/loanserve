@@ -725,10 +725,15 @@ export const escrowDisbursements = pgTable("escrow_disbursements", {
   payeeState: text("payee_state"),
   payeeZipCode: text("payee_zip_code"),
   
+  // Type-specific fields
+  parcelNumber: text("parcel_number"), // For property taxes
+  policyNumber: text("policy_number"), // For insurance
+  
   // Payment method and banking information
   paymentMethod: paymentMethodEnum("payment_method").notNull().default('check'),
-  accountNumber: text("account_number"), // Encrypted
-  routingNumber: text("routing_number"),
+  bankAccountNumber: text("bank_account_number"), // Encrypted - replaces accountNumber
+  achRoutingNumber: text("ach_routing_number"),
+  wireRoutingNumber: text("wire_routing_number"),
   accountType: text("account_type"), // 'checking', 'savings'
   bankName: text("bank_name"),
   wireInstructions: text("wire_instructions"),
@@ -738,7 +743,7 @@ export const escrowDisbursements = pgTable("escrow_disbursements", {
   remittanceCity: text("remittance_city"),
   remittanceState: text("remittance_state"),
   remittanceZipCode: text("remittance_zip_code"),
-  accountNumber2: text("account_number_2"), // property tax account number, policy number, etc.
+  accountNumber: text("account_number"), // For taxes - property tax account number
   referenceNumber: text("reference_number"),
   
   // Recurrence pattern
@@ -785,7 +790,7 @@ export const escrowDisbursementPayments = pgTable("escrow_disbursement_payments"
   id: serial("id").primaryKey(),
   disbursementId: integer("disbursement_id").references(() => escrowDisbursements.id).notNull(),
   loanId: integer("loan_id").references(() => loans.id).notNull(),
-  ledgerEntryId: integer("ledger_entry_id").references(() => ledgerEntries.id),
+  ledgerEntryId: integer("ledger_entry_id"), // References accounting ledger entry
   
   // Payment details
   paymentDate: timestamp("payment_date").notNull(),
@@ -823,7 +828,7 @@ export const escrowDisbursementPayments = pgTable("escrow_disbursement_payments"
 export const escrowTransactions = pgTable("escrow_transactions", {
   id: serial("id").primaryKey(),
   escrowAccountId: integer("escrow_account_id").references(() => escrowAccounts.id).notNull(),
-  escrowItemId: integer("escrow_item_id").references(() => escrowItems.id),
+  escrowItemId: integer("escrow_item_id"), // References escrow item
   // Transaction details
   transactionDate: timestamp("transaction_date").notNull(),
   effectiveDate: date("effective_date").notNull(),

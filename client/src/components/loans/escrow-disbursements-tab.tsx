@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Plus, Edit, Trash2, Pause, Play, DollarSign, Calendar, Building2, Phone, Mail, Eye, EyeOff } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -38,10 +39,16 @@ const disbursementSchema = z.object({
   payeeState: z.string().optional(),
   payeeZipCode: z.string().optional(),
   
+  // Type-specific fields
+  parcelNumber: z.string().optional(), // For taxes
+  accountNumber: z.string().optional(), // For taxes
+  policyNumber: z.string().optional(), // For insurance
+  
   // Payment details
   paymentMethod: z.enum(['check', 'ach', 'wire', 'cash', 'credit_card', 'online']),
-  accountNumber: z.string().optional(),
-  routingNumber: z.string().optional(),
+  bankAccountNumber: z.string().optional(),
+  achRoutingNumber: z.string().optional(),
+  wireRoutingNumber: z.string().optional(),
   accountType: z.enum(['checking', 'savings']).optional(),
   bankName: z.string().optional(),
   wireInstructions: z.string().optional(),
@@ -87,9 +94,15 @@ interface EscrowDisbursement {
   payeeCity?: string;
   payeeState?: string;
   payeeZipCode?: string;
-  paymentMethod: string;
+  // Type-specific fields
+  parcelNumber?: string;
   accountNumber?: string;
-  routingNumber?: string;
+  policyNumber?: string;
+  // Payment details
+  paymentMethod: string;
+  bankAccountNumber?: string;
+  achRoutingNumber?: string;
+  wireRoutingNumber?: string;
   bankName?: string;
   frequency: string;
   annualAmount: string;
@@ -364,6 +377,55 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         </FormItem>
                       )}
                     />
+                    
+                    {/* Type-specific fields */}
+                    {form.watch('disbursementType') === 'taxes' && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="parcelNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Parcel Number</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Enter parcel number" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="accountNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Account Number</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Enter account number" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+                    
+                    {form.watch('disbursementType') === 'insurance' && (
+                      <FormField
+                        control={form.control}
+                        name="policyNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Policy Number</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter policy number" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                    
                     <FormField
                       control={form.control}
                       name="notes"
@@ -512,21 +574,40 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                       control={form.control}
                       name="paymentMethod"
                       render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="space-y-3">
                           <FormLabel>Payment Method</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select payment method" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="check">Check</SelectItem>
-                              <SelectItem value="ach">ACH Transfer</SelectItem>
-                              <SelectItem value="wire">Wire Transfer</SelectItem>
-                              <SelectItem value="online">Online Payment</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <FormControl>
+                            <RadioGroup
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                              className="flex flex-col space-y-1"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="check" id="check" />
+                                <label htmlFor="check">Check</label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="ach" id="ach" />
+                                <label htmlFor="ach">ACH Transfer</label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="wire" id="wire" />
+                                <label htmlFor="wire">Wire Transfer</label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="cash" id="cash" />
+                                <label htmlFor="cash">Cash</label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="credit_card" id="credit_card" />
+                                <label htmlFor="credit_card">Credit Card</label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="online" id="online" />
+                                <label htmlFor="online">Online Payment</label>
+                              </div>
+                            </RadioGroup>
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -534,15 +615,28 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                     
                     {(form.watch('paymentMethod') === 'ach' || form.watch('paymentMethod') === 'wire') && (
                       <>
+                        <FormField
+                          control={form.control}
+                          name="bankAccountNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Account Number</FormLabel>
+                              <FormControl>
+                                <Input type="password" placeholder="Account number" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                         <div className="grid grid-cols-2 gap-4">
                           <FormField
                             control={form.control}
-                            name="accountNumber"
+                            name="achRoutingNumber"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Account Number</FormLabel>
+                                <FormLabel>ACH Routing Number</FormLabel>
                                 <FormControl>
-                                  <Input type="password" placeholder="Account number" {...field} />
+                                  <Input placeholder="123456789" {...field} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -550,10 +644,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           />
                           <FormField
                             control={form.control}
-                            name="routingNumber"
+                            name="wireRoutingNumber"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Routing Number</FormLabel>
+                                <FormLabel>Wire Routing Number</FormLabel>
                                 <FormControl>
                                   <Input placeholder="123456789" {...field} />
                                 </FormControl>
