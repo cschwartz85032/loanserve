@@ -842,7 +842,7 @@ export class DatabaseStorage implements IStorage {
         isOnHold: true,
         holdReason: reason,
         holdRequestedBy: requestedBy,
-        holdDate: new Date().toISOString(),
+        holdDate: new Date(),
       })
       .where(eq(escrowDisbursements.id, id))
       .returning();

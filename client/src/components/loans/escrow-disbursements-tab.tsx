@@ -153,7 +153,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   // Local state to track disbursements for immediate UI updates
   const [localDisbursements, setLocalDisbursements] = useState<EscrowDisbursement[]>([]);
 
-  // Update local state when query data changes
+  // Update local state when query data changes - avoid infinite loops
   useEffect(() => {
     setLocalDisbursements(disbursements);
   }, [disbursements]);
@@ -258,14 +258,20 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
 
   const holdMutation = useMutation({
     mutationFn: ({ id, action, reason, requestedBy }: { id: number; action: 'hold' | 'release'; reason?: string; requestedBy?: string }) =>
-      apiRequest(`/api/escrow-disbursements/${id}/${action}`, {
+      apiRequest(`/api/escrow-disbursements/${id}/hold`, {
         method: 'POST',
-        body: JSON.stringify({ reason, requestedBy }),
+        body: JSON.stringify({ action, reason, requestedBy }),
       }),
-    onSuccess: () => {
-      console.log('Disbursement hold status updated, manually refetching data for loanId:', loanId);
+    onSuccess: (updatedDisbursement) => {
+      console.log('Disbursement hold status updated, updating local state and refetching data for loanId:', loanId);
+      
+      // Update local state immediately for instant UI feedback
+      setLocalDisbursements(prev => 
+        prev.map(d => d.id === updatedDisbursement.id ? updatedDisbursement : d)
+      );
+      
       refetchDisbursements();
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
+      refetchSummary();
       toast({ title: "Disbursement status updated successfully" });
     },
   });
@@ -991,16 +997,16 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                     </TableCell>
                     <TableCell>
                       <div>
-                        <div className="font-medium">${Number(disbursement.paymentAmount).toLocaleString()}</div>
+                        <div className="font-medium">${disbursement.paymentAmount ? Number(disbursement.paymentAmount).toLocaleString() : '0.00'}</div>
                         <div className="text-sm text-muted-foreground">
-                          Annual: ${Number(disbursement.annualAmount).toLocaleString()}
+                          Annual: ${disbursement.annualAmount ? Number(disbursement.annualAmount).toLocaleString() : '0.00'}
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Calendar className="h-4 w-4" />
-                        {new Date(disbursement.nextDueDate).toLocaleDateString()}
+                        {disbursement.nextDueDate && disbursement.nextDueDate !== 'Invalid Date' ? new Date(disbursement.nextDueDate).toLocaleDateString() : 'Not set'}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -1042,7 +1048,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                               wireInstructions: disbursement.wireInstructions || undefined,
                               frequency: disbursement.frequency as any,
                               paymentAmount: disbursement.paymentAmount,
-                              nextDueDate: disbursement.nextDueDate.split('T')[0],
+                              nextDueDate: disbursement.nextDueDate ? disbursement.nextDueDate.split('T')[0] : '',
                               autoPayEnabled: disbursement.autoPayEnabled,
                               daysBeforeDue: disbursement.daysBeforeDue || 10,
                               notes: disbursement.notes || undefined
@@ -1065,8 +1071,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant={disbursement.isOnHold ? "default" : "ghost"}
                           size="sm"
+                          className={disbursement.isOnHold ? "bg-red-100 hover:bg-red-200 text-red-700" : ""}
                           onClick={() => {
                             const action = disbursement.isOnHold ? 'release' : 'hold';
                             const reason = action === 'hold' ? prompt('Reason for hold:') || '' : undefined;
