@@ -45,61 +45,36 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch escrow disbursements - force fresh fetch with aggressive settings
-  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading, error: disbursementsError } = useQuery({
-    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
-    queryFn: async () => {
-      console.log('=== DISBURSEMENTS QUERYFN CALLED ===');
-      console.log('LoanId in queryFn:', loanId);
-      
-      if (!loanId) {
-        console.log('No loanId, returning empty array');
-        return [];
-      }
-      
-      const url = `/api/loans/${loanId}/escrow-disbursements`;
-      console.log('Fetching from URL:', url);
-      
-      try {
-        const response = await fetch(url, {
-          credentials: 'include',
-          cache: 'no-cache'
-        });
-        
-        console.log('Response status:', response.status);
-        
-        if (!response.ok) {
-          console.error('Failed to fetch disbursements:', response.status);
-          return [];
-        }
-        
-        const data = await response.json();
-        console.log('Successfully fetched disbursements:', data);
-        console.log('Number of disbursements:', data.length);
-        
-        return data;
-      } catch (error) {
-        console.error('Error in disbursements queryFn:', error);
-        return [];
-      }
-    },
-    enabled: !!loanId,
-    staleTime: 0,
-    gcTime: 0,
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-    retry: false
-  });
+  // State for disbursements
+  const [escrowDisbursements, setEscrowDisbursements] = useState<any[]>([]);
+  const [isDisbursementsLoading, setIsDisbursementsLoading] = useState(false);
   
-  // Log query state
+  // Manually fetch escrow disbursements when loan loads
   useEffect(() => {
-    console.log('=== DISBURSEMENTS QUERY STATE ===');
-    console.log('loanId:', loanId);
-    console.log('enabled:', !!loanId);
-    console.log('isLoading:', isDisbursementsLoading);
-    console.log('error:', disbursementsError);
-    console.log('data:', escrowDisbursements);
-  }, [loanId, isDisbursementsLoading, disbursementsError, escrowDisbursements]);
+    if (loanId) {
+      console.log('Fetching disbursements for loan:', loanId);
+      setIsDisbursementsLoading(true);
+      
+      fetch(`/api/loans/${loanId}/escrow-disbursements`, {
+        credentials: 'include'
+      })
+        .then(response => {
+          console.log('Disbursements response status:', response.status);
+          if (!response.ok) throw new Error('Failed to fetch disbursements');
+          return response.json();
+        })
+        .then(data => {
+          console.log('Fetched disbursements:', data);
+          setEscrowDisbursements(Array.isArray(data) ? data : []);
+          setIsDisbursementsLoading(false);
+        })
+        .catch(error => {
+          console.error('Error fetching disbursements:', error);
+          setEscrowDisbursements([]);
+          setIsDisbursementsLoading(false);
+        });
+    }
+  }, [loanId]);
   
   // Fetch documents for this loan
   const { data: documents, refetch: refetchDocuments } = useQuery({
