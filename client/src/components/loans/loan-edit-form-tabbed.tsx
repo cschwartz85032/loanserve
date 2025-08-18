@@ -90,20 +90,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   }, [loan]);
 
   const calculatePayments = (loanData: any) => {
-    const principal = parseFloat(loanData.loanAmount || loanData.originalAmount) || 0;
-    const annualRate = parseFloat(loanData.interestRate) || 0;
-    const termMonths = parseFloat(loanData.loanTerm) || 360;
-    
-    const monthlyRate = annualRate / 100 / 12;
-    const numPayments = termMonths;
-
-    let principalAndInterest = 0;
-    if (monthlyRate > 0) {
-      principalAndInterest = principal * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / 
-                           (Math.pow(1 + monthlyRate, numPayments) - 1);
-    } else {
-      principalAndInterest = principal / numPayments;
-    }
+    // Use the actual payment amount from the database, not calculated
+    const principalAndInterest = parseFloat(loanData.paymentAmount) || 0;
 
     const hazardInsurance = parseFloat(loanData.hazardInsurance) || 0;
     const propertyTaxes = parseFloat(loanData.propertyTaxes) || 0;
@@ -112,7 +100,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
     const hoaFees = parseFloat(loanData.hoaFees) || 0;
     const pmi = parseFloat(loanData.pmiAmount) || 0;
-    const servicingFee = parseFloat(loanData.servicingFee) || 25;
+    const servicingFee = parseFloat(loanData.servicingFee) || 0;
 
     const totalMonthlyPayment = principalAndInterest + escrow + hoaFees + pmi + servicingFee;
 
