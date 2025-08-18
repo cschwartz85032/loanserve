@@ -85,6 +85,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Update form data when loan is loaded
   useEffect(() => {
     if (loan) {
+      console.log('Loading loan data into form:', loan);
       setFormData(loan);
       calculatePayments(loan);
     }
@@ -128,18 +129,28 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
-      return fetch(`/api/loans/${loanId}`, {
+      const response = await fetch(`/api/loans/${loanId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(data),
-      }).then(res => res.json());
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
     },
     onSuccess: (response) => {
       console.log('Update response:', response);
-      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      // Update local form data with the server response to ensure consistency
+      setFormData(response);
+      // Invalidate and refetch the specific loan data
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      // Force a refetch of the current loan data
+      queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}`] });
       toast({
         title: "Loan Updated",
         description: "Loan information has been successfully updated",
@@ -156,6 +167,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   });
 
   const handleInputChange = (field: string, value: any) => {
+    console.log(`Field changed: ${field} = ${value}`);
     setFormData((prev: any) => ({ ...prev, [field]: value }));
   };
 
