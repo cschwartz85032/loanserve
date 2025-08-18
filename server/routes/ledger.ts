@@ -37,6 +37,8 @@ export async function addLedgerTransaction(req: Request, res: Response) {
     const transaction = req.body;
     const userId = (req.user as any)?.id;
     
+    console.log('Adding ledger transaction:', { loanId, transaction, userId });
+    
     // Generate transaction ID
     const transactionId = `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
@@ -99,6 +101,7 @@ export async function addLedgerTransaction(req: Request, res: Response) {
       reversalOf: transaction.reversalOf,
     }).returning();
     
+    console.log('Transaction added successfully:', newEntry);
     res.json(newEntry);
   } catch (error) {
     console.error('Error adding ledger transaction:', error);
