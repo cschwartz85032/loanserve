@@ -216,11 +216,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       </div>
 
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
-          <TabsTrigger value="beneficiaries">Beneficiaries</TabsTrigger>
-          <TabsTrigger value="investors">Investors</TabsTrigger>
+          <TabsTrigger value="beneficiaries">Beneficiaries & Investors</TabsTrigger>
           <TabsTrigger value="documents">Document Management</TabsTrigger>
           <TabsTrigger value="accounting">Accounting</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
@@ -838,10 +837,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        {/* Investors Tab */}
-        <TabsContent value="investors" className="space-y-6">
+          {/* Investors Section */}
           <LoanInvestorsManager loanId={loanId} />
         </TabsContent>
 

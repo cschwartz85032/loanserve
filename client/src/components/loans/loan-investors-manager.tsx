@@ -59,6 +59,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     ownershipPercentage: 0,
     accountType: 'checking'
   });
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Fetch loan details for amount and origination date
   const { data: loanData } = useQuery({
@@ -193,22 +194,42 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
       ownershipPercentage: 0,
       accountType: 'checking'
     });
+    setFormErrors({});
   };
 
   const handleSave = () => {
-    if (!formData.name || !formData.ownershipPercentage) {
+    const errors: Record<string, string> = {};
+    
+    // Validate required fields
+    if (!formData.name) {
+      errors.name = "Name is required";
+    }
+    if (!formData.ownershipPercentage || formData.ownershipPercentage === 0) {
+      errors.ownershipPercentage = "Ownership percentage is required";
+    }
+    
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
       toast({
         title: "Error",
-        description: "Please fill in required fields",
+        description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
     }
+    
+    setFormErrors({});
+    
+    // Ensure investment amount is calculated
+    const dataToSave = {
+      ...formData,
+      investmentAmount: calculateInvestmentAmount(formData.ownershipPercentage || 0)
+    };
 
     if (editingInvestor) {
-      updateMutation.mutate({ id: editingInvestor.id!, data: formData });
+      updateMutation.mutate({ id: editingInvestor.id!, data: dataToSave });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(dataToSave);
     }
   };
 
@@ -447,14 +468,18 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="name">
-                    {formData.entityType === 'individual' ? 'Name' : 'Entity Name'} *
+                    {formData.entityType === 'individual' ? 'Name' : 'Entity Name'} <span className="text-red-500">*</span>
                   </Label>
                   <Input
                     id="name"
                     value={formData.name || ''}
                     onChange={(e) => handleInputChange('name', e.target.value)}
                     placeholder={formData.entityType === 'individual' ? 'John Doe' : 'ABC Corporation'}
+                    className={formErrors.name ? 'border-red-500' : ''}
                   />
+                  {formErrors.name && (
+                    <p className="text-sm text-red-500">{formErrors.name}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="ssnOrEin">
@@ -498,7 +523,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
               )}
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="ownershipPercentage">Ownership Percentage *</Label>
+                  <Label htmlFor="ownershipPercentage">Ownership Percentage <span className="text-red-500">*</span></Label>
                   <Input
                     id="ownershipPercentage"
                     type="number"
@@ -506,16 +531,20 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                     max="100"
                     step="0.01"
                     value={formData.ownershipPercentage || ''}
-                    onChange={(e) => handleInputChange('ownershipPercentage', parseFloat(e.target.value))}
+                    onChange={(e) => handleInputChange('ownershipPercentage', e.target.value)}
                     placeholder="25.00"
+                    className={formErrors.ownershipPercentage ? 'border-red-500' : ''}
                   />
+                  {formErrors.ownershipPercentage && (
+                    <p className="text-sm text-red-500">{formErrors.ownershipPercentage}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="investmentAmount">Investment Amount (Calculated)</Label>
                   <Input
                     id="investmentAmount"
                     type="text"
-                    value={formData.investmentAmount ? `$${formData.investmentAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}
+                    value={`$${(calculateInvestmentAmount(parseFloat(formData.ownershipPercentage?.toString() || '0')) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     readOnly
                     className="bg-gray-50"
                     title="Automatically calculated based on ownership percentage"

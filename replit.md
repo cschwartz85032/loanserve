@@ -10,7 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ## UI/UX Decisions
 The application features a modern, component-based UI designed for clarity and ease of use. Key UI/UX decisions include:
-- **Tab-based Navigation**: Logical grouping of information with 7 tabs: Edit Loan Details, Contacts, Beneficiaries, Investors, Documents, Accounting, Audit Trail. Beneficiary and Investor information have dedicated tabs for improved organization.
+- **Tab-based Navigation**: Logical grouping of information with 6 tabs: Edit Loan Details, Contacts, Beneficiaries & Investors, Documents, Accounting, Audit Trail. Investors are integrated within the Beneficiaries tab for better organization.
 - **Data Display Principle**: System must display exactly what was extracted from loan documents or user corrections; no assumed calculations. This is particularly critical for financial data like loan payments.
 - **Comprehensive Contact Management**: All contacts (borrower, trustee, beneficiary) include both individual and company names, phone, email, and full street addresses.
 - **Investor Management**: Comprehensive investor tracking with ownership percentages, banking information (bank name/address, account/routing numbers), SSN/EIN tracking, and entity types. Investment amounts are automatically calculated based on ownership percentage and loan amount. Investment date defaults to loan origination date. Visual validation shows green at 100% ownership, flashing red when incorrect. Each investor has unique ID and supports add/edit/delete operations.
