@@ -296,7 +296,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Loan not found" });
       }
 
-      const loan = await storage.updateLoan(id, req.body);
+      // Remove timestamp fields that are automatically managed
+      const { createdAt, updatedAt, ...updateData } = req.body;
+      const loan = await storage.updateLoan(id, updateData);
       
       // Temporarily skip audit log until database schema is updated
       // await storage.createAuditLog({
@@ -391,7 +393,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/investors/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const investor = await storage.updateInvestor(id, req.body);
+      // Remove timestamp fields that are automatically managed
+      const { createdAt, updatedAt, ...updateData } = req.body;
+      
+      // Ensure dates are properly formatted
+      if (updateData.investmentDate) {
+        updateData.investmentDate = typeof updateData.investmentDate === 'string' 
+          ? updateData.investmentDate 
+          : new Date(updateData.investmentDate).toISOString().split('T')[0];
+      }
+      
+      const investor = await storage.updateInvestor(id, updateData);
       res.json(investor);
     } catch (error) {
       console.error("Error updating investor:", error);
