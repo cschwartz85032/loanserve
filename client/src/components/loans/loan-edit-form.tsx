@@ -45,22 +45,24 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch escrow disbursements
-  const { data: escrowDisbursements } = useQuery({
-    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
+  // Fetch escrow disbursements - use proper query key format
+  const { data: escrowDisbursements, isLoading: isDisbursementsLoading } = useQuery({
+    queryKey: ['/api/loans', loanId, 'escrow-disbursements'],
     queryFn: async () => {
+      console.log('Fetching escrow disbursements for loan:', loanId);
       const response = await fetch(`/api/loans/${loanId}/escrow-disbursements`, {
         credentials: 'include'
       });
       if (!response.ok) {
-        console.error('Failed to fetch escrow disbursements');
+        console.error('Failed to fetch escrow disbursements, status:', response.status);
         return [];
       }
       const data = await response.json();
       console.log('Fetched escrow disbursements:', data);
       return data;
     },
-    enabled: !!loanId
+    enabled: !!loanId,
+    staleTime: 0 // Force fresh fetch
   });
 
   // Fetch documents for this loan
@@ -80,14 +82,16 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   useEffect(() => {
     if (loan) {
       console.log('Loan data loaded:', loan);
+      console.log('Disbursements loading status:', isDisbursementsLoading);
+      console.log('Current escrow disbursements:', escrowDisbursements);
       setFormData(loan);
       // Calculate payments once both loan and disbursements are available
-      if (escrowDisbursements !== undefined) {
-        console.log('Escrow disbursements loaded:', escrowDisbursements);
-        calculatePayments(loan, escrowDisbursements);
+      if (!isDisbursementsLoading) {
+        console.log('Escrow disbursements ready:', escrowDisbursements);
+        calculatePayments(loan, escrowDisbursements || []);
       }
     }
-  }, [loan, escrowDisbursements]);
+  }, [loan, escrowDisbursements, isDisbursementsLoading]);
 
   const calculatePayments = (loanData: any, disbursements?: any[]) => {
     console.log('calculatePayments called with:', { loanData, disbursements });
@@ -165,7 +169,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Recalculate when form data changes
   useEffect(() => {
     if (formData.loanAmount || formData.interestRate || formData.loanTerm) {
-      calculatePayments(formData, escrowDisbursements);
+      calculatePayments(formData, escrowDisbursements || []);
     }
   }, [formData.loanAmount, formData.interestRate, formData.loanTerm, formData.hazardInsurance, formData.propertyTaxes, formData.hoaFees, formData.pmiAmount, formData.servicingFee, escrowDisbursements]);
 
