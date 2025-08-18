@@ -1071,18 +1071,15 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           </CardContent>
         </Card>
       </div>
-      
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
-      
-      {/* Document Preview Modal */}
-      <DocumentPreviewModal
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        document={selectedDocument}
-      />
-    </div>
-  );
+    </TabsContent>
+  </Tabs>
+  
+  {/* Document Preview Modal */}
+  <DocumentPreviewModal
+    open={previewOpen}
+    onOpenChange={setPreviewOpen}
+    document={selectedDocument}
+  />
+</div>
+);
 }
