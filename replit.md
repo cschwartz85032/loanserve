@@ -4,6 +4,13 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 
 ## Recent Changes (January 17, 2025)
 
+**Critical Fix: Loan Payment Display - Database Values Only**
+- **Issue Fixed**: Loan edit form was calculating payment amounts instead of using database values
+- **Root Cause**: calculatePayments() function was computing P&I from loan amount/rate/term
+- **Solution**: Modified to use actual paymentAmount field from database (extracted from documents)
+- **Principle Enforced**: Only data from database or user corrections is valid - no assumptions or calculations
+- **User Emphasis**: System must display exactly what was extracted from loan documents, not theoretical calculations
+
 **Enhanced Contact Information Management with Company Names**
 - **Database Schema Updated**: Added company name fields for all contacts (borrower, trustee, beneficiary)
 - **Dual Name Fields**: Each contact now has both "Contact Name" (individual) and "Company Name" fields
