@@ -626,7 +626,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeStreetAddress"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Street Address (Optional)</FormLabel>
+                            <FormLabel>Street Address</FormLabel>
                             <FormControl>
                               <Input placeholder="123 Main St" {...field} />
                             </FormControl>
@@ -639,7 +639,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeCity"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>City (Optional)</FormLabel>
+                            <FormLabel>City</FormLabel>
                             <FormControl>
                               <Input placeholder="Anytown" {...field} />
                             </FormControl>
@@ -654,7 +654,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeState"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>State (Optional)</FormLabel>
+                            <FormLabel>State</FormLabel>
                             <FormControl>
                               <Input placeholder="CA" {...field} />
                             </FormControl>
@@ -667,7 +667,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeZipCode"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>ZIP Code (Optional)</FormLabel>
+                            <FormLabel>ZIP Code</FormLabel>
                             <FormControl>
                               <Input placeholder="12345" {...field} />
                             </FormControl>
@@ -798,7 +798,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="accountNumber2"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Reference/Policy Number (Optional)</FormLabel>
+                            <FormLabel>Reference/Policy Number</FormLabel>
                             <FormControl>
                               <Input placeholder="Tax parcel #, policy #, etc." {...field} />
                             </FormControl>
@@ -811,7 +811,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="referenceNumber"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Reference Number (Optional)</FormLabel>
+                            <FormLabel>Reference Number</FormLabel>
                             <FormControl>
                               <Input placeholder="Additional reference" {...field} />
                             </FormControl>
@@ -882,7 +882,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="annualAmount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Annual Amount (Calculated)</FormLabel>
+                            <FormLabel>Annual Amount</FormLabel>
                             <FormControl>
                               <Input 
                                 type="number" 
@@ -902,7 +902,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="monthlyAmount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Monthly Amount (Calculated)</FormLabel>
+                            <FormLabel>Monthly Amount</FormLabel>
                             <FormControl>
                               <Input 
                                 type="number" 

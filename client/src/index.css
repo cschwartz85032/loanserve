@@ -122,6 +122,13 @@
   --shadow-2xl: 0px 2px 0px 0px hsl(202.8169, 89.1213%, 53.1373%, 0.00);
 }
 
+/* Make all input placeholders light grey */
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important; /* Light grey color */
+  opacity: 1 !important;
+}
+
 @layer base {
   * {
     @apply border-border;
