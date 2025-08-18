@@ -3,12 +3,15 @@
 LoanServe Pro is a comprehensive mortgage loan servicing platform built with React and Express.js. It provides a full-featured loan portfolio management system for lenders, borrowers, investors, escrow officers, and legal professionals. The platform offers complete loan lifecycle management, including origination tracking, payment processing, document management, escrow account handling, compliance monitoring, comprehensive reporting capabilities, and investor management with ownership percentage tracking. A key capability is AI-powered document analysis for automated loan creation and data extraction from financial documents.
 
 ## Recent Changes (January 2025)
+- Added dedicated Escrows tab to loan edit interface with comprehensive escrow account management
+- Fixed fee dropdown to display all 33 configured fees from fee management schedule instead of limited loan-specific fees
 - Added escrow number field to escrow company section with database schema update
 - Implemented fee selection dropdown in accounting transactions - when transaction type is "fee", users can select from the loan's fee schedule
 - Fixed investor and loan update errors by properly handling timestamp fields in backend
 - Enhanced security for sensitive data (SSN/EIN, account/routing numbers) with password field eye toggle visibility
 - Updated AI document extraction to include escrow number from loan documents
 - Made investor ID and Name fields clickable with blue underlined styling
+- Changed "Doc Management" tab to "Docs" for brevity
 
 # User Preferences
 
@@ -18,7 +21,7 @@ Preferred communication style: Simple, everyday language.
 
 ## UI/UX Decisions
 The application features a modern, component-based UI designed for clarity and ease of use. Key UI/UX decisions include:
-- **Tab-based Navigation**: Logical grouping of information with 6 tabs: Edit Loan Details, Contacts, Beneficiaries & Investors, Documents, Accounting, Audit Trail. Investors are integrated within the Beneficiaries tab for better organization.
+- **Tab-based Navigation**: Logical grouping of information with 7 tabs: Edit Loan Details, Contacts, Beneficiary, Escrows, Docs, Accounting, Audit Trail. Investors are integrated within the Beneficiaries tab for better organization.
 - **Data Display Principle**: System must display exactly what was extracted from loan documents or user corrections; no assumed calculations. This is particularly critical for financial data like loan payments.
 - **Comprehensive Contact Management**: All contacts (borrower, trustee, beneficiary) include both individual and company names, phone, email, and full street addresses.
 - **Investor Management**: Comprehensive investor tracking with ownership percentages, banking information (bank name/address, account/routing numbers), SSN/EIN tracking, and entity types. Investment amounts are automatically calculated based on ownership percentage and loan amount. Investment date defaults to loan origination date. Visual validation shows green at 100% ownership, flashing red when incorrect. Each investor has unique ID and supports add/edit/delete operations.
