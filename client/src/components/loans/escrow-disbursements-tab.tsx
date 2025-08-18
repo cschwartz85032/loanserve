@@ -77,7 +77,7 @@ const disbursementSchema = z.object({
 type DisbursementFormData = z.infer<typeof disbursementSchema>;
 
 interface EscrowDisbursementsTabProps {
-  loanId: number;
+  loanId: string;
 }
 
 interface EscrowDisbursement {
@@ -86,6 +86,7 @@ interface EscrowDisbursement {
   disbursementType: string;
   description: string;
   payeeName: string;
+  payeeContactName?: string;
   payeePhone?: string;
   payeeEmail?: string;
   payeeStreetAddress?: string;
@@ -94,7 +95,9 @@ interface EscrowDisbursement {
   payeeZipCode?: string;
   // Type-specific fields
   accountNumber?: string;
+  accountType?: string;
   policyNumber?: string;
+  wireInstructions?: string;
   // Payment details
   paymentMethod: string;
   bankAccountNumber?: string;
@@ -104,7 +107,9 @@ interface EscrowDisbursement {
   frequency: string;
   annualAmount: string;
   paymentAmount: string;
+  monthlyAmount?: string;
   nextDueDate: string;
+  daysBeforeDue?: number;
   status: string;
   isOnHold: boolean;
   holdReason?: string;
@@ -133,26 +138,34 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   const { data: loan } = useQuery({
     queryKey: [`/api/loans/${loanId}`],
     enabled: !!loanId
-  });
+  }) as { data: any };
 
-  const { data: disbursements = [], isLoading } = useQuery({
-    queryKey: ['/api/loans', String(loanId), 'escrow-disbursements'],
+  const { data: disbursements = [], isLoading, refetch: refetchDisbursements } = useQuery({
+    queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     queryFn: async () => {
       const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
       return Array.isArray(response) ? response : [];
     },
     staleTime: 0, // Always consider data stale
-    cacheTime: 0, // Don't cache the data
+    gcTime: 0, // Don't cache the data (updated API)
   });
 
-  const { data: escrowSummary } = useQuery<EscrowSummaryResponse>({
-    queryKey: ['/api/loans', String(loanId), 'escrow-summary'],
+  // Local state to track disbursements for immediate UI updates
+  const [localDisbursements, setLocalDisbursements] = useState<EscrowDisbursement[]>([]);
+
+  // Update local state when query data changes
+  useEffect(() => {
+    setLocalDisbursements(disbursements);
+  }, [disbursements]);
+
+  const { data: escrowSummary, refetch: refetchSummary } = useQuery<EscrowSummaryResponse>({
+    queryKey: [`/api/loans/${loanId}/escrow-summary`],
     queryFn: async () => {
       const response = await apiRequest(`/api/loans/${loanId}/escrow-summary`);
-      return response as EscrowSummaryResponse;
+      return response as unknown as EscrowSummaryResponse;
     },
     staleTime: 0, // Always consider data stale
-    cacheTime: 0, // Don't cache the data
+    gcTime: 0, // Don't cache the data (updated API)
   });
 
   const form = useForm<DisbursementFormData>({
@@ -203,23 +216,15 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    onSuccess: () => {
-      console.log('Disbursement created successfully, invalidating cache for loanId:', loanId);
-      // Clear all related queries more aggressively
-      const loanIdStr = String(loanId);
-      const loanIdNum = Number(loanId);
+    onSuccess: (newDisbursement) => {
+      console.log('Disbursement created successfully, updating local state and refetching for loanId:', loanId);
       
-      // Try both string and number versions of loanId
-      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-disbursements'] });
-      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-disbursements'] });
-      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-summary'] });
-      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-summary'] });
+      // Immediately update local state for instant UI feedback
+      setLocalDisbursements(prev => [...prev, newDisbursement]);
       
-      // Also invalidate with both types
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-disbursements'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-disbursements'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-summary'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-summary'] });
+      // Also refetch to ensure data consistency
+      refetchDisbursements();
+      refetchSummary();
       
       setIsAddDialogOpen(false);
       form.reset();
@@ -241,11 +246,11 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      console.log('Disbursement updated successfully, invalidating cache for loanId:', loanId);
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
-      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
-      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
+      console.log('Disbursement updated successfully, manually refetching data for loanId:', loanId);
+      refetchDisbursements();
+      refetchSummary();
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
       setEditingDisbursement(null);
       toast({ title: "Disbursement updated successfully" });
     },
@@ -258,9 +263,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify({ reason, requestedBy }),
       }),
     onSuccess: () => {
-      console.log('Disbursement hold status updated, invalidating cache for loanId:', loanId);
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
-      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      console.log('Disbursement hold status updated, manually refetching data for loanId:', loanId);
+      refetchDisbursements();
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
       toast({ title: "Disbursement status updated successfully" });
     },
   });
@@ -269,11 +274,11 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
     mutationFn: (id: number) =>
       apiRequest(`/api/escrow-disbursements/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
-      console.log('Disbursement deleted successfully, invalidating cache for loanId:', loanId);
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
-      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
-      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
+      console.log('Disbursement deleted successfully, manually refetching data for loanId:', loanId);
+      refetchDisbursements();
+      refetchSummary();
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
       toast({ title: "Disbursement deleted successfully" });
     },
   });
@@ -446,9 +451,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                             </FormItem>
                           )}
                         />
-                        {loan && (
+                        {loan?.parcelNumber && (
                           <div className="text-sm text-muted-foreground">
-                            <strong>Parcel Number:</strong> {loan.parcelNumber || 'Not available - please update property information'}
+                            <strong>Parcel Number:</strong> {loan.parcelNumber}
                           </div>
                         )}
                       </div>
@@ -932,7 +937,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {disbursements.length === 0 ? (
+          {localDisbursements.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No disbursements configured. Click "Add Disbursement" to get started.
             </div>
@@ -950,7 +955,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {Array.isArray(disbursements) && disbursements.map((disbursement: EscrowDisbursement) => (
+                {Array.isArray(localDisbursements) && localDisbursements.map((disbursement: EscrowDisbursement) => (
                   <TableRow key={disbursement.id}>
                     <TableCell>
                       <div>
