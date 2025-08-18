@@ -136,19 +136,23 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   });
 
   const { data: disbursements = [], isLoading } = useQuery({
-    queryKey: ['/api/loans', loanId, 'escrow-disbursements'],
+    queryKey: ['/api/loans', String(loanId), 'escrow-disbursements'],
     queryFn: async () => {
       const response = await apiRequest(`/api/loans/${loanId}/escrow-disbursements`);
       return Array.isArray(response) ? response : [];
     },
+    staleTime: 0, // Always consider data stale
+    cacheTime: 0, // Don't cache the data
   });
 
   const { data: escrowSummary } = useQuery<EscrowSummaryResponse>({
-    queryKey: ['/api/loans', loanId, 'escrow-summary'],
+    queryKey: ['/api/loans', String(loanId), 'escrow-summary'],
     queryFn: async () => {
       const response = await apiRequest(`/api/loans/${loanId}/escrow-summary`);
       return response as EscrowSummaryResponse;
     },
+    staleTime: 0, // Always consider data stale
+    cacheTime: 0, // Don't cache the data
   });
 
   const form = useForm<DisbursementFormData>({
@@ -201,12 +205,22 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       }),
     onSuccess: () => {
       console.log('Disbursement created successfully, invalidating cache for loanId:', loanId);
-      // Invalidate and refetch the disbursements
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
-      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
-      // Invalidate and refetch the summary
-      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
-      queryClient.refetchQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
+      // Clear all related queries more aggressively
+      const loanIdStr = String(loanId);
+      const loanIdNum = Number(loanId);
+      
+      // Try both string and number versions of loanId
+      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-disbursements'] });
+      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-disbursements'] });
+      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-summary'] });
+      queryClient.removeQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-summary'] });
+      
+      // Also invalidate with both types
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-disbursements'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-disbursements'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdStr, 'escrow-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanIdNum, 'escrow-summary'] });
+      
       setIsAddDialogOpen(false);
       form.reset();
       toast({ title: "Disbursement created successfully" });
