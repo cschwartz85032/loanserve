@@ -94,7 +94,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       console.log('=== LOAN LOADED, TRIGGERING DISBURSEMENTS FETCH ===');
       refetchDisbursements();
     }
-  }, [loanId, loan]);
+  }, [loanId, loan, refetchDisbursements]);
 
   // Update form data when loan is loaded
   useEffect(() => {
@@ -237,8 +237,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         }
       });
       
-      const res = await apiRequest("PUT", `/api/loans/${loanId}`, cleanData);
-      if (!res.ok) throw new Error('Failed to update loan');
+      const res = await apiRequest(`/api/loans/${loanId}`, {
+        method: "PUT",
+        body: JSON.stringify(cleanData)
+      });
       return res.json();
     },
     onSuccess: () => {
@@ -1068,6 +1070,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
             </div>
           </CardContent>
         </Card>
+      </div>
+      
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
       
       {/* Document Preview Modal */}
