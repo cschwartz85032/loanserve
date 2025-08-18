@@ -57,6 +57,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   const [formData, setFormData] = useState<Partial<Investor>>({
     entityType: 'individual',
     ownershipPercentage: 0,
+    investmentAmount: 0,
     accountType: 'checking'
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -192,6 +193,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     setFormData({
       entityType: 'individual',
       ownershipPercentage: 0,
+      investmentAmount: 0,
       accountType: 'checking'
     });
     setFormErrors({});
@@ -220,10 +222,12 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     
     setFormErrors({});
     
-    // Ensure investment amount is calculated
+    // Ensure investment amount is calculated and converted to string for decimal field
+    const calculatedAmount = calculateInvestmentAmount(formData.ownershipPercentage || 0);
     const dataToSave = {
       ...formData,
-      investmentAmount: calculateInvestmentAmount(formData.ownershipPercentage || 0)
+      investmentAmount: calculatedAmount.toString(),
+      ownershipPercentage: formData.ownershipPercentage?.toString()
     };
 
     if (editingInvestor) {
@@ -242,10 +246,11 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   const handleInputChange = (field: keyof Investor, value: any) => {
     if (field === 'ownershipPercentage') {
       // Calculate investment amount when percentage changes
-      const investmentAmount = calculateInvestmentAmount(parseFloat(value) || 0);
+      const percentage = parseFloat(value) || 0;
+      const investmentAmount = calculateInvestmentAmount(percentage);
       setFormData(prev => ({ 
         ...prev, 
-        [field]: value,
+        ownershipPercentage: percentage,
         investmentAmount 
       }));
     } else {
@@ -544,9 +549,10 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                   <Input
                     id="investmentAmount"
                     type="text"
-                    value={`$${(calculateInvestmentAmount(parseFloat(formData.ownershipPercentage?.toString() || '0')) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    value={`$${(formData.investmentAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                     readOnly
-                    className="bg-gray-50"
+                    disabled
+                    className="bg-gray-100 cursor-not-allowed"
                     title="Automatically calculated based on ownership percentage"
                   />
                 </div>
