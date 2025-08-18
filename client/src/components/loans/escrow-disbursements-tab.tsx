@@ -229,11 +229,11 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         const annualAmount = (amount * multiplier).toFixed(2);
         const monthlyAmount = (parseFloat(annualAmount) / 12).toFixed(2);
         
-        form.setValue('annualAmount', annualAmount);
-        form.setValue('monthlyAmount', monthlyAmount);
+        form.setValue('annualAmount', annualAmount, { shouldValidate: false });
+        form.setValue('monthlyAmount', monthlyAmount, { shouldValidate: false });
       }
     }
-  }, [paymentAmount, frequency, form]);
+  }, [paymentAmount, frequency]); // Removed form from dependencies to prevent infinite loop
 
   const createMutation = useMutation({
     mutationFn: async (data: DisbursementFormData) => {
@@ -311,16 +311,36 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const response = await apiRequest(`/api/escrow-disbursements/${id}`, { method: 'DELETE' });
-      return await response.json();
+      // DELETE returns 204 No Content, so no JSON to parse
+      if (!response.ok) {
+        throw new Error(`Failed to delete: ${response.status}`);
+      }
+      return id; // Return the deleted ID
     },
-    onSuccess: () => {
-      console.log('Disbursement deleted successfully, manually refetching data for loanId:', loanId);
-      refetchDisbursements();
-      refetchSummary();
+    onSuccess: (deletedId) => {
+      console.log('Disbursement deleted successfully, ID:', deletedId);
+      
+      // Update local state immediately for instant UI feedback
+      setLocalDisbursements(prev => prev.filter(d => d.id !== deletedId));
+      
+      // Also refetch to ensure data consistency with backend
+      setTimeout(() => {
+        refetchDisbursements();
+        refetchSummary();
+      }, 100);
+      
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
       toast({ title: "Disbursement deleted successfully" });
     },
+    onError: (error: any) => {
+      console.error('Delete failed:', error);
+      toast({ 
+        title: "Failed to delete disbursement", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    }
   });
 
   const onSubmit = (data: DisbursementFormData) => {
