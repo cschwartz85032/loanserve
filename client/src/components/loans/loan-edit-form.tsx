@@ -46,7 +46,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   });
 
   // Fetch escrow disbursements - SIMPLE APPROACH LIKE OTHER QUERIES
-  const { data: escrowDisbursements = [] } = useQuery({
+  const { data: escrowDisbursements = [], isLoading: isDisbursementsLoading } = useQuery({
     queryKey: [`/api/loans/${loanId}/escrow-disbursements`],
     enabled: !!loanId
   });
