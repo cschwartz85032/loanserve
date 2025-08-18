@@ -86,6 +86,16 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
+  // Force fetch disbursements when loan loads
+  useEffect(() => {
+    if (loanId && loan) {
+      console.log('=== LOAN LOADED, FORCING DISBURSEMENTS FETCH ===');
+      console.log('Loan ID:', loanId);
+      console.log('Refetching disbursements...');
+      refetchDisbursements();
+    }
+  }, [loanId, loan]);
+  
   // Log when disbursements are fetched
   useEffect(() => {
     console.log('=== ESCROW DISBURSEMENTS CHECK ===');
