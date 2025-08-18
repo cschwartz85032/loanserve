@@ -402,6 +402,27 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       />
                     </div>
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="parcelNumber">Parcel Number (APN)</Label>
+                      <Input
+                        id="parcelNumber"
+                        value={formData.parcelNumber || ''}
+                        onChange={(e) => handleInputChange('parcelNumber', e.target.value)}
+                        placeholder="Assessor's Parcel Number"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="legalDescription">Legal Description</Label>
+                      <Textarea
+                        id="legalDescription"
+                        value={formData.legalDescription || ''}
+                        onChange={(e) => handleInputChange('legalDescription', e.target.value)}
+                        placeholder="Property legal description"
+                        rows={2}
+                      />
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
