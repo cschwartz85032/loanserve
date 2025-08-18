@@ -46,11 +46,16 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
     enabled: !!loanId,
   });
 
-  // Fetch loan fees for dropdown
-  const { data: loanFees = [] } = useQuery({
-    queryKey: [`/api/fees/loan/${loanId}`],
+  // Fetch fee templates for dropdown (contains 33 configured fees)
+  const { data: feeTemplates = [] } = useQuery({
+    queryKey: [`/api/fees/templates`],
     enabled: !!loanId,
   });
+
+  // Extract all fees from all templates into a flat array
+  const availableFees = feeTemplates.flatMap((template: any) => 
+    Array.isArray(template.fees) ? template.fees : []
+  );
 
   // Add transaction mutation
   const addTransactionMutation = useMutation({
@@ -416,14 +421,14 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                 <Select 
                   value={newTransaction.feeId} 
                   onValueChange={(value) => {
-                    const fee = loanFees.find((f: any) => f.id.toString() === value);
+                    const fee = availableFees.find((f: any) => f.name === value);
                     if (fee) {
                       setSelectedFee(fee);
                       setNewTransaction({ 
                         ...newTransaction, 
                         feeId: value,
-                        description: `${fee.feeName} - ${fee.feeType}`,
-                        amount: `-${fee.feeAmount}` // Fees are typically debits (negative)
+                        description: `${fee.name} - ${fee.type}`,
+                        amount: `-${fee.amount}` // Fees are typically debits (negative)
                       });
                     }
                   }}
@@ -432,13 +437,13 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                     <SelectValue placeholder="Select a fee from the schedule" />
                   </SelectTrigger>
                   <SelectContent>
-                    {loanFees.length === 0 ? (
+                    {availableFees.length === 0 ? (
                       <SelectItem value="none" disabled>No fees in schedule</SelectItem>
                     ) : (
-                      loanFees.map((fee: any) => (
-                        <SelectItem key={fee.id} value={fee.id.toString()}>
-                          {fee.feeName} - ${parseFloat(fee.feeAmount).toFixed(2)} ({fee.feeType})
-                          {fee.waived && ' - WAIVED'}
+                      availableFees.map((fee: any, index: number) => (
+                        <SelectItem key={index} value={fee.name}>
+                          {fee.name} - ${parseFloat(fee.amount).toFixed(2)} ({fee.type})
+                          {fee.note && ` - ${fee.note}`}
                         </SelectItem>
                       ))
                     )}
@@ -446,10 +451,11 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                 </Select>
                 {selectedFee && (
                   <div className="p-3 bg-blue-50 rounded-md text-sm">
-                    <p className="font-medium">{selectedFee.feeName}</p>
-                    <p className="text-gray-600">Type: {selectedFee.feeType}</p>
-                    <p className="text-gray-600">Amount: ${parseFloat(selectedFee.feeAmount).toFixed(2)}</p>
-                    {selectedFee.notes && <p className="text-gray-600">Notes: {selectedFee.notes}</p>}
+                    <p className="font-medium">{selectedFee.name}</p>
+                    <p className="text-gray-600">Type: {selectedFee.type}</p>
+                    <p className="text-gray-600">Amount: ${parseFloat(selectedFee.amount).toFixed(2)}</p>
+                    <p className="text-gray-600">Frequency: {selectedFee.frequency}</p>
+                    {selectedFee.note && <p className="text-gray-600">Note: {selectedFee.note}</p>}
                   </div>
                 )}
               </div>
