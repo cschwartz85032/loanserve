@@ -129,16 +129,44 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       
       // Group disbursements by type
       const grouped = disbursements.reduce((acc: any, disbursement: any) => {
+        // Skip if on hold or terminated
         if (!disbursement.isOnHold && disbursement.status !== 'terminated') {
           const type = disbursement.disbursementType;
           if (!acc[type]) {
             acc[type] = 0;
           }
-          // Convert annual to monthly - use monthlyAmount if available, otherwise calculate
-          const monthlyAmount = disbursement.monthlyAmount 
-            ? parseFloat(disbursement.monthlyAmount) 
-            : parseFloat(disbursement.annualAmount || 0) / 12;
           
+          // Use the correct field names from the database
+          let monthlyAmount = 0;
+          
+          // Try different field names for the amount
+          if (disbursement.monthlyAmount) {
+            monthlyAmount = parseFloat(disbursement.monthlyAmount);
+          } else if (disbursement.annualAmount) {
+            monthlyAmount = parseFloat(disbursement.annualAmount) / 12;
+          } else if (disbursement.paymentAmount) {
+            // Determine monthly amount based on frequency
+            const amount = parseFloat(disbursement.paymentAmount);
+            switch (disbursement.frequency) {
+              case 'monthly':
+                monthlyAmount = amount;
+                break;
+              case 'quarterly':
+                monthlyAmount = amount / 3;
+                break;
+              case 'semi_annual':
+                monthlyAmount = amount / 6;
+                break;
+              case 'annual':
+              case 'once':
+                monthlyAmount = amount / 12;
+                break;
+              default:
+                monthlyAmount = amount / 12;
+            }
+          }
+          
+          console.log(`Disbursement ${type}: monthly amount = ${monthlyAmount}`);
           acc[type] += monthlyAmount;
         }
         return acc;
