@@ -286,7 +286,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/loans/:id", isAuthenticated, async (req, res) => {
+  // Handler for updating loans
+  const updateLoanHandler = async (req: any, res: any) => {
     try {
       const id = parseInt(req.params.id);
       const existingLoan = await storage.getLoan(id);
@@ -312,7 +313,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error updating loan:", error);
       res.status(400).json({ error: "Failed to update loan" });
     }
-  });
+  };
+
+  // Support both PUT and PATCH for loan updates
+  app.put("/api/loans/:id", isAuthenticated, updateLoanHandler);
+  app.patch("/api/loans/:id", isAuthenticated, updateLoanHandler);
 
   // ============= LOAN BORROWER ROUTES =============
   app.get("/api/loans/:loanId/borrowers", async (req, res) => {

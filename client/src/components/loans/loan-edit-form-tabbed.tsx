@@ -560,11 +560,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </div>
               <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="borrowerStreetAddress">Street Address</Label>
+                  <Label htmlFor="borrowerAddress">Street Address</Label>
                   <Input
-                    id="borrowerStreetAddress"
-                    value={formData.borrowerStreetAddress || ''}
-                    onChange={(e) => handleInputChange('borrowerStreetAddress', e.target.value)}
+                    id="borrowerAddress"
+                    value={formData.borrowerAddress || ''}
+                    onChange={(e) => handleInputChange('borrowerAddress', e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
