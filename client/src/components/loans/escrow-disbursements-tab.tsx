@@ -24,7 +24,6 @@ import { apiRequest } from "@/lib/queryClient";
 const disbursementSchema = z.object({
   disbursementType: z.enum(['taxes', 'insurance', 'hoa', 'other']),
   description: z.string().min(1, "Description is required"),
-  category: z.string().optional(),
   
   // Payee information
   payeeName: z.string().min(1, "Payee name is required"),
@@ -329,13 +328,13 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                   </TabsList>
 
                   <TabsContent value="basic" className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                       <FormField
                         control={form.control}
                         name="disbursementType"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Disbursement Type</FormLabel>
+                            <FormLabel>Disbursement Type *</FormLabel>
                             <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <FormControl>
                                 <SelectTrigger>
@@ -353,26 +352,14 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={form.control}
-                        name="category"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Category (Optional)</FormLabel>
-                            <FormControl>
-                              <Input placeholder="e.g., Homeowner's Insurance" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+
                     </div>
                     <FormField
                       control={form.control}
                       name="description"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Description</FormLabel>
+                          <FormLabel>Description *</FormLabel>
                           <FormControl>
                             <Input placeholder="e.g., Annual property tax payment" {...field} />
                           </FormControl>
@@ -389,7 +376,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           name="parcelNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Parcel Number</FormLabel>
+                              <FormLabel>Parcel Number *</FormLabel>
                               <FormControl>
                                 <Input placeholder="Enter parcel number" {...field} />
                               </FormControl>
@@ -402,7 +389,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                           name="accountNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Account Number</FormLabel>
+                              <FormLabel>Account Number *</FormLabel>
                               <FormControl>
                                 <Input placeholder="Enter account number" {...field} />
                               </FormControl>
@@ -419,7 +406,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="policyNumber"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Policy Number</FormLabel>
+                            <FormLabel>Policy Number *</FormLabel>
                             <FormControl>
                               <Input placeholder="Enter policy number" {...field} />
                             </FormControl>
@@ -451,7 +438,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="payeeName"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Payee Name</FormLabel>
+                            <FormLabel>Payee Name *</FormLabel>
                             <FormControl>
                               <Input placeholder="County Tax Collector" {...field} />
                             </FormControl>
@@ -578,7 +565,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                       name="paymentMethod"
                       render={({ field }) => (
                         <FormItem className="space-y-3">
-                          <FormLabel>Payment Method</FormLabel>
+                          <FormLabel>Payment Method *</FormLabel>
                           <FormControl>
                             <RadioGroup
                               onValueChange={field.onChange}
@@ -723,7 +710,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="frequency"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Payment Frequency</FormLabel>
+                            <FormLabel>Payment Frequency *</FormLabel>
                             <Select onValueChange={field.onChange} defaultValue={field.value}>
                               <FormControl>
                                 <SelectTrigger>
@@ -747,7 +734,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="nextDueDate"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Next Due Date</FormLabel>
+                            <FormLabel>Next Due Date *</FormLabel>
                             <FormControl>
                               <Input type="date" {...field} />
                             </FormControl>
@@ -763,7 +750,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="paymentAmount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Payment Amount</FormLabel>
+                            <FormLabel>Payment Amount *</FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" placeholder="0.00" {...field} />
                             </FormControl>
@@ -776,7 +763,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         name="annualAmount"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Annual Amount</FormLabel>
+                            <FormLabel>Annual Amount *</FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" placeholder="0.00" {...field} />
                             </FormControl>
