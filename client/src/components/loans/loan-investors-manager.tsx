@@ -137,11 +137,12 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   // Update investor mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Partial<Investor> }) => {
-      // Ensure dates are properly formatted as strings
+      // Remove timestamp fields and ensure dates are properly formatted
+      const { createdAt, updatedAt, ...cleanData } = data as any;
       const formattedData = {
-        ...data,
-        investmentDate: data.investmentDate ? 
-          (typeof data.investmentDate === 'string' ? data.investmentDate : new Date(data.investmentDate).toISOString().split('T')[0]) 
+        ...cleanData,
+        investmentDate: cleanData.investmentDate ? 
+          (typeof cleanData.investmentDate === 'string' ? cleanData.investmentDate : new Date(cleanData.investmentDate).toISOString().split('T')[0]) 
           : undefined
       };
       const response = await fetch(`/api/investors/${id}`, {

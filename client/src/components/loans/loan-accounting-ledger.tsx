@@ -28,6 +28,7 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
   const [showEmailDialog, setShowEmailDialog] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [emailRecipient, setEmailRecipient] = useState({ email: '', name: '', format: 'pdf' });
+  const [selectedFee, setSelectedFee] = useState<any>(null);
   
   const [newTransaction, setNewTransaction] = useState({
     transactionDate: new Date().toISOString().split('T')[0],
@@ -36,11 +37,18 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
     category: '',
     amount: '',
     notes: '',
+    feeId: '',
   });
 
   // Fetch ledger entries
   const { data: ledgerEntries = [], isLoading, refetch } = useQuery({
     queryKey: [`/api/loans/${loanId}/ledger`],
+    enabled: !!loanId,
+  });
+
+  // Fetch loan fees for dropdown
+  const { data: loanFees = [] } = useQuery({
+    queryKey: [`/api/loans/${loanId}/fees`],
     enabled: !!loanId,
   });
 
@@ -127,7 +135,9 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
       category: '',
       amount: '',
       notes: '',
+      feeId: '',
     });
+    setSelectedFee(null);
   };
 
   // Calculate summary statistics
@@ -378,7 +388,10 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                 <Label htmlFor="transactionType">Transaction Type</Label>
                 <Select 
                   value={newTransaction.transactionType} 
-                  onValueChange={(value) => setNewTransaction({ ...newTransaction, transactionType: value })}
+                  onValueChange={(value) => {
+                    setNewTransaction({ ...newTransaction, transactionType: value, feeId: '' });
+                    setSelectedFee(null);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select type" />
@@ -395,6 +408,53 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                 </Select>
               </div>
             </div>
+            
+            {/* Show fee selector when transaction type is fee */}
+            {newTransaction.transactionType === 'fee' && (
+              <div className="space-y-2">
+                <Label htmlFor="feeSelection">Select Fee from Schedule</Label>
+                <Select 
+                  value={newTransaction.feeId} 
+                  onValueChange={(value) => {
+                    const fee = loanFees.find((f: any) => f.id.toString() === value);
+                    if (fee) {
+                      setSelectedFee(fee);
+                      setNewTransaction({ 
+                        ...newTransaction, 
+                        feeId: value,
+                        description: `${fee.feeName} - ${fee.feeType}`,
+                        amount: `-${fee.feeAmount}` // Fees are typically debits (negative)
+                      });
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a fee from the schedule" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {loanFees.length === 0 ? (
+                      <SelectItem value="none" disabled>No fees in schedule</SelectItem>
+                    ) : (
+                      loanFees.map((fee: any) => (
+                        <SelectItem key={fee.id} value={fee.id.toString()}>
+                          {fee.feeName} - ${parseFloat(fee.feeAmount).toFixed(2)} ({fee.feeType})
+                          {fee.waived && ' - WAIVED'}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedFee && (
+                  <div className="p-3 bg-blue-50 rounded-md text-sm">
+                    <p className="font-medium">{selectedFee.feeName}</p>
+                    <p className="text-gray-600">Type: {selectedFee.feeType}</p>
+                    <p className="text-gray-600">Amount: ${parseFloat(selectedFee.feeAmount).toFixed(2)}</p>
+                    {selectedFee.notes && <p className="text-gray-600">Notes: {selectedFee.notes}</p>}
+                  </div>
+                )}
+              </div>
+            )}
+            
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <Input
