@@ -200,8 +200,8 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
       setIsAddDialogOpen(false);
       form.reset();
       toast({ title: "Disbursement created successfully" });
@@ -222,8 +222,8 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
       setEditingDisbursement(null);
       toast({ title: "Disbursement updated successfully" });
     },
@@ -236,7 +236,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
         body: JSON.stringify({ reason, requestedBy }),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
       toast({ title: "Disbursement status updated successfully" });
     },
   });
@@ -245,8 +245,8 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
     mutationFn: (id: number) =>
       apiRequest(`/api/escrow-disbursements/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-disbursements'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/loans', loanId, 'escrow-summary'] });
       toast({ title: "Disbursement deleted successfully" });
     },
   });
