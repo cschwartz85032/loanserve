@@ -53,9 +53,9 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
   });
 
   // Extract all fees from all templates into a flat array
-  const availableFees = feeTemplates.flatMap((template: any) => 
+  const availableFees = Array.isArray(feeTemplates) ? feeTemplates.flatMap((template: any) => 
     Array.isArray(template.fees) ? template.fees : []
-  );
+  ) : [];
 
   // Add transaction mutation
   const addTransactionMutation = useMutation({
@@ -67,10 +67,11 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
       refetch();
       resetTransaction();
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error('Transaction add error:', error);
       toast({ 
         title: "Error", 
-        description: "Failed to add transaction.", 
+        description: "Failed to add transaction. Please check the console for details.", 
         variant: "destructive" 
       });
     }
@@ -147,7 +148,9 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
 
   // Calculate summary statistics
   const calculateSummary = () => {
-    if (!ledgerEntries || ledgerEntries.length === 0) {
+    const entries = Array.isArray(ledgerEntries) ? ledgerEntries : [];
+    
+    if (entries.length === 0) {
       return {
         totalDebits: 0,
         totalCredits: 0,
@@ -157,15 +160,15 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
       };
     }
 
-    const lastEntry = ledgerEntries[ledgerEntries.length - 1];
+    const lastEntry = entries[entries.length - 1];
     
-    const totalDebits = ledgerEntries.reduce((sum: number, entry: any) => 
+    const totalDebits = entries.reduce((sum: number, entry: any) => 
       sum + parseFloat(entry.debitAmount || 0), 0);
     
-    const totalCredits = ledgerEntries.reduce((sum: number, entry: any) => 
+    const totalCredits = entries.reduce((sum: number, entry: any) => 
       sum + parseFloat(entry.creditAmount || 0), 0);
     
-    const pendingCount = ledgerEntries.filter((entry: any) => 
+    const pendingCount = entries.filter((entry: any) => 
       entry.status === 'pending_approval').length;
 
     return {
@@ -267,7 +270,7 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-8">Loading ledger entries...</TableCell>
                   </TableRow>
-                ) : ledgerEntries.length === 0 ? (
+                ) : !Array.isArray(ledgerEntries) || ledgerEntries.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-8 text-gray-500">
                       No transactions recorded yet
@@ -515,8 +518,10 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                   debitAmount: amount < 0 ? Math.abs(amount).toFixed(2) : '',
                   creditAmount: amount > 0 ? amount.toFixed(2) : '',
                 };
-                delete transactionData.amount;
-                addTransactionMutation.mutate(transactionData);
+                // Remove amount property to avoid conflicts
+                const { amount: _, ...finalData } = transactionData;
+                console.log('Sending transaction data:', finalData);
+                addTransactionMutation.mutate(finalData);
               }}
               disabled={!newTransaction.description || !newTransaction.amount}
             >
