@@ -52,12 +52,6 @@ const disbursementSchema = z.object({
   policyExpirationDate: z.string().optional(),
   coverageAmount: z.string().optional(),
   
-  // Insurance property information
-  insurancePropertyAddress: z.string().optional(),
-  insurancePropertyCity: z.string().optional(),
-  insurancePropertyState: z.string().optional(),
-  insurancePropertyZipCode: z.string().optional(),
-  
   // Insurance agent information
   agentName: z.string().optional(),
   agentBusinessAddress: z.string().optional(),
@@ -240,10 +234,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       policyDescription: '',
       policyExpirationDate: '',
       coverageAmount: '',
-      insurancePropertyAddress: '',
-      insurancePropertyCity: '',
-      insurancePropertyState: '',
-      insurancePropertyZipCode: '',
+
       agentName: '',
       agentBusinessAddress: '',
       agentCity: '',
@@ -624,293 +615,19 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                     )}
                     
                     {form.watch('disbursementType') === 'insurance' && (
-                      <div className="space-y-4">
-                        <div className="border-b pb-2">
-                          <h4 className="font-medium text-sm">Insurance Policy Information</h4>
-                        </div>
-                        
-                        {/* Insurance Property Address */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="insurancePropertyAddress"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Property Address</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Property street address" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="insurancePropertyCity"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>City</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="City" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="insurancePropertyState"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>State</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="State" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="insurancePropertyZipCode"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>ZIP Code</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="ZIP" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-
-                        {/* Policy Description */}
-                        <FormField
-                          control={form.control}
-                          name="policyDescription"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Policy Type/Description</FormLabel>
-                              <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select policy type" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="Hazard">Hazard</SelectItem>
-                                  <SelectItem value="Flood">Flood</SelectItem>
-                                  <SelectItem value="Earthquake">Earthquake</SelectItem>
-                                  <SelectItem value="Title">Title</SelectItem>
-                                  <SelectItem value="PMI">PMI</SelectItem>
-                                  <SelectItem value="Other">Other</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        {/* Insured Name */}
-                        <FormField
-                          control={form.control}
-                          name="insuredName"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Insured's Name</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Name of insured party" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        {/* Insurance Company Name */}
-                        <FormField
-                          control={form.control}
-                          name="insuranceCompanyName"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Insurance Company Name</FormLabel>
-                              <FormControl>
-                                <Input placeholder="e.g., State Farm, Allstate" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        {/* Policy Number */}
-                        <FormField
-                          control={form.control}
-                          name="policyNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Policy Number *</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Enter policy number" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        {/* Policy Expiration Date */}
-                        <FormField
-                          control={form.control}
-                          name="policyExpirationDate"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Policy Expiration Date</FormLabel>
-                              <FormControl>
-                                <Input type="date" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        {/* Coverage Amount */}
-                        <FormField
-                          control={form.control}
-                          name="coverageAmount"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Coverage Amount</FormLabel>
-                              <FormControl>
-                                <Input type="number" step="0.01" placeholder="$0.00" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <div className="border-b pb-2 pt-4">
-                          <h4 className="font-medium text-sm">Insurance Agent Information</h4>
-                        </div>
-                        
-                        {/* Agent Name */}
-                        <FormField
-                          control={form.control}
-                          name="agentName"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Agent's Name</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Insurance agent name" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        {/* Agent Business Address */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="agentBusinessAddress"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Agent Business Address</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="Street address" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="agentCity"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>City</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="City" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="agentState"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>State</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="State" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="agentZipCode"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>ZIP Code</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="ZIP" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                        
-                        {/* Agent Contact Info */}
-                        <div className="grid grid-cols-3 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="agentPhone"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Agent Phone</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="(555) 123-4567" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="agentFax"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Agent Fax</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="(555) 123-4568" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="agentEmail"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Agent Email</FormLabel>
-                                <FormControl>
-                                  <Input type="email" placeholder="agent@example.com" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                      </div>
+                      <FormField
+                        control={form.control}
+                        name="policyNumber"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Policy Number *</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter policy number" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
                     
                     <FormField
@@ -1054,6 +771,217 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                         )}
                       />
                     </div>
+                    
+                    {/* Insurance-specific fields - shown only for insurance disbursements */}
+                    {form.watch('disbursementType') === 'insurance' && (
+                      <>
+                        <div className="border-b pb-2 pt-4">
+                          <h4 className="font-medium text-sm">Insurance Policy Details</h4>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="policyDescription"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Policy Type</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select policy type" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="Hazard">Hazard</SelectItem>
+                                    <SelectItem value="Flood">Flood</SelectItem>
+                                    <SelectItem value="Earthquake">Earthquake</SelectItem>
+                                    <SelectItem value="Title">Title</SelectItem>
+                                    <SelectItem value="PMI">PMI</SelectItem>
+                                    <SelectItem value="Other">Other</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="policyExpirationDate"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Policy Expiration Date</FormLabel>
+                                <FormControl>
+                                  <Input type="date" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="insuredName"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Insured Name</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="Name of insured party" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="coverageAmount"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Coverage Amount</FormLabel>
+                                <FormControl>
+                                  <Input type="number" step="0.01" placeholder="$0.00" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        
+                        <FormField
+                          control={form.control}
+                          name="insuranceCompanyName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Insurance Company</FormLabel>
+                              <FormControl>
+                                <Input placeholder="e.g., State Farm, Allstate" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <div className="border-b pb-2 pt-4">
+                          <h4 className="font-medium text-sm">Insurance Agent Information</h4>
+                        </div>
+                        
+                        <FormField
+                          control={form.control}
+                          name="agentName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Agent Name</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Insurance agent name" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="agentBusinessAddress"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Agent Address</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="Street address" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="agentCity"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>City</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="City" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="agentState"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>State</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="State" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="agentZipCode"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>ZIP Code</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="ZIP" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="agentPhone"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Agent Phone</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="(555) 123-4567" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="agentFax"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Agent Fax</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="(555) 123-4568" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={form.control}
+                            name="agentEmail"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Agent Email</FormLabel>
+                                <FormControl>
+                                  <Input type="email" placeholder="agent@example.com" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      </>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="payment" className="space-y-4">
@@ -1440,10 +1368,6 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                               form.setValue('policyDescription', disbursement.policyDescription || '');
                               form.setValue('policyExpirationDate', disbursement.policyExpirationDate ? disbursement.policyExpirationDate.split('T')[0] : '');
                               form.setValue('coverageAmount', disbursement.coverageAmount || '');
-                              form.setValue('insurancePropertyAddress', disbursement.insurancePropertyAddress || '');
-                              form.setValue('insurancePropertyCity', disbursement.insurancePropertyCity || '');
-                              form.setValue('insurancePropertyState', disbursement.insurancePropertyState || '');
-                              form.setValue('insurancePropertyZipCode', disbursement.insurancePropertyZipCode || '');
                               form.setValue('agentName', disbursement.agentName || '');
                               form.setValue('agentBusinessAddress', disbursement.agentBusinessAddress || '');
                               form.setValue('agentCity', disbursement.agentCity || '');
@@ -1565,10 +1489,6 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                             form.setValue('policyDescription', disbursement.policyDescription || '');
                             form.setValue('policyExpirationDate', disbursement.policyExpirationDate ? disbursement.policyExpirationDate.split('T')[0] : '');
                             form.setValue('coverageAmount', disbursement.coverageAmount || '');
-                            form.setValue('insurancePropertyAddress', disbursement.insurancePropertyAddress || '');
-                            form.setValue('insurancePropertyCity', disbursement.insurancePropertyCity || '');
-                            form.setValue('insurancePropertyState', disbursement.insurancePropertyState || '');
-                            form.setValue('insurancePropertyZipCode', disbursement.insurancePropertyZipCode || '');
                             form.setValue('agentName', disbursement.agentName || '');
                             form.setValue('agentBusinessAddress', disbursement.agentBusinessAddress || '');
                             form.setValue('agentCity', disbursement.agentCity || '');
