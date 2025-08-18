@@ -19,7 +19,7 @@ import {
   insertPropertySchema,
   insertLoanBorrowerSchema,
   insertPaymentScheduleSchema,
-  insertEscrowItemSchema,
+  insertEscrowDisbursementSchema,
   insertInvestorSchema
 } from "@shared/schema";
 
@@ -1109,6 +1109,10 @@ To implement full file serving:
       res.status(400).json({ error: "Failed to create loan from extracted data" });
     }
   });
+
+  // Register escrow disbursement routes
+  const escrowDisbursementRoutes = await import('./routes/escrow-disbursements');
+  app.use(escrowDisbursementRoutes.default);
 
   const httpServer = createServer(app);
   return httpServer;

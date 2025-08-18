@@ -162,6 +162,30 @@ export const frequencyEnum = pgEnum('frequency', [
   'annual'
 ]);
 
+export const disbursementTypeEnum = pgEnum('disbursement_type', [
+  'taxes',
+  'insurance', 
+  'hoa',
+  'other'
+]);
+
+export const paymentMethodEnum = pgEnum('payment_method', [
+  'check',
+  'ach',
+  'wire',
+  'cash',
+  'credit_card',
+  'online'
+]);
+
+export const disbursementStatusEnum = pgEnum('disbursement_status', [
+  'active',
+  'on_hold',
+  'suspended',
+  'cancelled',
+  'completed'
+]);
+
 export const collectionStatusEnum = pgEnum('collection_status', [
   'current',
   'contact_made',
@@ -677,38 +701,121 @@ export const escrowAccounts = pgTable("escrow_accounts", {
   };
 });
 
-// Escrow Items - Types of escrow disbursements
-export const escrowItems = pgTable("escrow_items", {
+// Escrow Disbursements - Enhanced escrow payment management
+export const escrowDisbursements = pgTable("escrow_disbursements", {
   id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
   escrowAccountId: integer("escrow_account_id").references(() => escrowAccounts.id).notNull(),
-  itemType: text("item_type").notNull(), // 'property_tax', 'insurance', 'hoa', 'pmi', 'other'
-  payeeId: integer("payee_id").references(() => payees.id).notNull(),
+  
+  // Disbursement classification
+  disbursementType: disbursementTypeEnum("disbursement_type").notNull(),
   description: text("description").notNull(),
-  // Payment details
+  category: text("category"), // subcategory within type
+  
+  // Payee information
+  payeeName: text("payee_name").notNull(),
+  payeeContactName: text("payee_contact_name"),
+  payeePhone: text("payee_phone"),
+  payeeEmail: text("payee_email"),
+  payeeFax: text("payee_fax"),
+  
+  // Payee address
+  payeeStreetAddress: text("payee_street_address"),
+  payeeCity: text("payee_city"),
+  payeeState: text("payee_state"),
+  payeeZipCode: text("payee_zip_code"),
+  
+  // Payment method and banking information
+  paymentMethod: paymentMethodEnum("payment_method").notNull().default('check'),
+  accountNumber: text("account_number"), // Encrypted
+  routingNumber: text("routing_number"),
+  accountType: text("account_type"), // 'checking', 'savings'
+  bankName: text("bank_name"),
+  wireInstructions: text("wire_instructions"),
+  
+  // Remittance information
+  remittanceAddress: text("remittance_address"),
+  remittanceCity: text("remittance_city"),
+  remittanceState: text("remittance_state"),
+  remittanceZipCode: text("remittance_zip_code"),
+  accountNumber2: text("account_number_2"), // property tax account number, policy number, etc.
+  referenceNumber: text("reference_number"),
+  
+  // Recurrence pattern
   frequency: frequencyEnum("frequency").notNull(),
+  monthlyAmount: decimal("monthly_amount", { precision: 10, scale: 2 }),
   annualAmount: decimal("annual_amount", { precision: 10, scale: 2 }).notNull(),
   paymentAmount: decimal("payment_amount", { precision: 10, scale: 2 }).notNull(),
-  // Due dates
+  
+  // Due dates and scheduling
   firstDueDate: date("first_due_date"),
-  nextDueDate: date("next_due_date"),
+  nextDueDate: date("next_due_date").notNull(),
   lastPaidDate: date("last_paid_date"),
-  // Reference numbers
-  accountNumber: text("account_number"),
-  policyNumber: text("policy_number"),
-  referenceNumber: text("reference_number"),
-  // Status
-  isActive: boolean("is_active").default(true).notNull(),
+  specificDueDates: jsonb("specific_due_dates"), // For taxes with specific bi-annual dates
+  
+  // Status and holds
+  status: disbursementStatusEnum("status").notNull().default('active'),
+  isOnHold: boolean("is_on_hold").default(false).notNull(),
+  holdReason: text("hold_reason"),
+  holdRequestedBy: text("hold_requested_by"),
+  holdDate: timestamp("hold_date"),
+  
+  // Auto-pay settings
   autoPayEnabled: boolean("auto_pay_enabled").default(true),
-  // Additional
+  daysBeforeDue: integer("days_before_due").default(10), // How many days before due date to pay
+  
+  // Additional tracking
   notes: text("notes"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => {
   return {
-    accountIdx: index("escrow_item_account_idx").on(table.escrowAccountId),
-    typeIdx: index("escrow_item_type_idx").on(table.itemType),
-    nextDueIdx: index("escrow_item_next_due_idx").on(table.nextDueDate),
+    loanIdx: index("escrow_disb_loan_idx").on(table.loanId),
+    accountIdx: index("escrow_disb_account_idx").on(table.escrowAccountId),
+    typeIdx: index("escrow_disb_type_idx").on(table.disbursementType),
+    nextDueIdx: index("escrow_disb_next_due_idx").on(table.nextDueDate),
+    statusIdx: index("escrow_disb_status_idx").on(table.status),
+    holdIdx: index("escrow_disb_hold_idx").on(table.isOnHold),
+  };
+});
+
+// Escrow Disbursement Payments - Track actual payments made
+export const escrowDisbursementPayments = pgTable("escrow_disbursement_payments", {
+  id: serial("id").primaryKey(),
+  disbursementId: integer("disbursement_id").references(() => escrowDisbursements.id).notNull(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  ledgerEntryId: integer("ledger_entry_id").references(() => ledgerEntries.id),
+  
+  // Payment details
+  paymentDate: timestamp("payment_date").notNull(),
+  dueDate: date("due_date").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  
+  // Payment method used
+  paymentMethod: paymentMethodEnum("payment_method").notNull(),
+  checkNumber: text("check_number"),
+  wireConfirmation: text("wire_confirmation"),
+  achTransactionId: text("ach_transaction_id"),
+  
+  // Status
+  status: paymentStatusEnum("status").notNull().default('scheduled'),
+  confirmationNumber: text("confirmation_number"),
+  
+  // Processing
+  processedBy: integer("processed_by").references(() => users.id),
+  processedDate: timestamp("processed_date"),
+  
+  // Additional
+  notes: text("notes"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    disbursementIdx: index("escrow_payment_disbursement_idx").on(table.disbursementId),
+    loanIdx: index("escrow_payment_loan_idx").on(table.loanId),
+    dueDateIdx: index("escrow_payment_due_date_idx").on(table.dueDate),
+    statusIdx: index("escrow_payment_status_idx").on(table.status),
   };
 });
 
@@ -1237,7 +1344,8 @@ export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true,
 
 // Escrow schemas
 export const insertEscrowAccountSchema = createInsertSchema(escrowAccounts).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertEscrowItemSchema = createInsertSchema(escrowItems).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertEscrowDisbursementSchema = createInsertSchema(escrowDisbursements).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertEscrowDisbursementPaymentSchema = createInsertSchema(escrowDisbursementPayments).omit({ id: true, createdAt: true });
 export const insertEscrowTransactionSchema = createInsertSchema(escrowTransactions).omit({ id: true, createdAt: true });
 export const insertPayeeSchema = createInsertSchema(payees).omit({ id: true, createdAt: true, updatedAt: true });
 
@@ -1289,8 +1397,10 @@ export type Payment = typeof payments.$inferSelect;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type EscrowAccount = typeof escrowAccounts.$inferSelect;
 export type InsertEscrowAccount = z.infer<typeof insertEscrowAccountSchema>;
-export type EscrowItem = typeof escrowItems.$inferSelect;
-export type InsertEscrowItem = z.infer<typeof insertEscrowItemSchema>;
+export type EscrowDisbursement = typeof escrowDisbursements.$inferSelect;
+export type InsertEscrowDisbursement = z.infer<typeof insertEscrowDisbursementSchema>;
+export type EscrowDisbursementPayment = typeof escrowDisbursementPayments.$inferSelect;
+export type InsertEscrowDisbursementPayment = z.infer<typeof insertEscrowDisbursementPaymentSchema>;
 export type EscrowTransaction = typeof escrowTransactions.$inferSelect;
 export type InsertEscrowTransaction = z.infer<typeof insertEscrowTransactionSchema>;
 export type Payee = typeof payees.$inferSelect;

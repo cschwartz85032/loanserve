@@ -11,7 +11,8 @@ import {
   properties,
   loanBorrowers,
   paymentSchedule,
-  escrowItems,
+  escrowDisbursements,
+  escrowDisbursementPayments,
   type User, 
   type InsertUser,
   type Loan,
@@ -36,8 +37,10 @@ import {
   type InsertLoanBorrower,
   type PaymentSchedule,
   type InsertPaymentSchedule,
-  type EscrowItem,
-  type InsertEscrowItem,
+  type EscrowDisbursement,
+  type InsertEscrowDisbursement,
+  type EscrowDisbursementPayment,
+  type InsertEscrowDisbursementPayment,
   investors,
   type Investor,
   type InsertInvestor
@@ -122,13 +125,30 @@ export interface IStorage {
     limit?: number;
   }): Promise<EscrowTransaction[]>;
   createEscrowTransaction(transaction: InsertEscrowTransaction): Promise<EscrowTransaction>;
-  getEscrowItems(escrowAccountId: number): Promise<EscrowItem[]>;
-  createEscrowItem(item: InsertEscrowItem): Promise<EscrowItem>;
+  getEscrowItems(escrowAccountId: number): Promise<any[]>;
+  createEscrowItem(item: any): Promise<any>;
   getEscrowMetrics(): Promise<{
     totalBalance: string;
     pendingDisbursements: string;
     shortages: string;
     surpluses: string;
+  }>;
+
+  // Escrow Disbursement methods
+  getEscrowDisbursements(loanId: number): Promise<EscrowDisbursement[]>;
+  getEscrowDisbursement(id: number): Promise<EscrowDisbursement | undefined>;
+  createEscrowDisbursement(disbursement: InsertEscrowDisbursement): Promise<EscrowDisbursement>;
+  updateEscrowDisbursement(id: number, disbursement: Partial<InsertEscrowDisbursement>): Promise<EscrowDisbursement>;
+  deleteEscrowDisbursement(id: number): Promise<void>;
+  holdEscrowDisbursement(id: number, reason?: string, requestedBy?: string): Promise<EscrowDisbursement>;
+  releaseEscrowDisbursement(id: number): Promise<EscrowDisbursement>;
+  getEscrowSummary(loanId: number): Promise<{
+    summary: {
+      totalDisbursements: number;
+      activeDisbursements: number;
+      onHoldDisbursements: number;
+      totalAnnualAmount: string;
+    };
   }>;
 
   // Document methods
@@ -758,6 +778,100 @@ export class DatabaseStorage implements IStorage {
         eq(notifications.isRead, false)
       ));
     return Number(result?.count) || 0;
+  }
+
+  // Escrow Disbursement methods implementation
+  async getEscrowDisbursements(loanId: number): Promise<EscrowDisbursement[]> {
+    const disbursements = await db
+      .select()
+      .from(escrowDisbursements)
+      .where(eq(escrowDisbursements.loanId, loanId))
+      .orderBy(desc(escrowDisbursements.createdAt));
+    return disbursements;
+  }
+
+  async getEscrowDisbursement(id: number): Promise<EscrowDisbursement | undefined> {
+    const [disbursement] = await db
+      .select()
+      .from(escrowDisbursements)
+      .where(eq(escrowDisbursements.id, id));
+    return disbursement || undefined;
+  }
+
+  async createEscrowDisbursement(disbursement: InsertEscrowDisbursement): Promise<EscrowDisbursement> {
+    const [newDisbursement] = await db
+      .insert(escrowDisbursements)
+      .values(disbursement)
+      .returning();
+    return newDisbursement;
+  }
+
+  async updateEscrowDisbursement(id: number, disbursement: Partial<InsertEscrowDisbursement>): Promise<EscrowDisbursement> {
+    const [updatedDisbursement] = await db
+      .update(escrowDisbursements)
+      .set(disbursement)
+      .where(eq(escrowDisbursements.id, id))
+      .returning();
+    return updatedDisbursement;
+  }
+
+  async deleteEscrowDisbursement(id: number): Promise<void> {
+    await db.delete(escrowDisbursements).where(eq(escrowDisbursements.id, id));
+  }
+
+  async holdEscrowDisbursement(id: number, reason?: string, requestedBy?: string): Promise<EscrowDisbursement> {
+    const [disbursement] = await db
+      .update(escrowDisbursements)
+      .set({
+        isOnHold: true,
+        holdReason: reason,
+        holdRequestedBy: requestedBy,
+        holdDate: new Date().toISOString(),
+      })
+      .where(eq(escrowDisbursements.id, id))
+      .returning();
+    return disbursement;
+  }
+
+  async releaseEscrowDisbursement(id: number): Promise<EscrowDisbursement> {
+    const [disbursement] = await db
+      .update(escrowDisbursements)
+      .set({
+        isOnHold: false,
+        holdReason: null,
+        holdRequestedBy: null,
+        holdDate: null,
+      })
+      .where(eq(escrowDisbursements.id, id))
+      .returning();
+    return disbursement;
+  }
+
+  async getEscrowSummary(loanId: number): Promise<{
+    summary: {
+      totalDisbursements: number;
+      activeDisbursements: number;
+      onHoldDisbursements: number;
+      totalAnnualAmount: string;
+    };
+  }> {
+    const disbursements = await this.getEscrowDisbursements(loanId);
+    
+    const totalDisbursements = disbursements.length;
+    const activeDisbursements = disbursements.filter(d => !d.isOnHold && d.status === 'active').length;
+    const onHoldDisbursements = disbursements.filter(d => d.isOnHold).length;
+    const totalAnnualAmount = disbursements
+      .reduce((sum, d) => sum + parseFloat(d.annualAmount || '0'), 0)
+      .toFixed(2);
+
+    return {
+      summary: {
+        totalDisbursements,
+        activeDisbursements,
+        onHoldDisbursements,
+        totalAnnualAmount,
+      },
+    };
   }
 }
 
