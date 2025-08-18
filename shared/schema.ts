@@ -505,6 +505,58 @@ export const guarantors = pgTable("guarantors", {
 });
 
 // ========================================
+// INVESTOR TABLES
+// ========================================
+
+// Investors - Track ownership percentages and banking information
+export const investors = pgTable("investors", {
+  id: serial("id").primaryKey(),
+  investorId: text("investor_id").unique().notNull(), // Unique investor identifier
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  
+  // Investor details
+  entityType: entityTypeEnum("entity_type").notNull(), // 'individual' or 'entity'
+  name: text("name").notNull(), // Individual or entity name
+  contactName: text("contact_name"), // Contact person if entity
+  email: text("email"),
+  phone: text("phone"),
+  
+  // Address
+  streetAddress: text("street_address"),
+  city: text("city"),
+  state: text("state"),
+  zipCode: text("zip_code"),
+  
+  // Banking information
+  bankName: text("bank_name"),
+  bankStreetAddress: text("bank_street_address"),
+  bankCity: text("bank_city"),
+  bankState: text("bank_state"),
+  bankZipCode: text("bank_zip_code"),
+  accountNumber: text("account_number"), // Encrypted
+  routingNumber: text("routing_number"),
+  accountType: text("account_type"), // 'checking', 'savings'
+  
+  // Ownership
+  ownershipPercentage: decimal("ownership_percentage", { precision: 5, scale: 2 }).notNull(), // 0.00 to 100.00
+  investmentAmount: decimal("investment_amount", { precision: 15, scale: 2 }),
+  investmentDate: date("investment_date"),
+  
+  // Status
+  isActive: boolean("is_active").default(true).notNull(),
+  notes: text("notes"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("investor_loan_idx").on(table.loanId),
+    investorIdIdx: uniqueIndex("investor_id_idx").on(table.investorId),
+    activeIdx: index("investor_active_idx").on(table.isActive),
+  };
+});
+
+// ========================================
 // PAYMENT TABLES
 // ========================================
 
@@ -1175,6 +1227,7 @@ export const insertPropertySchema = createInsertSchema(properties).omit({ id: tr
 export const insertLoanSchema = createInsertSchema(loans).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertLoanBorrowerSchema = createInsertSchema(loanBorrowers).omit({ id: true, createdAt: true });
 export const insertGuarantorSchema = createInsertSchema(guarantors).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertInvestorSchema = createInsertSchema(investors).omit({ id: true, createdAt: true, updatedAt: true });
 
 // Payment schemas
 export const insertPaymentScheduleSchema = createInsertSchema(paymentSchedule).omit({ id: true, createdAt: true });
@@ -1226,6 +1279,8 @@ export type LoanBorrower = typeof loanBorrowers.$inferSelect;
 export type InsertLoanBorrower = z.infer<typeof insertLoanBorrowerSchema>;
 export type Guarantor = typeof guarantors.$inferSelect;
 export type InsertGuarantor = z.infer<typeof insertGuarantorSchema>;
+export type Investor = typeof investors.$inferSelect;
+export type InsertInvestor = z.infer<typeof insertInvestorSchema>;
 export type PaymentSchedule = typeof paymentSchedule.$inferSelect;
 export type InsertPaymentSchedule = z.infer<typeof insertPaymentScheduleSchema>;
 export type Payment = typeof payments.$inferSelect;

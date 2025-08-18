@@ -21,6 +21,7 @@ import {
 import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { LoanAccountingLedger } from "@/components/loans/loan-accounting-ledger";
+import { LoanInvestorsManager } from "@/components/loans/loan-investors-manager";
 
 interface LoanEditFormProps {
   loanId: string;
@@ -127,7 +128,13 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest(`/api/loans/${loanId}`, 'PATCH', data);
+      return fetch(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }).then(res => res.json());
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
@@ -209,10 +216,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       </div>
 
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiaries</TabsTrigger>
+          <TabsTrigger value="investors">Investors</TabsTrigger>
           <TabsTrigger value="documents">Document Management</TabsTrigger>
           <TabsTrigger value="accounting">Accounting</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
@@ -830,6 +838,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Investors Tab */}
+        <TabsContent value="investors" className="space-y-6">
+          <LoanInvestorsManager loanId={loanId} />
         </TabsContent>
 
         {/* Document Management Tab */}
