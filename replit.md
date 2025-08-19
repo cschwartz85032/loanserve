@@ -2,7 +2,7 @@
 
 LoanServe Pro is a comprehensive mortgage loan servicing platform built with React and Express.js. It provides a full-featured loan portfolio management system for lenders, borrowers, investors, escrow officers, and legal professionals. The platform offers complete loan lifecycle management, including origination tracking, payment processing, document management, escrow account handling, compliance monitoring, comprehensive reporting capabilities, and investor management with ownership percentage tracking. A key capability is AI-powered document analysis for automated loan creation and data extraction from financial documents.
 
-## Recent Changes (January 2025)
+## Recent Changes (January 2025 - Latest: January 22, 2025)
 - Added dedicated Escrows tab to loan edit interface with comprehensive escrow account management
 - Fixed fee dropdown to display all 33 configured fees from fee management schedule instead of limited loan-specific fees
 - Added escrow number field to escrow company section with database schema update
@@ -33,6 +33,11 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Made all AI-extracted fields editable before loan creation
   - Properly mapped all form fields to database columns including borrowerCompanyName and trusteeCompanyName
   - Added comprehensive Escrow Company section with full contact details
+- Fixed critical issues with loan display and AI extraction (January 22, 2025):
+  - Corrected loan amount field mapping (originalAmount to loanAmount) in loan edit form
+  - Enhanced AI prompt for credit reports to ONLY extract SSN, current address, and credit scores
+  - Prevented credit report servicer information from overwriting legitimate beneficiary data
+  - Fixed document upload category enum validation error in Docs tab
 
 # User Preferences
 
