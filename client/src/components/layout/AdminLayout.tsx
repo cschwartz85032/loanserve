@@ -5,8 +5,7 @@ import {
   FileText, 
   Wallet, 
   Settings, 
-  Users, 
-  DollarSign,
+  Users,
   Building,
   ChevronLeft,
   ChevronRight,
@@ -28,11 +27,6 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       title: 'Dashboard',
       href: '/dashboard',
       icon: Home,
-    },
-    {
-      title: 'Loans',
-      href: '/loans',
-      icon: DollarSign,
     },
     {
       title: 'Documents',
