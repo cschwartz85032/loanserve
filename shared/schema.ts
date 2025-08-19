@@ -1479,3 +1479,217 @@ export type EscrowPayment = EscrowTransaction;
 export type InsertEscrowPayment = InsertEscrowTransaction;
 export const escrowPayments = escrowTransactions;
 export const insertEscrowPaymentSchema = insertEscrowTransactionSchema;
+
+// ========================================
+// SERVICING CYCLE TABLES
+// ========================================
+
+// Servicing run tracking
+export const servicingRuns = pgTable('servicing_runs', {
+  id: serial('id').primaryKey(),
+  runId: text('run_id').notNull().unique(),
+  valuationDate: date('valuation_date').notNull(),
+  startTime: timestamp('start_time').notNull().defaultNow(),
+  endTime: timestamp('end_time'),
+  status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'cancelled'] }).notNull().default('pending'),
+  loansProcessed: integer('loans_processed').notNull().default(0),
+  totalLoans: integer('total_loans').notNull().default(0),
+  eventsCreated: integer('events_created').notNull().default(0),
+  exceptionsCreated: integer('exceptions_created').notNull().default(0),
+  totalDisbursedBeneficiary: decimal('total_disbursed_beneficiary', { precision: 12, scale: 2 }).default('0.00'),
+  totalDisbursedInvestors: decimal('total_disbursed_investors', { precision: 12, scale: 2 }).default('0.00'),
+  reconciliationStatus: text('reconciliation_status', { enum: ['pending', 'balanced', 'imbalanced'] }).default('pending'),
+  inputHash: text('input_hash'),
+  errors: text('errors').array(),
+  dryRun: boolean('dry_run').notNull().default(false),
+  loanIds: text('loan_ids').array(),
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow()
+});
+
+// Servicing events
+export const servicingEvents = pgTable('servicing_events', {
+  id: serial('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => servicingRuns.runId),
+  eventKey: text('event_key').notNull(),
+  eventType: text('event_type').notNull(), // interest_accrual, assess_due, late_fee, post_payment, distribute_investors, etc.
+  loanId: integer('loan_id').references(() => loans.id),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  valuationDate: date('valuation_date').notNull(),
+  amount: decimal('amount', { precision: 12, scale: 2 }),
+  principal: decimal('principal', { precision: 12, scale: 2 }),
+  interest: decimal('interest', { precision: 12, scale: 2 }),
+  escrow: decimal('escrow', { precision: 12, scale: 2 }),
+  fees: decimal('fees', { precision: 12, scale: 2 }),
+  details: jsonb('details').notNull().default('{}'),
+  status: text('status', { enum: ['success', 'failed', 'pending'] }).notNull().default('pending'),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+}, (table) => ({
+  uniqueEventKey: uniqueIndex('unique_event_key').on(table.valuationDate, table.eventKey),
+  loanIdIdx: index('servicing_events_loan_id_idx').on(table.loanId),
+  runIdIdx: index('servicing_events_run_id_idx').on(table.runId),
+  eventTypeIdx: index('servicing_events_type_idx').on(table.eventType)
+}));
+
+// Servicing exceptions queue
+export const servicingExceptions = pgTable('servicing_exceptions', {
+  id: serial('id').primaryKey(),
+  runId: text('run_id').references(() => servicingRuns.runId),
+  loanId: integer('loan_id').references(() => loans.id),
+  severity: text('severity', { enum: ['low', 'medium', 'high', 'critical'] }).notNull(),
+  type: text('type').notNull(), // insufficient_escrow, missing_payment, data_anomaly, etc.
+  message: text('message').notNull(),
+  suggestedAction: text('suggested_action'),
+  dueDate: date('due_date'),
+  status: text('status', { enum: ['open', 'resolved', 'escalated'] }).notNull().default('open'),
+  resolvedBy: integer('resolved_by').references(() => users.id),
+  resolvedAt: timestamp('resolved_at'),
+  resolutionNotes: text('resolution_notes'),
+  metadata: jsonb('metadata').default('{}'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow()
+}, (table) => ({
+  loanIdIdx: index('servicing_exceptions_loan_id_idx').on(table.loanId),
+  statusIdx: index('servicing_exceptions_status_idx').on(table.status),
+  severityIdx: index('servicing_exceptions_severity_idx').on(table.severity)
+}));
+
+// Payment inbox for unprocessed payments
+export const paymentsInbox = pgTable('payments_inbox', {
+  id: serial('id').primaryKey(),
+  referenceNumber: text('reference_number').unique(),
+  valueDate: date('value_date').notNull(),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  borrowerId: integer('borrower_id').references(() => borrowerEntities.id),
+  loanId: integer('loan_id').references(() => loans.id),
+  matchedBy: text('matched_by'), // loan_id_memo, borrower_id, reference_number, etc.
+  matchConfidence: decimal('match_confidence', { precision: 3, scale: 2 }), // 0.00 to 1.00
+  status: text('status', { enum: ['unmatched', 'matched', 'processed', 'suspense', 'rejected'] }).notNull().default('unmatched'),
+  processedAt: timestamp('processed_at'),
+  processedByRunId: text('processed_by_run_id').references(() => servicingRuns.runId),
+  metadata: jsonb('metadata').default('{}'),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+}, (table) => ({
+  loanIdIdx: index('payments_inbox_loan_id_idx').on(table.loanId),
+  statusIdx: index('payments_inbox_status_idx').on(table.status),
+  valueDateIdx: index('payments_inbox_value_date_idx').on(table.valueDate)
+}));
+
+// Interest accrual tracking
+export const interestAccruals = pgTable('interest_accruals', {
+  id: serial('id').primaryKey(),
+  loanId: integer('loan_id').notNull().references(() => loans.id),
+  accrualDate: date('accrual_date').notNull(),
+  fromDate: date('from_date').notNull(),
+  toDate: date('to_date').notNull(),
+  dayCount: integer('day_count').notNull(),
+  dayCountConvention: text('day_count_convention').notNull(), // ACT/365, 30/360, etc.
+  interestRate: decimal('interest_rate', { precision: 8, scale: 4 }).notNull(),
+  principalBalance: decimal('principal_balance', { precision: 12, scale: 2 }).notNull(),
+  dailyRate: decimal('daily_rate', { precision: 12, scale: 10 }).notNull(),
+  accruedAmount: decimal('accrued_amount', { precision: 12, scale: 2 }).notNull(),
+  runId: text('run_id').references(() => servicingRuns.runId),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+}, (table) => ({
+  uniqueAccrual: uniqueIndex('unique_accrual').on(table.loanId, table.accrualDate),
+  loanIdIdx: index('interest_accruals_loan_id_idx').on(table.loanId)
+}));
+
+// Investor distribution tracking
+export const investorDistributions = pgTable('investor_distributions', {
+  id: serial('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => servicingRuns.runId),
+  loanId: integer('loan_id').notNull().references(() => loans.id),
+  investorId: integer('investor_id').notNull().references(() => investors.id),
+  distributionDate: date('distribution_date').notNull(),
+  ownershipPercentage: decimal('ownership_percentage', { precision: 8, scale: 6 }).notNull(),
+  grossAmount: decimal('gross_amount', { precision: 12, scale: 2 }).notNull(),
+  principalAmount: decimal('principal_amount', { precision: 12, scale: 2 }).notNull(),
+  interestAmount: decimal('interest_amount', { precision: 12, scale: 2 }).notNull(),
+  feesAmount: decimal('fees_amount', { precision: 12, scale: 2 }).notNull(),
+  netAmount: decimal('net_amount', { precision: 12, scale: 2 }).notNull(),
+  roundingAdjustment: decimal('rounding_adjustment', { precision: 6, scale: 4 }).default('0.00'),
+  status: text('status', { enum: ['pending', 'processed', 'paid', 'failed'] }).notNull().default('pending'),
+  paidAt: timestamp('paid_at'),
+  metadata: jsonb('metadata').default('{}'),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+}, (table) => ({
+  loanInvestorIdx: index('investor_distributions_loan_investor_idx').on(table.loanId, table.investorId),
+  runIdIdx: index('investor_distributions_run_id_idx').on(table.runId)
+}));
+
+// Escrow advance tracking
+export const escrowAdvances = pgTable('escrow_advances', {
+  id: serial('id').primaryKey(),
+  loanId: integer('loan_id').notNull().references(() => loans.id),
+  escrowAccountId: integer('escrow_account_id').references(() => escrowAccounts.id),
+  advanceDate: date('advance_date').notNull(),
+  amount: decimal('amount', { precision: 12, scale: 2 }).notNull(),
+  reason: text('reason').notNull(),
+  repaymentMonths: integer('repayment_months').notNull().default(12),
+  monthlyRepayment: decimal('monthly_repayment', { precision: 12, scale: 2 }).notNull(),
+  outstandingBalance: decimal('outstanding_balance', { precision: 12, scale: 2 }).notNull(),
+  status: text('status', { enum: ['active', 'paid', 'written_off'] }).notNull().default('active'),
+  paidOffDate: date('paid_off_date'),
+  runId: text('run_id').references(() => servicingRuns.runId),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow()
+}, (table) => ({
+  loanIdIdx: index('escrow_advances_loan_id_idx').on(table.loanId),
+  statusIdx: index('escrow_advances_status_idx').on(table.status)
+}));
+
+// Create insert schemas for servicing cycle tables
+export const insertServicingRunSchema = createInsertSchema(servicingRuns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertServicingRun = z.infer<typeof insertServicingRunSchema>;
+export type ServicingRun = typeof servicingRuns.$inferSelect;
+
+export const insertServicingEventSchema = createInsertSchema(servicingEvents).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertServicingEvent = z.infer<typeof insertServicingEventSchema>;
+export type ServicingEvent = typeof servicingEvents.$inferSelect;
+
+export const insertServicingExceptionSchema = createInsertSchema(servicingExceptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertServicingException = z.infer<typeof insertServicingExceptionSchema>;
+export type ServicingException = typeof servicingExceptions.$inferSelect;
+
+export const insertPaymentInboxSchema = createInsertSchema(paymentsInbox).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertPaymentInbox = z.infer<typeof insertPaymentInboxSchema>;
+export type PaymentInbox = typeof paymentsInbox.$inferSelect;
+
+export const insertInterestAccrualSchema = createInsertSchema(interestAccruals).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertInterestAccrual = z.infer<typeof insertInterestAccrualSchema>;
+export type InterestAccrual = typeof interestAccruals.$inferSelect;
+
+export const insertInvestorDistributionSchema = createInsertSchema(investorDistributions).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertInvestorDistribution = z.infer<typeof insertInvestorDistributionSchema>;
+export type InvestorDistribution = typeof investorDistributions.$inferSelect;
+
+export const insertEscrowAdvanceSchema = createInsertSchema(escrowAdvances).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertEscrowAdvance = z.infer<typeof insertEscrowAdvanceSchema>;
+export type EscrowAdvance = typeof escrowAdvances.$inferSelect;
