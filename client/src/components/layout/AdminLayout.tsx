@@ -44,18 +44,18 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   ];
 
   return (
-    <div className="flex h-screen bg-gray-50 fixed inset-0">
+    <div className="min-h-screen flex bg-slate-50">
       {/* Sidebar */}
-      <div
+      <aside
         className={cn(
-          "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col h-full",
+          "bg-white border-r border-slate-200 transition-all duration-300 flex flex-col sticky top-0 h-screen",
           sidebarCollapsed ? "w-16" : "w-64"
         )}
       >
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           {!sidebarCollapsed && (
-            <h2 className="text-xl font-bold text-gray-800">Admin Panel</h2>
+            <h2 className="text-xl font-bold text-slate-800">Admin Panel</h2>
           )}
           <Button
             variant="ghost"
@@ -82,8 +82,8 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
                   isActive
-                    ? "bg-blue-50 text-blue-600"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+                    ? "bg-primary-50 text-primary-700"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-900",
                   sidebarCollapsed && "justify-center"
                 )}
                 title={sidebarCollapsed ? item.title : undefined}
@@ -98,7 +98,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-slate-200">
           <div className={cn(
             "flex items-center gap-3",
             sidebarCollapsed && "justify-center"
@@ -108,34 +108,34 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             </div>
             {!sidebarCollapsed && (
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">Admin User</p>
-                <p className="text-xs text-gray-500">Administrator</p>
+                <p className="text-sm font-medium text-slate-900">Admin User</p>
+                <p className="text-xs text-slate-500">Administrator</p>
               </div>
             )}
           </div>
         </div>
-      </div>
+      </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 overflow-y-auto">
         {/* Top Bar */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
+        <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-gray-800">
+            <h1 className="text-2xl font-semibold text-slate-800">
               {navItems.find(item => 
                 location === item.href || 
                 (item.href === '/admin/documents' && location === '/documents') ||
                 (item.href === '/admin/escrow' && location === '/escrow')
-              )?.title || 'Dashboard'}
+              )?.title || 'Admin'}
             </h1>
           </div>
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 overflow-auto p-6">
+        <div className="p-6">
           {children}
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };
