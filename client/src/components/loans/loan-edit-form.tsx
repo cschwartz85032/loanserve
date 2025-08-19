@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
-import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2, Users, ClipboardList, History } from "lucide-react";
+import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2, Users, ClipboardList, History, Settings } from "lucide-react";
 import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 
@@ -463,7 +463,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6 max-h-[80vh] overflow-y-auto">
+          <CardContent className="space-y-6">
             {/* Basic Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -620,7 +620,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
             {/* Servicing Settings */}
             <div className="space-y-4 border-t pt-4 mt-4">
-              <h3 className="text-lg font-semibold text-blue-600">Servicing Settings</h3>
+              <h3 className="text-lg font-semibold text-blue-600 flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Servicing Settings
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="servicingFeeRate">Servicing Fee Rate (%)</Label>
@@ -1221,6 +1224,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           </CardContent>
         </Card>
       </div>
+    </div>
     </TabsContent>
   </Tabs>
   
