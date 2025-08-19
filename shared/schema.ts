@@ -453,6 +453,24 @@ export const loans = pgTable("loans", {
   // Enhanced AI-extracted fields
   borrowerSSN: text("borrower_ssn"),
   borrowerIncome: decimal("borrower_income", { precision: 15, scale: 2 }),
+  // Credit scores for borrower
+  creditScoreEquifax: integer("credit_score_equifax"),
+  creditScoreExperian: integer("credit_score_experian"),
+  creditScoreTransunion: integer("credit_score_transunion"),
+  // Co-Borrower information
+  coBorrowerName: text("co_borrower_name"),
+  coBorrowerCompanyName: text("co_borrower_company_name"),
+  coBorrowerEmail: text("co_borrower_email"),
+  coBorrowerPhone: text("co_borrower_phone"),
+  coBorrowerAddress: text("co_borrower_address"),
+  coBorrowerCity: text("co_borrower_city"),
+  coBorrowerState: text("co_borrower_state"),
+  coBorrowerZip: text("co_borrower_zip"),
+  coBorrowerSSN: text("co_borrower_ssn"),
+  coBorrowerIncome: decimal("co_borrower_income", { precision: 15, scale: 2 }),
+  coBorrowerCreditScoreEquifax: integer("co_borrower_credit_score_equifax"),
+  coBorrowerCreditScoreExperian: integer("co_borrower_credit_score_experian"),
+  coBorrowerCreditScoreTransunion: integer("co_borrower_credit_score_transunion"),
   // Trustee information
   trusteeName: text("trustee_name"),
   trusteeCompanyName: text("trustee_company_name"),
@@ -486,6 +504,12 @@ export const loans = pgTable("loans", {
   crossDefaultParties: jsonb("cross_default_parties"),
   closingCosts: decimal("closing_costs", { precision: 15, scale: 2 }),
   downPayment: decimal("down_payment", { precision: 15, scale: 2 }),
+  // Insurance and Tax fields (for temporary storage during creation)
+  hazardInsurance: decimal("hazard_insurance", { precision: 10, scale: 2 }),
+  propertyTaxes: decimal("property_taxes", { precision: 10, scale: 2 }),
+  hoaFees: decimal("hoa_fees", { precision: 10, scale: 2 }),
+  pmiAmount: decimal("pmi_amount", { precision: 10, scale: 2 }),
+  servicingFee: decimal("servicing_fee", { precision: 10, scale: 2 }),
   // Additional fields
   notes: text("notes"),
   metadata: jsonb("metadata"),
