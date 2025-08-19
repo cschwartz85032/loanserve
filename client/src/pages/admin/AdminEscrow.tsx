@@ -392,7 +392,7 @@ function AdminEscrow() {
                             <TableCell className="font-semibold">${account.currentBalance || '0.00'}</TableCell>
                             <TableCell>${account.monthlyPayment || '0.00'}</TableCell>
                             <TableCell>
-                              {account.lastActivityDate 
+                              {account.lastActivityDate && !isNaN(new Date(account.lastActivityDate).getTime())
                                 ? format(new Date(account.lastActivityDate), 'MMM dd, yyyy')
                                 : 'No activity'}
                             </TableCell>
@@ -438,7 +438,10 @@ function AdminEscrow() {
                         return (
                           <TableRow key={payment.id}>
                             <TableCell>
-                              {format(new Date(payment.paymentDate || payment.scheduledDate), 'MMM dd, yyyy')}
+                              {(payment.paymentDate || payment.scheduledDate) && 
+                               !isNaN(new Date(payment.paymentDate || payment.scheduledDate).getTime())
+                                ? format(new Date(payment.paymentDate || payment.scheduledDate), 'MMM dd, yyyy')
+                                : 'No date'}
                             </TableCell>
                             <TableCell className="font-medium">{loan?.loanNumber}</TableCell>
                             <TableCell>

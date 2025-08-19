@@ -122,7 +122,7 @@ export function Sidebar() {
               {user?.firstName} {user?.lastName}
             </p>
             <p className="text-xs text-slate-500 truncate">
-              {user?.company || user?.email}
+              {user?.email}
             </p>
           </div>
         </div>
