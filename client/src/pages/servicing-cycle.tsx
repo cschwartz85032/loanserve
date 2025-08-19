@@ -23,6 +23,7 @@ import {
   CheckCircle2, XCircle, Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EventsLog } from "@/components/servicing/EventsLog";
 
 interface ServicingRun {
   id: number;
@@ -77,6 +78,7 @@ export default function ServicingCycle() {
   const [activeTab, setActiveTab] = useState("overview");
   const [searchFilter, setSearchFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedRun, setSelectedRun] = useState<ServicingRun | null>(null);
 
   // Fetch current run status
   const { data: currentRun, isLoading: isLoadingCurrentRun } = useQuery({
@@ -522,7 +524,17 @@ export default function ServicingCycle() {
                 <CardContent>
                   <div className="space-y-4">
                     {recentRuns.map((run: ServicingRun) => (
-                      <div key={run.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div 
+                        key={run.id} 
+                        className={cn(
+                          "flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors",
+                          selectedRun?.runId === run.runId && "bg-blue-50 dark:bg-blue-900/20 border-blue-500"
+                        )}
+                        onClick={() => {
+                          setSelectedRun(run);
+                          setActiveTab("events");
+                        }}
+                      >
                         <div className="flex items-center space-x-4">
                           {getStatusIcon(run.status)}
                           <div>
@@ -546,7 +558,10 @@ export default function ServicingCycle() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => exportReport(run.runId, 'json')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              exportReport(run.runId, 'json');
+                            }}
                           >
                             <Download className="h-4 w-4" />
                           </Button>
@@ -641,9 +656,13 @@ export default function ServicingCycle() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-sm text-muted-foreground text-center py-8">
-                    Events will be displayed here when a servicing cycle is running or completed.
-                  </div>
+                  {selectedRun ? (
+                    <EventsLog runId={selectedRun.runId} searchFilter={searchFilter} />
+                  ) : (
+                    <div className="text-sm text-muted-foreground text-center py-8">
+                      Select a run from the history to view its event logs.
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
