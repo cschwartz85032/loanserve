@@ -285,6 +285,9 @@ export const borrowerEntities = pgTable("borrower_entities", {
   mailingCountry: text("mailing_country").default('USA'),
   // Financial information
   creditScore: integer("credit_score"),
+  creditScoreEquifax: integer("credit_score_equifax"),
+  creditScoreExperian: integer("credit_score_experian"),
+  creditScoreTransunion: integer("credit_score_transunion"),
   monthlyIncome: decimal("monthly_income", { precision: 12, scale: 2 }),
   totalAssets: decimal("total_assets", { precision: 15, scale: 2 }),
   totalLiabilities: decimal("total_liabilities", { precision: 15, scale: 2 }),
