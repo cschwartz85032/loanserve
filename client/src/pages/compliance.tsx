@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Sidebar } from "@/components/layout/sidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,12 +97,16 @@ export default function CompliancePage() {
   };
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Compliance Management</h1>
-          <p className="text-muted-foreground">Monitor regulatory compliance and audit trails</p>
-        </div>
+    <div className="min-h-screen flex bg-slate-50">
+      <Sidebar />
+      
+      <main className="flex-1 overflow-y-auto">
+        <div className="container mx-auto py-6 space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold">Compliance Management</h1>
+              <p className="text-muted-foreground">Monitor regulatory compliance and audit trails</p>
+            </div>
         <div className="flex gap-2">
           <Button variant="outline">
             <FileText className="mr-2 h-4 w-4" />
@@ -349,6 +354,8 @@ export default function CompliancePage() {
           </Card>
         </TabsContent>
       </Tabs>
+        </div>
+      </main>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Sidebar } from "@/components/layout/sidebar";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -232,12 +233,16 @@ export default function FeeManagement() {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Fee Management</h1>
-          <p className="text-muted-foreground mt-1">Manage fee templates and schedules for loans</p>
-        </div>
+    <div className="min-h-screen flex bg-slate-50">
+      <Sidebar />
+      
+      <main className="flex-1 overflow-y-auto">
+        <div className="container mx-auto p-6 max-w-7xl">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-3xl font-bold">Fee Management</h1>
+              <p className="text-muted-foreground mt-1">Manage fee templates and schedules for loans</p>
+            </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -694,6 +699,8 @@ export default function FeeManagement() {
           </DialogContent>
         </Dialog>
       )}
+        </div>
+      </main>
     </div>
   );
 }
