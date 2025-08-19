@@ -131,7 +131,9 @@ function AdminDocuments() {
               <CardDescription>This Month</CardDescription>
               <CardTitle className="text-2xl">
                 {documents.filter((d: any) => {
+                  if (!d.uploadedAt) return false;
                   const uploadDate = new Date(d.uploadedAt);
+                  if (isNaN(uploadDate.getTime())) return false;
                   const now = new Date();
                   return uploadDate.getMonth() === now.getMonth() && 
                          uploadDate.getFullYear() === now.getFullYear();
@@ -235,7 +237,7 @@ function AdminDocuments() {
                                   </span>
                                 )}
                                 <span className="text-sm text-gray-500">
-                                  {format(new Date(doc.uploadedAt), 'MMM dd, yyyy')}
+                                  {doc.uploadedAt ? format(new Date(doc.uploadedAt), 'MMM dd, yyyy') : 'No date'}
                                 </span>
                               </div>
                             </div>

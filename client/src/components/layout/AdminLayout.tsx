@@ -94,22 +94,22 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                            (item.href === '/admin/escrow' && location === '/escrow');
             
             return (
-              <Link key={item.href} href={item.href}>
-                <a
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
-                    isActive
-                      ? "bg-blue-50 text-blue-600"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-                    sidebarCollapsed && "justify-center"
-                  )}
-                  title={sidebarCollapsed ? item.title : undefined}
-                >
-                  <Icon className="h-5 w-5 flex-shrink-0" />
-                  {!sidebarCollapsed && (
-                    <span className="font-medium">{item.title}</span>
-                  )}
-                </a>
+              <Link 
+                key={item.href} 
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors",
+                  isActive
+                    ? "bg-blue-50 text-blue-600"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+                  sidebarCollapsed && "justify-center"
+                )}
+                title={sidebarCollapsed ? item.title : undefined}
+              >
+                <Icon className="h-5 w-5 flex-shrink-0" />
+                {!sidebarCollapsed && (
+                  <span className="font-medium">{item.title}</span>
+                )}
               </Link>
             );
           })}
