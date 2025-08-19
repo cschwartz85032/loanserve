@@ -174,9 +174,9 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
   useEffect(() => {
     if (formData.loanAmount || formData.interestRate || formData.loanTerm) {
-      calculatePayments(formData);
+      calculatePayments(formData, escrowDisbursements);
     }
-  }, [formData.loanAmount, formData.interestRate, formData.loanTerm, formData.hazardInsurance, formData.propertyTaxes, formData.hoaFees, formData.pmiAmount, formData.servicingFee]);
+  }, [formData.loanAmount, formData.interestRate, formData.loanTerm, formData.hazardInsurance, formData.propertyTaxes, formData.hoaFees, formData.pmiAmount, formData.servicingFee, escrowDisbursements]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -535,11 +535,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                 </CardContent>
               </Card>
 
-              {/* Monthly Expenses */}
+              {/* Payment Settings - removed redundant Monthly Expenses */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Monthly Expenses</CardTitle>
-                  <CardDescription>Additional costs included in monthly payment</CardDescription>
+                  <CardTitle>Payment Settings</CardTitle>
+                  <CardDescription>Payment configuration and escrow settings</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
