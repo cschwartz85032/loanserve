@@ -12,6 +12,8 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
@@ -81,26 +83,26 @@ export default function ServicingCycle() {
   const [selectedRun, setSelectedRun] = useState<ServicingRun | null>(null);
 
   // Fetch current run status
-  const { data: currentRun, isLoading: isLoadingCurrentRun } = useQuery({
+  const { data: currentRun, isLoading: isLoadingCurrentRun } = useQuery<ServicingRun>({
     queryKey: ['/api/servicing-cycle/current'],
     refetchInterval: (data) => {
       // Poll every 2 seconds if running
-      return data?.status === 'running' ? 2000 : false;
+      return data?.state.data?.status === 'running' ? 2000 : false;
     }
   });
 
   // Fetch recent runs
-  const { data: recentRuns = [], isLoading: isLoadingRuns } = useQuery({
+  const { data: recentRuns = [], isLoading: isLoadingRuns } = useQuery<ServicingRun[]>({
     queryKey: ['/api/servicing-cycle/runs'],
   });
 
   // Fetch exceptions
-  const { data: exceptions = [], isLoading: isLoadingExceptions } = useQuery({
+  const { data: exceptions = [], isLoading: isLoadingExceptions } = useQuery<Exception[]>({
     queryKey: ['/api/servicing-cycle/exceptions'],
   });
 
   // Fetch today's summary
-  const { data: todaySummary } = useQuery({
+  const { data: todaySummary } = useQuery<any>({
     queryKey: ['/api/servicing-cycle/summary', format(new Date(), 'yyyy-MM-dd')],
   });
 
@@ -121,7 +123,11 @@ export default function ServicingCycle() {
         title: "Servicing Cycle Started",
         description: `Run ID: ${data.runId}. Processing ${data.totalLoans} loans.`,
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/servicing-cycle'] });
+      // Invalidate all servicing cycle queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['/api/servicing-cycle/current'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/servicing-cycle/runs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/servicing-cycle/summary'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/servicing-cycle/exceptions'] });
     },
     onError: (error) => {
       toast({
@@ -628,10 +634,57 @@ export default function ServicingCycle() {
                             <span className="text-sm">
                               Due: {format(new Date(exception.dueDate), 'PP')}
                             </span>
-                            <Button variant="outline" size="sm">
-                              <ChevronRight className="h-4 w-4 mr-1" />
-                              View Details
-                            </Button>
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  <ChevronRight className="h-4 w-4 mr-1" />
+                                  View Details
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="max-w-2xl">
+                                <DialogHeader>
+                                  <DialogTitle>Exception Details</DialogTitle>
+                                  <DialogDescription>
+                                    Run ID: {exception.runId} | Loan: {exception.loanNumber}
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <p className="text-sm font-medium text-muted-foreground">Severity</p>
+                                      <Badge className={`${getSeverityColor(exception.severity)} mt-1`}>
+                                        {exception.severity}
+                                      </Badge>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium text-muted-foreground">Type</p>
+                                      <p className="font-medium">{exception.type}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium text-muted-foreground">Status</p>
+                                      <Badge variant="outline" className="mt-1">{exception.status}</Badge>
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-medium text-muted-foreground">Due Date</p>
+                                      <p className="font-medium">{format(new Date(exception.dueDate), 'PPP')}</p>
+                                    </div>
+                                  </div>
+                                  <Separator />
+                                  <div>
+                                    <p className="text-sm font-medium text-muted-foreground mb-2">Issue Description</p>
+                                    <p className="text-sm">{exception.message}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-muted-foreground mb-2">Suggested Action</p>
+                                    <p className="text-sm">{exception.suggestedAction}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-muted-foreground mb-2">Created At</p>
+                                    <p className="text-sm">{format(new Date(exception.createdAt), 'PPpp')}</p>
+                                  </div>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
                           </div>
                         </div>
                     ))}
