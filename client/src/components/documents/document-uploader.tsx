@@ -57,7 +57,7 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
       const formData = new FormData();
       formData.append('file', file);
       formData.append('loanId', loanId.toString());
-      formData.append('category', 'loan_document');
+      formData.append('category', 'other');
       formData.append('description', `Uploaded ${file.name}`);
 
       const response = await fetch('/api/documents/upload', {

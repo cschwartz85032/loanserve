@@ -72,12 +72,19 @@ export default function Documents() {
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
-      'loan_document': 'bg-blue-100 text-blue-800',
-      'legal': 'bg-purple-100 text-purple-800',
-      'financial': 'bg-green-100 text-green-800',
-      'property': 'bg-orange-100 text-orange-800',
-      'insurance': 'bg-red-100 text-red-800',
-      'tax': 'bg-yellow-100 text-yellow-800',
+      'loan_application': 'bg-blue-100 text-blue-800',
+      'loan_agreement': 'bg-blue-100 text-blue-800',
+      'promissory_note': 'bg-indigo-100 text-indigo-800',
+      'deed_of_trust': 'bg-purple-100 text-purple-800',
+      'mortgage': 'bg-purple-100 text-purple-800',
+      'security_agreement': 'bg-purple-100 text-purple-800',
+      'insurance_policy': 'bg-red-100 text-red-800',
+      'tax_document': 'bg-yellow-100 text-yellow-800',
+      'financial_statement': 'bg-green-100 text-green-800',
+      'appraisal': 'bg-orange-100 text-orange-800',
+      'title_report': 'bg-orange-100 text-orange-800',
+      'escrow_statement': 'bg-teal-100 text-teal-800',
+      'correspondence': 'bg-gray-100 text-gray-800',
       'other': 'bg-gray-100 text-gray-800'
     };
     return colors[category] || colors['other'];
