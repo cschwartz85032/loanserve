@@ -7,10 +7,12 @@ import {
   Users,
   ChevronLeft,
   ChevronRight,
-  Menu
+  Menu,
+  Building2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -19,6 +21,7 @@ interface AdminLayoutProps {
 const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [location] = useLocation();
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
+  const [activeRole, setActiveRole] = React.useState('admin');
 
   const navItems = [
     {
@@ -52,20 +55,51 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           sidebarCollapsed ? "w-16" : "w-64"
         )}
       >
-        {/* Sidebar Header */}
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-          {!sidebarCollapsed && (
-            <h2 className="text-xl font-bold text-slate-800">Admin Panel</h2>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="ml-auto"
-          >
-            {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
+        {/* Logo and Company Name */}
+        <div className="p-4 border-b border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Building2 className={cn("text-primary-600", sidebarCollapsed ? "w-6 h-6" : "w-8 h-8")} />
+              {!sidebarCollapsed && (
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900">LoanServe Pro</h1>
+                  <p className="text-xs text-slate-500">Enterprise Edition</p>
+                </div>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className={cn("transition-all", sidebarCollapsed && "ml-auto")}
+            >
+              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            </Button>
+          </div>
         </div>
+
+        {/* Active Role Selector */}
+        {!sidebarCollapsed && (
+          <div className="p-4 border-b border-slate-200">
+            <label className="text-xs font-medium text-slate-500 mb-1 block">
+              Active Role
+            </label>
+            <Select value={activeRole} onValueChange={setActiveRole}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">Admin Portal</SelectItem>
+                <SelectItem value="lender">Lender Portal</SelectItem>
+                <SelectItem value="borrower">Borrower Portal</SelectItem>
+                <SelectItem value="investor">Investor Portal</SelectItem>
+                <SelectItem value="escrow_officer">Escrow Officer Portal</SelectItem>
+                <SelectItem value="legal">Legal Portal</SelectItem>
+                <SelectItem value="servicer">Servicer Portal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Navigation Items */}
         <nav className="flex-1 p-4 space-y-2">
