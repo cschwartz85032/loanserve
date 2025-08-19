@@ -188,8 +188,19 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
   };
 
   const uploadDocument = async (file: File) => {
-    const loanIdToUse = selectedLoanId || propLoanId;
-    if (!loanIdToUse) return;
+    const loanIdToUse = selectedLoanIdRef.current || propLoanId;
+    
+    console.log('uploadDocument called with:', {
+      selectedLoanIdRef: selectedLoanIdRef.current,
+      propLoanId,
+      loanIdToUse,
+      fileName: file.name
+    });
+    
+    if (!loanIdToUse) {
+      console.error('No loan ID available for upload');
+      return;
+    }
 
     setFiles(prev => prev.map(f => 
       f.file === file 
