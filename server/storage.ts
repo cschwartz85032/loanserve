@@ -725,7 +725,7 @@ export class DatabaseStorage implements IStorage {
       .insert(documents)
       .values(insertDocument)
       .returning();
-    return result[0];
+    return (result as Document[])[0];
   }
 
   async getDocument(id: number): Promise<Document | undefined> {

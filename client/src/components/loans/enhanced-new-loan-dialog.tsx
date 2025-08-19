@@ -442,7 +442,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       console.log("Property data to be created:", propertyData);
       
       console.log("Sending property creation request...");
-      const propertyResponse = await apiRequest({ method: "POST", url: "/api/properties", body: propertyData });
+      const propertyResponse = await apiRequest("/api/properties", {
+        method: "POST",
+        body: JSON.stringify(propertyData)
+      });
       console.log("Property response status:", propertyResponse.status);
       
       if (!propertyResponse.ok) {
@@ -450,8 +453,17 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         console.error("Property creation failed:", errorData);
         throw new Error(errorData.error || errorData.message || 'Failed to create property');
       }
-      const property = await propertyResponse.json();
-      console.log("Property created successfully:", property);
+      let property;
+      try {
+        property = await propertyResponse.json();
+        console.log("Property created successfully:", property);
+        console.log("Property ID:", property.id);
+      } catch (jsonError) {
+        console.error("Error parsing property response:", jsonError);
+        console.error("Response status:", propertyResponse.status);
+        console.error("Response text:", await propertyResponse.text());
+        throw new Error('Failed to parse property response');
+      }
       
       // Calculate monthly payment if not provided
       let monthlyPayment = data.paymentAmount;
@@ -501,6 +513,11 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       const maturityDate = new Date(today.setMonth(today.getMonth() + loanTermMonths)).toISOString().split('T')[0];
 
       console.log("=== PREPARING LOAN DATA ===");
+      
+      if (!property || !property.id) {
+        console.error("Property object or ID is missing:", property);
+        throw new Error('Property creation did not return a valid ID');
+      }
       
       // Create the loan with the property ID
       const loanData = {
@@ -592,7 +609,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       console.log(JSON.stringify(loanData, null, 2));
       console.log("Sending loan creation request...");
       
-      const response = await apiRequest({ method: "POST", url: "/api/loans", body: loanData });
+      const response = await apiRequest("/api/loans", {
+        method: "POST",
+        body: JSON.stringify(loanData)
+      });
       console.log("Loan response status:", response.status);
       
       if (!response.ok) {
@@ -683,6 +703,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       }
     },
     onError: (error: Error) => {
+      console.error("=== LOAN CREATION ERROR ===");
+      console.error("Error object:", error);
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
       toast({
         title: "Error",
         description: error.message || "Failed to create loan",
