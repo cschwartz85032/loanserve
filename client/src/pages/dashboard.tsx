@@ -3,8 +3,6 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { MetricsCards } from "@/components/dashboard/metrics-cards";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { PortfolioOverview } from "@/components/dashboard/portfolio-overview";
-import { LoanTable } from "@/components/loans/loan-table";
-import { EscrowSummary } from "@/components/escrow/escrow-summary";
 import { EnhancedNewLoanDialog } from "@/components/loans/enhanced-new-loan-dialog";
 import { Bell, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,12 +47,6 @@ export default function Dashboard() {
             <div className="lg:col-span-1">
               <PortfolioOverview />
             </div>
-          </div>
-
-          <LoanTable />
-          
-          <div className="mt-6">
-            <EscrowSummary />
           </div>
         </div>
       </main>

@@ -59,6 +59,7 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Added icon-only return button (U-turn arrow) positioned flush right above navigation items for returning to main dashboard
   - Removed "Escrow Management" from main navigation sidebar as requested
   - Set deployed user credentials to username: "loanatik" and password: "loanatik" for consistent access
+  - Removed "All Loans" table and "Escrow Management" sections from dashboard page for cleaner initial view
 
 # User Preferences
 
