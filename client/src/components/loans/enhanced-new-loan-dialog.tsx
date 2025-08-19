@@ -78,12 +78,15 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     
     // Borrower Information (separate from property)
     borrowerName: "",
+    borrowerCompanyName: "",
     borrowerEmail: "",
     borrowerPhone: "",
     borrowerAddress: "",
     borrowerCity: "",
     borrowerState: "",
     borrowerZip: "",
+    borrowerSSN: "",
+    borrowerIncome: "",
     creditScoreEquifax: "",
     creditScoreExperian: "",
     creditScoreTransunion: "",
@@ -103,6 +106,35 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     coBorrowerCreditScoreExperian: "",
     coBorrowerCreditScoreTransunion: "",
     
+    // Trustee Information
+    trusteeName: "",
+    trusteeCompanyName: "",
+    trusteePhone: "",
+    trusteeEmail: "",
+    trusteeStreetAddress: "",
+    trusteeCity: "",
+    trusteeState: "",
+    trusteeZipCode: "",
+    
+    // Beneficiary Information
+    beneficiaryName: "",
+    beneficiaryCompanyName: "",
+    beneficiaryPhone: "",
+    beneficiaryEmail: "",
+    beneficiaryStreetAddress: "",
+    beneficiaryCity: "",
+    beneficiaryState: "",
+    beneficiaryZipCode: "",
+    
+    // Escrow Company Information
+    escrowCompanyName: "",
+    escrowCompanyPhone: "",
+    escrowCompanyEmail: "",
+    escrowCompanyStreetAddress: "",
+    escrowCompanyCity: "",
+    escrowCompanyState: "",
+    escrowCompanyZipCode: "",
+    
     // Payment Information
     paymentAmount: "",
     escrowAmount: "",
@@ -118,19 +150,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     pmiAmount: "",
     servicingFee: "25",
     
-    // Enhanced AI-extracted fields
-    borrowerSSN: "",
-    borrowerIncome: "",
-    trusteeName: "",
-    trusteeStreetAddress: "",
-    trusteeCity: "",
-    trusteeState: "",
-    trusteeZipCode: "",
-    beneficiaryName: "",
-    beneficiaryStreetAddress: "",
-    beneficiaryCity: "",
-    beneficiaryState: "",
-    beneficiaryZipCode: "",
+    // Other fields
     loanDocuments: null as any,
     defaultConditions: null as any,
     insuranceRequirements: null as any,
@@ -360,6 +380,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       
       // Trustee complete contact info
       trusteeName: cleanString(extractedData.trusteeName) || prev.trusteeName,
+      trusteeCompanyName: cleanString(extractedData.trusteeCompanyName) || prev.trusteeCompanyName,
       trusteePhone: cleanString(extractedData.trusteePhone) || prev.trusteePhone,
       trusteeEmail: cleanString(extractedData.trusteeEmail) || prev.trusteeEmail,
       trusteeStreetAddress: cleanString(extractedData.trusteeStreetAddress) || prev.trusteeStreetAddress,
@@ -369,6 +390,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       
       // Beneficiary complete contact info
       beneficiaryName: cleanString(extractedData.beneficiaryName) || prev.beneficiaryName,
+      beneficiaryCompanyName: cleanString(extractedData.beneficiaryCompanyName) || prev.beneficiaryCompanyName,
       beneficiaryPhone: cleanString(extractedData.beneficiaryPhone) || prev.beneficiaryPhone,
       beneficiaryEmail: cleanString(extractedData.beneficiaryEmail) || prev.beneficiaryEmail,
       beneficiaryStreetAddress: cleanString(extractedData.beneficiaryStreetAddress) || prev.beneficiaryStreetAddress,
@@ -497,6 +519,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         borrowerState: cleanString(data.borrowerState) || null,
         borrowerZip: cleanString(data.borrowerZip) || null,
         // Enhanced AI-extracted fields
+        borrowerCompanyName: cleanString(data.borrowerCompanyName) || null,
         borrowerSSN: cleanString(data.borrowerSSN) || null,
         borrowerIncome: data.borrowerIncome?.toString() || null,
         creditScoreEquifax: data.creditScoreEquifax ? parseInt(data.creditScoreEquifax) : null,
@@ -517,15 +540,28 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         coBorrowerCreditScoreExperian: data.coBorrowerCreditScoreExperian ? parseInt(data.coBorrowerCreditScoreExperian) : null,
         coBorrowerCreditScoreTransunion: data.coBorrowerCreditScoreTransunion ? parseInt(data.coBorrowerCreditScoreTransunion) : null,
         trusteeName: cleanString(data.trusteeName) || null,
+        trusteeCompanyName: cleanString(data.trusteeCompanyName) || null,
+        trusteePhone: cleanString(data.trusteePhone) || null,
+        trusteeEmail: cleanString(data.trusteeEmail) || null,
         trusteeStreetAddress: cleanString(data.trusteeStreetAddress) || null,
         trusteeCity: cleanString(data.trusteeCity) || null,
         trusteeState: cleanString(data.trusteeState) || null,
         trusteeZipCode: cleanString(data.trusteeZipCode) || null,
         beneficiaryName: cleanString(data.beneficiaryName) || null,
+        beneficiaryCompanyName: cleanString(data.beneficiaryCompanyName) || null,
+        beneficiaryPhone: cleanString(data.beneficiaryPhone) || null,
+        beneficiaryEmail: cleanString(data.beneficiaryEmail) || null,
         beneficiaryStreetAddress: cleanString(data.beneficiaryStreetAddress) || null,
         beneficiaryCity: cleanString(data.beneficiaryCity) || null,
         beneficiaryState: cleanString(data.beneficiaryState) || null,
         beneficiaryZipCode: cleanString(data.beneficiaryZipCode) || null,
+        escrowCompanyName: cleanString(data.escrowCompanyName) || null,
+        escrowCompanyPhone: cleanString(data.escrowCompanyPhone) || null,
+        escrowCompanyEmail: cleanString(data.escrowCompanyEmail) || null,
+        escrowCompanyStreetAddress: cleanString(data.escrowCompanyStreetAddress) || null,
+        escrowCompanyCity: cleanString(data.escrowCompanyCity) || null,
+        escrowCompanyState: cleanString(data.escrowCompanyState) || null,
+        escrowCompanyZipCode: cleanString(data.escrowCompanyZipCode) || null,
         loanDocuments: data.loanDocuments ? JSON.stringify(data.loanDocuments) : null,
         defaultConditions: data.defaultConditions ? JSON.stringify(data.defaultConditions) : null,
         insuranceRequirements: data.insuranceRequirements ? JSON.stringify(data.insuranceRequirements) : null,
@@ -651,7 +687,48 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       borrowerCity: "",
       borrowerState: "",
       borrowerZip: "",
-      coborrowerName: "",
+      borrowerCompanyName: "",
+      borrowerSSN: "",
+      borrowerIncome: "",
+      creditScoreEquifax: "",
+      creditScoreExperian: "",
+      creditScoreTransunion: "",
+      coBorrowerName: "",
+      coBorrowerCompanyName: "",
+      coBorrowerEmail: "",
+      coBorrowerPhone: "",
+      coBorrowerAddress: "",
+      coBorrowerCity: "",
+      coBorrowerState: "",
+      coBorrowerZip: "",
+      coBorrowerSSN: "",
+      coBorrowerIncome: "",
+      coBorrowerCreditScoreEquifax: "",
+      coBorrowerCreditScoreExperian: "",
+      coBorrowerCreditScoreTransunion: "",
+      trusteeName: "",
+      trusteeCompanyName: "",
+      trusteePhone: "",
+      trusteeEmail: "",
+      trusteeStreetAddress: "",
+      trusteeCity: "",
+      trusteeState: "",
+      trusteeZipCode: "",
+      beneficiaryName: "",
+      beneficiaryCompanyName: "",
+      beneficiaryPhone: "",
+      beneficiaryEmail: "",
+      beneficiaryStreetAddress: "",
+      beneficiaryCity: "",
+      beneficiaryState: "",
+      beneficiaryZipCode: "",
+      escrowCompanyName: "",
+      escrowCompanyPhone: "",
+      escrowCompanyEmail: "",
+      escrowCompanyStreetAddress: "",
+      escrowCompanyCity: "",
+      escrowCompanyState: "",
+      escrowCompanyZipCode: "",
       paymentAmount: "",
       escrowAmount: "",
       firstPaymentDate: "",
@@ -663,18 +740,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       hoaFees: "",
       pmiAmount: "",
       servicingFee: "25",
-      borrowerSSN: "",
-      borrowerIncome: "",
-      trusteeName: "",
-      trusteeStreetAddress: "",
-      trusteeCity: "",
-      trusteeState: "",
-      trusteeZipCode: "",
-      beneficiaryName: "",
-      beneficiaryStreetAddress: "",
-      beneficiaryCity: "",
-      beneficiaryState: "",
-      beneficiaryZipCode: "",
       loanDocuments: null,
       defaultConditions: null,
       insuranceRequirements: null,
@@ -985,11 +1050,11 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="coborrowerName">Co-Borrower Name</Label>
+                      <Label htmlFor="borrowerCompanyName">Borrower Company/Trust</Label>
                       <Input
-                        id="coborrowerName"
-                        value={formData.coborrowerName}
-                        onChange={(e) => handleInputChange('coborrowerName', e.target.value)}
+                        id="borrowerCompanyName"
+                        value={formData.borrowerCompanyName}
+                        onChange={(e) => handleInputChange('borrowerCompanyName', e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
@@ -1009,6 +1074,60 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                         onChange={(e) => handleInputChange('borrowerPhone', e.target.value)}
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="borrowerSSN">SSN</Label>
+                      <Input
+                        id="borrowerSSN"
+                        value={formData.borrowerSSN}
+                        onChange={(e) => handleInputChange('borrowerSSN', e.target.value)}
+                        placeholder="XXX-XX-XXXX"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="borrowerIncome">Annual Income</Label>
+                      <Input
+                        id="borrowerIncome"
+                        type="number"
+                        value={formData.borrowerIncome}
+                        onChange={(e) => handleInputChange('borrowerIncome', e.target.value)}
+                      />
+                    </div>
+                    
+                    {/* Credit Scores */}
+                    <div className="col-span-2">
+                      <h4 className="text-md font-medium mb-3 text-gray-700">Credit Scores</h4>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="creditScoreEquifax">Equifax Score</Label>
+                      <Input
+                        id="creditScoreEquifax"
+                        type="number"
+                        value={formData.creditScoreEquifax}
+                        onChange={(e) => handleInputChange('creditScoreEquifax', e.target.value)}
+                        placeholder="300-850"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="creditScoreExperian">Experian Score</Label>
+                      <Input
+                        id="creditScoreExperian"
+                        type="number"
+                        value={formData.creditScoreExperian}
+                        onChange={(e) => handleInputChange('creditScoreExperian', e.target.value)}
+                        placeholder="300-850"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="creditScoreTransunion">TransUnion Score</Label>
+                      <Input
+                        id="creditScoreTransunion"
+                        type="number"
+                        value={formData.creditScoreTransunion}
+                        onChange={(e) => handleInputChange('creditScoreTransunion', e.target.value)}
+                        placeholder="300-850"
+                      />
+                    </div>
+                    <div></div>
                     
                     {/* Borrower Mailing Address Section */}
                     <div className="col-span-2">
@@ -1046,6 +1165,350 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                         id="borrowerZip"
                         value={formData.borrowerZip}
                         onChange={(e) => handleInputChange('borrowerZip', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Co-Borrower Section */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Co-Borrower Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerName">Co-Borrower Name</Label>
+                      <Input
+                        id="coBorrowerName"
+                        value={formData.coBorrowerName}
+                        onChange={(e) => handleInputChange('coBorrowerName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerCompanyName">Co-Borrower Company/Trust</Label>
+                      <Input
+                        id="coBorrowerCompanyName"
+                        value={formData.coBorrowerCompanyName}
+                        onChange={(e) => handleInputChange('coBorrowerCompanyName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerEmail">Email</Label>
+                      <Input
+                        id="coBorrowerEmail"
+                        type="email"
+                        value={formData.coBorrowerEmail}
+                        onChange={(e) => handleInputChange('coBorrowerEmail', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerPhone">Phone</Label>
+                      <Input
+                        id="coBorrowerPhone"
+                        value={formData.coBorrowerPhone}
+                        onChange={(e) => handleInputChange('coBorrowerPhone', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerSSN">SSN</Label>
+                      <Input
+                        id="coBorrowerSSN"
+                        value={formData.coBorrowerSSN}
+                        onChange={(e) => handleInputChange('coBorrowerSSN', e.target.value)}
+                        placeholder="XXX-XX-XXXX"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerIncome">Annual Income</Label>
+                      <Input
+                        id="coBorrowerIncome"
+                        type="number"
+                        value={formData.coBorrowerIncome}
+                        onChange={(e) => handleInputChange('coBorrowerIncome', e.target.value)}
+                      />
+                    </div>
+                    
+                    {/* Co-Borrower Credit Scores */}
+                    <div className="col-span-2">
+                      <h4 className="text-md font-medium mb-3 text-gray-700">Co-Borrower Credit Scores</h4>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerCreditScoreEquifax">Equifax Score</Label>
+                      <Input
+                        id="coBorrowerCreditScoreEquifax"
+                        type="number"
+                        value={formData.coBorrowerCreditScoreEquifax}
+                        onChange={(e) => handleInputChange('coBorrowerCreditScoreEquifax', e.target.value)}
+                        placeholder="300-850"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerCreditScoreExperian">Experian Score</Label>
+                      <Input
+                        id="coBorrowerCreditScoreExperian"
+                        type="number"
+                        value={formData.coBorrowerCreditScoreExperian}
+                        onChange={(e) => handleInputChange('coBorrowerCreditScoreExperian', e.target.value)}
+                        placeholder="300-850"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerCreditScoreTransunion">TransUnion Score</Label>
+                      <Input
+                        id="coBorrowerCreditScoreTransunion"
+                        type="number"
+                        value={formData.coBorrowerCreditScoreTransunion}
+                        onChange={(e) => handleInputChange('coBorrowerCreditScoreTransunion', e.target.value)}
+                        placeholder="300-850"
+                      />
+                    </div>
+                    <div></div>
+                    
+                    {/* Co-Borrower Address */}
+                    <div className="col-span-2">
+                      <h4 className="text-md font-medium mb-3 text-gray-700">Co-Borrower Mailing Address</h4>
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="coBorrowerAddress">Street Address</Label>
+                      <Input
+                        id="coBorrowerAddress"
+                        value={formData.coBorrowerAddress}
+                        onChange={(e) => handleInputChange('coBorrowerAddress', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerCity">City</Label>
+                      <Input
+                        id="coBorrowerCity"
+                        value={formData.coBorrowerCity}
+                        onChange={(e) => handleInputChange('coBorrowerCity', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerState">State</Label>
+                      <Input
+                        id="coBorrowerState"
+                        value={formData.coBorrowerState}
+                        onChange={(e) => handleInputChange('coBorrowerState', e.target.value)}
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="coBorrowerZip">ZIP Code</Label>
+                      <Input
+                        id="coBorrowerZip"
+                        value={formData.coBorrowerZip}
+                        onChange={(e) => handleInputChange('coBorrowerZip', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trustee Section */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Trustee Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="trusteeName">Trustee Name</Label>
+                      <Input
+                        id="trusteeName"
+                        value={formData.trusteeName}
+                        onChange={(e) => handleInputChange('trusteeName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trusteeCompanyName">Trustee Company</Label>
+                      <Input
+                        id="trusteeCompanyName"
+                        value={formData.trusteeCompanyName}
+                        onChange={(e) => handleInputChange('trusteeCompanyName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trusteePhone">Phone</Label>
+                      <Input
+                        id="trusteePhone"
+                        value={formData.trusteePhone}
+                        onChange={(e) => handleInputChange('trusteePhone', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trusteeEmail">Email</Label>
+                      <Input
+                        id="trusteeEmail"
+                        type="email"
+                        value={formData.trusteeEmail}
+                        onChange={(e) => handleInputChange('trusteeEmail', e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="trusteeStreetAddress">Street Address</Label>
+                      <Input
+                        id="trusteeStreetAddress"
+                        value={formData.trusteeStreetAddress}
+                        onChange={(e) => handleInputChange('trusteeStreetAddress', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trusteeCity">City</Label>
+                      <Input
+                        id="trusteeCity"
+                        value={formData.trusteeCity}
+                        onChange={(e) => handleInputChange('trusteeCity', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trusteeState">State</Label>
+                      <Input
+                        id="trusteeState"
+                        value={formData.trusteeState}
+                        onChange={(e) => handleInputChange('trusteeState', e.target.value)}
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="trusteeZipCode">ZIP Code</Label>
+                      <Input
+                        id="trusteeZipCode"
+                        value={formData.trusteeZipCode}
+                        onChange={(e) => handleInputChange('trusteeZipCode', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Beneficiary Section */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Beneficiary Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="beneficiaryName">Beneficiary Name</Label>
+                      <Input
+                        id="beneficiaryName"
+                        value={formData.beneficiaryName}
+                        onChange={(e) => handleInputChange('beneficiaryName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="beneficiaryCompanyName">Beneficiary Company</Label>
+                      <Input
+                        id="beneficiaryCompanyName"
+                        value={formData.beneficiaryCompanyName}
+                        onChange={(e) => handleInputChange('beneficiaryCompanyName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="beneficiaryPhone">Phone</Label>
+                      <Input
+                        id="beneficiaryPhone"
+                        value={formData.beneficiaryPhone}
+                        onChange={(e) => handleInputChange('beneficiaryPhone', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="beneficiaryEmail">Email</Label>
+                      <Input
+                        id="beneficiaryEmail"
+                        type="email"
+                        value={formData.beneficiaryEmail}
+                        onChange={(e) => handleInputChange('beneficiaryEmail', e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="beneficiaryStreetAddress">Street Address</Label>
+                      <Input
+                        id="beneficiaryStreetAddress"
+                        value={formData.beneficiaryStreetAddress}
+                        onChange={(e) => handleInputChange('beneficiaryStreetAddress', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="beneficiaryCity">City</Label>
+                      <Input
+                        id="beneficiaryCity"
+                        value={formData.beneficiaryCity}
+                        onChange={(e) => handleInputChange('beneficiaryCity', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="beneficiaryState">State</Label>
+                      <Input
+                        id="beneficiaryState"
+                        value={formData.beneficiaryState}
+                        onChange={(e) => handleInputChange('beneficiaryState', e.target.value)}
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="beneficiaryZipCode">ZIP Code</Label>
+                      <Input
+                        id="beneficiaryZipCode"
+                        value={formData.beneficiaryZipCode}
+                        onChange={(e) => handleInputChange('beneficiaryZipCode', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Escrow Company Section */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold">Escrow Company Information</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="escrowCompanyName">Escrow Company Name</Label>
+                      <Input
+                        id="escrowCompanyName"
+                        value={formData.escrowCompanyName}
+                        onChange={(e) => handleInputChange('escrowCompanyName', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="escrowCompanyPhone">Phone</Label>
+                      <Input
+                        id="escrowCompanyPhone"
+                        value={formData.escrowCompanyPhone}
+                        onChange={(e) => handleInputChange('escrowCompanyPhone', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="escrowCompanyEmail">Email</Label>
+                      <Input
+                        id="escrowCompanyEmail"
+                        type="email"
+                        value={formData.escrowCompanyEmail}
+                        onChange={(e) => handleInputChange('escrowCompanyEmail', e.target.value)}
+                      />
+                    </div>
+                    <div></div>
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="escrowCompanyStreetAddress">Street Address</Label>
+                      <Input
+                        id="escrowCompanyStreetAddress"
+                        value={formData.escrowCompanyStreetAddress}
+                        onChange={(e) => handleInputChange('escrowCompanyStreetAddress', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="escrowCompanyCity">City</Label>
+                      <Input
+                        id="escrowCompanyCity"
+                        value={formData.escrowCompanyCity}
+                        onChange={(e) => handleInputChange('escrowCompanyCity', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="escrowCompanyState">State</Label>
+                      <Input
+                        id="escrowCompanyState"
+                        value={formData.escrowCompanyState}
+                        onChange={(e) => handleInputChange('escrowCompanyState', e.target.value)}
+                        maxLength={2}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="escrowCompanyZipCode">ZIP Code</Label>
+                      <Input
+                        id="escrowCompanyZipCode"
+                        value={formData.escrowCompanyZipCode}
+                        onChange={(e) => handleInputChange('escrowCompanyZipCode', e.target.value)}
                       />
                     </div>
                   </div>
@@ -1207,11 +1670,11 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="coborrowerName-manual">Co-Borrower Name</Label>
+                      <Label htmlFor="coBorrowerName-manual">Co-Borrower Name</Label>
                       <Input
-                        id="coborrowerName-manual"
-                        value={formData.coborrowerName}
-                        onChange={(e) => handleInputChange('coborrowerName', e.target.value)}
+                        id="coBorrowerName-manual"
+                        value={formData.coBorrowerName}
+                        onChange={(e) => handleInputChange('coBorrowerName', e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">

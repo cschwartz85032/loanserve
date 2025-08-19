@@ -27,6 +27,12 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
     * All calculations with formulas and results
     * Every decision point with reasons for actions taken or not taken
     * Comprehensive logging for debugging and audit purposes
+- Enhanced AI Document Analysis tab in loan creation dialog (January 21, 2025):
+  - Added all extractable fields as editable inputs: credit scores (all 3 bureaus), co-borrower details, trustee info, beneficiary details, escrow company information
+  - Fixed database schema to include all necessary columns for AI-extracted data
+  - Made all AI-extracted fields editable before loan creation
+  - Properly mapped all form fields to database columns including borrowerCompanyName and trusteeCompanyName
+  - Added comprehensive Escrow Company section with full contact details
 
 # User Preferences
 
