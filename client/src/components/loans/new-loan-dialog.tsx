@@ -39,6 +39,7 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
     originalAmount: "",
     principalBalance: "",
     interestRate: "",
+    rateType: "fixed",
     termMonths: "",
     monthlyPaymentAmount: "",
     monthlyPayment: "",
@@ -51,6 +52,7 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
     propertyState: "",
     propertyZip: "",
     propertyValue: "",
+    propertyType: "single_family",
     loanToValue: "",
     originationDate: new Date().toISOString().split('T')[0],
     firstPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
@@ -80,10 +82,27 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
         method: "POST",
         body: JSON.stringify(propertyData)
       });
+      
+      // Better error handling for non-JSON responses
       if (!propertyRes.ok) {
-        const error = await propertyRes.json();
-        throw new Error(error.error || "Failed to create property");
+        const contentType = propertyRes.headers.get("content-type");
+        let errorMessage = "Failed to create property";
+        
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            const error = await propertyRes.json();
+            errorMessage = error.error || errorMessage;
+          } catch (e) {
+            errorMessage = `Server error: ${propertyRes.status} ${propertyRes.statusText}`;
+          }
+        } else {
+          // If HTML response, it's likely a server error page
+          errorMessage = `Server error: ${propertyRes.status} ${propertyRes.statusText}`;
+        }
+        
+        throw new Error(errorMessage);
       }
+      
       const property = await propertyRes.json();
       
       // Calculate maturity date based on term months
@@ -92,9 +111,12 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
       const maturityDate = new Date(firstPaymentDate);
       maturityDate.setMonth(maturityDate.getMonth() + termMonths);
       
+      // Generate loan number if not provided
+      const loanNumber = loanData.loanNumber || `LN${Date.now()}`;
+      
       // Format the data to match the database schema
       const formattedData = {
-        loanNumber: loanData.loanNumber,
+        loanNumber: loanNumber,
         propertyId: property.id, // Use the created property ID
         lenderId: loanData.lenderId ? parseInt(loanData.lenderId) : null,
         servicerId: loanData.servicerId ? parseInt(loanData.servicerId) : null,
@@ -119,23 +141,35 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
         prepaymentPenalty: loanData.prepaymentPenalty || "0",
         notes: loanData.notes,
         paymentFrequency: 'monthly', // Add default payment frequency
-        rateType: 'fixed' // Add default rate type
+        rateType: loanData.rateType || 'fixed' // Add default rate type
       };
+      
+      console.log("Creating loan with data:", formattedData);
       
       const res = await apiRequest("/api/loans", {
         method: "POST",
         body: JSON.stringify(formattedData)
       });
+      
+      // Better error handling for non-JSON responses
       if (!res.ok) {
-        const errorText = await res.text();
+        const contentType = res.headers.get("content-type");
         let errorMessage = "Failed to create loan";
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.error || errorMessage;
-        } catch {
-          // If not JSON, use the text directly
-          errorMessage = errorText || errorMessage;
+        
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            const error = await res.json();
+            errorMessage = error.error || errorMessage;
+            console.error("Loan creation error details:", error.details);
+          } catch (e) {
+            errorMessage = `Server error: ${res.status} ${res.statusText}`;
+          }
+        } else {
+          // If HTML response, it's likely a server error page
+          errorMessage = `Server error: ${res.status} ${res.statusText}`;
+          console.error("Server returned non-JSON response for loan creation");
         }
+        
         throw new Error(errorMessage);
       }
       return await res.json();
@@ -242,6 +276,19 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Log the form data for debugging
+    console.log("Submitting loan with form data:", formData);
+    
+    // Validate required fields before submission
+    if (!formData.originalAmount || !formData.interestRate || !formData.termMonths || !formData.monthlyPaymentAmount) {
+      toast({
+        title: "Missing Required Fields",
+        description: "Please fill in loan amount, interest rate, term, and payment amount",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     // Prepare submission data matching database schema
     const submitData = {
       ...formData,
@@ -259,6 +306,7 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
       investorId: formData.investorId ? parseInt(formData.investorId) : null
     };
     
+    console.log("Prepared submission data:", submitData);
     createLoanMutation.mutate(submitData);
   };
 
