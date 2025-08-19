@@ -531,6 +531,7 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
                                 <SelectItem value="taxes">Property Taxes</SelectItem>
                                 <SelectItem value="insurance">Insurance</SelectItem>
                                 <SelectItem value="hoa">HOA Fees</SelectItem>
+                                <SelectItem value="servicing">Servicing Fee</SelectItem>
                                 <SelectItem value="other">Other</SelectItem>
                               </SelectContent>
                             </Select>
