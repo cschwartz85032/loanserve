@@ -62,6 +62,7 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Removed "All Loans" table and "Escrow Management" sections from dashboard page for cleaner initial view
   - Added checkbox column to loan portfolio table for multi-selection functionality
   - Added action icons (delete, email, process) that appear when loans are selected with hover tooltips for functionality
+  - Enhanced AI document extraction to include missing West Star Setup Document fields: APN number, fee payer (B/S/SP), late charge ($ or %), grace period, SSN/EIN/TIN, investor bank details (name, ABA, account #, type)
 
 # User Preferences
 
