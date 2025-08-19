@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, Edit2, Trash2, Eye, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, Edit2, Trash2, Eye, ChevronUp, ChevronDown, Mail, Zap } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -21,6 +21,7 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
   const [page, setPage] = useState(0);
   const [selectedLoans, setSelectedLoans] = useState<Set<number>>(new Set());
   const [holdLoans, setHoldLoans] = useState<Set<number>>(new Set());
+  const [checkedLoans, setCheckedLoans] = useState<Set<number>>(new Set());
   const [sortField, setSortField] = useState<string>("loanNumber");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const limit = 50; // Show more loans like in the image
@@ -98,6 +99,40 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
     setHoldLoans(newHold);
   };
 
+  const toggleCheckbox = (loanId: number) => {
+    const newChecked = new Set(checkedLoans);
+    if (newChecked.has(loanId)) {
+      newChecked.delete(loanId);
+    } else {
+      newChecked.add(loanId);
+    }
+    setCheckedLoans(newChecked);
+  };
+
+  const toggleAllCheckboxes = (loans: any[]) => {
+    if (checkedLoans.size === loans.length && loans.length > 0) {
+      setCheckedLoans(new Set());
+    } else {
+      const allIds = loans.map((loan: any) => loan.id);
+      setCheckedLoans(new Set(allIds));
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    // Handle delete selected loans
+    console.log('Delete selected loans:', Array.from(checkedLoans));
+  };
+
+  const handleEmailSelected = () => {
+    // Handle email selected loans
+    console.log('Email selected loans:', Array.from(checkedLoans));
+  };
+
+  const handleProcessSelected = () => {
+    // Handle process selected loans
+    console.log('Process selected loans:', Array.from(checkedLoans));
+  };
+
   // Calculate totals
   const totals = loans && Array.isArray(loans) ? loans.reduce((acc: any, loan: any) => {
     acc.principal += parseFloat(loan.principalBalance || 0);
@@ -166,12 +201,76 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
     <div className="w-full bg-white">
       <div className="px-6 py-4 border-b border-gray-200">
         <h2 className="text-xl font-semibold text-gray-900">All Loans</h2>
+        {checkedLoans.size > 0 && (
+          <div className="flex items-center gap-2 mt-3">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleDeleteSelected}
+                    className="h-8 w-8"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Delete selected loans</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleEmailSelected}
+                    className="h-8 w-8"
+                  >
+                    <Mail className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Email selected loans</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleProcessSelected}
+                    className="h-8 w-8"
+                  >
+                    <Zap className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Process selected loans</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <span className="text-sm text-gray-600 ml-2">
+              {checkedLoans.size} loan{checkedLoans.size !== 1 ? 's' : ''} selected
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse">
           <thead>
             <tr className="bg-gray-100 border-y border-gray-300">
+              <th className="border-r border-gray-300 px-2 py-2 text-xs font-medium text-gray-700 text-center">
+                <Checkbox 
+                  checked={checkedLoans.size === loansList.length && loansList.length > 0}
+                  onCheckedChange={() => toggleAllCheckboxes(loansList)}
+                />
+              </th>
               <th className="border-r border-gray-300 px-2 py-2 text-xs font-medium text-gray-700 text-center">
                 ACH
               </th>
@@ -262,6 +361,12 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
                   >
                     <td className="border-r border-gray-200 px-2 py-2 text-center">
                       <Checkbox 
+                        checked={checkedLoans.has(loan.id)}
+                        onCheckedChange={() => toggleCheckbox(loan.id)}
+                      />
+                    </td>
+                    <td className="border-r border-gray-200 px-2 py-2 text-center">
+                      <Checkbox 
                         checked={selectedLoans.has(loan.id)}
                         onCheckedChange={() => toggleACH(loan.id)}
                       />
@@ -303,7 +408,7 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
               })
             ) : (
               <tr>
-                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={10} className="px-6 py-12 text-center text-gray-500">
                   No loans found
                 </td>
               </tr>
@@ -312,7 +417,7 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
           {loansList.length > 0 && (
             <tfoot className="bg-gray-100 border-t-2 border-gray-400">
               <tr>
-                <td colSpan={3} className="border-r border-gray-300 px-3 py-2 text-sm font-semibold">
+                <td colSpan={4} className="border-r border-gray-300 px-3 py-2 text-sm font-semibold">
                   {totals.count} loans
                 </td>
                 <td colSpan={4} className="border-r border-gray-300"></td>
