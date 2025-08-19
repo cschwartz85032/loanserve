@@ -14,7 +14,8 @@ import {
   Shield, 
   LogOut,
   Receipt,
-  Zap
+  Zap,
+  Settings
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ const navigation = [
   { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
   { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
   { name: "Compliance", href: "/compliance", icon: Shield },
+  { name: "Admin", href: "/admin/documents", icon: Settings },
 ];
 
 export function Sidebar() {
