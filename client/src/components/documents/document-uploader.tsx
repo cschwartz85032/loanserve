@@ -44,7 +44,13 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [selectedLoanId, setSelectedLoanId] = useState<number | undefined>(propLoanId);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedLoanIdRef = useRef<number | undefined>(propLoanId);
   const { toast } = useToast();
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedLoanIdRef.current = selectedLoanId;
+  }, [selectedLoanId]);
 
   // Fetch loans for selection if no loanId is provided
   const { data: loans } = useQuery({
@@ -54,11 +60,14 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
 
   // Auto-select first loan if there's any loans and no loan is selected
   useEffect(() => {
-    if (Array.isArray(loans) && loans.length > 0 && !selectedLoanId && !propLoanId && standalone) {
-      console.log('Auto-selecting first loan:', loans[0].id);
-      setSelectedLoanId(loans[0].id);
+    if (Array.isArray(loans) && loans.length > 0 && !propLoanId && standalone) {
+      // Only set if not already set
+      if (!selectedLoanId) {
+        console.log('Auto-selecting first loan:', loans[0].id);
+        setSelectedLoanId(loans[0].id);
+      }
     }
-  }, [loans, standalone, propLoanId]); // Safe dependencies
+  }, [loans]); // Only re-run when loans change
 
   const uploadMutation = useMutation({
     mutationFn: async ({ file, loanId }: { file: File; loanId: number }) => {
@@ -145,10 +154,10 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
   };
 
   const handleFiles = (newFiles: File[]) => {
-    const loanIdToUse = selectedLoanId || propLoanId;
+    const loanIdToUse = selectedLoanIdRef.current || propLoanId;
     
     console.log('handleFiles called with:', {
-      selectedLoanId,
+      selectedLoanId: selectedLoanIdRef.current,
       propLoanId,
       loanIdToUse,
       standalone,
