@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Sidebar } from "@/components/layout/sidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -46,12 +47,16 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Reports & Analytics</h1>
-          <p className="text-muted-foreground">Generate comprehensive reports and analyze portfolio performance</p>
-        </div>
+    <div className="min-h-screen flex bg-slate-50">
+      <Sidebar />
+      
+      <main className="flex-1 overflow-y-auto">
+        <div className="container mx-auto py-6 space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold">Reports & Analytics</h1>
+              <p className="text-muted-foreground">Generate comprehensive reports and analyze portfolio performance</p>
+            </div>
         <div className="flex gap-2">
           <Button onClick={() => downloadReport("pdf")} variant="outline">
             <Download className="mr-2 h-4 w-4" />
@@ -241,6 +246,8 @@ export default function ReportsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+        </div>
+      </main>
     </div>
   );
 }
