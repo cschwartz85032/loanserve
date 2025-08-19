@@ -211,16 +211,37 @@ export class ServicingCycleService {
     });
 
     // 3. Assess fees and charges with detailed logging
+    // Calculate actual next payment date based on payment schedule
+    const firstPaymentDate = loan.firstPaymentDate ? new Date(loan.firstPaymentDate) : null;
+    const currentDate = new Date(valuationDate);
+    let actualNextPaymentDate = null;
+    let missedPayments = 0;
+    
+    if (firstPaymentDate && loan.paymentFrequency === 'monthly') {
+      // Calculate how many payments should have been made
+      const monthsSinceFirst = differenceInDays(currentDate, firstPaymentDate) / 30;
+      if (monthsSinceFirst > 0) {
+        // Payments are due starting from first payment date
+        missedPayments = Math.floor(monthsSinceFirst);
+        actualNextPaymentDate = addDays(firstPaymentDate, missedPayments * 30);
+      } else {
+        // First payment hasn't come due yet
+        actualNextPaymentDate = firstPaymentDate;
+      }
+    }
+    
     await this.createDetailedEventLog(runId, loan.id, valuationDate, 'FEE_ASSESSMENT_START', {
       message: 'Evaluating fee and late charge assessment',
-      nextPaymentDue: loan.nextPaymentDue,
+      firstPaymentDate: loan.firstPaymentDate,
+      currentDate: valuationDate,
+      actualNextPaymentDate: actualNextPaymentDate?.toISOString(),
+      missedPayments: missedPayments,
+      paymentFrequency: loan.paymentFrequency,
       gracePeriodDays: loan.gracePeriodDays,
       lateFeePercentage: loan.lateFeePercentage,
       paymentAmount: loan.paymentAmount,
-      daysOverdue: loan.nextPaymentDue ? differenceInDays(new Date(valuationDate), new Date(loan.nextPaymentDue)) : 0,
-      gracePeriodExpiry: loan.nextPaymentDue && loan.gracePeriodDays ? addDays(new Date(loan.nextPaymentDue), loan.gracePeriodDays).toISOString() : null,
       decision: 'EVALUATING',
-      reason: 'Checking if payment is overdue beyond grace period'
+      reason: missedPayments > 0 ? `Found ${missedPayments} missed monthly payments` : 'Checking payment schedule'
     });
 
     const feeResult = await this.assessFees(runId, loan, valuationDate, dryRun);
