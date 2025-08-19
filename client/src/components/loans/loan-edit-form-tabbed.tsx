@@ -689,6 +689,173 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   />
                 </div>
               </div>
+              
+              {/* Credit Scores */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-3">Credit Scores</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="creditScoreEquifax">Equifax</Label>
+                    <Input
+                      id="creditScoreEquifax"
+                      type="number"
+                      placeholder="300-850"
+                      min="300"
+                      max="850"
+                      value={formData.creditScoreEquifax || ''}
+                      onChange={(e) => handleInputChange('creditScoreEquifax', parseInt(e.target.value) || null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="creditScoreExperian">Experian</Label>
+                    <Input
+                      id="creditScoreExperian"
+                      type="number"
+                      placeholder="300-850"
+                      min="300"
+                      max="850"
+                      value={formData.creditScoreExperian || ''}
+                      onChange={(e) => handleInputChange('creditScoreExperian', parseInt(e.target.value) || null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="creditScoreTransunion">TransUnion</Label>
+                    <Input
+                      id="creditScoreTransunion"
+                      type="number"
+                      placeholder="300-850"
+                      min="300"
+                      max="850"
+                      value={formData.creditScoreTransunion || ''}
+                      onChange={(e) => handleInputChange('creditScoreTransunion', parseInt(e.target.value) || null)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Co-Borrower Contact */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Co-Borrower Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerName">Contact Name</Label>
+                  <Input
+                    id="coBorrowerName"
+                    value={formData.coBorrowerName || ''}
+                    onChange={(e) => handleInputChange('coBorrowerName', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerCompanyName">Company Name</Label>
+                  <Input
+                    id="coBorrowerCompanyName"
+                    value={formData.coBorrowerCompanyName || ''}
+                    onChange={(e) => handleInputChange('coBorrowerCompanyName', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerPhone">Phone</Label>
+                  <Input
+                    id="coBorrowerPhone"
+                    value={formData.coBorrowerPhone || ''}
+                    onChange={(e) => handleInputChange('coBorrowerPhone', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerEmail">Email</Label>
+                  <Input
+                    id="coBorrowerEmail"
+                    type="email"
+                    value={formData.coBorrowerEmail || ''}
+                    onChange={(e) => handleInputChange('coBorrowerEmail', e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerAddress">Street Address</Label>
+                  <Input
+                    id="coBorrowerAddress"
+                    value={formData.coBorrowerAddress || ''}
+                    onChange={(e) => handleInputChange('coBorrowerAddress', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerCity">City</Label>
+                  <Input
+                    id="coBorrowerCity"
+                    value={formData.coBorrowerCity || ''}
+                    onChange={(e) => handleInputChange('coBorrowerCity', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerState">State</Label>
+                  <Input
+                    id="coBorrowerState"
+                    value={formData.coBorrowerState || ''}
+                    onChange={(e) => handleInputChange('coBorrowerState', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="coBorrowerZip">Zip Code</Label>
+                  <Input
+                    id="coBorrowerZip"
+                    value={formData.coBorrowerZip || ''}
+                    onChange={(e) => handleInputChange('coBorrowerZip', e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              {/* Credit Scores for Co-Borrower */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-3">Credit Scores</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="coBorrowerCreditScoreEquifax">Equifax</Label>
+                    <Input
+                      id="coBorrowerCreditScoreEquifax"
+                      type="number"
+                      placeholder="300-850"
+                      min="300"
+                      max="850"
+                      value={formData.coBorrowerCreditScoreEquifax || ''}
+                      onChange={(e) => handleInputChange('coBorrowerCreditScoreEquifax', parseInt(e.target.value) || null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="coBorrowerCreditScoreExperian">Experian</Label>
+                    <Input
+                      id="coBorrowerCreditScoreExperian"
+                      type="number"
+                      placeholder="300-850"
+                      min="300"
+                      max="850"
+                      value={formData.coBorrowerCreditScoreExperian || ''}
+                      onChange={(e) => handleInputChange('coBorrowerCreditScoreExperian', parseInt(e.target.value) || null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="coBorrowerCreditScoreTransunion">TransUnion</Label>
+                    <Input
+                      id="coBorrowerCreditScoreTransunion"
+                      type="number"
+                      placeholder="300-850"
+                      min="300"
+                      max="850"
+                      value={formData.coBorrowerCreditScoreTransunion || ''}
+                      onChange={(e) => handleInputChange('coBorrowerCreditScoreTransunion', parseInt(e.target.value) || null)}
+                    />
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
