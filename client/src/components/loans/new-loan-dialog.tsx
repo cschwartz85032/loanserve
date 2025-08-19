@@ -65,10 +65,37 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
 
   const createLoanMutation = useMutation({
     mutationFn: async (loanData: any) => {
+      // First, create the property
+      const propertyData = {
+        propertyType: loanData.propertyType || 'single_family',
+        address: loanData.propertyAddress,
+        city: loanData.propertyCity,
+        state: loanData.propertyState,
+        zipCode: loanData.propertyZip,
+        currentValue: loanData.propertyValue ? parseFloat(loanData.propertyValue) : null
+      };
+      
+      // Create property first
+      const propertyRes = await apiRequest("/api/properties", {
+        method: "POST",
+        body: JSON.stringify(propertyData)
+      });
+      if (!propertyRes.ok) {
+        const error = await propertyRes.json();
+        throw new Error(error.error || "Failed to create property");
+      }
+      const property = await propertyRes.json();
+      
+      // Calculate maturity date based on term months
+      const termMonths = parseInt(loanData.termMonths);
+      const firstPaymentDate = new Date(loanData.firstPaymentDate);
+      const maturityDate = new Date(firstPaymentDate);
+      maturityDate.setMonth(maturityDate.getMonth() + termMonths);
+      
       // Format the data to match the database schema
       const formattedData = {
         loanNumber: loanData.loanNumber,
-        propertyId: loanData.propertyId,
+        propertyId: property.id, // Use the created property ID
         lenderId: loanData.lenderId ? parseInt(loanData.lenderId) : null,
         servicerId: loanData.servicerId ? parseInt(loanData.servicerId) : null,
         investorId: loanData.investorId ? parseInt(loanData.investorId) : null,
@@ -76,26 +103,40 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
         principalBalance: loanData.principalBalance || loanData.originalAmount,
         interestRate: loanData.interestRate,
         currentInterestRate: loanData.currentInterestRate || loanData.interestRate,
-        termMonths: parseInt(loanData.termMonths),
-        monthlyPaymentAmount: loanData.monthlyPaymentAmount,
+        loanTerm: termMonths, // Changed from termMonths to loanTerm
+        paymentAmount: loanData.monthlyPaymentAmount, // Changed from monthlyPaymentAmount to paymentAmount
+        monthlyPaymentAmount: loanData.monthlyPaymentAmount, // Keep this for compatibility
         currentPaymentAmount: loanData.currentPaymentAmount || loanData.monthlyPaymentAmount,
-        nextPaymentDate: loanData.nextPaymentDate,
-        maturityDate: loanData.maturityDate,
-        status: loanData.status,
-        loanType: loanData.loanType,
+        nextPaymentDate: loanData.nextPaymentDate || loanData.firstPaymentDate,
+        maturityDate: maturityDate.toISOString().split('T')[0], // Calculate and format maturity date
+        status: loanData.status || 'active', // Default to 'active' status
+        loanType: loanData.loanType || 'conventional',
         originationDate: loanData.originationDate,
         firstPaymentDate: loanData.firstPaymentDate,
         escrowBalance: loanData.escrowBalance || "0",
         lateFeeAmount: loanData.lateFeeAmount || "25",
         gracePeroidDays: loanData.gracePeroidDays || 15,
         prepaymentPenalty: loanData.prepaymentPenalty || "0",
-        notes: loanData.notes
+        notes: loanData.notes,
+        paymentFrequency: 'monthly', // Add default payment frequency
+        rateType: 'fixed' // Add default rate type
       };
       
-      const res = await apiRequest("POST", "/api/loans", formattedData);
+      const res = await apiRequest("/api/loans", {
+        method: "POST",
+        body: JSON.stringify(formattedData)
+      });
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to create loan");
+        const errorText = await res.text();
+        let errorMessage = "Failed to create loan";
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorMessage;
+        } catch {
+          // If not JSON, use the text directly
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
       return await res.json();
     },
