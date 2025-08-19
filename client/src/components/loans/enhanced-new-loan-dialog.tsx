@@ -804,8 +804,8 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     setFiles([]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
     console.log('=== FORM SUBMISSION STARTED ===');
     console.log('Form data at submission:', formData);
     console.log('Form data keys:', Object.keys(formData));
@@ -851,7 +851,27 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
             </TabsTrigger>
           </TabsList>
 
-          <ScrollArea className="h-[calc(90vh-200px)] px-6">
+          {/* Action Buttons at the top */}
+          <div className="flex justify-end gap-3 px-6 py-3 border-b">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSubmit}
+              disabled={createLoanMutation.isPending}
+            >
+              {createLoanMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
+            </Button>
+          </div>
+
+          <ScrollArea className="h-[calc(90vh-250px)] px-6">
             <TabsContent value="ai" className="space-y-4">
               {/* Drop Zone */}
               <Card
@@ -1570,22 +1590,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                     </div>
                   </div>
                 </div>
-
-                <div className="flex justify-end gap-3 pb-6">
-                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={createLoanMutation.isPending}>
-                    {createLoanMutation.isPending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Create Loan'
-                    )}
-                  </Button>
-                </div>
               </form>
             </TabsContent>
 
@@ -1752,22 +1756,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                   </div>
-                </div>
-
-                <div className="flex justify-end gap-3 pb-6">
-                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={createLoanMutation.isPending}>
-                    {createLoanMutation.isPending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Creating...
-                      </>
-                    ) : (
-                      'Create Loan'
-                    )}
-                  </Button>
                 </div>
               </form>
             </TabsContent>
