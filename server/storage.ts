@@ -323,6 +323,7 @@ export class DatabaseStorage implements IStorage {
     return {
       ...result.loans,
       // Include property fields at the loan level for easy access
+      apn: result.properties?.apn,
       parcelNumber: result.properties?.apn,
       legalDescription: result.properties?.legalDescription,
       propertyAddress: result.properties?.address,
