@@ -57,14 +57,19 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         )}
       >
         {/* Logo and Company Name */}
-        <div className="p-4 border-b border-slate-200">
+        <div className="p-6 border-b border-slate-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <Building2 className={cn("text-primary-600", sidebarCollapsed ? "w-6 h-6" : "w-8 h-8")} />
+              <div className={cn(
+                "bg-primary-600 rounded-lg flex items-center justify-center",
+                sidebarCollapsed ? "w-8 h-8" : "w-10 h-10"
+              )}>
+                <Building2 className={cn("text-white", sidebarCollapsed ? "w-5 h-5" : "w-6 h-6")} />
+              </div>
               {!sidebarCollapsed && (
                 <div>
-                  <h1 className="text-xl font-bold text-slate-900">LoanServe Pro</h1>
-                  <p className="text-xs text-slate-500">Enterprise Edition</p>
+                  <h1 className="text-lg font-bold text-slate-900">LoanServe Pro</h1>
+                  <p className="text-sm text-slate-500">Enterprise Edition</p>
                 </div>
               )}
             </div>
@@ -82,7 +87,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         {/* Active Role Selector */}
         {!sidebarCollapsed && (
           <div className="p-4 border-b border-slate-200">
-            <label className="text-xs font-medium text-slate-500 mb-1 block">
+            <label className="block text-sm font-medium text-slate-700 mb-2">
               Active Role
             </label>
             <Select value={activeRole} onValueChange={setActiveRole}>
@@ -139,7 +144,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               >
                 <Icon className="h-5 w-5 flex-shrink-0" />
                 {!sidebarCollapsed && (
-                  <span className="font-medium">{item.title}</span>
+                  <span className="text-sm font-medium">{item.title}</span>
                 )}
               </Link>
             );
