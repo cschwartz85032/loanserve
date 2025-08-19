@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Edit2, Trash2, Eye, ChevronUp, ChevronDown, Mail, Zap } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
 
 interface LoanTableProps {
   onEditLoan?: (loanId: string) => void;
@@ -25,9 +27,37 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
   const [sortField, setSortField] = useState<string>("loanNumber");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const limit = 50; // Show more loans like in the image
+  const { toast } = useToast();
 
   const { data: loans, isLoading } = useQuery({
     queryKey: ["/api/loans", { limit, offset: page * limit, status: statusFilter === "all" ? undefined : statusFilter }],
+  });
+
+  const deleteLoanMutation = useMutation({
+    mutationFn: async (loanId: number) => {
+      const response = await fetch(`/api/loans/${loanId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to delete loan');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      toast({
+        title: "Loans deleted",
+        description: `Successfully deleted ${checkedLoans.size} loan(s)`,
+      });
+      setCheckedLoans(new Set());
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to delete loans. Please try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const getStatusBadgeVariant = (status: string) => {
@@ -118,9 +148,15 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
     }
   };
 
-  const handleDeleteSelected = () => {
-    // Handle delete selected loans
-    console.log('Delete selected loans:', Array.from(checkedLoans));
+  const handleDeleteSelected = async () => {
+    if (checkedLoans.size === 0) return;
+    
+    if (confirm(`Are you sure you want to delete ${checkedLoans.size} loan(s)?`)) {
+      const loanIds = Array.from(checkedLoans);
+      for (const loanId of loanIds) {
+        await deleteLoanMutation.mutateAsync(loanId);
+      }
+    }
   };
 
   const handleEmailSelected = () => {
