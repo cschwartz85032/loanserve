@@ -9,7 +9,7 @@ import {
   ChevronRight,
   Menu,
   Building2,
-  ArrowLeft
+  Undo2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -104,21 +104,19 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
         {/* Navigation Items */}
         <nav className="flex-1 p-4 space-y-2">
-          {/* Return to Main Button */}
-          <Link 
-            href="/"
-            className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg transition-colors mb-4",
-              "text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200",
-              sidebarCollapsed && "justify-center"
-            )}
-            title={sidebarCollapsed ? "Return to Main Dashboard" : undefined}
-          >
-            <ArrowLeft className="h-5 w-5 flex-shrink-0" />
-            {!sidebarCollapsed && (
-              <span className="font-medium">Return to Main</span>
-            )}
-          </Link>
+          {/* Return to Main Button - positioned to the right */}
+          <div className="flex justify-end mb-4">
+            <Link 
+              href="/"
+              className={cn(
+                "p-2 rounded-lg transition-colors",
+                "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              )}
+              title="Return to Main Dashboard"
+            >
+              <Undo2 className="h-5 w-5" />
+            </Link>
+          </div>
           
           {navItems.map((item) => {
             const Icon = item.icon;
