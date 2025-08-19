@@ -56,7 +56,7 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Included Active Role selector in admin sidebar matching main application
   - Fixed admin panel alignment to match main application layout structure
   - Added collapsible sidebar functionality with toggle button
-  - Added "Return to Main" button with arrow icon above Documents in admin navigation for easy navigation back to main dashboard
+  - Added icon-only return button (U-turn arrow) positioned flush right above navigation items for returning to main dashboard
 
 # User Preferences
 
