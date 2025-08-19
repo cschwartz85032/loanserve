@@ -13,7 +13,8 @@ import {
   BarChart3, 
   Shield, 
   LogOut,
-  Receipt
+  Receipt,
+  Zap
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ const navigation = [
   { name: "Documents", href: "/documents", icon: FolderOpen },
   { name: "Escrow Management", href: "/escrow", icon: DollarSign },
   { name: "Fee Management", href: "/fees", icon: Receipt },
+  { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
   { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
   { name: "Compliance", href: "/compliance", icon: Shield },
 ];

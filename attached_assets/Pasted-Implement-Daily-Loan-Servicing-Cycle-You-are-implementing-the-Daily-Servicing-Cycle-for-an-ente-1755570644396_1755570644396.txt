@@ -1,0 +1,169 @@
+Implement Daily Loan Servicing Cycle
+
+You are implementing the “Daily Servicing Cycle” for an enterprise mortgage servicing platform. The cycle runs once per calendar day, evaluates every active loan, decides what must be done that day, and performs those actions atomically with full audit trails.
+
+Objectives
+
+For each loan, determine all actions due today based on the legal terms recorded in the system. Actions include:
+
+Billing the borrower when a scheduled payment becomes due and applying contractually correct charges and late fees if applicable.
+
+Posting any borrower payments received since the last cycle to the borrower’s loan account, allocating principal, interest, escrow, and fees precisely per the note and amortization rules.
+
+When a beneficiary payment is recorded, distributing those funds to the loan’s investors according to each investor’s ownership percentage, respecting waterfalls, rounding rules, and reserve requirements.
+
+Paying escrow invoices when due from the applicable escrow subaccount, handling shortages, advances, and reimbursements.
+
+Generating exceptions when preconditions fail, such as insufficient escrow balance or data anomalies, and scheduling remediation tasks.
+
+If required data is missing, extend the schema via a forward-only migration. The code must create any needed fields or tables idempotently.
+
+The cycle must be idempotent, deterministic for a given valuation date, auditable, and safe under concurrency.
+
+Definitions and Core Rules
+
+Valuation date: the business date the cycle is processing. Pass as an input parameter. The cycle must never assume “today” from the wall clock.
+
+Payment schedule: defined by due day, frequency, first payment date, maturity date, grace period days, late fee rules, and holiday calendar.
+
+Interest accrual: support at minimum Actual/365 Fixed and 30/360 US day count conventions. Interest accrues through but excluding the posting date unless the note specifies otherwise.
+
+Allocation waterfall for borrower payment: fees first if note requires it, then accrued interest, then scheduled principal, then principal curtailment, then escrow, then unapplied or suspense per configuration. Make the waterfall configurable per loan program.
+
+Investor distribution: distribute cash received to investor positions by pro rata ownership percentage carried to 6 decimal places, then round final amounts to currency minor units with a documented tie-break rule. Rounding residuals go to a configurable rounding account.
+
+Escrow analysis: pay tax and insurance invoices on or before due date. If escrow balance is insufficient, draw from corporate advance account and record an escrow advance receivable, then automatically recoup according to RESPA-compliant rules and configured spread.
+
+Required Inputs
+
+Implement the cycle as a service with the following inputs:
+
+valuation_date: date
+
+loan_ids filter optional: list of loan identifiers for partial runs
+
+dry_run flag: boolean to validate without persisting changes
+
+Persistence and Idempotency
+
+Use a servicing_run table keyed by run_id with valuation_date, start_time, end_time, status, hash of inputs, and a repeatable read snapshot reference.
+
+Each discrete effect must write an atomic event into a servicing_event table. The combination of valuation_date plus a stable event_key must prevent duplicates if re-run.
+
+Use transactional outbox or message queue for downstream postings. External side effects such as ACH files must be produced only once per unique event key.
+
+Add data fields as necessary, keeping the database normalized.
+
+
+Processing Steps
+
+For each loan in scope at the valuation_date:
+
+Load loan state under snapshot isolation. Validate key invariants: ownership percentages sum to 1, schedule covers valuation_date range, maturity date logic, nonnegative balances. Raise exceptions for violations.
+
+Accrue interest from last_accrual_date up to valuation_date using the loan’s day count. Persist interest_accrued and an “interest_accrual” servicing_event with the exact fraction used. Update last_accrual_date.
+
+Determine if a scheduled installment is due today. If due:
+
+Create an assess_due event with total_due and line items: scheduled_principal, scheduled_interest, scheduled_escrow, previously accrued late fees or advances if contractually part of amount due.
+
+Do not duplicate if an equal assess_due event_key already exists for this loan and due_date equals valuation_date.
+
+Late fee evaluation:
+
+If the scheduled installment is unpaid after grace_period_days and valuation_date equals due_date plus grace plus late_fee_assess_on_day, compute late fee per loan rules. Insert a late fee charge line item. Respect state and federal caps configured per jurisdiction. Record assess_late_fee event.
+
+Borrower payments:
+
+Pull unprocessed payments_inbox entries whose value_date is less than or equal to valuation_date and are mapped to this loan by deterministic matching rules. On match, allocate per the loan program waterfall with high-precision internal math and currency rounding only at final posting. Post to cash_ledger and record post_borrower_payment event with allocation details. Mark inbox entries processed with event_key to ensure idempotency. If payment exceeds total due, allocate surplus to principal curtailment or suspense per configuration.
+
+Beneficiary receipts:
+
+If payments are posted to beneficiary_account for this loan, create distribute_to_beneficiary event that moves funds from beneficiary account to the loan’s distribution pool. Immediately split to investors using investor_positions effective on valuation_date. Produce distribute_to_investors events with exact amounts and rounding residual handling. Persist investor ledger postings.
+
+Escrow invoices:
+
+For each escrow_invoices row where pay_on is less than or equal to valuation_date and status is pending:
+
+If escrow balance is sufficient, debit escrow_subaccount, credit vendor payable, mark invoice paid, and record pay_escrow_invoice event.
+
+If insufficient, create an escrow advance from corporate_advance with record in escrow_advance receivable, pay vendor, set status advanced, and schedule shortage recovery over escrow_shortage_repay_months as an increased monthly escrow collection amount. Record escrow_advance event and an exception if policy requires approval.
+
+Post-processing reconciliations:
+
+Validate that loan principal_balance equals prior principal minus principal allocations. Validate investor distribution sums equal beneficiary receipts within rounding tolerance. Validate escrow balances match subledger. Write reconciliation results to servicing_event.
+
+Exception handling:
+
+Any failed validation, missing field, or policy condition creates an exceptions_queue item with severity, suggested action, and a due_date. No partial postings are allowed. Use compensating transactions only through explicit events if a later correction is needed.
+
+Matching and Cutoffs
+
+Define a deterministic payment matching algorithm using [loan_id in memo], [borrower_id], reference numbers, and exact amount heuristics. If multiple candidates exist, place funds in suspense and raise a duplicate_payment exception.
+
+Support business-day cutoffs and holiday calendars. If valuation_date is a holiday, still accrue interest but do not schedule external wires or ACH files unless configured to run on holidays.
+
+Concurrency and Scheduling
+
+The daily cycle runs in a distributed job framework. Partition work by loan_id hash buckets. Use advisory locks per loan_id during posting.
+
+Ensure at-least-once execution semantics with idempotent event keys to prevent double charges or double payments.
+
+Provide a reprocess endpoint that re-runs a specific loan for a given valuation_date and emits only missing events.
+
+Configuration and Compliance
+
+All rules must be data driven by program_id or jurisdiction tables. No hard-coded constants for fees, caps, or grace periods.
+
+Record the exact day count convention applied, the fraction used, and the calendar used in each interest_accrual payload.
+
+Maintain an audit trail sufficient for SOX-style evidence. Every balance change must be traceable to a servicing_event with inputs and outputs.
+
+Outputs
+
+A structured run summary per run_id including counts:
+
+loans_processed, events_created by type, invoices_paid, advances_made, exceptions_created by severity, total_disbursed_beneficiary, total_disbursed_investors, reconciliation_status.
+
+Machine-readable JSON report and a human-readable CSV for finance.
+
+Testing and Determinism
+
+Produce unit and property tests that:
+
+Verify interest accrual for ACT/365F and 30/360 across month boundaries, leap years, and maturity edge cases.
+
+Verify late fee timing across grace periods and holidays.
+
+Verify investor distributions with fractional ownership and rounding residual rules.
+
+Verify escrow advance and recoup schedules.
+
+Verify idempotent re-run of the same valuation_date produces no new events.
+
+Verify compensating transactions undo a single wrong posting only via new events, never via in-place edits.
+
+Migration Requirements
+
+Provide forward-only migrations that add missing fields and tables. Use “create if not exists” patterns and add defaults that do not break existing rows.
+
+Backfill derived fields deterministically where possible. Log any rows requiring manual remediation into exceptions_queue.
+
+Functions you may need to implement:
+ServicingCycleService with methods:
+
+run(valuation_date, loan_ids optional, dry_run flag) returns run_id
+
+reprocess(run_id or valuation_date, loan_id)
+
+Data migrations and seed configuration for calendars and programs.
+
+Full test suite with edge case coverage and example fixtures.
+
+Operational documentation for finance and compliance describing calculations and controls.
+
+Numerical and Rounding Standards
+
+All internal computations use high precision decimal. At least 10 decimal places during accrual and allocation. Round only at ledger posting boundaries to currency minor units.
+
+Tie-breaks follow loan.rounding_tie_break. Document and test the behavior on representative datasets.

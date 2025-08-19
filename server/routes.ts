@@ -1114,6 +1114,10 @@ To implement full file serving:
   const escrowDisbursementRoutes = await import('./routes/escrow-disbursements');
   app.use(escrowDisbursementRoutes.default);
 
+  // Register servicing cycle routes
+  const servicingCycleRoutes = await import('./routes/servicing-cycle');
+  app.use('/api/servicing-cycle', servicingCycleRoutes.default);
+
   const httpServer = createServer(app);
   return httpServer;
 }

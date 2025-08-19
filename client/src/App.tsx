@@ -14,6 +14,7 @@ import Escrow from "@/pages/escrow";
 import Reports from "@/pages/reports";
 import Compliance from "@/pages/compliance";
 import FeeManagement from "@/pages/FeeManagement";
+import ServicingCycle from "@/pages/servicing-cycle";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -27,6 +28,7 @@ function Router() {
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/compliance" component={Compliance} />
       <ProtectedRoute path="/fees" component={FeeManagement} />
+      <ProtectedRoute path="/servicing-cycle" component={ServicingCycle} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
