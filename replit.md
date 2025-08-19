@@ -51,6 +51,7 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Admin Escrow page features: account management, disbursement scheduling, payment tracking, and 90-day payment schedule view
   - Routes updated: /admin/documents for document management, /admin/escrow for escrow management
   - Added "Admin" navigation item with gear icon (Settings) to main sidebar, linking to /admin/documents
+  - Removed "Documents" from main navigation as it's now under Admin section
 
 # User Preferences
 
