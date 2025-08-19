@@ -107,7 +107,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     if (loan) {
       console.log('Loading loan data into form:', loan);
       console.log('Escrow disbursements available:', escrowDisbursements?.length || 0);
-      setFormData(loan);
+      // Map originalAmount to loanAmount for UI display
+      setFormData({
+        ...loan,
+        loanAmount: loan.originalAmount || loan.loanAmount || ''
+      });
       calculatePayments(loan, escrowDisbursements);
     }
   }, [loan, escrowDisbursements]);
@@ -489,7 +493,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       <Input
                         id="loanAmount"
                         type="number"
-                        value={formData.loanAmount || ''}
+                        value={formData.loanAmount || formData.originalAmount || ''}
                         onChange={(e) => handleInputChange('loanAmount', parseFloat(e.target.value) || 0)}
                       />
                     </div>

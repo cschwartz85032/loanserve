@@ -260,6 +260,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
   const updateFormWithExtractedData = (extractedData: any) => {
     if (!extractedData) return;
+    
+    console.log("=== UPDATING FORM WITH EXTRACTED DATA ===");
+    console.log("Extracted data received:", extractedData);
 
     // Helper to clean and convert values to string
     const toString = (val: any) => {
@@ -316,8 +319,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       // Loan Information
       loanNumber: cleanString(extractedData.loanNumber) || prev.loanNumber,
       loanType: extractedData.loanType ? normalizeLoanType(extractedData.loanType) : prev.loanType,
-      originalAmount: toString(extractedData.originalAmount || extractedData.loanAmount) || prev.originalAmount,
-      principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.originalAmount || extractedData.loanAmount) || prev.principalBalance,
+      // Fixed: prioritize loanAmount first, then originalAmount
+      originalAmount: toString(extractedData.loanAmount || extractedData.originalAmount || extractedData.principal) || prev.originalAmount,
+      principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.loanAmount || extractedData.originalAmount) || prev.principalBalance,
       interestRate: toString(extractedData.interestRate) || prev.interestRate,
       rateType: cleanString(extractedData.rateType) || prev.rateType,
       loanTerm: toString(extractedData.loanTermMonths || extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
@@ -388,15 +392,16 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       trusteeState: cleanString(extractedData.trusteeState) || prev.trusteeState,
       trusteeZipCode: cleanString(extractedData.trusteeZipCode) || prev.trusteeZipCode,
       
-      // Beneficiary complete contact info
-      beneficiaryName: cleanString(extractedData.beneficiaryName) || prev.beneficiaryName,
-      beneficiaryCompanyName: cleanString(extractedData.beneficiaryCompanyName) || prev.beneficiaryCompanyName,
-      beneficiaryPhone: cleanString(extractedData.beneficiaryPhone) || prev.beneficiaryPhone,
-      beneficiaryEmail: cleanString(extractedData.beneficiaryEmail) || prev.beneficiaryEmail,
-      beneficiaryStreetAddress: cleanString(extractedData.beneficiaryStreetAddress) || prev.beneficiaryStreetAddress,
-      beneficiaryCity: cleanString(extractedData.beneficiaryCity) || prev.beneficiaryCity,
-      beneficiaryState: cleanString(extractedData.beneficiaryState) || prev.beneficiaryState,
-      beneficiaryZipCode: cleanString(extractedData.beneficiaryZipCode) || prev.beneficiaryZipCode,
+      // Beneficiary complete contact info - Don't overwrite with loan servicer info
+      // Only update beneficiary if it's not FAY SERVICING (which is the loan servicer, not beneficiary)
+      beneficiaryName: (cleanString(extractedData.beneficiaryName) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryName) : prev.beneficiaryName,
+      beneficiaryCompanyName: (cleanString(extractedData.beneficiaryCompanyName) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryCompanyName) : prev.beneficiaryCompanyName,
+      beneficiaryPhone: (cleanString(extractedData.beneficiaryPhone) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryPhone) : prev.beneficiaryPhone,
+      beneficiaryEmail: (cleanString(extractedData.beneficiaryEmail) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryEmail) : prev.beneficiaryEmail,
+      beneficiaryStreetAddress: (cleanString(extractedData.beneficiaryStreetAddress) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryStreetAddress) : prev.beneficiaryStreetAddress,
+      beneficiaryCity: (cleanString(extractedData.beneficiaryCity) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryCity) : prev.beneficiaryCity,
+      beneficiaryState: (cleanString(extractedData.beneficiaryState) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryState) : prev.beneficiaryState,
+      beneficiaryZipCode: (cleanString(extractedData.beneficiaryZipCode) && !extractedData.beneficiaryCompanyName?.includes('FAY SERVICING')) ? cleanString(extractedData.beneficiaryZipCode) : prev.beneficiaryZipCode,
       
       // Escrow Company complete contact info
       escrowCompanyName: cleanString(extractedData.escrowCompanyName) || prev.escrowCompanyName,

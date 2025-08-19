@@ -710,7 +710,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create document record in database
       const document = await storage.createDocument({
         loanId: parseInt(loanId),
-        category: category || 'loan_document',
+        category: category || 'other', // Fixed: use 'other' instead of invalid 'loan_document'
         title: req.file.originalname,
         description: description || `Uploaded ${req.file.originalname}`,
         fileName: req.file.originalname,
