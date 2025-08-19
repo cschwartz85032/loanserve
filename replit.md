@@ -12,6 +12,7 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 - Updated AI document extraction to include escrow number from loan documents
 - Made investor ID and Name fields clickable with blue underlined styling
 - Changed "Doc Management" tab to "Docs" for brevity
+- Fixed Payment Breakdown escrow totals showing $0.00 - now correctly calculates from actual escrow disbursements data (January 20, 2025)
 
 # User Preferences
 
