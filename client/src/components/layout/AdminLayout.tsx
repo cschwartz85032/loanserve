@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'wouter';
 import { 
-  Home, 
   FileText, 
   Wallet, 
   Settings, 
@@ -23,11 +22,6 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
 
   const navItems = [
-    {
-      title: 'Dashboard',
-      href: '/dashboard',
-      icon: Home,
-    },
     {
       title: 'Documents',
       href: '/admin/documents',
