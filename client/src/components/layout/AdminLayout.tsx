@@ -5,7 +5,6 @@ import {
   Wallet, 
   Settings, 
   Users,
-  Building,
   ChevronLeft,
   ChevronRight,
   Menu
@@ -33,11 +32,6 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       icon: Wallet,
     },
     {
-      title: 'Investors',
-      href: '/investors',
-      icon: Building,
-    },
-    {
       title: 'Users',
       href: '/users',
       icon: Users,
@@ -50,11 +44,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   ];
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 fixed inset-0">
       {/* Sidebar */}
       <div
         className={cn(
-          "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col",
+          "bg-white border-r border-gray-200 transition-all duration-300 flex flex-col h-full",
           sidebarCollapsed ? "w-16" : "w-64"
         )}
       >
