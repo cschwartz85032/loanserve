@@ -136,14 +136,9 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
 
     // Navigate to nested values
     if (sortField === "borrowerName") {
-      aValue = a.borrower?.borrowerName || '';
-      bValue = b.borrower?.borrowerName || '';
-    } else if (sortField === "lastName") {
-      aValue = (a.borrower?.borrowerName || '').split(' ').pop() || '';
-      bValue = (b.borrower?.borrowerName || '').split(' ').pop() || '';
-    } else if (sortField === "firstName") {
-      aValue = (a.borrower?.borrowerName || '').split(' ')[0] || '';
-      bValue = (b.borrower?.borrowerName || '').split(' ')[0] || '';
+      // Get borrower name directly from the loan's borrowerName field
+      aValue = a.borrowerName || '';
+      bValue = b.borrowerName || '';
     } else if (sortField.includes('.')) {
       const fields = sortField.split('.');
       aValue = fields.reduce((obj, field) => obj?.[field], a);
@@ -205,34 +200,6 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
                   )}
                 </button>
               </th>
-              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
-                <button
-                  onClick={() => handleSort("lastName")}
-                  className="flex items-center hover:text-gray-900"
-                >
-                  BY LAST NAME
-                  {sortField === "lastName" && (
-                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
-                  )}
-                </button>
-              </th>
-              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
-                <button
-                  onClick={() => handleSort("firstName")}
-                  className="flex items-center hover:text-gray-900"
-                >
-                  FIRST NAME
-                  {sortField === "firstName" && (
-                    sortDirection === "asc" ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />
-                  )}
-                </button>
-              </th>
-              <th className="border-r border-gray-300 px-2 py-2 text-xs font-medium text-gray-700 text-center">
-                MI
-              </th>
-              <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-left">
-                LAST NAME
-              </th>
               <th className="border-r border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 text-center">
                 <button
                   onClick={() => handleSort("interestPaidTo")}
@@ -285,12 +252,8 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
           <tbody className="bg-white">
             {loansList.length > 0 ? (
               loansList.map((loan: any, index: number) => {
-                // Use the firstName and lastName directly from borrower if available
-                const firstName = loan.borrower?.firstName || '';
-                const lastName = loan.borrower?.lastName || '';
-                const middleInitial = loan.borrower?.middleInitial || '';
-                // Fallback to parsing borrowerName if individual fields aren't available
-                const borrowerName = loan.borrower?.borrowerName || `${firstName} ${lastName}`.trim() || '';
+                // Get borrower name directly from the loan's borrowerName field
+                const borrowerName = loan.borrowerName || '';
                 
                 return (
                   <tr 
@@ -320,18 +283,6 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
                     <td className="border-r border-gray-200 px-3 py-2 text-sm">
                       {borrowerName}
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
-                      {lastName}, {firstName}
-                    </td>
-                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
-                      {firstName}
-                    </td>
-                    <td className="border-r border-gray-200 px-2 py-2 text-sm text-center">
-                      {middleInitial}
-                    </td>
-                    <td className="border-r border-gray-200 px-3 py-2 text-sm">
-                      {lastName}
-                    </td>
                     <td className="border-r border-gray-200 px-3 py-2 text-sm text-center">
                       {formatDate(loan.interestPaidTo)}
                     </td>
@@ -352,7 +303,7 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
               })
             ) : (
               <tr>
-                <td colSpan={13} className="px-6 py-12 text-center text-gray-500">
+                <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                   No loans found
                 </td>
               </tr>
@@ -364,7 +315,7 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
                 <td colSpan={3} className="border-r border-gray-300 px-3 py-2 text-sm font-semibold">
                   {totals.count} loans
                 </td>
-                <td colSpan={8} className="border-r border-gray-300"></td>
+                <td colSpan={4} className="border-r border-gray-300"></td>
                 <td className="border-r border-gray-300 px-3 py-2 text-sm font-semibold text-right">
                   {formatCurrency(totals.payment)}
                 </td>
