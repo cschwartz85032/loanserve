@@ -542,6 +542,17 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   />
                 </div>
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="apn">APN (Assessor's Parcel Number)</Label>
+                  <Input
+                    id="apn"
+                    value={formData.apn || ''}
+                    onChange={(e) => handleInputChange('apn', e.target.value)}
+                    placeholder="Enter APN"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Loan Terms */}
@@ -602,6 +613,105 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                     type="number"
                     value={formData.closingCosts || ''}
                     onChange={(e) => handleInputChange('closingCosts', parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Servicing Settings */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Servicing Settings</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="servicingFeeRate">Servicing Fee Rate (%)</Label>
+                  <Input
+                    id="servicingFeeRate"
+                    type="number"
+                    step="0.01"
+                    value={formData.servicingFeeRate || ''}
+                    onChange={(e) => handleInputChange('servicingFeeRate', parseFloat(e.target.value) || 0)}
+                    placeholder="0.25"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="servicingFeeAmount">Servicing Fee Amount ($)</Label>
+                  <Input
+                    id="servicingFeeAmount"
+                    type="number"
+                    step="0.01"
+                    value={formData.servicingFeeAmount || ''}
+                    onChange={(e) => handleInputChange('servicingFeeAmount', parseFloat(e.target.value) || 0)}
+                    placeholder="25.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="feePayer">Fee Payer</Label>
+                  <Select 
+                    value={formData.feePayer || ''} 
+                    onValueChange={(value) => handleInputChange('feePayer', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select fee payer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="B">Borrower (B)</SelectItem>
+                      <SelectItem value="S">Seller (S)</SelectItem>
+                      <SelectItem value="SP">Split (SP)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lateChargeType">Late Charge Type</Label>
+                  <Select 
+                    value={formData.lateChargeType || ''} 
+                    onValueChange={(value) => handleInputChange('lateChargeType', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                      <SelectItem value="fixed">Fixed Amount ($)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lateChargeAmount">Late Charge Amount</Label>
+                  <Input
+                    id="lateChargeAmount"
+                    type="number"
+                    step="0.01"
+                    value={formData.lateChargeAmount || ''}
+                    onChange={(e) => handleInputChange('lateChargeAmount', parseFloat(e.target.value) || 0)}
+                    placeholder={formData.lateChargeType === 'percentage' ? '5.00' : '50.00'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gracePeriodDays">Grace Period (Days)</Label>
+                  <Input
+                    id="gracePeriodDays"
+                    type="number"
+                    value={formData.gracePeriodDays || ''}
+                    onChange={(e) => handleInputChange('gracePeriodDays', parseInt(e.target.value) || 0)}
+                    placeholder="15"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="investorLoanNumber">Investor Loan Number</Label>
+                  <Input
+                    id="investorLoanNumber"
+                    value={formData.investorLoanNumber || ''}
+                    onChange={(e) => handleInputChange('investorLoanNumber', e.target.value)}
+                    placeholder="Enter investor loan number"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="poolNumber">Pool Number</Label>
+                  <Input
+                    id="poolNumber"
+                    value={formData.poolNumber || ''}
+                    onChange={(e) => handleInputChange('poolNumber', e.target.value)}
+                    placeholder="Enter pool number"
                   />
                 </div>
               </div>
