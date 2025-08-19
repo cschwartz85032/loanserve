@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Loan Portfolio", href: "/loans", icon: FileText },
   { name: "Payments", href: "/payments", icon: CreditCard },
   { name: "Fee Management", href: "/fees", icon: Receipt },
   { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
