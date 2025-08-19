@@ -29,7 +29,7 @@ export default function Documents() {
 
   const deleteMutation = useMutation({
     mutationFn: async (documentId: number) => {
-      const response = await apiRequest("DELETE", `/api/documents/${documentId}`);
+      const response = await apiRequest("DELETE", `/api/documents/${documentId}`, {});
       if (!response.ok) throw new Error("Failed to delete document");
     },
     onSuccess: () => {
@@ -49,8 +49,11 @@ export default function Documents() {
   });
 
   const getLoanNumber = (loanId: number) => {
-    const loan = loans?.find((l: any) => l.id === loanId);
-    return loan?.loanNumber || `Loan #${loanId}`;
+    if (Array.isArray(loans)) {
+      const loan = loans.find((l: any) => l.id === loanId);
+      return loan?.loanNumber || `Loan #${loanId}`;
+    }
+    return `Loan #${loanId}`;
   };
 
   const formatFileSize = (bytes: string) => {
@@ -153,13 +156,13 @@ export default function Documents() {
                 <div className="text-center py-8 text-gray-500">
                   Loading documents...
                 </div>
-              ) : documents?.length === 0 ? (
+              ) : !Array.isArray(documents) || documents.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   No documents uploaded yet. Start by uploading some documents above.
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {documents?.map((doc: any) => (
+                  {documents.map((doc: any) => (
                     <div 
                       key={doc.id} 
                       className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"

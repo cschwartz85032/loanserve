@@ -137,7 +137,17 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
   };
 
   const handleFiles = (newFiles: File[]) => {
-    if (!selectedLoanId && standalone) {
+    const loanIdToUse = selectedLoanId || propLoanId;
+    
+    console.log('handleFiles called with:', {
+      selectedLoanId,
+      propLoanId,
+      loanIdToUse,
+      standalone,
+      filesCount: newFiles.length
+    });
+    
+    if (!loanIdToUse && standalone) {
       toast({
         title: "Select a loan",
         description: "Please select a loan to attach the documents to.",
@@ -205,7 +215,7 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
               <SelectValue placeholder="Choose a loan to attach documents" />
             </SelectTrigger>
             <SelectContent>
-              {loans?.map((loan: any) => (
+              {Array.isArray(loans) && loans.map((loan: any) => (
                 <SelectItem key={loan.id} value={loan.id.toString()}>
                   {loan.loanNumber} - {loan.borrowerName || 'No Borrower'}
                 </SelectItem>
