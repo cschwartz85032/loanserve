@@ -542,6 +542,11 @@ export default function ServicingCycle() {
                             <p className="text-sm text-muted-foreground">
                               {format(new Date(run.valuationDate), 'PPP')} · {run.loansProcessed} loans
                             </p>
+                            {run.startTime && (
+                              <p className="text-xs text-muted-foreground">
+                                Run at {format(new Date(run.startTime), 'h:mm:ss a')}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
