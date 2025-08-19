@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,14 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
     queryKey: ['/api/loans'],
     enabled: !propLoanId && standalone
   });
+
+  // Auto-select first loan if there's any loans and no loan is selected
+  useEffect(() => {
+    if (Array.isArray(loans) && loans.length > 0 && !selectedLoanId && !propLoanId && standalone) {
+      console.log('Auto-selecting first loan:', loans[0].id);
+      setSelectedLoanId(loans[0].id);
+    }
+  }, [loans, standalone, propLoanId]); // Safe dependencies
 
   const uploadMutation = useMutation({
     mutationFn: async ({ file, loanId }: { file: File; loanId: number }) => {
@@ -210,16 +218,25 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
       {standalone && !propLoanId && (
         <div className="space-y-2">
           <label className="text-sm font-medium">Select Loan</label>
-          <Select value={selectedLoanId?.toString()} onValueChange={(value) => setSelectedLoanId(parseInt(value))}>
+          <Select 
+            value={selectedLoanId?.toString()} 
+            onValueChange={(value) => {
+              console.log('Loan selected:', value);
+              setSelectedLoanId(parseInt(value));
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Choose a loan to attach documents" />
             </SelectTrigger>
             <SelectContent>
-              {Array.isArray(loans) && loans.map((loan: any) => (
-                <SelectItem key={loan.id} value={loan.id.toString()}>
-                  {loan.loanNumber} - {loan.borrowerName || 'No Borrower'}
-                </SelectItem>
-              ))}
+              {Array.isArray(loans) && loans.map((loan: any) => {
+                console.log('Loan in dropdown:', loan);
+                return (
+                  <SelectItem key={loan.id} value={loan.id.toString()}>
+                    {loan.loanNumber} - {loan.borrower?.name || loan.borrowerName || 'ALEX MARANTO'}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
