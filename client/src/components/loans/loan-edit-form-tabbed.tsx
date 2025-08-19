@@ -115,8 +115,24 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   const calculatePayments = (loanData: any, disbursements?: any[]) => {
     console.log('calculatePayments called with disbursements:', disbursements?.length || 0);
     
-    // Use the actual payment amount from the database, not calculated
-    const principalAndInterest = parseFloat(loanData.paymentAmount) || 0;
+    // Calculate principal and interest from loan data
+    const loanAmount = parseFloat(loanData.originalAmount) || parseFloat(loanData.loanAmount) || 0;
+    const interestRate = parseFloat(loanData.interestRate) || 0;
+    const loanTerm = parseInt(loanData.loanTerm) || 12;
+    
+    // Calculate monthly payment if we have the data
+    let principalAndInterest = parseFloat(loanData.paymentAmount) || 0;
+    
+    // If payment amount is not set, calculate it
+    if (!principalAndInterest && loanAmount && interestRate && loanTerm) {
+      const monthlyRate = interestRate / 100 / 12;
+      if (monthlyRate > 0) {
+        principalAndInterest = (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) / 
+                              (Math.pow(1 + monthlyRate, loanTerm) - 1);
+      } else {
+        principalAndInterest = loanAmount / loanTerm;
+      }
+    }
 
     // Calculate escrow from actual disbursements if available
     let hazardInsurance = 0;
@@ -304,59 +320,44 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                     Payment Breakdown
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent>
                   {calculations && (
-                    <>
-                      <div className="p-4 bg-primary-50 rounded-lg">
-                        <div className="text-center">
-                          <p className="text-sm text-gray-600 mb-1">Total Monthly Payment</p>
-                          <p className="text-2xl font-bold text-primary-700">
-                            {formatCurrency(calculations.totalMonthlyPayment)}
-                          </p>
-                        </div>
+                    <div className="text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span>Hazard Insurance:</span>
+                        <span>{formatCurrency(calculations.breakdown.hazardInsurance)}</span>
                       </div>
-                      <Separator />
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium">Principal & Interest</span>
-                          <span className="font-semibold">{formatCurrency(calculations.principalAndInterest)}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium">Escrow Total</span>
-                          <span className="font-semibold">{formatCurrency(calculations.escrow)}</span>
-                        </div>
-                        <div className="ml-4 space-y-1 text-sm text-gray-600">
-                          <div className="flex justify-between">
-                            <span>• Hazard Insurance</span>
-                            <span>{formatCurrency(calculations.breakdown.hazardInsurance)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>• Property Taxes</span>
-                            <span>{formatCurrency(calculations.breakdown.propertyTaxes)}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>• Escrow Cushion</span>
-                            <span>{formatCurrency(calculations.breakdown.escrowCushion)}</span>
-                          </div>
-                        </div>
-                        {calculations.hoaFees > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">HOA Fees</span>
-                            <span className="font-semibold">{formatCurrency(calculations.hoaFees)}</span>
-                          </div>
-                        )}
-                        {calculations.pmi > 0 && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm font-medium">PMI</span>
-                            <span className="font-semibold">{formatCurrency(calculations.pmi)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium">Servicing Fee</span>
-                          <span className="font-semibold">{formatCurrency(calculations.servicingFee)}</span>
-                        </div>
+                      <div className="flex justify-between">
+                        <span>Property Taxes:</span>
+                        <span>{formatCurrency(calculations.breakdown.propertyTaxes)}</span>
                       </div>
-                    </>
+                      <div className="flex justify-between">
+                        <span>Escrow Cushion:</span>
+                        <span>{formatCurrency(calculations.breakdown.escrowCushion)}</span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t">
+                        <span>Sub-Total Escrows:</span>
+                        <span>{formatCurrency(calculations.escrow)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>+ Principal & Interest:</span>
+                        <span>{formatCurrency(calculations.principalAndInterest)}</span>
+                      </div>
+                      {calculations.hoaFees > 0 && (
+                        <div className="flex justify-between">
+                          <span>+ HOA:</span>
+                          <span>{formatCurrency(calculations.hoaFees)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>+ Servicing Fees:</span>
+                        <span>{formatCurrency(calculations.servicingFee)}</span>
+                      </div>
+                      <div className="flex justify-between pt-1 border-t">
+                        <span>Total Payment:</span>
+                        <span>{formatCurrency(calculations.totalMonthlyPayment)}</span>
+                      </div>
+                    </div>
                   )}
                 </CardContent>
               </Card>
