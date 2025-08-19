@@ -463,7 +463,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 max-h-[80vh] overflow-y-auto">
             {/* Basic Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -619,8 +619,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
             </div>
 
             {/* Servicing Settings */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Servicing Settings</h3>
+            <div className="space-y-4 border-t pt-4 mt-4">
+              <h3 className="text-lg font-semibold text-blue-600">Servicing Settings</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="servicingFeeRate">Servicing Fee Rate (%)</Label>
