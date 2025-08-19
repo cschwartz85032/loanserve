@@ -319,7 +319,8 @@ router.get('/export/:runId', async (req, res) => {
         loanId: e.loanId,
         amount: e.amount,
         status: e.status,
-        timestamp: e.timestamp
+        timestamp: e.timestamp,
+        details: e.details  // Include the detailed decision logging data
       })),
       exceptions: exceptions.map(e => ({
         loanId: e.loanId,
