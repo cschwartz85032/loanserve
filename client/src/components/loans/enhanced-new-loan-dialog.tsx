@@ -426,6 +426,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
   const createLoanMutation = useMutation({
     mutationFn: async (data: any) => {
+      console.log("=== STARTING LOAN CREATION ===");
+      console.log("Full form data received:", data);
+      
       // First create the property
       const propertyData = {
         propertyType: data.propertyType,
@@ -436,12 +439,19 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         value: data.propertyValue || "0"
       };
       
-      const propertyResponse = await apiRequest("POST", "/api/properties", propertyData);
+      console.log("Property data to be created:", propertyData);
+      
+      console.log("Sending property creation request...");
+      const propertyResponse = await apiRequest({ method: "POST", url: "/api/properties", body: propertyData });
+      console.log("Property response status:", propertyResponse.status);
+      
       if (!propertyResponse.ok) {
         const errorData = await propertyResponse.json();
+        console.error("Property creation failed:", errorData);
         throw new Error(errorData.error || errorData.message || 'Failed to create property');
       }
       const property = await propertyResponse.json();
+      console.log("Property created successfully:", property);
       
       // Calculate monthly payment if not provided
       let monthlyPayment = data.paymentAmount;
@@ -490,6 +500,8 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       const today = new Date();
       const maturityDate = new Date(today.setMonth(today.getMonth() + loanTermMonths)).toISOString().split('T')[0];
 
+      console.log("=== PREPARING LOAN DATA ===");
+      
       // Create the loan with the property ID
       const loanData = {
         loanNumber: data.loanNumber || `LN${Date.now()}`,
@@ -576,12 +588,26 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         servicingFee: data.servicingFee?.toString() || "25"
       };
       
-      const response = await apiRequest("POST", "/api/loans", loanData);
+      console.log("=== LOAN DATA TO BE SENT ===");
+      console.log(JSON.stringify(loanData, null, 2));
+      console.log("Sending loan creation request...");
+      
+      const response = await apiRequest({ method: "POST", url: "/api/loans", body: loanData });
+      console.log("Loan response status:", response.status);
+      
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("=== LOAN CREATION FAILED ===");
+        console.error("Error details:", errorData);
+        console.error("Error message:", errorData.error || errorData.message);
         throw new Error(errorData.error || errorData.message || 'Failed to create loan');
       }
-      return response.json();
+      
+      const createdLoan = await response.json();
+      console.log("=== LOAN CREATED SUCCESSFULLY ===");
+      console.log("Created loan:", createdLoan);
+      
+      return createdLoan;
     },
     onSuccess: async (loan) => {
       // If there are uploaded files, create document records
@@ -752,7 +778,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Submitting loan with form data:', formData);
+    console.log('=== FORM SUBMISSION STARTED ===');
+    console.log('Form data at submission:', formData);
+    console.log('Form data keys:', Object.keys(formData));
+    console.log('Form data values that are empty:', Object.entries(formData).filter(([_, v]) => !v).map(([k]) => k));
     
     // Validate required fields
     if (!formData.originalAmount || !formData.interestRate || !formData.loanTerm || 

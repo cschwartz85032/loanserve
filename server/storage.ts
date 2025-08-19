@@ -338,11 +338,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLoan(insertLoan: InsertLoan): Promise<Loan> {
-    const [loan] = await db
-      .insert(loans)
-      .values(insertLoan)
-      .returning();
-    return loan;
+    console.log("=== STORAGE: createLoan called ===");
+    console.log("Insert data received:", JSON.stringify(insertLoan, null, 2));
+    
+    try {
+      console.log("Attempting to insert into database...");
+      const [loan] = await db
+        .insert(loans)
+        .values(insertLoan)
+        .returning();
+      
+      console.log("Loan inserted successfully:", loan);
+      return loan;
+    } catch (error: any) {
+      console.error("=== DATABASE ERROR ===");
+      console.error("Error inserting loan:", error);
+      console.error("Error message:", error.message);
+      console.error("Error code:", error.code);
+      console.error("Error detail:", error.detail);
+      throw error;
+    }
   }
 
   async updateLoan(id: number, updateLoan: Partial<InsertLoan>): Promise<Loan> {

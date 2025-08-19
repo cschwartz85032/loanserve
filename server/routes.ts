@@ -249,9 +249,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/loans", isAuthenticated, async (req, res) => {
+    console.log("=== BACKEND: LOAN CREATION ENDPOINT CALLED ===");
+    console.log("Request body received:", JSON.stringify(req.body, null, 2));
+    
     try {
+      console.log("Validating loan data with insertLoanSchema...");
       const validatedData = insertLoanSchema.parse(req.body);
+      console.log("Validation successful. Validated data:", JSON.stringify(validatedData, null, 2));
+      
+      console.log("Calling storage.createLoan...");
       const loan = await storage.createLoan(validatedData);
+      console.log("Loan created in database:", loan);
       
       // Temporarily skip audit log until database schema is updated
       // await storage.createAuditLog({
@@ -263,9 +271,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       //   newValues: loan
       // });
 
+      console.log("Sending success response");
       res.status(201).json(loan);
     } catch (error: any) {
-      console.error("Error creating loan:", error);
+      console.error("=== BACKEND ERROR IN LOAN CREATION ===");
+      console.error("Error type:", error.constructor.name);
+      console.error("Error message:", error.message);
+      console.error("Error details:", error);
+      
+      if (error.issues) {
+        console.error("Zod validation errors:", error.issues);
+        error.issues.forEach((issue: any, index: number) => {
+          console.error(`Issue ${index + 1}:`, {
+            path: issue.path.join('.'),
+            message: issue.message,
+            code: issue.code
+          });
+        });
+      }
+      
       const errorMessage = error.issues ? error.issues[0].message : error.message || "Invalid loan data";
       res.status(400).json({ error: errorMessage, details: error.issues || error.message });
     }
