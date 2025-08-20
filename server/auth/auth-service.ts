@@ -122,12 +122,10 @@ async function getLockoutSettings(): Promise<{
   windowMinutes: number;
   autoUnlockMinutes: number | null;
 }> {
-  const settings = await db.select({
-    key: systemSettings.key,
-    value: systemSettings.value
-  })
-  .from(systemSettings)
-  .where(sql`key IN ('LOCKOUT_THRESHOLD', 'LOCKOUT_WINDOW_MINUTES', 'LOCKOUT_AUTO_UNLOCK_MINUTES')`);
+  const settings = await db
+    .select()
+    .from(systemSettings)
+    .where(sql`key IN ('LOCKOUT_THRESHOLD', 'LOCKOUT_WINDOW_MINUTES', 'LOCKOUT_AUTO_UNLOCK_MINUTES')`);
 
   const settingsMap = settings.reduce((acc, s) => {
     acc[s.key] = s.value;
@@ -146,8 +144,9 @@ async function getLockoutSettings(): Promise<{
  */
 async function isAccountLocked(userId: number): Promise<{ locked: boolean; reason?: string }> {
   const [user] = await db.select({
-    status: users.status,
-    failedLoginCount: users.failedLoginCount
+    isActive: users.isActive,
+    lockedUntil: users.lockedUntil,
+    failedLoginAttempts: users.failedLoginAttempts
   })
   .from(users)
   .where(eq(users.id, userId))
@@ -157,22 +156,22 @@ async function isAccountLocked(userId: number): Promise<{ locked: boolean; reaso
     return { locked: false };
   }
 
-  // Check if account is explicitly locked or disabled
-  if (user.status === 'locked') {
+  // Check if account is explicitly locked
+  const isLocked = user.lockedUntil && new Date(user.lockedUntil) > new Date();
+  if (isLocked) {
     const settings = await getLockoutSettings();
     
     // Check for auto-unlock
     if (settings.autoUnlockMinutes) {
-      const lockEvent = await db.select({
-        occurredAt: authEvents.occurredAt
-      })
-      .from(authEvents)
-      .where(and(
-        eq(authEvents.targetUserId, userId),
-        eq(authEvents.eventType, 'account_locked')
-      ))
-      .orderBy(desc(authEvents.occurredAt))
-      .limit(1);
+      const lockEvent = await db
+        .select()
+        .from(authEvents)
+        .where(and(
+          eq(authEvents.targetUserId, userId),
+          eq(authEvents.eventType, 'account_locked')
+        ))
+        .orderBy(desc(authEvents.occurredAt))
+        .limit(1);
 
       if (lockEvent.length > 0) {
         const lockTime = new Date(lockEvent[0].occurredAt);
@@ -189,8 +188,8 @@ async function isAccountLocked(userId: number): Promise<{ locked: boolean; reaso
     return { locked: true, reason: 'Account is locked due to too many failed login attempts' };
   }
 
-  if (user.status === 'suspended' || user.status === 'disabled') {
-    return { locked: true, reason: `Account is ${user.status}` };
+  if (!user.isActive) {
+    return { locked: true, reason: 'Account is disabled' };
   }
 
   return { locked: false };
@@ -200,28 +199,30 @@ async function isAccountLocked(userId: number): Promise<{ locked: boolean; reaso
  * Record login attempt and check lockout
  */
 export async function recordLoginAttempt(
-  email: string,
+  emailOrUsername: string,
   success: boolean,
   ip: string,
   userAgent?: string
 ): Promise<{ shouldLock: boolean; userId?: number }> {
-  // Find user by email
-  const [user] = await db.select({
-    id: users.id,
-    failedLoginAttempts: users.failedLoginAttempts,
-    status: users.status
-  })
-  .from(users)
-  .where(eq(users.email, email))
-  .limit(1);
+  // Find user by email or username
+  const userQuery = emailOrUsername.includes('@') 
+    ? eq(users.email, emailOrUsername)
+    : eq(users.username, emailOrUsername);
+    
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(userQuery)
+    .limit(1);
 
   const userId = user?.id;
-  const outcome = success ? 'succeeded' : (user?.status === 'locked' ? 'locked' : 'failed');
+  const isLocked = user?.lockedUntil && new Date(user.lockedUntil) > new Date();
+  const outcome = success ? 'succeeded' : (isLocked ? 'locked' : 'failed');
 
   // Record the attempt
   await db.insert(loginAttempts).values({
     userId,
-    emailAttempted: email,
+    emailAttempted: user?.email || emailOrUsername,
     ip,
     userAgent,
     outcome: outcome as any,
@@ -271,9 +272,10 @@ export async function recordLoginAttempt(
  * Lock user account
  */
 async function lockAccount(userId: number, reason: string): Promise<void> {
+  const lockDuration = 30; // Lock for 30 minutes
   await db.update(users)
     .set({ 
-      status: 'locked',
+      lockedUntil: new Date(Date.now() + lockDuration * 60000),
       updatedAt: new Date()
     })
     .where(eq(users.id, userId));
@@ -292,7 +294,7 @@ async function lockAccount(userId: number, reason: string): Promise<void> {
 async function unlockAccount(userId: number, reason: string): Promise<void> {
   await db.update(users)
     .set({ 
-      status: 'active',
+      lockedUntil: null,
       failedLoginAttempts: 0,
       updatedAt: new Date()
     })
@@ -321,24 +323,15 @@ export async function login(
   error?: string;
 }> {
   try {
-    // Find user by email or username
-    const [user] = await db.select({
-      id: users.id,
-      username: users.username,
-      email: users.email,
-      password: users.password,
-      role: users.role,
-      status: users.status,
-      firstName: users.firstName,
-      lastName: users.lastName,
-      isActive: users.isActive
-    })
+    // Find user by email or username - select all fields
+    const userQuery = emailOrUsername.includes('@') 
+      ? eq(users.email, emailOrUsername)
+      : eq(users.username, emailOrUsername);
+      
+    const [user] = await db
+      .select()
       .from(users)
-      .where(
-        emailOrUsername.includes('@') 
-          ? eq(users.email, emailOrUsername)
-          : eq(users.username, emailOrUsername)
-      )
+      .where(userQuery)
       .limit(1);
 
     if (!user) {
@@ -397,7 +390,7 @@ export async function login(
       // Log auth event for IP block
       await db.insert(authEvents).values({
         actorUserId: user.id,
-        eventType: 'login_blocked',
+        eventType: 'login_failed',
         ip,
         userAgent,
         details: { 
