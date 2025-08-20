@@ -864,10 +864,11 @@ export async function activateAccountWithToken(
     }
 
     // Get invited user - use raw SQL since status field is in DB but not in schema
-    const [invitedUser] = await db.execute(
+    const result = await db.execute(
       sql`SELECT * FROM users WHERE id = ${tokenValidation.userId} AND status = 'invited' LIMIT 1`
     );
 
+    const invitedUser = result.rows?.[0];
     if (!invitedUser) {
       return { success: false, error: 'Invalid invitation' };
     }
