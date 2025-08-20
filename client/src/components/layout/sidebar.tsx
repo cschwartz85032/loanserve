@@ -25,7 +25,7 @@ export function Sidebar() {
   const [activeRole, setActiveRole] = useState(user?.role || "lender");
   
   // Check if user has admin role
-  const hasAdminRole = user?.roles?.includes('admin');
+  const hasAdminRole = user?.role === 'admin';
   
   // Build navigation dynamically based on user roles
   const navigation = [
