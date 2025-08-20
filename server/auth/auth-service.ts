@@ -360,7 +360,43 @@ export async function login(
       return { success: false, error: 'Invalid credentials' };
     }
 
-    // Password is valid - reset failed login count
+    // Check IP allowlist (after password verification, before session creation)
+    const { checkIpAllowlist, logIpDecision } = await import('./ip-allowlist-service');
+    const ipCheck = await checkIpAllowlist(user.id, ip);
+    
+    // Log IP decision
+    await logIpDecision(user.id, ip, ipCheck.allowed, ipCheck.reason || '', ipCheck.matchedEntry);
+    
+    if (!ipCheck.allowed) {
+      // Record failed login attempt due to IP restriction
+      await db.insert(loginAttempts).values({
+        userId: user.id,
+        emailAttempted: email,
+        ip,
+        userAgent,
+        outcome: 'failed',
+        reason: `IP not in allowlist: ${ip}`
+      });
+      
+      // Log auth event for IP block
+      await db.insert(authEvents).values({
+        actorUserId: user.id,
+        eventType: 'login_blocked',
+        ip,
+        userAgent,
+        details: { 
+          email,
+          reason: 'ip_not_allowed',
+          hasAllowlist: ipCheck.hasAllowlist,
+          blockedIp: ip
+        },
+        eventKey: `login-blocked-${user.id}-${Date.now()}`
+      });
+      
+      return { success: false, error: 'Access denied from this IP address' };
+    }
+
+    // Password is valid and IP is allowed - reset failed login count
     await db.update(users)
       .set({ 
         failedLoginCount: 0,
@@ -382,13 +418,17 @@ export async function login(
       userAgent
     });
 
-    // Log login event
+    // Log login event with IP allowlist info
     await db.insert(authEvents).values({
       actorUserId: user.id,
       eventType: 'login_succeeded',
       ip,
       userAgent,
-      details: { email },
+      details: { 
+        email,
+        ipAllowlistMatch: ipCheck.matchedEntry || null,
+        hasAllowlist: ipCheck.hasAllowlist
+      },
       eventKey: `login-${user.id}-${Date.now()}`
     });
 
