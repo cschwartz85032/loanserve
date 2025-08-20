@@ -514,7 +514,7 @@ export const loans = pgTable("loans", {
   propertyTaxes: decimal("property_taxes", { precision: 10, scale: 2 }),
   hoaFees: decimal("hoa_fees", { precision: 10, scale: 2 }),
   pmiAmount: decimal("pmi_amount", { precision: 10, scale: 2 }),
-  servicingFee: decimal("servicing_fee", { precision: 10, scale: 2 }),
+  // servicingFee removed - using servicingFeeRate/servicingFeeAmount instead
   // Additional payment fields for UI compatibility
   propertyTax: decimal("property_tax", { precision: 10, scale: 2 }),
   homeInsurance: decimal("home_insurance", { precision: 10, scale: 2 }),
