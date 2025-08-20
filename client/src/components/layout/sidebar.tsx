@@ -27,7 +27,6 @@ const navigation = [
   { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
   { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
   { name: "Compliance", href: "/compliance", icon: Shield },
-  { name: "User Management", href: "/admin/users", icon: Users },
   { name: "Security Settings", href: "/mfa-settings", icon: Shield },
   { name: "Admin", href: "/admin/documents", icon: Settings },
 ];
