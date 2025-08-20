@@ -869,7 +869,9 @@ export async function activateAccountWithToken(
       targetUserId: tokenValidation.userId,
       eventType: 'account_activated',
       details: { method: 'invitation' },
-      eventKey: `activate-${tokenValidation.userId}-${Date.now()}`
+      eventKey: `activate-${tokenValidation.userId}-${Date.now()}`,
+      ip: null,
+      userAgent: null
     });
 
     // Get updated user
