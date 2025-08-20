@@ -94,7 +94,7 @@ function RolesDragDrop({
   const [draggedRole, setDraggedRole] = useState<any>(null);
   const [dragOver, setDragOver] = useState<'available' | 'assigned' | null>(null);
 
-  const availableRolesList = availableRoles?.roles?.filter((role: any) => 
+  const availableRolesList = availableRoles?.filter((role: any) => 
     !userRoles?.find((ur: any) => ur.roleId === role.id)
   ) || [];
 
