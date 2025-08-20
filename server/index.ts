@@ -1,3 +1,4 @@
+// Build version: 2025-01-24-v3 - Force rebuild to fix servicing_fee_type
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
