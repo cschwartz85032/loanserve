@@ -68,6 +68,8 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Added APN (Assessor's Parcel Number) field to Property Information section in loan edit Overview tab
   - Added comprehensive Servicing Settings section to Overview tab with fields: servicing fee rate/amount, fee payer, late charge type/amount, grace period, investor loan number, pool number
   - Fixed Servicing Settings visibility issue by adding it to the correct component (loan-edit-form-tabbed.tsx) instead of loan-edit-form.tsx
+  - Implemented single-field design with toggle icons ($ and %) for servicing fee and late charge fields instead of separate percentage/amount fields
+  - Fixed database persistence issue for servicing settings by ensuring all fields are included in formData initialization
 
 # User Preferences
 
