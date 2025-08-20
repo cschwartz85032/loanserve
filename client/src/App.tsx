@@ -20,6 +20,7 @@ import AdminEscrow from "@/pages/admin/AdminEscrow";
 import { AdminUsers } from "@/pages/AdminUsers";
 import { AdminUserDetail } from "@/pages/AdminUserDetail";
 import { MigrateDatabase } from "@/pages/migrate-database";
+import MfaSettings from "@/pages/MfaSettings";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -42,7 +43,8 @@ function Router() {
       <ProtectedRoute path="/migrate-database" component={MigrateDatabase} />
       <ProtectedRoute path="/investors" component={Dashboard} />
       <ProtectedRoute path="/users" component={Dashboard} />
-      <ProtectedRoute path="/settings" component={Dashboard} />
+      <ProtectedRoute path="/settings" component={MfaSettings} />
+      <ProtectedRoute path="/mfa-settings" component={MfaSettings} />
       <Route path="/auth" component={AuthPage} />
       <Route component={NotFound} />
     </Switch>
