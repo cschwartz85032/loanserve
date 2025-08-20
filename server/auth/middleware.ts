@@ -47,6 +47,23 @@ export async function loadUserPolicy(
     const policy = await getCachedUserPolicy(userId);
     req.userPolicy = policy;
     
+    // Also populate req.user for backward compatibility with admin routes
+    if (!req.user && userId) {
+      const { db } = await import('../db');
+      const { users } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      
+      if (user) {
+        (req as any).user = user;
+      }
+    }
+    
     next();
   } catch (error) {
     console.error('Failed to load user policy:', error);
