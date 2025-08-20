@@ -335,7 +335,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                               'rateCapInitial', 'rateCapPeriodic', 'rateCapLifetime', 'rateFloor',
                               'balloonAmount', 'prepaymentPenaltyAmount', 'propertyValue',
                               'originalAmount', 'principalBalance', 'paymentAmount', 'monthlyEscrow',
-                              'monthlyMI', 'originalLTV', 'currentLTV', 'combinedLTV'];
+                              'monthlyMI', 'originalLTV', 'currentLTV', 'combinedLTV',
+                              'propertyTax', 'homeInsurance', 'pmi', 'otherMonthly',
+                              'hazardInsurance', 'propertyTaxes', 'hoaFees', 'pmiAmount',
+                              'principalAndInterest', 'escrowAmount', 'closingCosts', 'downPayment',
+                              'borrowerIncome', 'coBorrowerIncome', 'creditScoreEquifax', 
+                              'creditScoreExperian', 'creditScoreTransunion',
+                              'coBorrowerCreditScoreEquifax', 'coBorrowerCreditScoreExperian', 
+                              'coBorrowerCreditScoreTransunion', 'purchasePrice', 'originalAppraisalValue',
+                              'currentValue', 'annualPropertyTax', 'annualInsurance', 'annualHOA',
+                              'lotSize', 'rentalIncome'];
         
         if ((integerFields.includes(key) || numericFields.includes(key)) && value === '') {
           acc[key] = null;
