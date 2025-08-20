@@ -1,0 +1,145 @@
+Highest-impact corrections (do these first)
+
+Investor master vs position (break the hidden 1-loan limit)
+Problem: investors stores both the party’s identity and the per-loan ownership, but investors.investor_id is UNIQUE while the table also has loan_id. This design prevents the same investor from appearing on multiple loans.
+Fix:
+
+Drop the unique constraint on investors.investor_id and replace it with a composite uniqueness on (loan_id, investor_id), or better, split into:
+
+investor_parties (one row per investor entity; identity, KYC, payout instructions)
+
+investor_positions (loan_id, investor_party_id, ownership_pct, effective_date, end_date)
+Why it matters: avoids data duplication and allows multi-loan investors without hacks. It also cleanly supports effective dating and transfers.
+
+Precision for ownership percentages
+Problem: investors.ownership_percentage and loan_borrowers.ownership_percentage are numeric(5,2) which cannot represent typical pro-rata splits accurately across many investors. investor_distributions.ownership_percentage already uses numeric(8,6).
+Fix: set both ownership percentage columns to numeric(8,6) to match distribution math and eliminate rounding drift.
+Why it matters: prevents silent penny mismatches when splitting to many investors and keeps 3NF by aligning precision across dependent tables.
+
+Guarantor role duplication
+Problem: loan_borrowers.borrower_type allows 'guarantor', but you also have a dedicated guarantors table. This duplicates semantics and can violate 3NF (same business fact modeled in two places).
+Fix: restrict loan_borrowers.borrower_type to 'primary' | 'co_borrower' and keep guarantors exclusively in guarantors.
+Why it matters: one source of truth for guarantees and cleaner constraints.
+
+Escrow disbursements’ payee data duplication
+Problem: escrow_disbursements embeds payee_* columns while you also have a payees master table. This duplicates addresses and payment instructions.
+Fix: add payee_id to escrow_disbursements and migrate existing rows to reference payees; deprecate or drop the duplicated payee_* columns after backfill.
+Why it matters: avoids inconsistent vendor records and simplifies ACH/wire changes.
+
+Correct the missing foreign key in escrow transactions
+Problem: escrow_transactions.escrow_item_id is intended to reference an escrow item, but there is no FK and the correct target is escrow_disbursements.id.
+Fix: rename to disbursement_id and add a proper FK to escrow_disbursements(id).
+Why it matters: enforces referential integrity and enables reliable joins for reporting.
+
+Medium-impact improvements (cleanups that harden integrity)
+
+Use a single enum for payment methods everywhere
+Problem: payments.payment_method and payees.payment_method are free-text while escrow_disbursement_payments.payment_method uses an enum.
+Fix: standardize on one PG enum (e.g., payment_method) and apply it to all three tables.
+Why it matters: prevents illegal values and simplifies downstream logic.
+
+Standardize status enums
+Problem: some tables use pgEnum (good), others use text('status', { enum: [...] }) inline.
+Fix: promote these to named enums (e.g., servicing_event_status, inbox_status) and use them consistently.
+Why it matters: consistent constraints, easier cross-table validation, safer refactors.
+
+Ledger transaction types as an enum
+Problem: loan_ledger.transaction_type is free-text while you already have transaction_type for escrow_transactions.
+Fix: define and reuse a single transaction_type enum for both ledgers.
+Why it matters: one vocabulary for accounting categories reduces reconciliation errors.
+
+Remove functional duplicates in payments
+Problem: payments.schedule_id and payments.payment_number both identify the installment. This risks inconsistency.
+Fix: keep schedule_id as the FK to payment_schedule and drop payment_number from payments (or enforce a check that it matches the referenced schedule).
+Why it matters: avoids partial dependency violations and keeps 3NF.
+
+Monetary precision normalization
+Problem: money columns vary across tables (10,2, 12,2, 15,2).
+Fix: adopt a standard for currency amounts (e.g., numeric(18,2) for balances and numeric(12,2) for line items) and update columns that could overflow.
+Why it matters: prevents overflow edge cases and simplifies arithmetic guarantees.
+
+Timestamps with timezone for events
+Problem: most “moments in time” are timestamp (no TZ).
+Fix: use timestamptz for event and processing times (payments.received_date, loan_ledger.transaction_date, servicing_events.timestamp, etc.).
+Why it matters: deterministic ordering and auditability across timezones.
+
+Link business events to accounting entries
+Problem: loan_ledger entries are not explicitly tied to servicing_events.
+Fix: add servicing_event_id FK on loan_ledger (nullable for manual entries) and, if useful, on escrow_transactions.
+Why it matters: full audit chain from decision → posting, which supports idempotency and SOX-style evidence.
+
+Low-risk naming/structure polish
+
+Clarify investor table naming
+Rename investors → loan_investor_positions if you do not split the master. This reduces ambiguity that it is “per-loan” data.
+
+One escrow account, many sub-accounts (optional)
+If you need true subaccount balances (taxes vs hazard vs flood), introduce escrow_subaccounts with type and balance, and reference it from escrow_transactions and scheduled items. This is a structural normalization, not mandatory if you keep type in the line item.
+
+PII normalization and reuse
+Banking details and PII are repeated across investors and payees. Consider bank_accounts keyed by party, referenced where needed. This is a governance win more than a pure 3NF requirement.
+
+Minimal, concrete migration sketch (SQL-style)
+
+You can translate these to Drizzle migrations; shown here as SQL for clarity.
+
+-- 1) Investors: allow multi-loan participation and increase precision
+ALTER TABLE investors
+  ALTER COLUMN ownership_percentage TYPE numeric(8,6);
+
+-- If there is a unique index on investor_id, drop it:
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_indexes WHERE indexname = 'investors_investor_id_key'
+  ) THEN
+    DROP INDEX investors_investor_id_key;
+  END IF;
+END $$;
+
+-- Enforce uniqueness per (loan_id, investor_id)
+CREATE UNIQUE INDEX IF NOT EXISTS investors_loan_investor_uidx
+  ON investors(loan_id, investor_id);
+
+-- 2) Loan borrowers: fix ownership precision and borrower_type
+ALTER TABLE loan_borrowers
+  ALTER COLUMN ownership_percentage TYPE numeric(8,6);
+
+-- Optional: enforce allowed values (since it's text today)
+ALTER TABLE loan_borrowers
+  ADD CONSTRAINT loan_borrower_type_chk
+  CHECK (borrower_type IN ('primary','co_borrower'));
+
+-- 3) Escrow disbursements: normalize payee
+ALTER TABLE escrow_disbursements
+  ADD COLUMN payee_id integer REFERENCES payees(id);
+
+-- Backfill payee_id by matching on name + address (one-time script).
+-- After backfill, optionally drop duplicated payee_* columns.
+
+-- 4) Escrow transactions: correct FK and name
+ALTER TABLE escrow_transactions
+  ADD COLUMN disbursement_id integer REFERENCES escrow_disbursements(id);
+
+-- Backfill disbursement_id from escrow_item_id where possible,
+-- then drop the old column:
+ALTER TABLE escrow_transactions
+  DROP COLUMN escrow_item_id;
+
+-- 5) Standardize payment method to a single enum
+-- Example: create payment_method enum if not present, then apply:
+-- ALTER TABLE payments ALTER COLUMN payment_method TYPE payment_method USING payment_method::payment_method;
+-- ALTER TABLE payees   ALTER COLUMN payment_method TYPE payment_method USING payment_method::payment_method;
+
+-- 6) Ledger transaction type: use enum
+-- ALTER TABLE loan_ledger ALTER COLUMN transaction_type TYPE transaction_type USING transaction_type::transaction_type;
+
+-- 7) Remove duplication in payments
+ALTER TABLE payments DROP COLUMN payment_number;  -- if not strictly needed
+
+Strategic refactor (stageable)
+
+Introduce a unified parties table (persons and organizations), party_roles (borrower, guarantor, investor, payee, user), and contact_points/addresses tables.
+
+Map today’s borrower_entities, investors, and payees to parties.
+
+Benefits: maximal normalization, reusability, clean KYC/OFAC screening in one place, and simpler distributions and notifications. This can be phased in behind views to avoid a big-bang cutover.
