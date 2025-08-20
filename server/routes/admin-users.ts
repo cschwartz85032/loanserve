@@ -558,12 +558,12 @@ router.delete('/:id/roles/:roleId', async (req, res) => {
 
     // Log the action
     await db.insert(authEvents).values({
-      eventType: 'role_removed',
+      eventType: 'user_updated',
       actorUserId: req.user.id,
       targetUserId: userId,
       ip: req.ip,
       userAgent: req.headers['user-agent'] || null,
-      details: { roleId, roleName: role[0]?.name }
+      details: { action: 'role_removed', roleId, roleName: role[0]?.name }
     });
 
     res.json({ message: 'Role removed successfully' });

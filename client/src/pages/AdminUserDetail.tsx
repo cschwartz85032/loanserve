@@ -303,9 +303,20 @@ export function AdminUserDetail() {
 
   const cycleUserStatus = async () => {
     const currentStatus = getUserStatus();
-    const statusOrder = ['active', 'suspended', 'locked'];
-    const currentIndex = statusOrder.indexOf(currentStatus === 'invited' || currentStatus === 'unverified' ? 'active' : currentStatus);
-    const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
+    
+    // Define the cycle: active -> suspended -> locked -> active
+    let nextStatus = 'active';
+    
+    if (currentStatus === 'active') {
+      nextStatus = 'suspended';
+    } else if (currentStatus === 'suspended') {
+      nextStatus = 'locked';
+    } else if (currentStatus === 'locked') {
+      nextStatus = 'active';
+    } else if (currentStatus === 'invited' || currentStatus === 'unverified') {
+      // For invited/unverified users, start with activate
+      nextStatus = 'active';
+    }
     
     try {
       let endpoint = '';
@@ -1081,8 +1092,8 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                 <TableHead>Label</TableHead>
                 <TableHead>IP/CIDR</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Begins</TableHead>
                 <TableHead>Expires</TableHead>
-                <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -1105,6 +1116,25 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                     )}
                   </TableCell>
                   <TableCell>
+                    {entry.beginsAt ? (
+                      <div>
+                        {new Date(entry.beginsAt) > new Date() ? (
+                          <Badge variant="outline" className="text-xs">
+                            Starts {format(new Date(entry.beginsAt), 'MMM d')}
+                          </Badge>
+                        ) : (
+                          <span className="text-sm">
+                            {format(new Date(entry.beginsAt), 'MMM d, yyyy')}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-sm">
+                        {format(new Date(entry.createdAt), 'MMM d, yyyy')}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     {entry.expiresAt ? (
                       <div>
                         {new Date(entry.expiresAt) < new Date() ? (
@@ -1120,9 +1150,6 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                     ) : (
                       <span className="text-sm text-muted-foreground">Never</span>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    {format(new Date(entry.createdAt), 'MMM d, yyyy')}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">

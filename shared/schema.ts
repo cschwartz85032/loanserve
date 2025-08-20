@@ -1471,6 +1471,7 @@ export const userIpAllowlist = pgTable("user_ip_allowlist", {
   label: text("label").notNull(),
   cidr: text("cidr").notNull(), // Storing CIDR as text
   isActive: boolean("is_active").notNull().default(true),
+  beginsAt: timestamp("begins_at", { withTimezone: true }).defaultNow().notNull(), // Start date for allowlist entry
   expiresAt: timestamp("expires_at", { withTimezone: true }), // Optional expiration date
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

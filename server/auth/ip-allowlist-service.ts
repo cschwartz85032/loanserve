@@ -150,11 +150,12 @@ export async function checkIpAllowlist(
     // Also check that the entry hasn't expired
     const matchResult = await db.execute(
       sql`
-        SELECT id, cidr, label, expires_at 
+        SELECT id, cidr, label, begins_at, expires_at 
         FROM user_ip_allowlist 
         WHERE user_id = ${userId} 
           AND is_active = true 
           AND inet '${sql.raw(normalizedIp)}' <<= cidr
+          AND (begins_at IS NULL OR begins_at <= NOW())
           AND (expires_at IS NULL OR expires_at > NOW())
         LIMIT 1
       `
