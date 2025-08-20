@@ -322,7 +322,17 @@ export async function login(
 }> {
   try {
     // Find user by email or username
-    const [user] = await db.select()
+    const [user] = await db.select({
+      id: users.id,
+      username: users.username,
+      email: users.email,
+      password: users.password,
+      role: users.role,
+      status: users.status,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      isActive: users.isActive
+    })
       .from(users)
       .where(
         emailOrUsername.includes('@') 
