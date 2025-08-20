@@ -75,8 +75,178 @@ import {
   Smartphone,
   Wifi,
   WifiOff,
-  Key
+  Key,
+  GripVertical
 } from 'lucide-react';
+
+// Drag and Drop Component for Roles
+function RolesDragDrop({ 
+  availableRoles, 
+  userRoles, 
+  onAssignRole, 
+  onRemoveRole 
+}: {
+  availableRoles: any;
+  userRoles: any[];
+  onAssignRole: (roleId: string) => void;
+  onRemoveRole: (roleId: string) => void;
+}) {
+  const [draggedRole, setDraggedRole] = useState<any>(null);
+  const [dragOver, setDragOver] = useState<'available' | 'assigned' | null>(null);
+
+  const availableRolesList = availableRoles?.roles?.filter((role: any) => 
+    !userRoles?.find((ur: any) => ur.roleId === role.id)
+  ) || [];
+
+  const handleDragStart = (e: React.DragEvent, role: any, isAssigned: boolean) => {
+    setDraggedRole({ ...role, isAssigned });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnter = (zone: 'available' | 'assigned') => {
+    setDragOver(zone);
+  };
+
+  const handleDragLeave = () => {
+    setDragOver(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, zone: 'available' | 'assigned') => {
+    e.preventDefault();
+    setDragOver(null);
+
+    if (!draggedRole) return;
+
+    if (zone === 'assigned' && !draggedRole.isAssigned) {
+      // Assigning a new role
+      onAssignRole(draggedRole.id);
+    } else if (zone === 'available' && draggedRole.isAssigned) {
+      // Removing an assigned role
+      onRemoveRole(draggedRole.roleId || draggedRole.id);
+    }
+
+    setDraggedRole(null);
+  };
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {/* Available Roles */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Available Roles</CardTitle>
+          <CardDescription>
+            Drag roles to assign them to the user
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div 
+            className={`min-h-[200px] rounded-lg border-2 border-dashed p-4 transition-colors ${
+              dragOver === 'available' ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+            }`}
+            onDragOver={handleDragOver}
+            onDragEnter={() => handleDragEnter('available')}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, 'available')}
+          >
+            {availableRolesList.length === 0 ? (
+              <p className="text-center text-muted-foreground">
+                All roles have been assigned
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {availableRolesList.map((role: any) => (
+                  <div
+                    key={role.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, role, false)}
+                    className="flex items-center gap-2 p-2 bg-secondary/50 rounded-lg cursor-move hover:bg-secondary transition-colors"
+                  >
+                    <GripVertical className="w-4 h-4 text-muted-foreground" />
+                    <Shield className="w-4 h-4 text-primary" />
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{role.name}</div>
+                      {role.description && (
+                        <div className="text-xs text-muted-foreground">
+                          {role.description}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Assigned Roles */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Assigned Roles</CardTitle>
+          <CardDescription>
+            Current user roles - drag back to remove
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div 
+            className={`min-h-[200px] rounded-lg border-2 border-dashed p-4 transition-colors ${
+              dragOver === 'assigned' ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+            }`}
+            onDragOver={handleDragOver}
+            onDragEnter={() => handleDragEnter('assigned')}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, 'assigned')}
+          >
+            {userRoles.length === 0 ? (
+              <p className="text-center text-muted-foreground">
+                No roles assigned - drag roles here to assign
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {userRoles.map((role) => (
+                  <div
+                    key={role.roleId}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, role, true)}
+                    className="group flex items-center gap-2 p-2 bg-primary/10 rounded-lg cursor-move hover:bg-primary/20 transition-colors"
+                  >
+                    <GripVertical className="w-4 h-4 text-muted-foreground" />
+                    <Shield className="w-4 h-4 text-primary" />
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{role.roleName}</div>
+                      {role.roleDescription && (
+                        <div className="text-xs text-muted-foreground">
+                          {role.roleDescription}
+                        </div>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Assigned {formatDistanceToNow(new Date(role.assignedAt), { addSuffix: true })}
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemoveRole(role.roleId);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <XCircle className="w-4 h-4 text-destructive hover:text-destructive/80" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 interface UserDetail {
   user: {
@@ -612,54 +782,12 @@ export function AdminUserDetail() {
         </TabsContent>
 
         <TabsContent value="roles">
-          <Card>
-            <CardHeader>
-              <CardTitle>User Roles</CardTitle>
-              <CardDescription>
-                Click tags to manage roles. Similar to labels or tags interface.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {/* Assigned roles as tags */}
-                {roles.map((role) => (
-                  <div
-                    key={role.roleId}
-                    className="group relative inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 text-primary rounded-full cursor-move hover:bg-primary/20 transition-colors"
-                  >
-                    <Shield className="w-3 h-3" />
-                    <span className="text-sm font-medium">{role.roleName}</span>
-                    <button
-                      onClick={() => removeRoleMutation.mutate(role.roleId)}
-                      className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <XCircle className="w-3.5 h-3.5 hover:text-destructive" />
-                    </button>
-                  </div>
-                ))}
-                
-                {/* Add role button styled as tag */}
-                <AssignRoleDialog 
-                  availableRoles={availableRoles}
-                  currentRoles={roles}
-                  onAssign={(roleId) => assignRoleMutation.mutate(roleId)}
-                />
-              </div>
-              
-              {/* Role details section */}
-              {roles.length > 0 && (
-                <div className="mt-6 space-y-2">
-                  <h4 className="text-sm font-medium text-muted-foreground">Role Details</h4>
-                  {roles.map((role) => (
-                    <div key={role.roleId} className="text-sm text-muted-foreground">
-                      <span className="font-medium">{role.roleName}:</span> Assigned {formatDistanceToNow(new Date(role.assignedAt), { addSuffix: true })}
-                      {role.assignedBy && ` by User #${role.assignedBy}`}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <RolesDragDrop
+            availableRoles={availableRoles}
+            userRoles={roles}
+            onAssignRole={(roleId) => assignRoleMutation.mutate(roleId)}
+            onRemoveRole={(roleId) => removeRoleMutation.mutate(roleId)}
+          />
         </TabsContent>
 
         <TabsContent value="ip-allowlist">
