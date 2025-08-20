@@ -74,7 +74,8 @@ import {
   Monitor,
   Smartphone,
   Wifi,
-  WifiOff
+  WifiOff,
+  Key
 } from 'lucide-react';
 
 interface UserDetail {
@@ -220,6 +221,48 @@ export function AdminUserDetail() {
     }
   });
 
+  // Resend invitation mutation
+  const resendInviteMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/users/${id}/resend-invite`, {
+        method: 'POST'
+      }),
+    onSuccess: (data) => {
+      toast({ 
+        title: "Invitation resent successfully",
+        description: `Email sent to ${data.email}`
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to resend invitation",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Send password reset mutation
+  const sendPasswordResetMutation = useMutation({
+    mutationFn: () =>
+      apiRequest(`/api/admin/users/${id}/send-password-reset`, {
+        method: 'POST'
+      }),
+    onSuccess: (data) => {
+      toast({ 
+        title: "Password reset sent successfully",
+        description: `Email sent to ${data.email}`
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to send password reset",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
   if (isLoading) {
     return <div className="p-8 text-center">Loading user details...</div>;
   }
@@ -281,7 +324,11 @@ export function AdminUserDetail() {
           </h1>
           <p className="text-muted-foreground">{user.email}</p>
         </div>
-        <UserActions user={user} />
+        <UserActions 
+          user={user}
+          onResendInvite={() => resendInviteMutation.mutate()}
+          onSendPasswordReset={() => sendPasswordResetMutation.mutate()}
+        />
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -708,7 +755,15 @@ export function AdminUserDetail() {
   );
 }
 
-function UserActions({ user }: { user: any }) {
+function UserActions({ 
+  user, 
+  onResendInvite, 
+  onSendPasswordReset 
+}: { 
+  user: any;
+  onResendInvite?: () => void;
+  onSendPasswordReset?: () => void;
+}) {
   const { toast } = useToast();
   
   const lockMutation = useMutation({
@@ -755,6 +810,23 @@ function UserActions({ user }: { user: any }) {
 
   return (
     <div className="flex gap-2">
+      {/* Resend Invite - only for invited users */}
+      {user.status === 'invited' && onResendInvite && (
+        <Button onClick={onResendInvite} variant="outline">
+          <Mail className="w-4 h-4 mr-2" />
+          Resend Invite
+        </Button>
+      )}
+      
+      {/* Send Password Reset - for active users who are not invited */}
+      {user.status !== 'invited' && user.status !== 'disabled' && onSendPasswordReset && (
+        <Button onClick={onSendPasswordReset} variant="outline">
+          <Key className="w-4 h-4 mr-2" />
+          Send Password Reset
+        </Button>
+      )}
+
+      {/* Lock/Unlock Account */}
       {user.lockedUntil && new Date(user.lockedUntil) > new Date() ? (
         <Button onClick={() => unlockMutation.mutate()}>
           <Unlock className="w-4 h-4 mr-2" />
@@ -767,6 +839,7 @@ function UserActions({ user }: { user: any }) {
         </Button>
       )}
       
+      {/* Suspend/Activate Account */}
       {user.isActive ? (
         <Button 
           variant="destructive"
