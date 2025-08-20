@@ -12,7 +12,9 @@ import {
   authEvents,
   sessions,
   systemSettings,
-  passwordResetTokens
+  passwordResetTokens,
+  userRoles,
+  roles
 } from '@shared/schema';
 import { eq, and, gte, sql, desc } from 'drizzle-orm';
 
@@ -702,12 +704,13 @@ export async function resetPasswordWithToken(
  */
 export async function createInvitationToken(
   email: string,
-  role: string,
+  roleIdOrName: string,
   invitedBy: number
 ): Promise<{
   success: boolean;
   token?: string;
   error?: string;
+  invitationUrl?: string;
 }> {
   try {
     // Check if user already exists
@@ -723,23 +726,55 @@ export async function createInvitationToken(
     }
 
     // Generate token
-    const token = await generateSecureToken();
-    const hashedToken = await hashToken(token);
+    const token = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     
     // Set expiry (7 days)
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    // Create invited user
+    // Create invited user with proper fields
     const [newUser] = await db.insert(users).values({
       username: email.split('@')[0] + '_' + Date.now(), // Temporary username
       email,
-      password: crypto.randomBytes(32).toString('hex'), // Random password, will be set on activation
-      role: role as any,
-      status: 'invited',
+      password: await argon2.hash(crypto.randomBytes(32).toString('hex')), // Random hashed password
+      emailVerified: false,
+      isActive: true, // Active but not verified
       firstName: '',
-      lastName: ''
+      lastName: '',
+      phone: ''
     })
     .returning({ id: users.id });
+
+    // If roleIdOrName is provided, assign the role
+    if (roleIdOrName) {
+      // Check if it's a roleId (UUID format) or role name
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleIdOrName);
+      
+      if (isUuid) {
+        // It's a role ID, assign directly
+        await db.insert(userRoles).values({
+          userId: newUser.id,
+          roleId: roleIdOrName,
+          assignedBy: invitedBy,
+          assignedAt: new Date()
+        });
+      } else {
+        // It's a role name, find the role first
+        const [role] = await db.select({ id: roles.id })
+          .from(roles)
+          .where(eq(roles.name, roleIdOrName))
+          .limit(1);
+        
+        if (role) {
+          await db.insert(userRoles).values({
+            userId: newUser.id,
+            roleId: role.id,
+            assignedBy: invitedBy,
+            assignedAt: new Date()
+          });
+        }
+      }
+    }
 
     // Store invitation token
     await db.insert(passwordResetTokens).values({
@@ -752,12 +787,15 @@ export async function createInvitationToken(
     await db.insert(authEvents).values({
       actorUserId: invitedBy,
       targetUserId: newUser.id,
-      eventType: 'user_invited',
-      details: { email, role },
-      eventKey: `invite-${newUser.id}-${Date.now()}`
+      eventType: 'user_created',
+      details: { email, role: roleIdOrName, invited: true },
+      ip: null,
+      userAgent: null
     });
 
-    return { success: true, token };
+    const invitationUrl = `/reset-password?token=${token}`;
+
+    return { success: true, token, invitationUrl };
 
   } catch (error) {
     console.error('Invitation token error:', error);

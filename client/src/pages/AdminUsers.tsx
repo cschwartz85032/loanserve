@@ -184,10 +184,7 @@ export function AdminUsers() {
         </div>
         <div className="flex gap-2">
           <BulkInviteDialog roles={roles} />
-          <Button>
-            <Plus className="w-4 h-4 mr-2" />
-            Invite User
-          </Button>
+          <InviteUserDialog roles={roles} />
         </div>
       </div>
 
@@ -429,6 +426,114 @@ function UserActionsMenu({ user }: { user: User }) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function InviteUserDialog({ roles }: { roles: Role[] }) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [selectedRoleId, setSelectedRoleId] = useState('');
+  const { toast } = useToast();
+
+  const inviteMutation = useMutation({
+    mutationFn: async (data: { invitations: Array<{ email: string; roleId: string }> }) => {
+      const res = await apiRequest('/api/admin/users/bulk-invite', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.summary.successful > 0) {
+        toast({ 
+          title: "User invited successfully",
+          description: `Invitation sent to ${email}`
+        });
+        setOpen(false);
+        setEmail('');
+        setSelectedRoleId('');
+      } else if (data.errors && data.errors.length > 0) {
+        toast({ 
+          title: "Failed to invite user",
+          description: data.errors[0].error,
+          variant: 'destructive'
+        });
+      }
+    },
+    onError: (error) => {
+      toast({ 
+        title: "Failed to invite user",
+        description: error.message,
+        variant: 'destructive'
+      });
+    }
+  });
+
+  const handleSubmit = () => {
+    if (!email.trim() || !selectedRoleId) return;
+    
+    inviteMutation.mutate({ 
+      invitations: [{
+        email: email.trim(),
+        roleId: selectedRoleId
+      }]
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="w-4 h-4 mr-2" />
+          Invite User
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite User</DialogTitle>
+          <DialogDescription>
+            Send an invitation to a new user
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Email Address</Label>
+            <Input
+              type="email"
+              placeholder="user@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label>Role</Label>
+            <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a role" />
+              </SelectTrigger>
+              <SelectContent>
+                {roles.map((role) => (
+                  <SelectItem key={role.id} value={role.id}>
+                    {role.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSubmit}
+            disabled={!email.trim() || !selectedRoleId || inviteMutation.isPending}
+          >
+            {inviteMutation.isPending ? 'Sending...' : 'Send Invitation'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
