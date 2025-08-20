@@ -2,7 +2,7 @@
 
 LoanServe Pro is a comprehensive mortgage loan servicing platform built with React and Express.js. It provides a full-featured loan portfolio management system for lenders, borrowers, investors, escrow officers, and legal professionals. The platform offers complete loan lifecycle management, including origination tracking, payment processing, document management, escrow account handling, compliance monitoring, comprehensive reporting capabilities, and investor management with ownership percentage tracking. A key capability is AI-powered document analysis for automated loan creation and data extraction from financial documents.
 
-## Recent Changes (January 2025 - Latest: January 23, 2025)
+## Recent Changes (January 2025 - Latest: January 24, 2025)
 - Added dedicated Escrows tab to loan edit interface with comprehensive escrow account management
 - Fixed fee dropdown to display all 33 configured fees from fee management schedule instead of limited loan-specific fees
 - Added escrow number field to escrow company section with database schema update
@@ -73,6 +73,10 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Enhanced AI loan creation to extract and save all servicing settings fields (servicingFee, servicingFeeType, lateCharge, lateChargeType, feePayer, gracePeriodDays, investorLoanNumber, poolNumber) from documents during loan creation
   - Fixed payment settings fields (Property Tax, Home Insurance, PMI, Other Monthly) by adding missing database columns and ensuring proper field mapping in form initialization
   - Fixed "servicing_fee_type" column error in new loan creation by adding missing servicing settings fields to schema.ts (servicingFeeType, lateChargeType, feePayer, gracePeriodDays, investorLoanNumber, poolNumber)
+  - Applied critical production database fixes (January 24, 2025):
+    * Added all 14 missing columns to production database (servicing settings, payment settings, APN, escrow number)
+    * Fixed ownership percentage precision from numeric(5,2) to numeric(8,6) in all three tables (investors, loan_borrowers, investor_distributions)
+    * Resolved production deployment errors and enabled precise ownership splits like 33.333333% without rounding issues
 
 # User Preferences
 
