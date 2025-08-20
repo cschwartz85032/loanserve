@@ -619,7 +619,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
             </div>
 
             {/* Servicing Settings */}
-            <div className="space-y-4 border-t pt-4 mt-4">
+            {console.log('Rendering Servicing Settings section')}
+            <div className="space-y-4 border-t pt-4 mt-4 bg-blue-50 p-4 rounded-lg">
               <h3 className="text-lg font-semibold text-blue-600 flex items-center gap-2">
                 <Settings className="h-5 w-5" />
                 Servicing Settings
