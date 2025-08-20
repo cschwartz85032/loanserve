@@ -128,7 +128,8 @@ export async function checkIpAllowlist(
       id: userIpAllowlist.id,
       cidr: userIpAllowlist.cidr,
       label: userIpAllowlist.label,
-      isActive: userIpAllowlist.isActive
+      isActive: userIpAllowlist.isActive,
+      expiresAt: userIpAllowlist.expiresAt
     })
     .from(userIpAllowlist)
     .where(and(
@@ -146,13 +147,15 @@ export async function checkIpAllowlist(
     }
     
     // Check if IP matches any allowlist entry using PostgreSQL's inet operators
+    // Also check that the entry hasn't expired
     const matchResult = await db.execute(
       sql`
-        SELECT id, cidr, label 
+        SELECT id, cidr, label, expires_at 
         FROM user_ip_allowlist 
         WHERE user_id = ${userId} 
           AND is_active = true 
           AND inet '${sql.raw(normalizedIp)}' <<= cidr
+          AND (expires_at IS NULL OR expires_at > NOW())
         LIMIT 1
       `
     );
@@ -227,7 +230,8 @@ export async function addIpToAllowlist(
   userId: number,
   cidr: string,
   label?: string,
-  actorUserId?: number
+  actorUserId?: number,
+  expiresAt?: Date | string
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   try {
     // Validate CIDR format
@@ -257,7 +261,8 @@ export async function addIpToAllowlist(
       userId,
       cidr,
       label: label || `IP allowlist entry for ${cidr}`,
-      isActive: true
+      isActive: true,
+      expiresAt: expiresAt ? new Date(expiresAt) : null
     })
     .returning({ id: userIpAllowlist.id });
     
@@ -269,7 +274,8 @@ export async function addIpToAllowlist(
       details: {
         cidr,
         label,
-        entryId: result.id
+        entryId: result.id,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null
       },
       eventKey: `ip-add-${userId}-${Date.now()}`
     });

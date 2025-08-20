@@ -848,11 +848,11 @@ function AssignRoleDialog({ availableRoles, currentRoles, onAssign }: any) {
 
 function IpAllowlistTab({ userId, ipAllowlist }: any) {
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [newEntry, setNewEntry] = useState({ label: '', cidr: '' });
+  const [newEntry, setNewEntry] = useState({ label: '', cidr: '', expiresAt: '' });
   const { toast } = useToast();
 
   const addMutation = useMutation({
-    mutationFn: async (data: { label: string; cidr: string }) => {
+    mutationFn: async (data: { label: string; cidr: string; expiresAt?: string }) => {
       const res = await apiRequest('/api/ip-allowlist', {
         method: 'POST',
         body: JSON.stringify({ ...data, userId })
@@ -863,7 +863,7 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
       toast({ title: "IP allowlist entry added" });
       queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${userId}`] });
       setShowAddDialog(false);
-      setNewEntry({ label: '', cidr: '' });
+      setNewEntry({ label: '', cidr: '', expiresAt: '' });
     },
     onError: (error: any) => {
       toast({ 
@@ -957,6 +957,17 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                     Examples: 192.168.1.0/24, 10.0.0.1, 2001:db8::/32
                   </p>
                 </div>
+                <div>
+                  <Label>Expiration Date (Optional)</Label>
+                  <Input
+                    type="datetime-local"
+                    value={newEntry.expiresAt}
+                    onChange={(e) => setNewEntry({ ...newEntry, expiresAt: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Leave empty for permanent access, or set a date for temporary access (e.g., during travel)
+                  </p>
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -987,6 +998,7 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                 <TableHead>Label</TableHead>
                 <TableHead>IP/CIDR</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Expires</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -1007,6 +1019,23 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                         <WifiOff className="w-3 h-3 mr-1" />
                         Inactive
                       </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {entry.expiresAt ? (
+                      <div>
+                        {new Date(entry.expiresAt) < new Date() ? (
+                          <Badge variant="destructive" className="text-xs">
+                            Expired {format(new Date(entry.expiresAt), 'MMM d')}
+                          </Badge>
+                        ) : (
+                          <span className="text-sm">
+                            {format(new Date(entry.expiresAt), 'MMM d, yyyy')}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Never</span>
                     )}
                   </TableCell>
                   <TableCell>
