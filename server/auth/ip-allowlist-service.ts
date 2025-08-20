@@ -206,7 +206,7 @@ export async function logIpDecision(
   try {
     await db.insert(authEvents).values({
       targetUserId: userId,
-      eventType: allowed ? 'ip_allowlist_passed' : 'ip_allowlist_blocked',
+      eventType: allowed ? 'permission_granted' : 'permission_denied',
       ip,
       details: {
         normalizedIp: normalizeIp(ip),
