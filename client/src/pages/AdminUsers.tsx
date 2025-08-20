@@ -252,7 +252,15 @@ export function AdminUsers() {
                     <TableRow 
                       key={user.id} 
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setLocation(`/admin/users/${user.id}`)}
+                      onClick={(e) => {
+                        // Prevent navigation when clicking on actions menu
+                        const target = e.target as HTMLElement;
+                        if (target.closest('[role="button"]') || target.closest('[role="menu"]')) {
+                          return;
+                        }
+                        console.log('Navigating to user:', user.id);
+                        setLocation(`/admin/users/${user.id}`);
+                      }}
                     >
                       <TableCell>
                         <div>
@@ -281,7 +289,7 @@ export function AdminUsers() {
                           {format(new Date(user.createdAt), 'MMM d, yyyy')}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <UserActionsMenu user={user} />
                       </TableCell>
                     </TableRow>
