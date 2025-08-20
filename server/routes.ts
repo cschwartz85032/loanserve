@@ -10,6 +10,7 @@ import feeRoutes from "./routes/fees";
 import { registerLedgerRoutes } from "./routes/ledger";
 import authRoutes from "./routes/auth";
 import adminUserRoutes from "./routes/admin-users";
+import ipAllowlistRoutes from "./routes/ip-allowlist";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1181,6 +1182,9 @@ To implement full file serving:
 
   // Register admin user routes
   app.use("/api/admin/users", adminUserRoutes);
+  
+  // Register IP allowlist routes
+  app.use("/api/ip-allowlist", ipAllowlistRoutes);
   
   // Register ledger routes
   registerLedgerRoutes(app);
