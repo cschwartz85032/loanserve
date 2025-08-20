@@ -148,8 +148,8 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     propertyTaxes: "",
     hoaFees: "",
     pmiAmount: "",
-    servicingFeeAmount: "25",
-    servicingFeeRate: "0.25",
+    servicingFee: "25",
+    servicingFeeType: "percentage",
     
     // Other fields
     loanDocuments: null as any,
@@ -405,15 +405,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       hoaFees: toString(extractedData.hoaFees) || prev.hoaFees,
       pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) || prev.pmiAmount,
       
-      // Servicing Settings
-      // Map servicingFee to the correct field based on type
-      servicingFeeAmount: extractedData.servicingFee && !extractedData.servicingFee.includes('%') 
-        ? cleanNumeric(extractedData.servicingFee) 
-        : (cleanNumeric(extractedData.servicingFeeAmount) || prev.servicingFeeAmount),
-      servicingFeeRate: extractedData.servicingFee && extractedData.servicingFee.includes('%') 
-        ? cleanNumeric(extractedData.servicingFee) 
-        : (cleanNumeric(extractedData.servicingFeeRate) || prev.servicingFeeRate),
-      servicingFeeType: extractedData.servicingFee ? detectValueType(extractedData.servicingFee) : (cleanString(extractedData.servicingFeeType) || prev.servicingFeeType || 'amount'),
+      // Servicing Settings - single field with type toggle
+      servicingFee: cleanNumeric(extractedData.servicingFee) || prev.servicingFee,
+      servicingFeeType: extractedData.servicingFee ? detectValueType(extractedData.servicingFee) : (cleanString(extractedData.servicingFeeType) || prev.servicingFeeType || 'percentage'),
       lateCharge: cleanNumeric(extractedData.lateCharge || extractedData.lateChargeAmount) || prev.lateCharge,
       lateChargeType: (extractedData.lateCharge || extractedData.lateChargeAmount) ? detectValueType(extractedData.lateCharge || extractedData.lateChargeAmount) : (cleanString(extractedData.lateChargeType) || prev.lateChargeType || 'percentage'),
       feePayer: cleanString(extractedData.feePayer) || prev.feePayer,
@@ -651,9 +645,8 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         propertyTaxes: data.propertyTaxes?.toString() || "0",
         hoaFees: data.hoaFees?.toString() || "0",
         pmiAmount: data.pmiAmount?.toString() || "0",
-        // Servicing Settings
-        servicingFeeAmount: data.servicingFeeType === 'amount' ? (data.servicingFeeAmount?.toString() || "25") : "",
-        servicingFeeRate: data.servicingFeeType === 'percentage' ? (data.servicingFeeRate?.toString() || "0.25") : "",
+        // Servicing Settings - single field with toggle
+        servicingFee: data.servicingFee?.toString() || "25",
         servicingFeeType: cleanString(data.servicingFeeType) || "percentage",
         lateCharge: data.lateCharge?.toString() || null,
         lateChargeType: cleanString(data.lateChargeType) || "percentage",
@@ -847,8 +840,8 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       propertyTaxes: "",
       hoaFees: "",
       pmiAmount: "",
-      servicingFeeAmount: "25",
-      servicingFeeRate: "0.25",
+      servicingFee: "25",
+      servicingFeeType: "percentage",
       loanDocuments: null,
       defaultConditions: null,
       insuranceRequirements: null,

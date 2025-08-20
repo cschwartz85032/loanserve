@@ -257,14 +257,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertLoanSchema.parse(req.body);
       console.log("Validation successful. Validated data:", JSON.stringify(validatedData, null, 2));
       
-      // Production workaround: Explicitly ensure correct field name
-      // Some production builds may incorrectly transform this field name
-      if ('servicingFileType' in validatedData) {
-        console.log("WARNING: Found incorrect field 'servicingFileType', correcting to 'servicingFeeType'");
-        (validatedData as any).servicingFeeType = (validatedData as any).servicingFileType;
-        delete (validatedData as any).servicingFileType;
-      }
-      
       console.log("Calling storage.createLoan...");
       const loan = await storage.createLoan(validatedData);
       console.log("Loan created in database:", loan);
