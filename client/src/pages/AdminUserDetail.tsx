@@ -852,37 +852,64 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
   const { toast } = useToast();
 
   const addMutation = useMutation({
-    mutationFn: (data: { label: string; cidr: string }) =>
-      apiRequest('/api/ip-allowlist', {
+    mutationFn: async (data: { label: string; cidr: string }) => {
+      const res = await apiRequest('/api/ip-allowlist', {
         method: 'POST',
         body: JSON.stringify({ ...data, userId })
-      }),
+      });
+      return res.json();
+    },
     onSuccess: () => {
       toast({ title: "IP allowlist entry added" });
       queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${userId}`] });
       setShowAddDialog(false);
       setNewEntry({ label: '', cidr: '' });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to add IP entry", 
+        description: error.message || "This IP might already be in the allowlist",
+        variant: "destructive"
+      });
     }
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiRequest(`/api/ip-allowlist/${id}`, { method: 'DELETE' }),
+    mutationFn: async (id: string) => {
+      const res = await apiRequest(`/api/ip-allowlist/${id}`, { method: 'DELETE' });
+      return res.json();
+    },
     onSuccess: () => {
       toast({ title: "IP allowlist entry removed" });
       queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${userId}`] });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to remove IP entry", 
+        description: error.message,
+        variant: "destructive"
+      });
     }
   });
 
   const toggleMutation = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      apiRequest(`/api/ip-allowlist/${id}`, {
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const res = await apiRequest(`/api/ip-allowlist/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ isActive })
-      }),
+      });
+      return res.json();
+    },
     onSuccess: () => {
       toast({ title: "IP allowlist entry updated" });
       queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${userId}`] });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update IP entry", 
+        description: error.message,
+        variant: "destructive"
+      });
     }
   });
 

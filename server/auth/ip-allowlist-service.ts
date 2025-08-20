@@ -265,9 +265,8 @@ export async function addIpToAllowlist(
     await db.insert(authEvents).values({
       actorUserId: actorUserId || userId,
       targetUserId: userId,
-      eventType: 'security_event', // Using a valid event type
+      eventType: 'ip_allow_added', // Using the correct valid event type
       details: {
-        action: 'ip_allowlist_added',
         cidr,
         label,
         entryId: result.id
@@ -316,9 +315,8 @@ export async function removeIpFromAllowlist(
     await db.insert(authEvents).values({
       actorUserId: actorUserId || entry.userId,
       targetUserId: entry.userId,
-      eventType: 'security_event', // Using a valid event type
+      eventType: 'ip_allow_removed', // Using the correct valid event type
       details: {
-        action: 'ip_allowlist_removed',
         cidr: entry.cidr,
         label: entry.label,
         entryId
@@ -383,7 +381,7 @@ export async function updateIpAllowlistEntry(
     await db.insert(authEvents).values({
       actorUserId: actorUserId || entry.userId,
       targetUserId: entry.userId,
-      eventType: 'security_event', // Using a valid event type
+      eventType: 'settings_changed', // Using a valid event type for updates
       details: {
         action: 'ip_allowlist_updated',
         entryId,
