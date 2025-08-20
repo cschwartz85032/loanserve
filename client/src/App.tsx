@@ -22,6 +22,7 @@ import { AdminUserDetail } from "@/pages/AdminUserDetail";
 import { MigrateDatabase } from "@/pages/migrate-database";
 import MfaSettings from "@/pages/MfaSettings";
 import ActivatePage from "@/pages/activate";
+import ActivateTestPage from "@/pages/activate-test";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -48,6 +49,7 @@ function Router() {
       <ProtectedRoute path="/mfa-settings" component={MfaSettings} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/activate" component={ActivatePage} />
+      <Route path="/activate-test" component={ActivateTestPage} />
       <Route component={NotFound} />
     </Switch>
   );
