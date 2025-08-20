@@ -371,4 +371,4 @@ router.post('/admin/user/:userId/bulk', async (req, res) => {
   }
 });
 
-export default router;
+export { router as ipAllowlistRouter };

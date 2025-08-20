@@ -9,8 +9,8 @@ import { analyzeDocument } from "./openai";
 import feeRoutes from "./routes/fees";
 import { registerLedgerRoutes } from "./routes/ledger";
 import authRoutes from "./routes/auth";
-import adminUserRoutes from "./routes/admin-users";
-import ipAllowlistRoutes from "./routes/ip-allowlist";
+import { adminUsersRouter } from "./routes/admin-users";
+import { ipAllowlistRouter } from "./routes/ip-allowlist";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -73,6 +73,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Apply global middleware for policy engine
   app.use(loadUserPolicy); // Load user policy for all requests
   app.use(applyPIIMasking()); // Apply PII masking for regulators
+
+  // Register admin routes (requires authentication)
+  app.use('/api/admin/users', adminUsersRouter);
+  app.use('/api/ip-allowlist', ipAllowlistRouter);
 
   // ============= BORROWER ENTITY ROUTES =============
   app.get("/api/borrowers", 
@@ -1181,10 +1185,10 @@ To implement full file serving:
   app.use("/api/fees", feeRoutes);
 
   // Register admin user routes
-  app.use("/api/admin/users", adminUserRoutes);
+  app.use("/api/admin/users", adminUsersRouter);
   
   // Register IP allowlist routes
-  app.use("/api/ip-allowlist", ipAllowlistRoutes);
+  app.use("/api/ip-allowlist", ipAllowlistRouter);
   
   // Register ledger routes
   registerLedgerRoutes(app);
