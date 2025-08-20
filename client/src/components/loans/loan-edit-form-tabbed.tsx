@@ -760,7 +760,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
         {/* CRM Tab */}
         <TabsContent value="crm" className="space-y-6">
-          <LoanCRM loanId={parseInt(loanId)} />
+          <LoanCRM loanId={parseInt(loanId)} calculations={calculations} />
         </TabsContent>
 
         {/* Contacts Tab */}

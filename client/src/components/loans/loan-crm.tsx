@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,9 @@ import {
   MoreHorizontal,
   ChevronDown,
   Filter,
-  Search
+  Search,
+  Calculator,
+  DollarSign
 } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -44,9 +46,10 @@ import { useAuth } from '@/hooks/use-auth';
 
 interface LoanCRMProps {
   loanId: number;
+  calculations?: any;
 }
 
-export function LoanCRM({ loanId }: LoanCRMProps) {
+export function LoanCRM({ loanId, calculations }: LoanCRMProps) {
   const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState('notes');
   const [newNoteContent, setNewNoteContent] = useState('');
@@ -54,6 +57,16 @@ export function LoanCRM({ loanId }: LoanCRMProps) {
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newCallNotes, setNewCallNotes] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Helper function to format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount || 0);
+  };
 
   // Fetch CRM data
   const { data: notes = [], isLoading: notesLoading } = useQuery({
@@ -180,8 +193,93 @@ export function LoanCRM({ loanId }: LoanCRMProps) {
 
   return (
     <div className="grid grid-cols-12 gap-6">
-      {/* Main Content Area - Left Side */}
-      <div className="col-span-8 space-y-6">
+      {/* Left Column - Payment Breakdown and Info Cards */}
+      <div className="col-span-3 space-y-6">
+        {/* Payment Breakdown Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calculator className="h-5 w-5" />
+              Payment Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {calculations ? (
+              <div className="text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span>Hazard Insurance:</span>
+                  <span>{formatCurrency(calculations.breakdown?.hazardInsurance || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Property Taxes:</span>
+                  <span>{formatCurrency(calculations.breakdown?.propertyTaxes || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Escrow Cushion:</span>
+                  <span>{formatCurrency(calculations.breakdown?.escrowCushion || 0)}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t">
+                  <span>Sub-Total Escrows:</span>
+                  <span>{formatCurrency(calculations?.escrow || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>+ Principal & Interest:</span>
+                  <span>{formatCurrency(calculations?.principalAndInterest || 0)}</span>
+                </div>
+                {calculations?.hoaFees > 0 && (
+                  <div className="flex justify-between">
+                    <span>+ HOA:</span>
+                    <span>{formatCurrency(calculations.hoaFees)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span>+ Servicing Fees:</span>
+                  <span>{formatCurrency(calculations?.servicingFee || 0)}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t">
+                  <span>Total Payment:</span>
+                  <span>{formatCurrency(calculations?.totalMonthlyPayment || 0)}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground">No payment data available</div>
+            )}
+          </CardContent>
+        </Card>
+        
+        {/* Quick Stats Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Quick Stats
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>Total Notes:</span>
+                <span className="font-medium">{notes.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Open Tasks:</span>
+                <span className="font-medium">{tasks.filter((t: any) => t.status !== 'completed').length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Total Calls:</span>
+                <span className="font-medium">{calls.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Collaborators:</span>
+                <span className="font-medium">{collaborators.length}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Middle Column - Main Content Area */}
+      <div className="col-span-6 space-y-6">
         {/* Notes Section */}
         <Card>
           <CardHeader>
@@ -370,7 +468,8 @@ export function LoanCRM({ loanId }: LoanCRMProps) {
       </div>
 
       {/* Sidebar - Right Side */}
-      <div className="col-span-4 space-y-6">
+      {/* Right Column - Activity Timeline and Sidebar */}
+      <div className="col-span-3 space-y-6">
         {/* Appointments */}
         <Card>
           <CardHeader>
