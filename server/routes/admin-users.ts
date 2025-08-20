@@ -22,7 +22,14 @@ import {
 import { eq, and, or, like, sql, desc, inArray, isNull, lt, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import * as argon2 from 'argon2';
-import { createInvitationToken } from '../auth/auth-service';
+import { 
+  createInvitationToken,
+  createPasswordResetToken 
+} from '../auth/auth-service';
+import { 
+  sendPasswordResetEmail,
+  sendInvitationEmail 
+} from '../auth/email-service';
 import { ipAllowlistService } from '../auth/ip-allowlist-service';
 
 const router = Router();
@@ -820,6 +827,134 @@ router.get('/roles', async (req, res) => {
   } catch (error) {
     console.error('Error fetching roles:', error);
     res.status(500).json({ error: 'Failed to fetch roles' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/resend-invite
+ * Resend invitation email to user
+ */
+router.post('/:id/resend-invite', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    // Get user details
+    const [user] = await db.select({
+      email: users.email,
+      status: users.status,
+      role: users.role
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    if (user.status !== 'invited') {
+      return res.status(400).json({ error: 'User is not in invited status' });
+    }
+    
+    // Delete old invitation tokens
+    await db.delete(passwordResetTokens)
+      .where(eq(passwordResetTokens.userId, userId));
+    
+    // Create new invitation token
+    const result = await createInvitationToken(user.email, user.role, req.user.id);
+    
+    if (!result.success || !result.token) {
+      return res.status(500).json({ error: result.error || 'Failed to create invitation token' });
+    }
+    
+    // Send invitation email
+    const emailSent = await sendInvitationEmail(
+      user.email,
+      result.token,
+      user.role,
+      req.user.id
+    );
+    
+    if (!emailSent) {
+      return res.status(500).json({ error: 'Failed to send invitation email' });
+    }
+    
+    // Log the action
+    await db.insert(authEvents).values({
+      eventType: 'invitation_resent',
+      actorUserId: req.user.id,
+      targetUserId: userId,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] || null,
+      details: { email: user.email }
+    });
+    
+    res.json({ 
+      message: 'Invitation resent successfully',
+      email: user.email
+    });
+  } catch (error) {
+    console.error('Error resending invitation:', error);
+    res.status(500).json({ error: 'Failed to resend invitation' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/send-password-reset
+ * Send password reset email to user
+ */
+router.post('/:id/send-password-reset', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    
+    // Get user details
+    const [user] = await db.select({
+      email: users.email,
+      status: users.status
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    if (user.status === 'disabled') {
+      return res.status(400).json({ error: 'Cannot send password reset to disabled user' });
+    }
+    
+    // Create password reset token
+    const result = await createPasswordResetToken(user.email);
+    
+    if (!result.success || !result.token) {
+      return res.status(500).json({ error: result.error || 'Failed to create password reset token' });
+    }
+    
+    // Send password reset email
+    const emailSent = await sendPasswordResetEmail(user.email, result.token);
+    
+    if (!emailSent) {
+      return res.status(500).json({ error: 'Failed to send password reset email' });
+    }
+    
+    // Log the action (additional to the one created in createPasswordResetToken)
+    await db.insert(authEvents).values({
+      eventType: 'password_reset_sent_by_admin',
+      actorUserId: req.user.id,
+      targetUserId: userId,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] || null,
+      details: { email: user.email }
+    });
+    
+    res.json({ 
+      message: 'Password reset email sent successfully',
+      email: user.email
+    });
+  } catch (error) {
+    console.error('Error sending password reset:', error);
+    res.status(500).json({ error: 'Failed to send password reset' });
   }
 });
 
