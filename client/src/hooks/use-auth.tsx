@@ -40,10 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           password: credentials.password 
         }),
       });
-      return await res.json();
+      const data = await res.json();
+      // Return just the user object from the response
+      return data.user;
     },
     onSuccess: (user: SelectUser) => {
       queryClient.setQueryData(["/api/user"], user);
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error: Error) => {
       toast({

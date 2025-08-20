@@ -112,8 +112,36 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    res.json(req.user);
+  app.get("/api/user", async (req, res) => {
+    // Check for session userId (new auth system)
+    const userId = (req.session as any)?.userId;
+    
+    if (!userId) {
+      return res.sendStatus(401);
+    }
+    
+    try {
+      // Get user from database
+      const { db } = await import('./db');
+      const { users } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+      
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      
+      if (!user) {
+        return res.sendStatus(401);
+      }
+      
+      // Don't send password to client
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      res.sendStatus(500);
+    }
   });
 }
