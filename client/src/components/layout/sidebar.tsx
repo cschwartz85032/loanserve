@@ -19,22 +19,27 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Loan Portfolio", href: "/loans", icon: FileText },
-  { name: "Payments", href: "/payments", icon: CreditCard },
-  { name: "Fee Management", href: "/fees", icon: Receipt },
-  { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
-  { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
-  { name: "Compliance", href: "/compliance", icon: Shield },
-  { name: "Security Settings", href: "/mfa-settings", icon: Shield },
-  { name: "Admin", href: "/admin/documents", icon: Settings },
-];
-
 export function Sidebar() {
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
   const [activeRole, setActiveRole] = useState(user?.role || "lender");
+  
+  // Check if user has admin role
+  const hasAdminRole = user?.roles?.includes('admin');
+  
+  // Build navigation dynamically based on user roles
+  const navigation = [
+    { name: "Dashboard", href: "/", icon: LayoutDashboard },
+    { name: "Loan Portfolio", href: "/loans", icon: FileText },
+    { name: "Payments", href: "/payments", icon: CreditCard },
+    { name: "Fee Management", href: "/fees", icon: Receipt },
+    { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
+    { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
+    { name: "Compliance", href: "/compliance", icon: Shield },
+    { name: "Security Settings", href: "/mfa-settings", icon: Shield },
+    // Only show Admin menu if user has admin role
+    ...(hasAdminRole ? [{ name: "Admin", href: "/admin/documents", icon: Settings }] : []),
+  ];
 
   const handleLogout = () => {
     logoutMutation.mutate();

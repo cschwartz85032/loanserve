@@ -1,5 +1,7 @@
 import { 
-  users, 
+  users,
+  userRoles,
+  roles, 
   loans, 
   payments, 
   escrowAccounts, 
@@ -188,7 +190,22 @@ export class DatabaseStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
+    if (!user) return undefined;
+    
+    // Fetch user roles
+    const userRolesList = await db.select({
+      roleId: userRoles.roleId,
+      roleName: roles.name
+    })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, id));
+    
+    // Add roles to user object
+    return {
+      ...user,
+      roles: userRolesList.map(r => r.roleName)
+    } as any;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
