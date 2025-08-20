@@ -14,6 +14,13 @@ When encountering database or field-related errors:
 4. **Use diagnostic scripts** - run `node debug-db-schema.cjs [table] [search]` to quickly check columns
 5. **Avoid overcomplicating** - check simple causes (duplicate columns, mismatched schemas) before complex theories (build issues, caching)
 
+## Recent Achievements (August 20, 2025)
+Successfully implemented and tested user activation flow:
+- Fixed authentication event type constraints (changed 'account_activated' to 'user_updated')
+- Resolved status field database schema mismatch issues
+- Implemented proper token validation without consuming tokens during validation checks
+- Successfully activated invited user with username 'loanserve' (Corey Schwartz)
+
 # System Architecture
 
 ## UI/UX Decisions
