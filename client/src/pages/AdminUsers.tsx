@@ -534,6 +534,33 @@ function UserActionsMenu({ user }: { user: User }) {
     }
   });
 
+  const resendInviteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/admin/users/${user.id}/resend-invite`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to resend invitation');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ 
+        title: "Invitation resent successfully",
+        description: data.email ? `Email sent to ${data.email}` : data.message
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to resend invitation",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e: any) => e.stopPropagation()}>
@@ -574,10 +601,12 @@ function UserActionsMenu({ user }: { user: User }) {
           <RefreshCw className="w-4 h-4 mr-2" />
           Reset Password
         </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Mail className="w-4 h-4 mr-2" />
-          Resend Verification
-        </DropdownMenuItem>
+        {!user.emailVerified && !user.lastLogin && (
+          <DropdownMenuItem onClick={() => resendInviteMutation.mutate()}>
+            <Mail className="w-4 h-4 mr-2" />
+            Resend Invitation
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
