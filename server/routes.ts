@@ -8,6 +8,7 @@ import fs from "fs/promises";
 import { analyzeDocument } from "./openai";
 import feeRoutes from "./routes/fees";
 import { registerLedgerRoutes } from "./routes/ledger";
+import authRoutes from "./routes/auth";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -63,6 +64,9 @@ const upload = multer({ storage: uploadStorage });
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   await setupAuth(app);
+
+  // Register auth routes first (before policy middleware)
+  app.use('/api/auth', authRoutes);
 
   // Apply global middleware for policy engine
   app.use(loadUserPolicy); // Load user policy for all requests
