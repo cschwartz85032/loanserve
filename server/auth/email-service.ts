@@ -345,16 +345,8 @@ export async function sendEmail(
  * Get the application base URL
  */
 function getBaseUrl(): string {
-  // Check for Replit domains
-  if (process.env.REPLIT_DOMAINS) {
-    const domains = process.env.REPLIT_DOMAINS.split(',');
-    // Use the first domain (usually the .replit.app domain)
-    const primaryDomain = domains[0];
-    return `https://${primaryDomain}`;
-  }
-  
-  // Fallback to APP_URL or localhost
-  return process.env.APP_URL || 'http://localhost:5000';
+  // Use the specific Replit app URL
+  return 'https://mortgage-servicing-serinova1.replit.app';
 }
 
 /**
