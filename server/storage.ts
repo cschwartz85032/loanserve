@@ -342,11 +342,20 @@ export class DatabaseStorage implements IStorage {
     console.log("=== STORAGE: createLoan called ===");
     console.log("Insert data received:", JSON.stringify(insertLoan, null, 2));
     
+    // Production workaround: Ensure field names are correct
+    // Some production builds incorrectly transform servicingFeeType to servicingFileType
+    const cleanInsertData = { ...insertLoan };
+    if ('servicingFileType' in cleanInsertData) {
+      console.log("WARNING: Found incorrect field 'servicingFileType', correcting to 'servicingFeeType'");
+      (cleanInsertData as any).servicingFeeType = (cleanInsertData as any).servicingFileType;
+      delete (cleanInsertData as any).servicingFileType;
+    }
+    
     try {
       console.log("Attempting to insert into database...");
       const [loan] = await db
         .insert(loans)
-        .values(insertLoan)
+        .values(cleanInsertData)
         .returning();
       
       console.log("Loan inserted successfully:", loan);
