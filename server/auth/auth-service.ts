@@ -208,7 +208,7 @@ export async function recordLoginAttempt(
   // Find user by email
   const [user] = await db.select({
     id: users.id,
-    failedLoginCount: users.failedLoginCount,
+    failedLoginAttempts: users.failedLoginAttempts,
     status: users.status
   })
   .from(users)
@@ -252,7 +252,7 @@ export async function recordLoginAttempt(
   // Update failed login count on user
   await db.update(users)
     .set({ 
-      failedLoginCount: failureCount,
+      failedLoginAttempts: failureCount,
       updatedAt: new Date()
     })
     .where(eq(users.id, userId));
@@ -293,7 +293,7 @@ async function unlockAccount(userId: number, reason: string): Promise<void> {
   await db.update(users)
     .set({ 
       status: 'active',
-      failedLoginCount: 0,
+      failedLoginAttempts: 0,
       updatedAt: new Date()
     })
     .where(eq(users.id, userId));
@@ -401,9 +401,8 @@ export async function login(
     // Password is valid and IP is allowed - reset failed login count
     await db.update(users)
       .set({ 
-        failedLoginCount: 0,
-        lastLoginAt: new Date(),
-        lastLoginIp: ip,
+        failedLoginAttempts: 0,
+        lastLogin: new Date(),
         updatedAt: new Date()
       })
       .where(eq(users.id, user.id));
