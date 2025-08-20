@@ -59,7 +59,7 @@ The application features a modern, component-based UI designed for clarity and e
 - **File Storage**: Scalable cloud storage for documents.
 
 ## User Management System
-An enterprise user management subsystem with role-based access control, living under Admin -> Users. It supports defined roles (admin, title, legal, lender, borrower, investor, regulator) with granular permission levels (none, read, write, admin) across various resources (Users, Loans, Payments, Escrow, Investor Positions, Reports, Settings, Audit Logs). Features include a robust password policy, account lockout, IP allowlisting with automatic expiration for temporary travel access, and secure invitation/password reset flows. All actions are auditable.
+An enterprise user management subsystem with role-based access control, living under Admin -> Users. It supports defined roles (admin, title, legal, lender, borrower, investor, regulator) with granular permission levels (none, read, write, admin) across various resources (Users, Loans, Payments, Escrow, Investor Positions, Reports, Settings, Audit Logs). Features include a robust password policy, account lockout, non-restrictive IP tracking (allows login from any IP while maintaining audit trail of trusted IPs), and secure invitation/password reset flows. All actions are auditable.
 
 # External Dependencies
 
