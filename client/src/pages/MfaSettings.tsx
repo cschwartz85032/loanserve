@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
+import { Sidebar } from "@/components/layout/sidebar";
 import {
   Card,
   CardContent,
@@ -282,26 +283,40 @@ Once you have used a backup code, it cannot be used again.
 
   if (isLoading) {
     return (
-      <div className="p-8">
-        <div className="animate-pulse">
-          <div className="h-8 bg-slate-200 rounded w-1/4 mb-4"></div>
-          <div className="h-4 bg-slate-200 rounded w-1/2"></div>
-        </div>
+      <div className="min-h-screen flex bg-slate-50">
+        <Sidebar />
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-8">
+            <div className="animate-pulse">
+              <div className="h-8 bg-slate-200 rounded w-1/4 mb-4"></div>
+              <div className="h-4 bg-slate-200 rounded w-1/2"></div>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Security Settings</h1>
-        <p className="text-muted-foreground">
-          Manage your Multi-Factor Authentication (MFA) settings
-        </p>
-      </div>
+    <div className="min-h-screen flex bg-slate-50">
+      <Sidebar />
+      
+      <main className="flex-1 overflow-y-auto">
+        {/* Header */}
+        <header className="bg-white border-b border-slate-200 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Security Settings</h1>
+              <p className="text-sm text-slate-600">Manage your Multi-Factor Authentication (MFA) settings</p>
+            </div>
+          </div>
+        </header>
 
-      {/* MFA Status Card */}
-      <Card className="mb-6">
+        {/* Content */}
+        <div className="p-6">
+          <div className="max-w-4xl mx-auto">
+            {/* MFA Status Card */}
+            <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -412,28 +427,31 @@ Once you have used a backup code, it cannot be used again.
             </p>
           )}
         </CardContent>
-      </Card>
+            </Card>
 
-      {/* Backup Codes */}
-      {mfaStatus?.mfaEnabled && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Backup Codes</CardTitle>
-            <CardDescription>
-              Use these codes to access your account if you lose your device
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              onClick={() => generateBackupCodesMutation.mutate(true)}
-              variant="outline"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Generate New Codes
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+            {/* Backup Codes */}
+            {mfaStatus?.mfaEnabled && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Backup Codes</CardTitle>
+                  <CardDescription>
+                    Use these codes to access your account if you lose your device
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button
+                    onClick={() => generateBackupCodesMutation.mutate(true)}
+                    variant="outline"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Generate New Codes
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      </main>
 
       {/* Enrollment Dialog */}
       <Dialog open={enrollDialogOpen} onOpenChange={setEnrollDialogOpen}>
