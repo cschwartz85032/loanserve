@@ -325,3 +325,5 @@ export default function ActivatePage() {
     </div>
   );
 }
+
+export default ActivatePage;
