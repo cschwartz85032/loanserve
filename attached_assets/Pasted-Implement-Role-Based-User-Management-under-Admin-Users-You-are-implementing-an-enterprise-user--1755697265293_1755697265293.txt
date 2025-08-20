@@ -1,0 +1,580 @@
+Implement Role-Based User Management under Admin ? Users
+
+You are implementing an enterprise user management subsystem with role-based access control. It will live under Admin -> Users and govern access across the application. It must be secure, fully auditable, idempotent, and deterministic.
+
+Scope and objectives
+
+Create users, assign one or more roles, and enforce role-based permissions across all API routes and UI views.
+
+Provide strong authentication with lockouts after a configurable number of failed attempts, IP address recording, and an IP allowlist that supports multiple entries per user with friendly labels.
+
+Provide password reset flows, invitation flows, and status controls.
+
+Maintain exhaustive audit logs for all auth and admin actions, with immutable event records, IP, user agent, and acting user.
+
+Restrict parts of the system per role: full access, read only, or invisible.
+
+All new data required by this spec must be added through forward-only migrations. Do not break existing data.
+
+Roles and default access model
+
+Define first-class roles as an enum or reference table: title, legal, lender, borrower, investor, regulator, plus admin for platform administrators.
+
+Define a resource list that maps to actual modules and routes. At minimum include:
+
+Users and Roles
+
+Loans
+
+Payments and Allocations
+
+Escrow and Disbursements
+
+Investor Positions and Distributions
+
+Reports
+
+Settings
+
+Audit Logs
+
+Permission levels per resource: none, read, write, admin.
+Default policy matrix:
+
+admin: admin on all resources.
+
+title: read loans, read escrow, write escrow disbursements in their assigned jurisdictions if applicable, none on Users, read reports.
+
+legal: read all, write on compliance and audit annotations, none on Settings, none on Users except read audit logs.
+
+lender: write loans and payments within assigned portfolios, read escrow, read investor, none on Users.
+
+borrower: read only on their own loans and statements, none elsewhere.
+
+investor: read only on their own positions, distributions, and tax docs, none elsewhere.
+
+regulator: read only on all resources with PII masking rules applied, none on Users and Settings.
+
+Make the matrix data-driven so an admin can adjust policies without code changes. Enforce a hard cap that a user cannot escalate their own privileges.
+
+Data model additions and migrations
+
+If these objects or fields do not exist, create them. Use PostgreSQL types uuid for ids, timestamptz for instants, inet for IPs. Monetary values are not needed here.
+
+users
+
+id uuid pk
+
+email citext unique not null
+
+password_hash text nullable when SSO invited
+
+status enum: invited, active, locked, suspended, disabled
+
+last_login_at timestamptz
+
+last_login_ip inet
+
+failed_login_count integer not null default 0
+
+password_updated_at timestamptz
+
+created_at timestamptz not null default now()
+
+updated_at timestamptz not null default now()
+
+roles
+
+id uuid pk
+
+name text unique not null in {admin, title, legal, lender, borrower, investor, regulator}
+
+description text
+
+user_roles
+
+user_id uuid fk users
+
+role_id uuid fk roles
+
+unique(user_id, role_id)
+
+permissions
+
+id uuid pk
+
+resource text not null
+
+level text not null in {none, read, write, admin}
+
+unique(resource, level)
+
+role_permissions
+
+role_id uuid fk roles
+
+permission_id uuid fk permissions
+
+scope jsonb nullable for future attribute-based constraints
+
+unique(role_id, permission_id)
+
+user_ip_allowlist
+
+id uuid pk
+
+user_id uuid fk users
+
+label text not null
+
+cidr cidr not null — support IPv4 and IPv6
+
+is_active boolean not null default true
+
+unique(user_id, cidr)
+
+auth_events — append-only audit log
+
+id uuid pk
+
+occurred_at timestamptz not null default now()
+
+actor_user_id uuid fk users nullable for anonymous events like login_failed
+
+target_user_id uuid fk users nullable
+
+event_type text not null
+
+examples: user_created, user_updated, role_assigned, role_revoked, login_succeeded, login_failed, account_locked, account_unlocked, password_reset_requested, password_reset_completed, ip_allow_added, ip_allow_removed, permission_matrix_changed
+
+ip inet nullable
+
+user_agent text nullable
+
+details jsonb not null — never store raw passwords or secrets
+
+event_key text unique nullable for idempotency of admin actions
+
+login_attempts — for rate limiting and forensics
+
+id uuid pk
+
+user_id uuid fk users nullable when email unknown
+
+email_attempted citext
+
+attempted_at timestamptz not null default now()
+
+ip inet
+
+user_agent text
+
+outcome text in {succeeded, failed, locked}
+
+reason text nullable
+
+password_reset_tokens
+
+id uuid pk
+
+user_id uuid fk users
+
+token_hash text not null
+
+expires_at timestamptz not null
+
+used_at timestamptz nullable
+
+created_at timestamptz not null default now()
+
+unique(user_id, token_hash)
+
+sessions — if not already present
+
+id uuid pk
+
+user_id uuid fk users
+
+created_at timestamptz not null default now()
+
+last_seen_at timestamptz
+
+ip inet
+
+user_agent text
+
+revoked_at timestamptz nullable
+
+reason text nullable
+
+All tables must have foreign keys, indexes on common lookups, and row-level created_at and updated_at where edits occur. Write forward-only migrations with guards so reruns are safe.
+
+Authentication and password policy
+
+Hash passwords with Argon2id using memory-hard parameters suitable for servers. Store only the hash and a password_updated_at timestamp.
+
+Password policy: minimum length 12, mixed classes recommended, reject common passwords using a local list.
+
+On each login attempt:
+
+Record a login_attempts row including IP and user agent.
+
+Increment users.failed_login_count only when the email exists.
+
+If failed_login_count exceeds LOCKOUT_THRESHOLD within a rolling window LOCKOUT_WINDOW_MINUTES, set status=locked and record an auth_events account_locked with reason.
+
+When login succeeds, reset failed_login_count to 0, update last_login_at and last_login_ip, record auth_events login_succeeded.
+
+Lockout behavior:
+
+Locked users cannot authenticate until an unlock event. Provide two unlock options: time-based auto unlock after LOCKOUT_AUTO_UNLOCK_MINUTES, or admin manual unlock with auth_events account_unlocked.
+
+When locked, continue to record attempts with outcome locked.
+
+IP allowlist enforcement:
+
+If a user has any active user_ip_allowlist rows, then only allow authentication when the request IP matches one of those CIDRs.
+
+If there are none, allow all IPs by default.
+
+Always record the request IP and whether it matched an allowlist entry in auth_events.details.
+
+Invitations and password reset flows
+
+Invitation:
+
+Admin can invite by email and assign roles. Create users row with status=invited and no password_hash.
+
+Send a time-bound invite link with a signed token. On acceptance, collect password, set status=active, and emit auth_events user_created and role_assigned events.
+
+Password reset:
+
+Endpoint accepts email, always respond with generic success. If user exists and status is not disabled, create password_reset_tokens with a random secret, store only its hash, expiry default 60 minutes. Email a link with the opaque token.
+
+Redeem endpoint verifies token, expiry, and used_at is null, then allows setting a new password, updates password_hash and password_updated_at, sets used_at, records auth_events password_reset_completed. Invalidate all active sessions for that user.
+
+RBAC enforcement
+
+Server side:
+
+Implement a policy engine that resolves a user’s effective permissions from user_roles joined to role_permissions.
+
+Resource guards:
+
+Route middleware checks the required permission level for each endpoint.
+
+Enforce row-level scoping for borrower and investor so that they can only read their own records. Use secure joins keyed by user_id to borrower or investor party id.
+
+Enforce that regulator sees masked PII. Implement masking in the data access layer, not the UI.
+
+Client side:
+
+Use the same permission map to conditionally render UI.
+
+For each page and component, define three modes by resource and level:
+
+Invisible: component is not rendered.
+
+Read only: fields disabled, no write actions shown.
+
+Write: full interaction.
+
+Never rely on client checks alone. The server is authoritative.
+
+Admin ? Users UI
+
+Build under Admin ? Users with the following views and actions. All actions write auth_events.
+
+Users list
+
+Columns: name, email, status, roles, last_login_at, last_login_ip, failed_login_count.
+
+Filters: status, role. Sort by created_at or last_login_at.
+
+User detail
+
+Tabs: Profile, Roles, IP Allowlist, Sessions, Audit Log.
+
+Profile: email, status, created_at, updated_at, password_updated_at. Actions: Reset password, Lock, Unlock, Suspend, Disable, Resend invite.
+
+Roles: assign and revoke roles with a visible permission summary.
+
+IP Allowlist: list of CIDRs with labels. Actions: add, deactivate, delete. Validate CIDR correctness.
+
+Sessions: list active sessions with device, IP, last_seen_at, revoke action.
+
+Audit Log: stream of auth_events involving this user with filtering.
+
+Bulk actions
+
+Bulk invite and bulk role assignment for selected users.
+
+Export users as CSV with non-sensitive fields.
+
+Permission matrix viewer
+
+Read only table that shows the current role-to-permissions mapping. Admins can edit when feature flag enabled.
+
+Security controls
+
+Rate limiting per IP and per email for login and reset endpoints. Use a token bucket in Redis or database with sliding window.
+
+CSRF protection on form posts.
+
+All secrets and tokens are single use and short lived.
+
+All emails use templates that avoid leaking whether an email exists.
+
+PII masking for regulator:
+
+Email show first letter and domain only.
+
+Addresses and phone partially masked.
+
+Full unmask requires admin permission and explicit action that generates an auth_events pii_unmasked entry.
+
+Auditing requirements
+
+Every state change writes an auth_events row.
+
+auth_events.details includes old_value and new_value for changed fields where appropriate, excluding secrets.
+
+Provide an immutable export endpoint for audit logs by date range with server-side pagination.
+
+Provide an integrity check endpoint that counts events per type and compares to derived state to detect missing logs.
+
+Configuration
+
+System settings stored in a settings or config table if not present:
+
+LOCKOUT_THRESHOLD default 5
+
+LOCKOUT_WINDOW_MINUTES default 15
+
+LOCKOUT_AUTO_UNLOCK_MINUTES default 30
+
+PASSWORD_RESET_EXPIRY_MINUTES default 60
+
+LOGIN_RATE_LIMITS per IP and per email
+
+EMAIL_FROM and template ids for invite and reset
+
+REGULATOR_PII_MASKING enabled flag
+
+Settings are editable only by admin and changes write auth_events permission_matrix_changed or settings_changed.
+
+API surface
+
+Implement typed endpoints. All endpoints require auth except invite and reset initiations.
+
+POST /api/admin/users/invite
+
+GET /api/admin/users
+
+GET /api/admin/users/:id
+
+PATCH /api/admin/users/:id
+
+POST /api/admin/users/:id/lock
+
+POST /api/admin/users/:id/unlock
+
+POST /api/admin/users/:id/reset-password
+
+GET /api/admin/users/:id/audit-events
+
+POST /api/admin/users/:id/ip-allowlist
+
+DELETE /api/admin/users/:id/ip-allowlist/:entryId
+
+POST /api/admin/users/:id/roles
+
+DELETE /api/admin/users/:id/roles/:roleId
+
+Auth endpoints
+
+POST /api/auth/login
+
+POST /api/auth/logout
+
+POST /api/auth/password-reset/request
+
+POST /api/auth/password-reset/confirm
+
+All endpoints return deterministic error codes and messages that do not leak sensitive information.
+
+Determinism and idempotency
+
+Admin actions that can be double posted must carry a deterministic event_key and perform upsert semantics. Example: assigning the same role twice should be a no-op that still records a single audit event identified by userId|roleId|assign.
+
+Invitations are idempotent per email within a time window.
+
+Password reset token redemption is single use. Use an atomic update that sets used_at only if null.
+
+Tests and acceptance criteria
+
+Write unit and integration tests that verify:
+
+Role resolution and effective permission calculation for multi-role users.
+
+Route guards enforce permissions including borrower and investor scoping.
+
+Lockout triggers after the configured threshold inside the window and auto unlock works.
+
+IP allowlist blocks non-matching IPs and allows matching IPv4 and IPv6.
+
+Password reset flow: request, email sent, token redeemed, sessions revoked.
+
+Audit events emitted for all actions with correct fields.
+
+Regulator PII masking applied in list and detail endpoints.
+
+Idempotent behavior on duplicate role assignment, repeated invite, and repeated password reset requests.
+
+Define explicit acceptance criteria:
+
+A locked user cannot authenticate and receives a generic error.
+
+An investor can only view distributions for loans they are attached to.
+
+A borrower sees only their own loan records and cannot discover others by id probing.
+
+A regulator can browse read only across resources but never sees unmasked PII.
+
+Admin can view, edit, and delete user IP allowlist entries and see their effect in the next login attempt.
+
+All events carry IP, user agent, timestamp, and actor where applicable.
+
+Implementation notes
+
+Use server-side middleware to load the authenticated user, resolve effective permissions, and attach a requestContext with user id, roles, IP, and correlation id for logging.
+
+Store IPs in inet, CIDRs in cidr. Validate CIDR syntax on input.
+
+Use strong random number generation for tokens. Store only token hashes.
+
+Keep secrets out of logs.
+
+Build a simple email adapter interface so you can swap providers without code changes.
+
+Multi Factor Authentication (MFA)
+Factor types and policy
+
+Support factors: TOTP authenticator app, WebAuthn passkeys or security keys, one time backup codes. SMS or email codes are optional and discouraged except as temporary recovery for low risk roles.
+
+Enforcement is data driven by role. Create a matrix that maps each role to requirements: minimum factors, allowed factor types, remember device duration, step up actions.
+
+admin, regulator: require at least one hardware bound factor (WebAuthn) or two factors total.
+
+legal, title, lender: require at least one factor.
+
+borrower, investor: configurable, default recommended on.
+
+Sensitive operations require step up MFA even inside a session. Examples: changing bank instructions, releasing distributions, editing permissions, unmasking PII.
+
+Data model additions
+
+Create forward only migrations with indexes and FKs. Use uuid PKs, timestamptz, and encrypt secrets at rest.
+
+user_mfa_factors
+id, user_id fk users, type enum (totp, webauthn, sms, email), label, secret_encrypted (TOTP), phone_e164 (if used), webauthn_credential_id bytea, webauthn_public_key bytea, webauthn_sign_count integer, transports text[], verified_at, created_at, last_used_at, disabled_at
+
+mfa_backup_codes
+id, user_id, code_hash, used_at, created_at
+
+mfa_challenges
+id, user_id, type, created_at, expires_at, challenge_data jsonb, consumed_at, ip inet, user_agent text
+
+user_devices (trusted devices)
+id, user_id, device_fingerprint text unique, first_seen_at, last_seen_at, trusted_until, last_ip inet, user_agent text
+
+settings (or config) additions
+MFA_REQUIRED_BY_ROLE jsonb, MFA_REMEMBER_DEVICE_DAYS integer, MFA_STEP_UP_MAX_AGE_MIN integer, MFA_TOTP_TIME_STEP_SEC integer default 30, MFA_TOTP_WINDOW_STEPS integer default 1
+
+Login and session flow
+
+Primary auth succeeds (password or SSO), IP allowlist check passes.
+
+Check enforcement for the user’s roles. If MFA required and not satisfied on this device, create mfa_challenges row and return a challenge state.
+
+Verify factor:
+
+TOTP: accept 6 digit codes, time step 30 seconds, window ±1 step, rate limit attempts.
+
+WebAuthn: implement Registration and Authentication ceremonies, verify rpId, origin, UV flags, sign count.
+
+Backup code: single use, compare against code_hash.
+
+On success, issue full session, set users.last_login_at and last_login_ip, record auth_events mfa_verified with factor type. If “remember device” is allowed, create or update user_devices with trusted_until.
+
+On failure, increment an MFA specific counter, record auth_events mfa_failed. Lock only the factor after N failures by default, not the whole account unless policy says so.
+
+Enrollment and recovery
+
+TOTP enrollment: generate random secret, display QR, do not store raw secret. Encrypt secret with envelope encryption and rotate keys via KMS. Require a successful code to mark verified_at.
+
+WebAuthn registration: begin, return challenge, complete with attestation, store credential_id, public_key, sign_count, transports. For admin and regulator require user verification flag true.
+
+Backup codes: generate 10 random codes, store only hashes, show once for download. auth_events backup_codes_generated and each use emits backup_code_used.
+
+Recovery policy: admin assisted reset requires a second admin or a break glass approval and always generates audit entries. Optional SMS or email factor may be enabled only for roles that allow it.
+
+API endpoints
+
+POST /api/auth/mfa/enroll/totp.begin
+
+POST /api/auth/mfa/enroll/totp.verify
+
+POST /api/auth/mfa/enroll/webauthn.begin
+
+POST /api/auth/mfa/enroll/webauthn.finish
+
+POST /api/auth/mfa/challenge (issues challenge after primary auth)
+
+POST /api/auth/mfa/verify
+
+POST /api/auth/mfa/backup-codes/generate
+
+GET /api/auth/mfa/backup-codes
+
+POST /api/auth/mfa/device/trust
+
+GET /api/auth/mfa/devices
+
+DELETE /api/auth/mfa/devices/:id
+
+All endpoints must record auth_events with ip, user_agent, event_type in {mfa_challenge_issued, mfa_verified, mfa_failed, mfa_enrolled, mfa_removed, backup_codes_generated, backup_code_used}.
+
+UI under Admin -> Users -> Security
+
+Show enrolled factors with type, label, verified_at, last_used_at, disable action.
+
+Trusted devices list with revoke.
+
+Role based enforcement summary and editor for admins.
+
+Audit log tab filters for MFA events.
+
+Cryptographic and operational requirements
+
+Argon2id for passwords, TLS everywhere, strict CSRF on enroll and verify endpoints.
+
+Do not log secrets or raw codes.
+
+TOTP secrets are encrypted at rest and in backups.
+
+WebAuthn counters are checked for cloning detection; handle passkeys that sync across platforms.
+
+Session state includes mfa_level and last_mfa_at. Step up is required when last_mfa_at is older than MFA_STEP_UP_MAX_AGE_MIN for sensitive actions.
+
+Tests
+
+Positive and negative cases for TOTP and WebAuthn.
+
+Device trust expiry and revocation.
+
+Policy enforcement by role, including step up for sensitive routes.
+
+Rate limiting and lockout on MFA attempts.
+
+End to end: password login, MFA challenge, verify, full session, audit entries present and correct.
