@@ -1070,11 +1070,13 @@ function AssignRoleDialog({ availableRoles, currentRoles, onAssign }: any) {
 
 function IpAllowlistTab({ userId, ipAllowlist }: any) {
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [newEntry, setNewEntry] = useState({ label: '', cidr: '', expiresAt: '' });
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<any>(null);
+  const [newEntry, setNewEntry] = useState({ label: '', cidr: '', beginsAt: '', expiresAt: '' });
   const { toast } = useToast();
 
   const addMutation = useMutation({
-    mutationFn: async (data: { label: string; cidr: string; expiresAt?: string }) => {
+    mutationFn: async (data: { label: string; cidr: string; beginsAt?: string; expiresAt?: string }) => {
       const res = await apiRequest('/api/ip-allowlist', {
         method: 'POST',
         body: JSON.stringify({ ...data, userId })
@@ -1085,12 +1087,41 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
       toast({ title: "IP allowlist entry added" });
       queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${userId}`] });
       setShowAddDialog(false);
-      setNewEntry({ label: '', cidr: '', expiresAt: '' });
+      setNewEntry({ label: '', cidr: '', beginsAt: '', expiresAt: '' });
     },
     onError: (error: any) => {
       toast({ 
         title: "Failed to add IP entry", 
         description: error.message || "This IP might already be in the allowlist",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: { id: string; label: string; cidr: string; beginsAt?: string; expiresAt?: string; isActive: boolean }) => {
+      const res = await apiRequest(`/api/ip-allowlist/${data.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          label: data.label,
+          cidr: data.cidr,
+          beginsAt: data.beginsAt,
+          expiresAt: data.expiresAt,
+          isActive: data.isActive
+        })
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "IP allowlist entry updated" });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${userId}`] });
+      setShowEditDialog(false);
+      setEditingEntry(null);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update IP entry", 
+        description: error.message,
         variant: "destructive"
       });
     }
@@ -1180,6 +1211,17 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                   </p>
                 </div>
                 <div>
+                  <Label>Begin Date (Optional)</Label>
+                  <Input
+                    type="datetime-local"
+                    value={newEntry.beginsAt}
+                    onChange={(e) => setNewEntry({ ...newEntry, beginsAt: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Leave empty to start immediately, or set a future date for scheduled access
+                  </p>
+                </div>
+                <div>
                   <Label>Expiration Date (Optional)</Label>
                   <Input
                     type="datetime-local"
@@ -1200,6 +1242,94 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                   disabled={!newEntry.label || !newEntry.cidr}
                 >
                   Add Entry
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Dialog */}
+          <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit IP Allowlist Entry</DialogTitle>
+                <DialogDescription>
+                  Modify the IP address or CIDR range settings
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>Label</Label>
+                  <Input
+                    placeholder="Home office"
+                    value={editingEntry?.label || ''}
+                    onChange={(e) => setEditingEntry({ ...editingEntry, label: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>IP Address or CIDR Range</Label>
+                  <Input
+                    placeholder="192.168.1.0/24 or 10.0.0.1"
+                    value={editingEntry?.cidr || ''}
+                    onChange={(e) => setEditingEntry({ ...editingEntry, cidr: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Examples: 192.168.1.0/24, 10.0.0.1, 2001:db8::/32
+                  </p>
+                </div>
+                <div>
+                  <Label>Begin Date (Optional)</Label>
+                  <Input
+                    type="datetime-local"
+                    value={editingEntry?.beginsAt ? new Date(editingEntry.beginsAt).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setEditingEntry({ ...editingEntry, beginsAt: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Leave empty to start immediately, or set a future date for scheduled access
+                  </p>
+                </div>
+                <div>
+                  <Label>Expiration Date (Optional)</Label>
+                  <Input
+                    type="datetime-local"
+                    value={editingEntry?.expiresAt ? new Date(editingEntry.expiresAt).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setEditingEntry({ ...editingEntry, expiresAt: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Leave empty for permanent access, or set a date for temporary access (e.g., during travel)
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="edit-active"
+                    checked={editingEntry?.isActive}
+                    onCheckedChange={(checked) => setEditingEntry({ ...editingEntry, isActive: checked })}
+                  />
+                  <Label htmlFor="edit-active">Active</Label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => {
+                  setShowEditDialog(false);
+                  setEditingEntry(null);
+                }}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={() => {
+                    if (editingEntry) {
+                      updateMutation.mutate({
+                        id: editingEntry.id,
+                        label: editingEntry.label,
+                        cidr: editingEntry.cidr,
+                        beginsAt: editingEntry.beginsAt || undefined,
+                        expiresAt: editingEntry.expiresAt || undefined,
+                        isActive: editingEntry.isActive
+                      });
+                    }
+                  }}
+                  disabled={!editingEntry?.label || !editingEntry?.cidr}
+                >
+                  Save Changes
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -1227,7 +1357,19 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
             </TableHeader>
             <TableBody>
               {ipAllowlist.map((entry: any) => (
-                <TableRow key={entry.id}>
+                <TableRow 
+                  key={entry.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={(e) => {
+                    // Don't open edit dialog if clicking on actions (switch or delete button)
+                    const target = e.target as HTMLElement;
+                    if (target.closest('[role="button"]') || target.closest('[role="switch"]')) {
+                      return;
+                    }
+                    setEditingEntry(entry);
+                    setShowEditDialog(true);
+                  }}
+                >
                   <TableCell className="font-medium">{entry.label}</TableCell>
                   <TableCell className="font-mono text-sm">{entry.cidr}</TableCell>
                   <TableCell>
@@ -1279,7 +1421,7 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
                       <span className="text-sm text-muted-foreground">Never</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-2">
                       <Switch
                         checked={entry.isActive}
