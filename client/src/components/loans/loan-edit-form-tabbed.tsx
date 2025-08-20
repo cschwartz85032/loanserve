@@ -107,18 +107,22 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     if (loan) {
       console.log('Loading loan data into form:', loan);
       console.log('Escrow disbursements available:', escrowDisbursements?.length || 0);
-      // Map originalAmount to loanAmount for UI display
-      setFormData({
+      // Map originalAmount to loanAmount for UI display and ensure all servicing fields exist
+      const formDataWithDefaults = {
         ...loan,
         loanAmount: loan.originalAmount || loan.loanAmount || '',
-        // Ensure servicing settings fields are always included
+        // Ensure ALL servicing settings fields are always included with proper defaults
         servicingFee: loan.servicingFee || '',
         servicingFeeType: loan.servicingFeeType || 'percentage',
         lateCharge: loan.lateCharge || loan.lateChargeAmount || '',
         lateChargeType: loan.lateChargeType || 'percentage',
         feePayer: loan.feePayer || '',
-        gracePeriodDays: loan.gracePeriodDays || ''
-      });
+        gracePeriodDays: loan.gracePeriodDays || '',
+        investorLoanNumber: loan.investorLoanNumber || '',
+        poolNumber: loan.poolNumber || ''
+      };
+      console.log('Form data with defaults:', formDataWithDefaults);
+      setFormData(formDataWithDefaults);
       calculatePayments(loan, escrowDisbursements);
     }
   }, [loan, escrowDisbursements]);
