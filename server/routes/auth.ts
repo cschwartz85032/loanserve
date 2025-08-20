@@ -316,4 +316,147 @@ router.post('/validate-password', (req, res) => {
   });
 });
 
+/**
+ * POST /api/auth/password-reset/request
+ * Request password reset token
+ */
+router.post('/password-reset/request', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ 
+        error: 'Email is required',
+        code: 'MISSING_EMAIL' 
+      });
+    }
+
+    // Import email service
+    const { 
+      createPasswordResetToken,
+      sendPasswordResetEmail,
+      sendGenericResponseEmail 
+    } = await import('../auth/auth-service');
+    const emailService = await import('../auth/email-service');
+
+    // Create reset token
+    const result = await createPasswordResetToken(email);
+
+    // Send email
+    if (result.token) {
+      // User exists, send reset email
+      await emailService.sendPasswordResetEmail(email, result.token);
+    } else {
+      // User doesn't exist or is disabled, send generic response
+      await emailService.sendGenericResponseEmail(email);
+    }
+
+    // Always return success to prevent account enumeration
+    res.json({ 
+      success: true,
+      message: 'If an account exists with this email, you will receive password reset instructions.' 
+    });
+
+  } catch (error) {
+    console.error('Password reset request error:', error);
+    res.status(500).json({ 
+      error: 'An error occurred processing your request',
+      code: 'INTERNAL_ERROR' 
+    });
+  }
+});
+
+/**
+ * POST /api/auth/password-reset/confirm
+ * Reset password with token
+ */
+router.post('/password-reset/confirm', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ 
+        error: 'Token and new password are required',
+        code: 'MISSING_PARAMS' 
+      });
+    }
+
+    // Import auth service
+    const { resetPasswordWithToken } = await import('../auth/auth-service');
+
+    // Reset password
+    const result = await resetPasswordWithToken(token, newPassword);
+
+    if (!result.success) {
+      return res.status(400).json({ 
+        error: result.error || 'Password reset failed',
+        code: 'RESET_FAILED',
+        errors: (result as any).errors
+      });
+    }
+
+    res.json({ 
+      success: true,
+      message: 'Password reset successfully. Please login with your new password.' 
+    });
+
+  } catch (error) {
+    console.error('Password reset confirm error:', error);
+    res.status(500).json({ 
+      error: 'An error occurred resetting your password',
+      code: 'INTERNAL_ERROR' 
+    });
+  }
+});
+
+/**
+ * POST /api/auth/activate
+ * Activate account with invitation token
+ */
+router.post('/activate', async (req, res) => {
+  try {
+    const { token, username, password, firstName, lastName } = req.body;
+
+    if (!token || !username || !password || !firstName || !lastName) {
+      return res.status(400).json({ 
+        error: 'All fields are required',
+        code: 'MISSING_FIELDS' 
+      });
+    }
+
+    // Import auth service
+    const { activateAccountWithToken } = await import('../auth/auth-service');
+
+    // Activate account
+    const result = await activateAccountWithToken(
+      token,
+      username,
+      password,
+      firstName,
+      lastName
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ 
+        error: result.error || 'Account activation failed',
+        code: 'ACTIVATION_FAILED',
+        errors: (result as any).errors
+      });
+    }
+
+    res.json({ 
+      success: true,
+      message: 'Account activated successfully. You can now login.',
+      user: result.user
+    });
+
+  } catch (error) {
+    console.error('Account activation error:', error);
+    res.status(500).json({ 
+      error: 'An error occurred activating your account',
+      code: 'INTERNAL_ERROR' 
+    });
+  }
+});
+
 export default router;
