@@ -331,6 +331,15 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       return 'conventional';
     };
 
+    // Debug loan term extraction
+    console.log("Loan term extraction from AI:", {
+      loanTermMonths: extractedData.loanTermMonths,
+      loanTerm: extractedData.loanTerm,
+      termMonths: extractedData.termMonths,
+      term: extractedData.term,
+      raw: extractedData
+    });
+
     // Always set a value for each field (never undefined) to prevent controlled/uncontrolled issues
     setFormData(prev => ({
       ...prev,
@@ -342,7 +351,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.loanAmount || extractedData.originalAmount) || prev.principalBalance,
       interestRate: toString(extractedData.interestRate) || prev.interestRate,
       rateType: cleanString(extractedData.rateType) || prev.rateType,
-      loanTerm: toString(extractedData.loanTermMonths || extractedData.loanTerm || extractedData.termMonths) || prev.loanTerm,
+      loanTerm: toString(extractedData.loanTermMonths || extractedData.loanTerm || extractedData.termMonths || extractedData.term) || prev.loanTerm,
       
       // Property Information  
       propertyType: extractedData.propertyType ? normalizePropertyType(extractedData.propertyType) : prev.propertyType,
@@ -539,7 +548,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       };
 
       // Calculate maturity date properly (loan term is in MONTHS)
-      const loanTermMonths = parseInt(data.loanTerm) || 360; // Default to 360 months (30 years)
+      const parsedLoanTerm = parseInt(data.loanTerm);
+      const loanTermMonths = isNaN(parsedLoanTerm) ? 360 : parsedLoanTerm; // Default to 360 months (30 years)
+      console.log("Loan term processing:", { input: data.loanTerm, parsed: parsedLoanTerm, final: loanTermMonths });
       const today = new Date();
       const maturityDate = new Date(today.setMonth(today.getMonth() + loanTermMonths)).toISOString().split('T')[0];
 
@@ -559,7 +570,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         principalBalance: (data.principalBalance || data.originalAmount).toString(),
         interestRate: data.interestRate.toString(),
         rateType: data.rateType,
-        loanTerm: parseInt(data.loanTerm),
+        loanTerm: loanTermMonths,
         paymentAmount: monthlyPayment?.toString() || "0",
         escrowAmount: data.escrowAmount?.toString() || "0",
         status: "active",
