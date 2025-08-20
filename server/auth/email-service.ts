@@ -288,14 +288,25 @@ export async function sendEmail(
       return true; // Return true to not break the flow
     }
     
-    // Send email via SendGrid (trim whitespace from email addresses)
+    // Debug: Check the FROM email value
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL.trim();
+    console.log(`[EMAIL DEBUG] Raw FROM email: "${process.env.SENDGRID_FROM_EMAIL}"`);
+    console.log(`[EMAIL DEBUG] Trimmed FROM email: "${fromEmail}"`);
+    console.log(`[EMAIL DEBUG] FROM email length: ${fromEmail.length}`);
+    
+    // Send email via SendGrid (clean up email addresses)
+    // Remove all whitespace from the FROM email to fix malformed env variable
+    const cleanFromEmail = fromEmail.replace(/\s+/g, '');
+    
     const msg = {
       to: to.trim(),
-      from: process.env.SENDGRID_FROM_EMAIL.trim(),
+      from: cleanFromEmail,
       subject: template.subject,
       text: template.text,
       html: template.html,
     };
+    
+    console.log(`[EMAIL DEBUG] Cleaned FROM email: "${cleanFromEmail}"`);
     
     try {
       const [response] = await sgMail.send(msg);
