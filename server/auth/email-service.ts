@@ -288,10 +288,10 @@ export async function sendEmail(
       return true; // Return true to not break the flow
     }
     
-    // Send email via SendGrid
+    // Send email via SendGrid (trim whitespace from email addresses)
     const msg = {
-      to,
-      from: process.env.SENDGRID_FROM_EMAIL,
+      to: to.trim(),
+      from: process.env.SENDGRID_FROM_EMAIL.trim(),
       subject: template.subject,
       text: template.text,
       html: template.html,
