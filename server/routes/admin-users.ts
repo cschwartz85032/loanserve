@@ -888,6 +888,18 @@ router.post('/:id/resend-invite', async (req, res) => {
       expiresAt
     });
     
+    // Send the invitation email
+    const emailSent = await sendInvitationEmail(
+      user.email,
+      token,
+      primaryRole,
+      req.user.id
+    );
+    
+    if (!emailSent) {
+      console.error('Failed to send invitation email to:', user.email);
+    }
+    
     // Log the action
     await db.insert(authEvents).values({
       eventType: 'user_updated',
@@ -895,17 +907,24 @@ router.post('/:id/resend-invite', async (req, res) => {
       targetUserId: userId,
       ip: req.ip,
       userAgent: req.headers['user-agent'] || null,
-      details: { action: 'invitation_resent', email: user.email, role: primaryRole }
+      details: { 
+        action: 'invitation_resent', 
+        email: user.email, 
+        role: primaryRole,
+        emailSent 
+      }
     });
     
-    // In development, you might want to include the token for testing
-    // In production, this would be sent via email
     res.json({ 
-      message: 'Invitation resent successfully',
+      message: emailSent 
+        ? 'Invitation resent successfully. Email has been sent.'
+        : 'Invitation resent but email delivery failed. Please check email configuration.',
       email: user.email,
+      emailSent,
       ...(process.env.NODE_ENV === 'development' && { 
         token,
-        resetLink: `/reset-password?token=${token}` 
+        resetLink: `/reset-password?token=${token}`,
+        note: 'Check server console for email content in development mode'
       })
     });
   } catch (error) {
