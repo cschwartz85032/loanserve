@@ -105,20 +105,23 @@ router.post('/login', async (req, res) => {
  */
 router.post('/logout', async (req, res) => {
   try {
-    const userId = (req.session as any)?.userId;
+    // Handle both new auth system and old Passport sessions
+    const userId = (req.session as any)?.userId || (req as any)?.user?.id;
     const sessionId = (req.session as any)?.sessionId;
 
-    if (!userId || !sessionId) {
+    if (!userId) {
       return res.status(400).json({ 
         error: 'No active session',
         code: 'NO_SESSION' 
       });
     }
 
-    // Perform logout
-    await logout(sessionId, userId);
+    // Perform logout if sessionId exists (new system)
+    if (sessionId) {
+      await logout(sessionId, userId);
+    }
 
-    // Clear session
+    // Clear session (works for both systems)
     if (req.session) {
       req.session.destroy((err) => {
         if (err) {
