@@ -70,30 +70,12 @@ router.get('/', async (req, res) => {
 
     const offset = (Number(page) - 1) * Number(limit);
 
-    // Build query
-    let query = db.select({
-      id: users.id,
-      username: users.username,
-      email: users.email,
-      firstName: users.firstName,
-      lastName: users.lastName,
-      phone: users.phone,
-      isActive: users.isActive,
-      emailVerified: users.emailVerified,
-      createdAt: users.createdAt,
-      lastLogin: users.lastLogin,
-      failedLoginCount: users.failedLoginCount,
-      lockedUntil: users.lockedUntil,
-      roles: sql<string[]>`ARRAY_AGG(DISTINCT ${roles.name})`.as('roles')
-    })
-    .from(users)
-    .leftJoin(userRoles, eq(users.id, userRoles.userId))
-    .leftJoin(roles, eq(userRoles.roleId, roles.id))
-    .groupBy(users.id);
-
+    // Build base query conditions
+    let baseConditions: any[] = [];
+    
     // Add search filter
     if (search) {
-      query = query.where(
+      baseConditions.push(
         or(
           like(users.username, `%${search}%`),
           like(users.email, `%${search}%`),
@@ -103,26 +85,68 @@ router.get('/', async (req, res) => {
       );
     }
 
-    // Add role filter
-    if (role) {
-      query = query.having(sql`${role} = ANY(ARRAY_AGG(${roles.name}))`);
-    }
-
     // Add active filter
     if (isActive !== undefined) {
-      query = query.where(eq(users.isActive, isActive === 'true'));
+      baseConditions.push(eq(users.isActive, isActive === 'true'));
     }
 
+    const whereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
+
     // Get total count
-    const countResult = await db.select({ count: sql<number>`COUNT(*)` })
+    const countQuery = db.select({ count: sql<number>`COUNT(*)` })
       .from(users);
+    if (whereClause) {
+      countQuery.where(whereClause);
+    }
+    const countResult = await countQuery;
     const totalCount = Number(countResult[0].count);
 
-    // Get paginated results
-    const results = await query
+    // Get paginated users
+    const usersQuery = db.select()
+      .from(users);
+    if (whereClause) {
+      usersQuery.where(whereClause);
+    }
+    const usersList = await usersQuery
       .orderBy(desc(users.createdAt))
       .limit(Number(limit))
       .offset(offset);
+
+    // Get roles for each user
+    const userIds = usersList.map(u => u.id);
+    let userRolesMap: Record<number, string[]> = {};
+    
+    if (userIds.length > 0) {
+      const userRolesList = await db.select({
+        userId: userRoles.userId,
+        roleName: roles.name
+      })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(inArray(userRoles.userId, userIds));
+
+      // Group roles by user
+      userRolesList.forEach(ur => {
+        if (!userRolesMap[ur.userId]) {
+          userRolesMap[ur.userId] = [];
+        }
+        userRolesMap[ur.userId].push(ur.roleName);
+      });
+    }
+
+    // Filter by role if specified
+    let filteredUsers = usersList;
+    if (role && role !== 'all') {
+      filteredUsers = usersList.filter(u => 
+        userRolesMap[u.id]?.includes(role)
+      );
+    }
+
+    // Combine users with their roles
+    const results = filteredUsers.map(user => ({
+      ...user,
+      roles: userRolesMap[user.id] || []
+    }));
 
     res.json({
       users: results,
@@ -136,6 +160,23 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+/**
+ * GET /api/admin/users/roles
+ * Get all available roles
+ */
+router.get('/roles', async (req, res) => {
+  try {
+    const rolesList = await db.select()
+      .from(roles)
+      .orderBy(roles.name);
+
+    res.json({ roles: rolesList });
+  } catch (error) {
+    console.error('Error fetching roles:', error);
+    res.status(500).json({ error: 'Failed to fetch roles' });
   }
 });
 

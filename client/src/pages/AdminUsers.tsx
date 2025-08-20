@@ -110,21 +110,40 @@ interface Role {
   }>;
 }
 
+interface UsersResponse {
+  users: User[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
+interface RolesResponse {
+  roles: Role[];
+}
+
 export function AdminUsers() {
   const [location, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRole, setSelectedRole] = useState('');
-  const [activeFilter, setActiveFilter] = useState<string>('');
+  const [selectedRole, setSelectedRole] = useState('all');
+  const [activeFilter, setActiveFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const { toast } = useToast();
 
   // Fetch users list
-  const { data: usersData, isLoading } = useQuery({
-    queryKey: ['/api/admin/users', { page, search: searchTerm, role: selectedRole, isActive: activeFilter }]
+  const { data: usersData, isLoading } = useQuery<UsersResponse>({
+    queryKey: ['/api/admin/users', { 
+      page, 
+      search: searchTerm, 
+      role: selectedRole === 'all' ? undefined : selectedRole, 
+      isActive: activeFilter === 'all' ? undefined : activeFilter 
+    }]
   });
 
   // Fetch available roles
-  const { data: rolesData } = useQuery({
+  const { data: rolesData } = useQuery<RolesResponse>({
     queryKey: ['/api/admin/users/roles']
   });
 
@@ -191,7 +210,7 @@ export function AdminUsers() {
                   <SelectValue placeholder="All roles" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All roles</SelectItem>
+                  <SelectItem value="all">All roles</SelectItem>
                   {roles.map((role: Role) => (
                     <SelectItem key={role.id} value={role.name}>
                       {role.name}
@@ -204,7 +223,7 @@ export function AdminUsers() {
                   <SelectValue placeholder="All status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All status</SelectItem>
+                  <SelectItem value="all">All status</SelectItem>
                   <SelectItem value="true">Active</SelectItem>
                   <SelectItem value="false">Inactive</SelectItem>
                 </SelectContent>
