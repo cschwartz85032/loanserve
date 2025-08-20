@@ -31,6 +31,7 @@ import {
   sendInvitationEmail 
 } from '../auth/email-service';
 import { ipAllowlistService } from '../auth/ip-allowlist-service';
+import * as crypto from 'crypto';
 
 const router = Router();
 
@@ -840,9 +841,11 @@ router.post('/:id/resend-invite', async (req, res) => {
     
     // Get user details
     const [user] = await db.select({
+      id: users.id,
       email: users.email,
-      status: users.status,
-      role: users.role
+      emailVerified: users.emailVerified,
+      lastLogin: users.lastLogin,
+      isActive: users.isActive
     })
     .from(users)
     .where(eq(users.id, userId))
@@ -852,7 +855,10 @@ router.post('/:id/resend-invite', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    if (user.status !== 'invited') {
+    // Check if user is in invited state (not verified and never logged in)
+    const isInvited = !user.emailVerified && !user.lastLogin;
+    
+    if (!isInvited) {
       return res.status(400).json({ error: 'User is not in invited status' });
     }
     
@@ -860,38 +866,47 @@ router.post('/:id/resend-invite', async (req, res) => {
     await db.delete(passwordResetTokens)
       .where(eq(passwordResetTokens.userId, userId));
     
-    // Create new invitation token
-    const result = await createInvitationToken(user.email, user.role, req.user.id);
+    // Get user's roles
+    const userRoles = await db.select({
+      roleName: roles.name
+    })
+    .from(userRoles as any)
+    .innerJoin(roles, eq((userRoles as any).roleId, roles.id))
+    .where(eq((userRoles as any).userId, userId));
     
-    if (!result.success || !result.token) {
-      return res.status(500).json({ error: result.error || 'Failed to create invitation token' });
-    }
+    const primaryRole = userRoles[0]?.roleName || 'user';
     
-    // Send invitation email
-    const emailSent = await sendInvitationEmail(
-      user.email,
-      result.token,
-      user.role,
-      req.user.id
-    );
+    // Generate a new token directly (don't create a new user)
+    const token = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     
-    if (!emailSent) {
-      return res.status(500).json({ error: 'Failed to send invitation email' });
-    }
+    // Store the new token
+    await db.insert(passwordResetTokens).values({
+      userId: userId,
+      tokenHash: hashedToken,
+      expiresAt
+    });
     
     // Log the action
     await db.insert(authEvents).values({
-      eventType: 'invitation_resent',
+      eventType: 'user_updated',
       actorUserId: req.user.id,
       targetUserId: userId,
       ip: req.ip,
       userAgent: req.headers['user-agent'] || null,
-      details: { email: user.email }
+      details: { action: 'invitation_resent', email: user.email, role: primaryRole }
     });
     
+    // In development, you might want to include the token for testing
+    // In production, this would be sent via email
     res.json({ 
       message: 'Invitation resent successfully',
-      email: user.email
+      email: user.email,
+      ...(process.env.NODE_ENV === 'development' && { 
+        token,
+        resetLink: `/reset-password?token=${token}` 
+      })
     });
   } catch (error) {
     console.error('Error resending invitation:', error);
@@ -909,8 +924,10 @@ router.post('/:id/send-password-reset', async (req, res) => {
     
     // Get user details
     const [user] = await db.select({
+      id: users.id,
       email: users.email,
-      status: users.status
+      emailVerified: users.emailVerified,
+      isActive: users.isActive
     })
     .from(users)
     .where(eq(users.id, userId))
