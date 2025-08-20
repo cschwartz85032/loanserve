@@ -129,6 +129,36 @@ function UserStatusBadge({ user }: { user: User }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
+  // Determine current status
+  const getCurrentStatus = () => {
+    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      return 'locked';
+    }
+    if (!user.isActive) {
+      return 'suspended';
+    }
+    if (!user.emailVerified && !user.lastLogin) {
+      return 'invited';
+    }
+    return 'active';
+  };
+  
+  const currentStatus = getCurrentStatus();
+  
+  const lockMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/admin/users/${user.id}/lock`, { 
+        method: 'POST',
+        body: JSON.stringify({ duration: 30 }) // Lock for 30 minutes
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "User locked successfully" });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+    }
+  });
+  
   const unlockMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest(`/api/admin/users/${user.id}/unlock`, { method: 'POST' });
@@ -168,33 +198,48 @@ function UserStatusBadge({ user }: { user: User }) {
   const handleStatusClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent row click navigation
     
-    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-      // When locked, clicking will unlock AND activate the user
-      unlockMutation.mutate();
-      // Also activate if not already active
-      if (!user.isActive) {
-        setTimeout(() => activateMutation.mutate(), 100);
-      }
-    } else if (!user.isActive) {
-      // Activate suspended user
-      activateMutation.mutate();
-    } else if (user.isActive && user.emailVerified) {
-      // Suspend an active user
-      suspendMutation.mutate();
+    // Cycle through statuses: locked → suspended → invited → active → locked
+    switch (currentStatus) {
+      case 'locked':
+        // Move from locked to suspended
+        unlockMutation.mutate();
+        // Ensure user is suspended after unlock
+        setTimeout(() => {
+          if (user.isActive) {
+            suspendMutation.mutate();
+          }
+        }, 200);
+        break;
+        
+      case 'suspended':
+        // Move from suspended to active (or invited if never logged in)
+        activateMutation.mutate();
+        break;
+        
+      case 'invited':
+        // Move from invited to active
+        activateMutation.mutate();
+        break;
+        
+      case 'active':
+        // Move from active to locked
+        lockMutation.mutate();
+        break;
     }
   };
   
   // Loading state
-  if (unlockMutation.isPending || activateMutation.isPending || suspendMutation.isPending) {
+  if (unlockMutation.isPending || activateMutation.isPending || suspendMutation.isPending || lockMutation.isPending) {
     return <Badge variant="outline">Updating...</Badge>;
   }
   
-  if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+  if (currentStatus === 'locked') {
     return (
       <Badge 
         variant="destructive" 
         className="cursor-pointer hover:opacity-80 transition-opacity"
         onClick={handleStatusClick}
+        title="Click to unlock and suspend"
       >
         <Lock className="w-3 h-3 mr-1" />
         Locked
@@ -202,12 +247,13 @@ function UserStatusBadge({ user }: { user: User }) {
     );
   }
   
-  if (!user.isActive) {
+  if (currentStatus === 'suspended') {
     return (
       <Badge 
         variant="secondary"
         className="cursor-pointer hover:opacity-80 transition-opacity"
         onClick={handleStatusClick}
+        title="Click to activate"
       >
         <UserX className="w-3 h-3 mr-1" />
         Suspended
@@ -215,14 +261,25 @@ function UserStatusBadge({ user }: { user: User }) {
     );
   }
   
-  if (!user.emailVerified) {
-    return <Badge variant="outline"><Mail className="w-3 h-3 mr-1" />Unverified</Badge>;
+  if (currentStatus === 'invited') {
+    return (
+      <Badge 
+        variant="outline"
+        className="cursor-pointer hover:opacity-80 transition-opacity"
+        onClick={handleStatusClick}
+        title="Click to activate"
+      >
+        <Mail className="w-3 h-3 mr-1" />
+        Invited
+      </Badge>
+    );
   }
   
   return (
     <Badge 
       className="bg-green-600 hover:bg-green-700 cursor-pointer transition-colors text-white"
       onClick={handleStatusClick}
+      title="Click to lock"
     >
       <UserCheck className="w-3 h-3 mr-1" />
       Active
