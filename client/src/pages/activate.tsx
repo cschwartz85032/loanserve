@@ -101,6 +101,7 @@ export default function ActivatePage() {
 
   // Validate the token
   const validateToken = async (tokenValue: string) => {
+    console.log('Starting token validation for:', tokenValue);
     try {
       const response = await fetch('/api/auth/validate-token', {
         method: 'POST',
@@ -108,14 +109,18 @@ export default function ActivatePage() {
         body: JSON.stringify({ token: tokenValue, type: 'invitation' })
       });
 
+      console.log('Token validation response status:', response.status);
+
       if (!response.ok) {
         const error = await response.json();
+        console.error('Token validation failed:', error);
         setTokenError(error.error || 'Invalid or expired activation token');
         setIsValidating(false);
         return;
       }
 
       const data = await response.json();
+      console.log('Token validation successful, user data:', data);
       setUserInfo(data.user);
       
       // Populate form with user info
@@ -127,7 +132,9 @@ export default function ActivatePage() {
       
       setTokenValid(true);
       setIsValidating(false);
+      console.log('Token validated successfully, tokenValid set to true');
     } catch (error) {
+      console.error('Token validation error:', error);
       setTokenError('Failed to validate activation token');
       setIsValidating(false);
     }
@@ -232,19 +239,33 @@ export default function ActivatePage() {
     );
   }
 
+  // Debug current state
+  console.log('Render state:', {
+    isValidating,
+    tokenValid,
+    tokenError,
+    token,
+    userInfo,
+    authLoading,
+    user
+  });
+
   // Simple render for debugging
   if (!tokenValid) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <CardTitle>Loading...</CardTitle>
+            <CardTitle>Waiting for validation...</CardTitle>
+            <CardDescription>Token validation state: {isValidating ? 'Validating' : 'Not valid'}</CardDescription>
           </CardHeader>
         </Card>
       </div>
     );
   }
 
+  console.log('Rendering main activation form');
+  
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-md">
@@ -268,7 +289,8 @@ export default function ActivatePage() {
               </Alert>
             </div>
           ) : (
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
                   name="username"
@@ -367,6 +389,7 @@ export default function ActivatePage() {
                   )}
                 </Button>
               </form>
+            </Form>
           )}
         </CardContent>
       </Card>
