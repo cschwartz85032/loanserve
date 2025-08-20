@@ -7,8 +7,9 @@ import { Router } from 'express';
 import { requireAuth } from '../auth/middleware';
 import mfaService from '../auth/mfa-service';
 import { db } from '../db';
-import { users } from '@shared/schema';
-import { eq } from 'drizzle-orm';
+import { users, mfaBackupCodes } from '@shared/schema';
+import { eq, and, isNull, or, gt } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -235,15 +236,21 @@ router.get('/backup-codes/count', async (req, res) => {
   try {
     const userId = req.user!.id;
 
-    const result = await db.execute(
-      `SELECT COUNT(*) as count FROM mfa_backup_codes 
-       WHERE user_id = $1 AND used_at IS NULL 
-       AND (expires_at IS NULL OR expires_at > NOW())`,
-      [userId]
-    );
+    const result = await db.select({
+      count: sql<number>`count(*)::int`
+    })
+    .from(mfaBackupCodes)
+    .where(and(
+      eq(mfaBackupCodes.userId, userId),
+      isNull(mfaBackupCodes.usedAt),
+      or(
+        isNull(mfaBackupCodes.expiresAt),
+        gt(mfaBackupCodes.expiresAt, sql`now()`)
+      )
+    ));
 
     res.json({ 
-      remainingCodes: result.rows[0]?.count || 0 
+      remainingCodes: result[0]?.count || 0 
     });
   } catch (error) {
     console.error('Backup code count error:', error);
