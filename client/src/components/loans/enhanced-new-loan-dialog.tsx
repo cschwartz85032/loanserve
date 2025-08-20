@@ -1019,7 +1019,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="originalAmount">Original Amount</Label>
+                      <Label htmlFor="originalAmount">Original Amount *</Label>
                       <Input
                         id="originalAmount"
                         type="number"
@@ -1029,7 +1029,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="interestRate">Interest Rate (%)</Label>
+                      <Label htmlFor="interestRate">Interest Rate (%) *</Label>
                       <Input
                         id="interestRate"
                         type="number"
@@ -1040,7 +1040,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="loanTerm">Term (Months)</Label>
+                      <Label htmlFor="loanTerm">Term (Months) *</Label>
                       <Input
                         id="loanTerm"
                         type="number"
@@ -1093,7 +1093,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="col-span-2 space-y-2">
-                      <Label htmlFor="propertyAddress">Property Address</Label>
+                      <Label htmlFor="propertyAddress">Property Address *</Label>
                       <Input
                         id="propertyAddress"
                         value={formData.propertyAddress}
@@ -1102,7 +1102,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="propertyCity">City</Label>
+                      <Label htmlFor="propertyCity">City *</Label>
                       <Input
                         id="propertyCity"
                         value={formData.propertyCity}
@@ -1111,7 +1111,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="propertyState">State</Label>
+                      <Label htmlFor="propertyState">State *</Label>
                       <Input
                         id="propertyState"
                         value={formData.propertyState}
@@ -1121,7 +1121,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="propertyZip">ZIP Code</Label>
+                      <Label htmlFor="propertyZip">ZIP Code *</Label>
                       <Input
                         id="propertyZip"
                         value={formData.propertyZip}
