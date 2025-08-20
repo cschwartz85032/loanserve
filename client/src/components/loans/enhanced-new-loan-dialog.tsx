@@ -298,6 +298,13 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       return cleaned;
     };
     
+    // Helper to detect if value is percentage or amount
+    const detectValueType = (val: any) => {
+      if (!val) return 'amount';
+      const str = String(val);
+      return str.includes('%') ? 'percentage' : 'amount';
+    };
+    
     // Helper to normalize property type
     const normalizePropertyType = (type: string) => {
       if (!type) return "single_family";
@@ -390,9 +397,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       
       // Servicing Settings
       servicingFee: cleanNumeric(extractedData.servicingFee) || prev.servicingFee,
-      servicingFeeType: cleanString(extractedData.servicingFeeType) || prev.servicingFeeType || 'percentage',
+      servicingFeeType: extractedData.servicingFee ? detectValueType(extractedData.servicingFee) : (cleanString(extractedData.servicingFeeType) || prev.servicingFeeType || 'amount'),
       lateCharge: cleanNumeric(extractedData.lateCharge || extractedData.lateChargeAmount) || prev.lateCharge,
-      lateChargeType: cleanString(extractedData.lateChargeType) || prev.lateChargeType || 'percentage',
+      lateChargeType: (extractedData.lateCharge || extractedData.lateChargeAmount) ? detectValueType(extractedData.lateCharge || extractedData.lateChargeAmount) : (cleanString(extractedData.lateChargeType) || prev.lateChargeType || 'percentage'),
       feePayer: cleanString(extractedData.feePayer) || prev.feePayer,
       gracePeriodDays: cleanNumeric(extractedData.gracePeriodDays || extractedData.gracePeriod) || prev.gracePeriodDays,
       investorLoanNumber: cleanString(extractedData.investorLoanNumber) || prev.investorLoanNumber,
