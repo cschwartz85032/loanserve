@@ -904,8 +904,8 @@ export async function activateAccountWithToken(
     await db.insert(authEvents).values({
       actorUserId: tokenValidation.userId,
       targetUserId: tokenValidation.userId,
-      eventType: 'account_activated',
-      details: { method: 'invitation' },
+      eventType: 'user_updated',
+      details: { method: 'invitation', action: 'account_activated' },
       eventKey: `activate-${tokenValidation.userId}-${Date.now()}`,
       ip: null,
       userAgent: null
