@@ -4,6 +4,7 @@ import { Express } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import argon2 from "argon2";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 
@@ -16,16 +17,23 @@ declare global {
 const scryptAsync = promisify(scrypt);
 
 async function hashPassword(password: string) {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
+  // Use argon2 to match auth-service.ts
+  return await argon2.hash(password);
 }
 
 async function comparePasswords(supplied: string, stored: string) {
-  const [hashed, salt] = stored.split(".");
-  const hashedBuf = Buffer.from(hashed, "hex");
-  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(hashedBuf, suppliedBuf);
+  // Handle both argon2 and legacy scrypt formats
+  if (stored.startsWith("$argon2")) {
+    // New argon2 format
+    return await argon2.verify(stored, supplied);
+  } else if (stored.includes(".")) {
+    // Legacy scrypt format (hash.salt)
+    const [hashed, salt] = stored.split(".");
+    const hashedBuf = Buffer.from(hashed, "hex");
+    const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+    return timingSafeEqual(hashedBuf, suppliedBuf);
+  }
+  return false;
 }
 
 export function setupAuth(app: Express) {
