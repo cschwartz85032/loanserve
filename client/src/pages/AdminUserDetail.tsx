@@ -393,10 +393,12 @@ export function AdminUserDetail() {
 
   // Resend invitation mutation
   const resendInviteMutation = useMutation({
-    mutationFn: () =>
-      apiRequest(`/api/admin/users/${id}/resend-invite`, {
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/admin/users/${id}/resend-invite`, {
         method: 'POST'
-      }),
+      });
+      return res.json();
+    },
     onSuccess: (data) => {
       toast({ 
         title: "Invitation resent successfully",
