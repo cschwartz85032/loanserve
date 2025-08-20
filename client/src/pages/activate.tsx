@@ -232,6 +232,19 @@ export default function ActivatePage() {
     );
   }
 
+  // Simple render for debugging
+  if (!tokenValid) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle>Loading...</CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-md">
@@ -255,8 +268,7 @@ export default function ActivatePage() {
               </Alert>
             </div>
           ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
                   name="username"
@@ -355,7 +367,6 @@ export default function ActivatePage() {
                   )}
                 </Button>
               </form>
-            </Form>
           )}
         </CardContent>
       </Card>
