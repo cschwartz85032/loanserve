@@ -23,6 +23,7 @@ import { DocumentPreviewModal } from "@/components/documents/document-preview-mo
 import { LoanAccountingLedger } from "@/components/loans/loan-accounting-ledger";
 import { LoanInvestorsManager } from "@/components/loans/loan-investors-manager";
 import { EscrowDisbursementsTab } from "@/components/loans/escrow-disbursements-tab";
+import { LoanCRM } from "@/components/loans/loan-crm";
 
 interface LoanEditFormProps {
   loanId: string;
@@ -319,8 +320,9 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       </div>
 
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full grid-cols-7">
+        <TabsList className="grid w-full grid-cols-8">
           <TabsTrigger value="details">Overview</TabsTrigger>
+          <TabsTrigger value="crm">CRM</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiary</TabsTrigger>
           <TabsTrigger value="escrows">Escrows</TabsTrigger>
@@ -754,6 +756,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               </Card>
             </div>
           </div>
+        </TabsContent>
+
+        {/* CRM Tab */}
+        <TabsContent value="crm" className="space-y-6">
+          <LoanCRM loanId={parseInt(loanId)} />
         </TabsContent>
 
         {/* Contacts Tab */}
