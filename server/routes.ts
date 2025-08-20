@@ -1158,12 +1158,21 @@ To implement full file serving:
         return res.status(400).json({ error: "No file uploaded" });
       }
 
+      console.log(`[Document Analysis] Starting analysis for: ${req.file.originalname}, Size: ${req.file.size} bytes`);
       const result = await analyzeDocument(req.file.path, req.file.originalname || req.file.filename);
       
+      // Check if analysis failed (returned unknown document type)
+      if (result.documentType === "unknown" && result.confidence === 0) {
+        console.error(`[Document Analysis] Failed to analyze ${req.file.originalname} - returning error`);
+        return res.status(500).json({ error: "Document analysis failed - document may be too complex or large" });
+      }
+      
+      console.log(`[Document Analysis] Successfully analyzed: ${req.file.originalname}, Type: ${result.documentType}`);
       res.json(result);
-    } catch (error) {
-      console.error("Error analyzing document:", error);
-      res.status(500).json({ error: "Failed to analyze document" });
+    } catch (error: any) {
+      console.error(`[Document Analysis] Error analyzing ${req.file?.originalname}:`, error.message);
+      console.error("Full error:", error);
+      res.status(500).json({ error: `Failed to analyze document: ${error.message || "Unknown error"}` });
     }
   });
 
