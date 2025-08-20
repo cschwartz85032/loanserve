@@ -41,6 +41,7 @@ const activateSchema = z.object({
 type ActivateFormData = z.infer<typeof activateSchema>;
 
 export default function ActivatePage() {
+  console.log('ActivatePage component rendered');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user, isLoading: authLoading } = useAuth();
