@@ -287,6 +287,17 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       return String(val);
     };
     
+    // Helper to clean numeric values (removes % signs and other non-numeric characters)
+    const cleanNumeric = (val: any) => {
+      if (!val) return "";
+      const str = String(val);
+      // Remove percentage signs, dollar signs, commas, and other non-numeric characters
+      const cleaned = str.replace(/[%$,]/g, '').trim();
+      // Return empty string if not a valid number
+      if (isNaN(Number(cleaned))) return "";
+      return cleaned;
+    };
+    
     // Helper to normalize property type
     const normalizePropertyType = (type: string) => {
       if (!type) return "single_family";
@@ -378,12 +389,12 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) || prev.pmiAmount,
       
       // Servicing Settings
-      servicingFee: toString(extractedData.servicingFee) || prev.servicingFee,
+      servicingFee: cleanNumeric(extractedData.servicingFee) || prev.servicingFee,
       servicingFeeType: cleanString(extractedData.servicingFeeType) || prev.servicingFeeType || 'percentage',
-      lateCharge: toString(extractedData.lateCharge || extractedData.lateChargeAmount) || prev.lateCharge,
+      lateCharge: cleanNumeric(extractedData.lateCharge || extractedData.lateChargeAmount) || prev.lateCharge,
       lateChargeType: cleanString(extractedData.lateChargeType) || prev.lateChargeType || 'percentage',
       feePayer: cleanString(extractedData.feePayer) || prev.feePayer,
-      gracePeriodDays: toString(extractedData.gracePeriodDays || extractedData.gracePeriod) || prev.gracePeriodDays,
+      gracePeriodDays: cleanNumeric(extractedData.gracePeriodDays || extractedData.gracePeriod) || prev.gracePeriodDays,
       investorLoanNumber: cleanString(extractedData.investorLoanNumber) || prev.investorLoanNumber,
       poolNumber: cleanString(extractedData.poolNumber) || prev.poolNumber,
       
