@@ -464,6 +464,14 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* TEST BANNER - REMOVE AFTER DEBUGGING */}
+            <div className="p-4 bg-red-100 border-2 border-red-500 rounded-lg mb-4">
+              <p className="text-red-700 font-bold">
+                TEST: If you can see this RED banner, you are viewing the LoanEditForm component.
+                Scroll down to see Servicing Settings section below Loan Terms.
+              </p>
+            </div>
+
             {/* Basic Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
