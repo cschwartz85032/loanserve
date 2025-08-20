@@ -15,6 +15,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2, Users, ClipboardList, History, Settings } from "lucide-react";
 import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
+import { LoanCRM } from "./loan-crm";
 
 interface LoanEditFormProps {
   loanId: string;
@@ -327,10 +328,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   return (
     <div className="max-w-7xl mx-auto">
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="details">Edit Loan Details</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="details">Overview</TabsTrigger>
+          <TabsTrigger value="crm">CRM</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
-          <TabsTrigger value="documents">Document Management</TabsTrigger>
+          <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="accounting">Accounting</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
         </TabsList>
@@ -1234,6 +1236,11 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         </Card>
       </div>
     </div>
+    </TabsContent>
+
+    {/* CRM Tab */}
+    <TabsContent value="crm" className="mt-6">
+      <LoanCRM loanId={parseInt(loanId)} />
     </TabsContent>
   </Tabs>
   

@@ -1556,6 +1556,162 @@ export const sessions = pgTable("sessions", {
   };
 });
 
+// CRM Tables
+// CRM Notes table
+export const crmNotes = pgTable("crm_notes", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").notNull().references(() => loans.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  isPrivate: boolean("is_private").default(false),
+  mentionedUsers: jsonb("mentioned_users").default([]),
+  attachments: jsonb("attachments").default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("crm_notes_loan_idx").on(table.loanId),
+    userIdx: index("crm_notes_user_idx").on(table.userId),
+    createdAtIdx: index("crm_notes_created_at_idx").on(table.createdAt),
+  };
+});
+
+// CRM Tasks table
+export const crmTasks = pgTable("crm_tasks", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").notNull().references(() => loans.id, { onDelete: 'cascade' }),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  assignedTo: integer("assigned_to").references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status").notNull().default('pending'), // pending, in_progress, completed, cancelled
+  priority: text("priority").default('medium'), // low, medium, high, urgent
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  tags: jsonb("tags").default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("crm_tasks_loan_idx").on(table.loanId),
+    assignedToIdx: index("crm_tasks_assigned_to_idx").on(table.assignedTo),
+    statusIdx: index("crm_tasks_status_idx").on(table.status),
+    dueDateIdx: index("crm_tasks_due_date_idx").on(table.dueDate),
+  };
+});
+
+// CRM Appointments table
+export const crmAppointments = pgTable("crm_appointments", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").notNull().references(() => loans.id, { onDelete: 'cascade' }),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  attendees: jsonb("attendees").default([]),
+  reminderMinutes: integer("reminder_minutes").default(15),
+  status: text("status").default('scheduled'), // scheduled, completed, cancelled, rescheduled
+  meetingLink: text("meeting_link"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("crm_appointments_loan_idx").on(table.loanId),
+    startTimeIdx: index("crm_appointments_start_time_idx").on(table.startTime),
+    statusIdx: index("crm_appointments_status_idx").on(table.status),
+  };
+});
+
+// CRM Calls table
+export const crmCalls = pgTable("crm_calls", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").notNull().references(() => loans.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  contactName: text("contact_name").notNull(),
+  contactPhone: text("contact_phone").notNull(),
+  direction: text("direction").notNull(), // inbound, outbound
+  status: text("status").notNull(), // completed, missed, voicemail, scheduled
+  duration: integer("duration"), // in seconds
+  outcome: text("outcome"),
+  notes: text("notes"),
+  scheduledFor: timestamp("scheduled_for"),
+  completedAt: timestamp("completed_at"),
+  recordingUrl: text("recording_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("crm_calls_loan_idx").on(table.loanId),
+    userIdx: index("crm_calls_user_idx").on(table.userId),
+    statusIdx: index("crm_calls_status_idx").on(table.status),
+    scheduledForIdx: index("crm_calls_scheduled_for_idx").on(table.scheduledFor),
+  };
+});
+
+// CRM Activity table (timeline)
+export const crmActivity = pgTable("crm_activity", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").notNull().references(() => loans.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  activityType: text("activity_type").notNull(), // note, task, call, appointment, email, document, status_change
+  activityData: jsonb("activity_data").notNull(),
+  relatedId: integer("related_id"), // ID of related record (note_id, task_id, etc.)
+  isSystem: boolean("is_system").default(false), // System-generated vs user action
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("crm_activity_loan_idx").on(table.loanId),
+    userIdx: index("crm_activity_user_idx").on(table.userId),
+    typeIdx: index("crm_activity_type_idx").on(table.activityType),
+    createdAtIdx: index("crm_activity_created_at_idx").on(table.createdAt),
+  };
+});
+
+// CRM Collaborators table
+export const crmCollaborators = pgTable("crm_collaborators", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").notNull().references(() => loans.id, { onDelete: 'cascade' }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  role: text("role").notNull(), // viewer, editor, manager
+  permissions: jsonb("permissions").default({}),
+  addedBy: integer("added_by").notNull().references(() => users.id),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+  lastActivityAt: timestamp("last_activity_at"),
+}, (table) => {
+  return {
+    loanUserIdx: uniqueIndex("crm_collaborators_loan_user_idx").on(table.loanId, table.userId),
+    loanIdx: index("crm_collaborators_loan_idx").on(table.loanId),
+    userIdx: index("crm_collaborators_user_idx").on(table.userId),
+  };
+});
+
+// CRM Deals table
+export const crmDeals = pgTable("crm_deals", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").notNull().references(() => loans.id, { onDelete: 'cascade' }),
+  title: text("title").notNull(),
+  value: decimal("value", { precision: 12, scale: 2 }),
+  stage: text("stage").notNull(), // prospecting, qualification, proposal, negotiation, closed_won, closed_lost
+  probability: integer("probability").default(0), // 0-100
+  expectedCloseDate: date("expected_close_date"),
+  actualCloseDate: date("actual_close_date"),
+  lostReason: text("lost_reason"),
+  notes: text("notes"),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  assignedTo: integer("assigned_to").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    loanIdx: index("crm_deals_loan_idx").on(table.loanId),
+    stageIdx: index("crm_deals_stage_idx").on(table.stage),
+    assignedToIdx: index("crm_deals_assigned_to_idx").on(table.assignedTo),
+  };
+});
+
 // Core schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBorrowerEntitySchema = createInsertSchema(borrowerEntities).omit({ id: true, createdAt: true, updatedAt: true });
