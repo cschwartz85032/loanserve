@@ -17,6 +17,7 @@ import FeeManagement from "@/pages/FeeManagement";
 import ServicingCycle from "@/pages/servicing-cycle";
 import AdminDocuments from "@/pages/admin/AdminDocuments";
 import AdminEscrow from "@/pages/admin/AdminEscrow";
+import { MigrateDatabase } from "@/pages/migrate-database";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -34,6 +35,7 @@ function Router() {
       <ProtectedRoute path="/compliance" component={Compliance} />
       <ProtectedRoute path="/fees" component={FeeManagement} />
       <ProtectedRoute path="/servicing-cycle" component={ServicingCycle} />
+      <ProtectedRoute path="/migrate-database" component={MigrateDatabase} />
       <ProtectedRoute path="/investors" component={Dashboard} />
       <ProtectedRoute path="/users" component={Dashboard} />
       <ProtectedRoute path="/settings" component={Dashboard} />

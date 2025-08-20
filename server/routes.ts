@@ -1047,6 +1047,65 @@ To implement full file serving:
   });
 
   // ============= AUDIT LOG ROUTES =============
+  // Database Migration Endpoint
+  app.post("/api/migrate-database", isAuthenticated, async (req, res) => {
+    try {
+      // Only allow admin users to run migrations
+      if (req.user?.username !== 'loanatik') {
+        return res.status(403).json({ 
+          success: false, 
+          error: 'Only administrators can run database migrations' 
+        });
+      }
+
+      const details: string[] = [];
+      
+      // Run migration queries
+      const migrations = [
+        // Servicing settings
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS servicing_fee_type text DEFAULT 'percentage'`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS late_charge_type text DEFAULT 'percentage'`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS fee_payer text`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS grace_period_days integer`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS investor_loan_number text`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS pool_number text`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS late_charge decimal(10, 2)`,
+        // Payment settings
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS property_tax decimal(10, 2)`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS home_insurance decimal(10, 2)`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS pmi decimal(10, 2)`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS other_monthly decimal(10, 2)`,
+        // Other fields
+        `ALTER TABLE properties ADD COLUMN IF NOT EXISTS apn text`,
+        `ALTER TABLE loans ADD COLUMN IF NOT EXISTS escrow_number text`
+      ];
+
+      for (const migration of migrations) {
+        try {
+          await db.execute(sql.raw(migration));
+          const columnName = migration.match(/ADD COLUMN IF NOT EXISTS (\w+)/)?.[1];
+          details.push(`✓ Added column: ${columnName}`);
+        } catch (error: any) {
+          if (error.code === '42701') {
+            const columnName = migration.match(/ADD COLUMN IF NOT EXISTS (\w+)/)?.[1];
+            details.push(`✓ Column already exists: ${columnName}`);
+          } else {
+            details.push(`✗ Error: ${error.message}`);
+          }
+        }
+      }
+
+      res.json({ success: true, details });
+    } catch (error) {
+      console.error("Error running migration:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to run migration",
+        details: []
+      });
+    }
+  });
+
   app.get("/api/audit-logs/:entityType/:entityId", isAuthenticated, async (req, res) => {
     try {
       const logs = await storage.getAuditLogs(req.params.entityType, parseInt(req.params.entityId));
