@@ -863,14 +863,10 @@ export async function activateAccountWithToken(
       return { success: false, error: tokenValidation.error || 'Invalid token' };
     }
 
-    // Get invited user
-    const [invitedUser] = await db.select()
-      .from(users)
-      .where(and(
-        eq(users.id, tokenValidation.userId),
-        eq(users.status, 'invited')
-      ))
-      .limit(1);
+    // Get invited user - use raw SQL since status field is in DB but not in schema
+    const [invitedUser] = await db.execute(
+      sql`SELECT * FROM users WHERE id = ${tokenValidation.userId} AND status = 'invited' LIMIT 1`
+    );
 
     if (!invitedUser) {
       return { success: false, error: 'Invalid invitation' };
@@ -889,18 +885,19 @@ export async function activateAccountWithToken(
     // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Activate account
-    await db.update(users)
-      .set({
-        username,
-        password: hashedPassword,
-        firstName,
-        lastName,
-        status: 'active',
-        passwordUpdatedAt: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(users.id, tokenValidation.userId));
+    // Activate account - use raw SQL since status field is in DB but not in schema
+    await db.execute(
+      sql`UPDATE users 
+          SET username = ${username},
+              password = ${hashedPassword},
+              first_name = ${firstName},
+              last_name = ${lastName},
+              status = 'active',
+              password_updated_at = ${new Date()},
+              updated_at = ${new Date()},
+              is_active = true
+          WHERE id = ${tokenValidation.userId}`
+    );
 
     // Log activation
     await db.insert(authEvents).values({
