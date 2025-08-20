@@ -82,6 +82,14 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
 
 Preferred communication style: Simple, everyday language.
 
+## Debugging Protocol
+When encountering database or field-related errors:
+1. **Check production database schema FIRST** - compare columns with development
+2. **Look for patterns** - intermittent failures usually mean data-dependent issues
+3. **Trust user instincts** - when user says "something else must be wrong", reconsider approach
+4. **Use diagnostic scripts** - run `node debug-db-schema.cjs [table] [search]` to quickly check columns
+5. **Avoid overcomplicating** - check simple causes (duplicate columns, mismatched schemas) before complex theories (build issues, caching)
+
 # System Architecture
 
 ## UI/UX Decisions
