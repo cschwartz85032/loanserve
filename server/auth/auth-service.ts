@@ -310,7 +310,7 @@ async function unlockAccount(userId: number, reason: string): Promise<void> {
  * Perform login
  */
 export async function login(
-  email: string,
+  emailOrUsername: string,
   password: string,
   ip: string,
   userAgent?: string
@@ -321,15 +321,19 @@ export async function login(
   error?: string;
 }> {
   try {
-    // Find user by email
+    // Find user by email or username
     const [user] = await db.select()
       .from(users)
-      .where(eq(users.email, email))
+      .where(
+        emailOrUsername.includes('@') 
+          ? eq(users.email, emailOrUsername)
+          : eq(users.username, emailOrUsername)
+      )
       .limit(1);
 
     if (!user) {
       // Record failed attempt
-      await recordLoginAttempt(email, false, ip, userAgent);
+      await recordLoginAttempt(emailOrUsername, false, ip, userAgent);
       return { success: false, error: 'Invalid credentials' };
     }
 
@@ -339,7 +343,7 @@ export async function login(
       // Record attempt against locked account
       await db.insert(loginAttempts).values({
         userId: user.id,
-        emailAttempted: email,
+        emailAttempted: user.email,
         ip,
         userAgent,
         outcome: 'locked',
@@ -353,7 +357,7 @@ export async function login(
     
     if (!passwordValid) {
       // Record failed attempt and check for lockout
-      const { shouldLock } = await recordLoginAttempt(email, false, ip, userAgent);
+      const { shouldLock } = await recordLoginAttempt(user.email, false, ip, userAgent);
       
       if (shouldLock) {
         return { success: false, error: 'Account has been locked due to too many failed attempts' };
@@ -373,7 +377,7 @@ export async function login(
       // Record failed login attempt due to IP restriction
       await db.insert(loginAttempts).values({
         userId: user.id,
-        emailAttempted: email,
+        emailAttempted: user.email,
         ip,
         userAgent,
         outcome: 'failed',
@@ -387,7 +391,7 @@ export async function login(
         ip,
         userAgent,
         details: { 
-          email,
+          email: user.email,
           reason: 'ip_not_allowed',
           hasAllowlist: ipCheck.hasAllowlist,
           blockedIp: ip
@@ -408,7 +412,7 @@ export async function login(
       .where(eq(users.id, user.id));
 
     // Record successful login
-    await recordLoginAttempt(email, true, ip, userAgent);
+    await recordLoginAttempt(user.email, true, ip, userAgent);
 
     // Create session
     const sessionId = crypto.randomUUID();
@@ -426,7 +430,8 @@ export async function login(
       ip,
       userAgent,
       details: { 
-        email,
+        email: user.email,
+        username: user.username,
         ipAllowlistMatch: ipCheck.matchedEntry || null,
         hasAllowlist: ipCheck.hasAllowlist
       },

@@ -33,9 +33,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      const res = await apiRequest("/api/login", {
+      const res = await apiRequest("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify(credentials),
+        body: JSON.stringify({ 
+          email: credentials.username, // Map username to email for auth-service
+          password: credentials.password 
+        }),
       });
       return await res.json();
     },
@@ -73,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("/api/logout", {
+      await apiRequest("/api/auth/logout", {
         method: "POST",
       });
     },
