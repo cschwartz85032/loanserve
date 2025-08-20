@@ -1,6 +1,6 @@
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { pgTable, text, timestamp, integer, serial, boolean, jsonb, decimal, uuid, varchar, date, index, pgEnum, uniqueIndex, time } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, serial, boolean, jsonb, decimal, uuid, varchar, date, index, pgEnum, uniqueIndex, time, primaryKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // ========================================
@@ -1405,10 +1405,187 @@ export const loansRelations = relations(loans, ({ one, many }) => ({
 // CREATE INSERT SCHEMAS AND TYPES
 // ========================================
 
+// User Management System Tables
+
+// User status enum
+export const userStatusEnum = pgEnum("user_status", ['invited', 'active', 'locked', 'suspended', 'disabled']);
+
+// Permission level enum
+export const permissionLevelEnum = pgEnum("permission_level", ['none', 'read', 'write', 'admin']);
+
+// Login outcome enum
+export const loginOutcomeEnum = pgEnum("login_outcome", ['succeeded', 'failed', 'locked']);
+
+// Roles table
+export const roles = pgTable("roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// User roles junction table
+export const userRoles = pgTable("user_roles", {
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }).defaultNow().notNull(),
+  assignedBy: integer("assigned_by").references(() => users.id),
+}, (table) => {
+  return {
+    pk: primaryKey({ columns: [table.userId, table.roleId] }),
+    userIdx: index("idx_user_roles_user_id").on(table.userId),
+    roleIdx: index("idx_user_roles_role_id").on(table.roleId),
+  };
+});
+
+// Permissions table
+export const permissions = pgTable("permissions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  resource: text("resource").notNull(),
+  level: permissionLevelEnum("level").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => {
+  return {
+    uniqueResourceLevel: uniqueIndex("unique_resource_level").on(table.resource, table.level),
+  };
+});
+
+// Role permissions table
+export const rolePermissions = pgTable("role_permissions", {
+  roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  permissionId: uuid("permission_id").notNull().references(() => permissions.id, { onDelete: 'cascade' }),
+  scope: jsonb("scope"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => {
+  return {
+    pk: primaryKey({ columns: [table.roleId, table.permissionId] }),
+    roleIdx: index("idx_role_permissions_role_id").on(table.roleId),
+  };
+});
+
+// User IP allowlist table
+export const userIpAllowlist = pgTable("user_ip_allowlist", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  label: text("label").notNull(),
+  cidr: text("cidr").notNull(), // Storing CIDR as text
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => {
+  return {
+    uniqueUserCidr: uniqueIndex("unique_user_cidr").on(table.userId, table.cidr),
+    activeIdx: index("idx_user_ip_allowlist_user_id").on(table.userId),
+  };
+});
+
+// Auth events table (audit log)
+export const authEvents = pgTable("auth_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+  actorUserId: integer("actor_user_id").references(() => users.id),
+  targetUserId: integer("target_user_id").references(() => users.id),
+  eventType: text("event_type").notNull(),
+  ip: text("ip"), // Using text for inet type
+  userAgent: text("user_agent"),
+  details: jsonb("details").notNull().default({}),
+  eventKey: text("event_key").unique(),
+}, (table) => {
+  return {
+    occurredAtIdx: index("idx_auth_events_occurred_at").on(table.occurredAt),
+    actorIdx: index("idx_auth_events_actor_user_id").on(table.actorUserId),
+    targetIdx: index("idx_auth_events_target_user_id").on(table.targetUserId),
+    eventTypeIdx: index("idx_auth_events_event_type").on(table.eventType),
+  };
+});
+
+// Login attempts table
+export const loginAttempts = pgTable("login_attempts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: integer("user_id").references(() => users.id),
+  emailAttempted: text("email_attempted"),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true }).defaultNow().notNull(),
+  ip: text("ip"), // Using text for inet type
+  userAgent: text("user_agent"),
+  outcome: loginOutcomeEnum("outcome").notNull(),
+  reason: text("reason"),
+}, (table) => {
+  return {
+    userIdx: index("idx_login_attempts_user_id").on(table.userId),
+    attemptedAtIdx: index("idx_login_attempts_attempted_at").on(table.attemptedAt),
+    ipIdx: index("idx_login_attempts_ip").on(table.ip),
+  };
+});
+
+// Password reset tokens table
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => {
+  return {
+    uniqueUserToken: uniqueIndex("unique_user_token").on(table.userId, table.tokenHash),
+    userIdx: index("idx_password_reset_tokens_user_id").on(table.userId),
+    expiresIdx: index("idx_password_reset_tokens_expires_at").on(table.expiresAt),
+  };
+});
+
+// Sessions table
+export const sessions = pgTable("sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  ip: text("ip"), // Using text for inet type
+  userAgent: text("user_agent"),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokeReason: text("revoke_reason"),
+}, (table) => {
+  return {
+    userIdx: index("idx_sessions_user_id").on(table.userId),
+    lastSeenIdx: index("idx_sessions_last_seen_at").on(table.lastSeenAt),
+  };
+});
+
 // Core schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBorrowerEntitySchema = createInsertSchema(borrowerEntities).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPropertySchema = createInsertSchema(properties).omit({ id: true, createdAt: true, updatedAt: true });
+
+// User Management System Schemas and Types
+export const insertRoleSchema = createInsertSchema(roles).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserRoleSchema = createInsertSchema(userRoles).omit({ assignedAt: true });
+export const insertPermissionSchema = createInsertSchema(permissions).omit({ id: true, createdAt: true });
+export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ createdAt: true });
+export const insertUserIpAllowlistSchema = createInsertSchema(userIpAllowlist).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAuthEventSchema = createInsertSchema(authEvents).omit({ id: true, occurredAt: true });
+export const insertLoginAttemptSchema = createInsertSchema(loginAttempts).omit({ id: true, attemptedAt: true });
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({ id: true, createdAt: true });
+export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true, createdAt: true, lastSeenAt: true });
+
+// User Management System Types
+export type Role = typeof roles.$inferSelect;
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type UserIpAllowlist = typeof userIpAllowlist.$inferSelect;
+export type InsertUserIpAllowlist = z.infer<typeof insertUserIpAllowlistSchema>;
+export type AuthEvent = typeof authEvents.$inferSelect;
+export type InsertAuthEvent = z.infer<typeof insertAuthEventSchema>;
+export type LoginAttempt = typeof loginAttempts.$inferSelect;
+export type InsertLoginAttempt = z.infer<typeof insertLoginAttemptSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type Session = typeof sessions.$inferSelect;
+export type InsertSession = z.infer<typeof insertSessionSchema>;
 export const insertLoanSchema = createInsertSchema(loans).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertLoanBorrowerSchema = createInsertSchema(loanBorrowers).omit({ id: true, createdAt: true });
 export const insertGuarantorSchema = createInsertSchema(guarantors).omit({ id: true, createdAt: true, updatedAt: true });
