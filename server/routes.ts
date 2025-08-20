@@ -22,6 +22,16 @@ import {
   insertEscrowDisbursementSchema,
   insertInvestorSchema
 } from "@shared/schema";
+import {
+  loadUserPolicy,
+  requireAuth,
+  requirePermission,
+  applyPIIMasking,
+  requireAdmin,
+  requireRole,
+  auditLog
+} from "./auth/middleware";
+import { PermissionLevel } from "./auth/policy-engine";
 
 function isAuthenticated(req: any, res: any, next: any) {
   if (req.isAuthenticated()) {
@@ -54,8 +64,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   await setupAuth(app);
 
+  // Apply global middleware for policy engine
+  app.use(loadUserPolicy); // Load user policy for all requests
+  app.use(applyPIIMasking()); // Apply PII masking for regulators
+
   // ============= BORROWER ENTITY ROUTES =============
-  app.get("/api/borrowers", async (req, res) => {
+  app.get("/api/borrowers", 
+    requireAuth,
+    requirePermission('Loans', PermissionLevel.Read),
+    async (req, res) => {
     try {
       const borrowers = await storage.getBorrowerEntities();
       res.json(borrowers);
@@ -197,8 +214,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============= LOAN ROUTES =============
-  app.get("/api/loans", async (req, res) => {
+  app.get("/api/loans", 
+    requireAuth,
+    requirePermission('Loans', PermissionLevel.Read),
+    async (req: any, res) => {
     try {
+      // Apply row-level filter if present
+      let filters: any = {};
+      if (req.rowLevelFilter) {
+        filters = { ...req.rowLevelFilter };
+      }
+      
       const { 
         lenderId, 
         servicerId, 
