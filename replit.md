@@ -67,6 +67,7 @@ LoanServe Pro is a comprehensive mortgage loan servicing platform built with Rea
   - Enhanced AI document extraction to include missing West Star Setup Document fields: APN number, fee payer (B/S/SP), late charge ($ or %), grace period, SSN/EIN/TIN, investor bank details (name, ABA, account #, type)
   - Added APN (Assessor's Parcel Number) field to Property Information section in loan edit Overview tab
   - Added comprehensive Servicing Settings section to Overview tab with fields: servicing fee rate/amount, fee payer, late charge type/amount, grace period, investor loan number, pool number
+  - Fixed Servicing Settings visibility issue by adding it to the correct component (loan-edit-form-tabbed.tsx) instead of loan-edit-form.tsx
 
 # User Preferences
 
