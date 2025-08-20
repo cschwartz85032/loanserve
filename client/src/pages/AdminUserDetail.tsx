@@ -273,17 +273,71 @@ export function AdminUserDetail() {
 
   const { user, roles, recentLogins, activeSessions, ipAllowlist } = userDetail;
 
-  const getUserStatusBadge = () => {
+  const getUserStatus = () => {
     if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-      return <Badge variant="destructive"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
+      return 'locked';
     }
     if (!user.isActive) {
-      return <Badge variant="secondary"><UserX className="w-3 h-3 mr-1" />Suspended</Badge>;
+      return 'suspended';
+    }
+    if (!user.emailVerified && !user.lastLogin) {
+      return 'invited';
     }
     if (!user.emailVerified) {
-      return <Badge variant="outline"><Mail className="w-3 h-3 mr-1" />Unverified</Badge>;
+      return 'unverified';
     }
-    return <Badge variant="default"><UserCheck className="w-3 h-3 mr-1" />Active</Badge>;
+    return 'active';
+  };
+
+  const getUserStatusBadge = () => {
+    const status = getUserStatus();
+    const badges: Record<string, JSX.Element> = {
+      locked: <Badge variant="destructive" className="cursor-pointer"><Lock className="w-3 h-3 mr-1" />Locked</Badge>,
+      suspended: <Badge variant="secondary" className="cursor-pointer"><UserX className="w-3 h-3 mr-1" />Suspended</Badge>,
+      invited: <Badge variant="outline" className="cursor-pointer"><Mail className="w-3 h-3 mr-1" />Invited</Badge>,
+      unverified: <Badge variant="outline" className="cursor-pointer"><AlertTriangle className="w-3 h-3 mr-1" />Unverified</Badge>,
+      active: <Badge variant="default" className="cursor-pointer"><UserCheck className="w-3 h-3 mr-1" />Active</Badge>
+    };
+    return badges[status] || badges.active;
+  };
+
+  const cycleUserStatus = async () => {
+    const currentStatus = getUserStatus();
+    const statusOrder = ['active', 'suspended', 'locked'];
+    const currentIndex = statusOrder.indexOf(currentStatus === 'invited' || currentStatus === 'unverified' ? 'active' : currentStatus);
+    const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
+    
+    try {
+      let endpoint = '';
+      let body = {};
+      
+      switch(nextStatus) {
+        case 'active':
+          endpoint = `/api/admin/users/${id}/activate`;
+          break;
+        case 'suspended':
+          endpoint = `/api/admin/users/${id}/suspend`;
+          body = { reason: 'Status cycle' };
+          break;
+        case 'locked':
+          endpoint = `/api/admin/users/${id}/lock`;
+          body = { duration: 30 };
+          break;
+      }
+      
+      await apiRequest(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      
+      toast({ title: `User status changed to ${nextStatus}` });
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${id}`] });
+    } catch (error) {
+      toast({ 
+        title: "Failed to change status", 
+        variant: "destructive" 
+      });
+    }
   };
 
   const getLoginOutcomeBadge = (outcome: string) => {
@@ -320,12 +374,15 @@ export function AdminUserDetail() {
         <div className="flex-1">
           <h1 className="text-3xl font-bold flex items-center gap-2">
             {user.username}
-            {getUserStatusBadge()}
+            <div onClick={cycleUserStatus}>
+              {getUserStatusBadge()}
+            </div>
           </h1>
           <p className="text-muted-foreground">{user.email}</p>
         </div>
         <UserActions 
           user={user}
+          userStatus={getUserStatus()}
           onResendInvite={() => resendInviteMutation.mutate()}
           onSendPasswordReset={() => sendPasswordResetMutation.mutate()}
         />
@@ -546,73 +603,49 @@ export function AdminUserDetail() {
         <TabsContent value="roles">
           <Card>
             <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>User Roles</CardTitle>
+              <CardTitle>User Roles</CardTitle>
+              <CardDescription>
+                Click tags to manage roles. Similar to labels or tags interface.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {/* Assigned roles as tags */}
+                {roles.map((role) => (
+                  <div
+                    key={role.roleId}
+                    className="group relative inline-flex items-center gap-1 px-3 py-1.5 bg-primary/10 text-primary rounded-full cursor-move hover:bg-primary/20 transition-colors"
+                  >
+                    <Shield className="w-3 h-3" />
+                    <span className="text-sm font-medium">{role.roleName}</span>
+                    <button
+                      onClick={() => removeRoleMutation.mutate(role.roleId)}
+                      className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <XCircle className="w-3.5 h-3.5 hover:text-destructive" />
+                    </button>
+                  </div>
+                ))}
+                
+                {/* Add role button styled as tag */}
                 <AssignRoleDialog 
                   availableRoles={availableRoles}
                   currentRoles={roles}
                   onAssign={(roleId) => assignRoleMutation.mutate(roleId)}
                 />
               </div>
-            </CardHeader>
-            <CardContent>
-              {roles.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No roles assigned to this user
+              
+              {/* Role details section */}
+              {roles.length > 0 && (
+                <div className="mt-6 space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Role Details</h4>
+                  {roles.map((role) => (
+                    <div key={role.roleId} className="text-sm text-muted-foreground">
+                      <span className="font-medium">{role.roleName}:</span> Assigned {formatDistanceToNow(new Date(role.assignedAt), { addSuffix: true })}
+                      {role.assignedBy && ` by User #${role.assignedBy}`}
+                    </div>
+                  ))}
                 </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Assigned</TableHead>
-                      <TableHead>Assigned By</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {roles.map((role) => (
-                      <TableRow key={role.roleId}>
-                        <TableCell className="font-medium">{role.roleName}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {role.roleDescription || 'No description'}
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(role.assignedAt), 'MMM d, yyyy')}
-                        </TableCell>
-                        <TableCell>
-                          {role.assignedBy ? `User #${role.assignedBy}` : 'System'}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Remove Role</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to remove the {role.roleName} role from this user?
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => removeRoleMutation.mutate(role.roleId)}
-                                >
-                                  Remove Role
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
               )}
             </CardContent>
           </Card>
@@ -757,10 +790,12 @@ export function AdminUserDetail() {
 
 function UserActions({ 
   user, 
+  userStatus,
   onResendInvite, 
   onSendPasswordReset 
 }: { 
   user: any;
+  userStatus?: string;
   onResendInvite?: () => void;
   onSendPasswordReset?: () => void;
 }) {
@@ -811,7 +846,7 @@ function UserActions({
   return (
     <div className="flex gap-2">
       {/* Resend Invite - only for invited users */}
-      {user.status === 'invited' && onResendInvite && (
+      {userStatus === 'invited' && onResendInvite && (
         <Button onClick={onResendInvite} variant="outline">
           <Mail className="w-4 h-4 mr-2" />
           Resend Invite
@@ -819,39 +854,10 @@ function UserActions({
       )}
       
       {/* Send Password Reset - for active users who are not invited */}
-      {user.status !== 'invited' && user.status !== 'disabled' && onSendPasswordReset && (
+      {userStatus !== 'invited' && userStatus !== 'disabled' && onSendPasswordReset && (
         <Button onClick={onSendPasswordReset} variant="outline">
           <Key className="w-4 h-4 mr-2" />
           Send Password Reset
-        </Button>
-      )}
-
-      {/* Lock/Unlock Account */}
-      {user.lockedUntil && new Date(user.lockedUntil) > new Date() ? (
-        <Button onClick={() => unlockMutation.mutate()}>
-          <Unlock className="w-4 h-4 mr-2" />
-          Unlock Account
-        </Button>
-      ) : (
-        <Button variant="outline" onClick={() => lockMutation.mutate(30)}>
-          <Lock className="w-4 h-4 mr-2" />
-          Lock Account
-        </Button>
-      )}
-      
-      {/* Suspend/Activate Account */}
-      {user.isActive ? (
-        <Button 
-          variant="destructive"
-          onClick={() => suspendMutation.mutate('Admin action')}
-        >
-          <UserX className="w-4 h-4 mr-2" />
-          Suspend Account
-        </Button>
-      ) : (
-        <Button onClick={() => activateMutation.mutate()}>
-          <UserCheck className="w-4 h-4 mr-2" />
-          Activate Account
         </Button>
       )}
     </div>
@@ -868,9 +874,13 @@ function AssignRoleDialog({ availableRoles, currentRoles, onAssign }: any) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="w-4 h-4 mr-2" />
-          Assign Role
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 px-3 rounded-full border-dashed hover:bg-primary/10"
+        >
+          <Plus className="w-3 h-3 mr-1" />
+          Add Role
         </Button>
       </DialogTrigger>
       <DialogContent>

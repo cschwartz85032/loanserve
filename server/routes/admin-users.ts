@@ -324,7 +324,7 @@ router.post('/:id/lock', async (req, res) => {
 
     // Log the action
     await db.insert(authEvents).values({
-      eventType: 'user_locked',
+      eventType: 'account_locked',
       actorUserId: req.user.id,
       targetUserId: userId,
       ip: req.ip,
@@ -365,7 +365,7 @@ router.post('/:id/unlock', async (req, res) => {
 
     // Log the action
     await db.insert(authEvents).values({
-      eventType: 'user_unlocked',
+      eventType: 'account_unlocked',
       actorUserId: req.user.id,
       targetUserId: userId,
       ip: req.ip,
@@ -411,7 +411,7 @@ router.post('/:id/suspend', async (req, res) => {
 
     // Log the action
     await db.insert(authEvents).values({
-      eventType: 'user_suspended',
+      eventType: 'user_updated',
       actorUserId: req.user.id,
       targetUserId: userId,
       ip: req.ip,
@@ -448,7 +448,7 @@ router.post('/:id/activate', async (req, res) => {
 
     // Log the action
     await db.insert(authEvents).values({
-      eventType: 'user_activated',
+      eventType: 'user_updated',
       actorUserId: req.user.id,
       targetUserId: userId,
       ip: req.ip,
