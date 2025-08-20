@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
@@ -12,6 +14,7 @@ import authRoutes from "./routes/auth";
 import { adminUsersRouter } from "./routes/admin-users";
 import { ipAllowlistRouter } from "./routes/ip-allowlist";
 import mfaRoutes from "./routes/mfa";
+import crmRoutes from "./routes/crm";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -81,6 +84,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Register MFA routes
   app.use('/api/mfa', mfaRoutes);
+
+  // Register CRM routes
+  app.use('/api', crmRoutes);
 
   // ============= BORROWER ENTITY ROUTES =============
   app.get("/api/borrowers", 
