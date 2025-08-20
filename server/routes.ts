@@ -323,9 +323,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Remove timestamp fields that are automatically managed
       const { createdAt, updatedAt, ...updateData } = req.body;
       
-      // Contact fields are now saving correctly
+      // Clean the data: convert empty strings to null for numeric/integer fields
+      const cleanedData = Object.entries(updateData).reduce((acc: any, [key, value]) => {
+        // Integer fields that should be null instead of empty string
+        const integerFields = ['gracePeriodDays', 'loanTerm', 'amortizationTerm', 'balloonMonths', 
+                              'prepaymentPenaltyTerm', 'rateAdjustmentFrequency', 'yearBuilt', 
+                              'squareFeet', 'bedrooms', 'bathrooms', 'stories', 'garageSpaces'];
+        
+        // Numeric/decimal fields that should be null instead of empty string
+        const numericFields = ['servicingFee', 'lateCharge', 'interestRate', 'margin', 
+                              'rateCapInitial', 'rateCapPeriodic', 'rateCapLifetime', 'rateFloor',
+                              'balloonAmount', 'prepaymentPenaltyAmount', 'propertyValue',
+                              'originalAmount', 'principalBalance', 'paymentAmount', 'monthlyEscrow',
+                              'monthlyMI', 'originalLTV', 'currentLTV', 'combinedLTV'];
+        
+        if ((integerFields.includes(key) || numericFields.includes(key)) && value === '') {
+          acc[key] = null;
+        } else {
+          acc[key] = value;
+        }
+        return acc;
+      }, {});
       
-      const loan = await storage.updateLoan(id, updateData);
+      const loan = await storage.updateLoan(id, cleanedData);
       
       // Temporarily skip audit log until database schema is updated
       // await storage.createAuditLog({
