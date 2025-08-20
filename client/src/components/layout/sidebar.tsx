@@ -14,7 +14,8 @@ import {
   LogOut,
   Receipt,
   Zap,
-  Settings
+  Settings,
+  Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ const navigation = [
   { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
   { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
   { name: "Compliance", href: "/compliance", icon: Shield },
+  { name: "User Management", href: "/admin/users", icon: Users },
   { name: "Admin", href: "/admin/documents", icon: Settings },
 ];
 
