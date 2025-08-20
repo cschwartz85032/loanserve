@@ -1,0 +1,147 @@
+2025-08-20 01:14:16.53
+967770d9
+User
+idleTimeoutMillis: 10000
+2025-08-20 01:14:16.53
+967770d9
+User
+},
+2025-08-20 01:14:16.53
+967770d9
+User
+_connectionCallback: null,
+2025-08-20 01:14:16.53
+967770d9
+User
+release: [Function (anonymous)],
+2025-08-20 01:14:16.53
+967770d9
+User
+activeQuery: null,
+2025-08-20 01:14:16.53
+967770d9
+User
+readyForQuery: true,
+2025-08-20 01:14:16.53
+967770d9
+User
+hasExecuted: true,
+2025-08-20 01:14:16.53
+967770d9
+User
+_poolUseCount: 3
+2025-08-20 01:14:16.53
+967770d9
+User
+}
+2025-08-20 01:14:16.53
+967770d9
+User
+}
+2025-08-20 01:14:16.53
+967770d9
+User
+2025-08-20 01:14:16.53
+967770d9
+User
+Node.js v20.19.3
+2025-08-20 01:14:16.59
+967770d9
+User
+npm notice
+2025-08-20 01:14:16.59
+967770d9
+User
+npm notice New major version of npm available! 10.8.2 -> 11.5.2
+2025-08-20 01:14:16.59
+967770d9
+User
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.5.2
+2025-08-20 01:14:16.59
+967770d9
+User
+npm notice To update run: npm install -g npm@11.5.2
+2025-08-20 01:14:16.59
+967770d9
+User
+npm notice
+2025-08-20 01:14:16.60
+967770d9
+System
+command finished with error [npm run start]: exit status 1
+2025-08-20 01:14:16.99
+967770d9
+User
+> rest-express@1.0.0 start
+2025-08-20 01:14:16.99
+967770d9
+User
+> NODE_ENV=production node dist/index.js
+2025-08-20 01:16:30.18
+967770d9
+User
+[INFO] Successfully loaded pdf2pic module
+2025-08-20 01:16:42.58
+967770d9
+User
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+2025-08-20 01:16:43.08
+967770d9
+User
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+2025-08-20 01:16:44.68
+967770d9
+User
+[INFO] Successfully loaded pdfjs-dist module
+2025-08-20 01:16:45.48
+967770d9
+User
+[Migration] Auto-migration will run on production deployment
+2025-08-20 01:16:49.18
+967770d9
+User
+8:16:46 AM [express] serving on port 5000
+2025-08-20 03:11:20.63
+967770d9
+System
+starting up user application
+2025-08-20 03:11:20.86
+967770d9
+System
+forwarding local port 5000 to external port 80 (mapped as 1104)
+2025-08-20 03:11:23.09
+967770d9
+User
+> rest-express@1.0.0 start
+2025-08-20 03:11:23.09
+967770d9
+User
+> NODE_ENV=production node dist/index.js
+2025-08-20 03:11:25.70
+967770d9
+User
+[INFO] Successfully loaded pdf2pic module
+2025-08-20 03:11:26.18
+967770d9
+User
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+2025-08-20 03:11:26.19
+967770d9
+User
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+2025-08-20 03:11:26.21
+967770d9
+User
+[INFO] Successfully loaded pdfjs-dist module
+2025-08-20 03:11:26.21
+967770d9
+User
+[Migration] Auto-migration will run on production deployment
+2025-08-20 03:11:26.33
+967770d9
+User
+10:11:26 AM [express] serving on port 5000
+2025-08-20 03:12:07.50
+967770d9
+System
+system: received signal terminated
