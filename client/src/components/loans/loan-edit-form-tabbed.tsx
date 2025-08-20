@@ -119,7 +119,13 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         feePayer: loan.feePayer || '',
         gracePeriodDays: loan.gracePeriodDays || '',
         investorLoanNumber: loan.investorLoanNumber || '',
-        poolNumber: loan.poolNumber || ''
+        poolNumber: loan.poolNumber || '',
+        // Ensure payment settings fields are always included
+        propertyTax: loan.propertyTax || loan.propertyTaxes || '',
+        homeInsurance: loan.homeInsurance || loan.hazardInsurance || '',
+        hoaFees: loan.hoaFees || '',
+        pmi: loan.pmi || loan.pmiAmount || '',
+        otherMonthly: loan.otherMonthly || ''
       };
       console.log('Form data with defaults:', formDataWithDefaults);
       setFormData(formDataWithDefaults);
