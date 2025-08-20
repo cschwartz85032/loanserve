@@ -13,14 +13,6 @@ import { Building2, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
 
 const activateSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
@@ -289,79 +281,70 @@ export default function ActivatePage() {
               </Alert>
             </div>
           ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter your username" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input 
+                  id="username"
+                  placeholder="Enter your username" 
+                  {...form.register('username')} 
                 />
+                {form.formState.errors.username && (
+                  <p className="text-sm text-red-500">{form.formState.errors.username.message}</p>
+                )}
+              </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="firstName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>First Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter your first name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input 
+                    id="firstName"
+                    placeholder="Enter your first name" 
+                    {...form.register('firstName')} 
                   />
-
-                  <FormField
-                    control={form.control}
-                    name="lastName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Last Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter your last name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {form.formState.errors.firstName && (
+                    <p className="text-sm text-red-500">{form.formState.errors.firstName.message}</p>
+                  )}
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="Enter your password" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input 
+                    id="lastName"
+                    placeholder="Enter your last name" 
+                    {...form.register('lastName')} 
+                  />
+                  {form.formState.errors.lastName && (
+                    <p className="text-sm text-red-500">{form.formState.errors.lastName.message}</p>
                   )}
-                />
+                </div>
+              </div>
 
-                <FormField
-                  control={form.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" placeholder="Confirm your password" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input 
+                  id="password"
+                  type="password" 
+                  placeholder="Enter your password" 
+                  {...form.register('password')} 
                 />
+                {form.formState.errors.password && (
+                  <p className="text-sm text-red-500">{form.formState.errors.password.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input 
+                  id="confirmPassword"
+                  type="password" 
+                  placeholder="Confirm your password" 
+                  {...form.register('confirmPassword')} 
+                />
+                {form.formState.errors.confirmPassword && (
+                  <p className="text-sm text-red-500">{form.formState.errors.confirmPassword.message}</p>
+                )}
+              </div>
 
                 <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg">
                   <p className="font-medium mb-1">Password Requirements:</p>
@@ -389,7 +372,6 @@ export default function ActivatePage() {
                   )}
                 </Button>
               </form>
-            </Form>
           )}
         </CardContent>
       </Card>
