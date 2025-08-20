@@ -58,7 +58,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Attempt login
+    // Attempt login (email can be either email or username)
     const result = await login(email, password, ip, userAgent);
 
     if (!result.success) {
