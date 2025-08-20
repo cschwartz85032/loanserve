@@ -140,7 +140,10 @@ interface AuditLog {
 }
 
 export function AdminUserDetail() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params.id;
+  console.log('AdminUserDetail params:', params, 'id:', id);
+  
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('profile');
@@ -149,13 +152,14 @@ export function AdminUserDetail() {
 
   // Fetch user details
   const { data: userDetail, isLoading } = useQuery<UserDetail>({
-    queryKey: [`/api/admin/users/${id}`]
+    queryKey: [`/api/admin/users/${id}`],
+    enabled: !!id
   });
 
   // Fetch audit logs
   const { data: auditLogs } = useQuery<{ auditLogs: AuditLog[] }>({
     queryKey: [`/api/admin/users/${id}/audit-logs`],
-    enabled: activeTab === 'audit'
+    enabled: activeTab === 'audit' && !!id
   });
 
   // Fetch available roles
