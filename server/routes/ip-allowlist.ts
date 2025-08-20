@@ -50,8 +50,12 @@ router.get('/', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const userId = (req as any).user?.id;
-    const { cidr, label } = req.body;
+    const actorUserId = (req as any).user?.id;
+    const { cidr, label, userId } = req.body;
+    
+    // Use the userId from the request body if provided (for admin managing other users)
+    // Otherwise use the logged-in user's ID (for self-management)
+    const targetUserId = userId || actorUserId;
     
     if (!cidr) {
       return res.status(400).json({ 
@@ -60,7 +64,7 @@ router.post('/', async (req, res) => {
       });
     }
     
-    const result = await addIpToAllowlist(userId, cidr, label, userId);
+    const result = await addIpToAllowlist(targetUserId, cidr, label, actorUserId);
     
     if (!result.success) {
       return res.status(400).json({ 
