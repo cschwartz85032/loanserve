@@ -397,12 +397,16 @@ export function AdminUserDetail() {
       const res = await apiRequest(`/api/admin/users/${id}/resend-invite`, {
         method: 'POST'
       });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to resend invitation');
+      }
       return res.json();
     },
     onSuccess: (data) => {
       toast({ 
         title: "Invitation resent successfully",
-        description: `Email sent to ${data.email}`
+        description: data.email ? `Email sent to ${data.email}` : data.message
       });
     },
     onError: (error: any) => {
@@ -416,14 +420,20 @@ export function AdminUserDetail() {
 
   // Send password reset mutation
   const sendPasswordResetMutation = useMutation({
-    mutationFn: () =>
-      apiRequest(`/api/admin/users/${id}/send-password-reset`, {
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/admin/users/${id}/send-password-reset`, {
         method: 'POST'
-      }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to send password reset');
+      }
+      return res.json();
+    },
     onSuccess: (data) => {
       toast({ 
         title: "Password reset sent successfully",
-        description: `Email sent to ${data.email}`
+        description: data.email ? `Email sent to ${data.email}` : data.message
       });
     },
     onError: (error: any) => {
