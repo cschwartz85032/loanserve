@@ -867,14 +867,14 @@ router.post('/:id/resend-invite', async (req, res) => {
       .where(eq(passwordResetTokens.userId, userId));
     
     // Get user's roles
-    const userRoles = await db.select({
+    const assignedRoles = await db.select({
       roleName: roles.name
     })
-    .from(userRoles as any)
-    .innerJoin(roles, eq((userRoles as any).roleId, roles.id))
-    .where(eq((userRoles as any).userId, userId));
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, userId));
     
-    const primaryRole = userRoles[0]?.roleName || 'user';
+    const primaryRole = assignedRoles[0]?.roleName || 'user';
     
     // Generate a new token directly (don't create a new user)
     const token = crypto.randomBytes(32).toString('hex');
