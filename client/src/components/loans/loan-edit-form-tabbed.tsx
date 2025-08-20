@@ -573,7 +573,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           type="number"
                           step="0.01"
                           value={formData.servicingFee || ''}
-                          onChange={(e) => handleInputChange('servicingFee', parseFloat(e.target.value) || 0)}
+                          onChange={(e) => handleInputChange('servicingFee', e.target.value === '' ? '' : parseFloat(e.target.value))}
                           placeholder={formData.servicingFeeType === 'percentage' ? '0.25' : '25.00'}
                           className="flex-1"
                         />
@@ -607,7 +607,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           type="number"
                           step="0.01"
                           value={formData.lateCharge || ''}
-                          onChange={(e) => handleInputChange('lateCharge', parseFloat(e.target.value) || 0)}
+                          onChange={(e) => handleInputChange('lateCharge', e.target.value === '' ? '' : parseFloat(e.target.value))}
                           placeholder={formData.lateChargeType === 'percentage' ? '5.00' : '50.00'}
                           className="flex-1"
                         />
@@ -657,7 +657,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                         id="gracePeriodDays"
                         type="number"
                         value={formData.gracePeriodDays || ''}
-                        onChange={(e) => handleInputChange('gracePeriodDays', parseInt(e.target.value) || 0)}
+                        onChange={(e) => handleInputChange('gracePeriodDays', e.target.value === '' ? '' : parseInt(e.target.value))}
                         placeholder="15"
                       />
                     </div>
