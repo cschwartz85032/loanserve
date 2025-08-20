@@ -124,6 +124,112 @@ interface RolesResponse {
   roles: Role[];
 }
 
+// Component for clickable status badges
+function UserStatusBadge({ user }: { user: User }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
+  const unlockMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/admin/users/${user.id}/unlock`, { method: 'POST' });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "User unlocked successfully" });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+    }
+  });
+  
+  const activateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/admin/users/${user.id}/activate`, { method: 'POST' });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "User activated successfully" });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+    }
+  });
+  
+  const suspendMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(`/api/admin/users/${user.id}/suspend`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Admin action' })
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "User suspended successfully" });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+    }
+  });
+  
+  const handleStatusClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click navigation
+    
+    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      // When locked, clicking will unlock AND activate the user
+      unlockMutation.mutate();
+      // Also activate if not already active
+      if (!user.isActive) {
+        setTimeout(() => activateMutation.mutate(), 100);
+      }
+    } else if (!user.isActive) {
+      // Activate suspended user
+      activateMutation.mutate();
+    } else if (user.isActive && user.emailVerified) {
+      // Suspend an active user
+      suspendMutation.mutate();
+    }
+  };
+  
+  // Loading state
+  if (unlockMutation.isPending || activateMutation.isPending || suspendMutation.isPending) {
+    return <Badge variant="outline">Updating...</Badge>;
+  }
+  
+  if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+    return (
+      <Badge 
+        variant="destructive" 
+        className="cursor-pointer hover:opacity-80 transition-opacity"
+        onClick={handleStatusClick}
+      >
+        <Lock className="w-3 h-3 mr-1" />
+        Locked
+      </Badge>
+    );
+  }
+  
+  if (!user.isActive) {
+    return (
+      <Badge 
+        variant="secondary"
+        className="cursor-pointer hover:opacity-80 transition-opacity"
+        onClick={handleStatusClick}
+      >
+        <UserX className="w-3 h-3 mr-1" />
+        Suspended
+      </Badge>
+    );
+  }
+  
+  if (!user.emailVerified) {
+    return <Badge variant="outline"><Mail className="w-3 h-3 mr-1" />Unverified</Badge>;
+  }
+  
+  return (
+    <Badge 
+      className="bg-green-600 hover:bg-green-700 cursor-pointer transition-colors text-white"
+      onClick={handleStatusClick}
+    >
+      <UserCheck className="w-3 h-3 mr-1" />
+      Active
+    </Badge>
+  );
+}
+
 export function AdminUsers() {
   const [location, setLocation] = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
@@ -150,16 +256,7 @@ export function AdminUsers() {
   const roles = rolesData?.roles || [];
 
   const getUserStatusBadge = (user: User) => {
-    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-      return <Badge variant="destructive"><Lock className="w-3 h-3 mr-1" />Locked</Badge>;
-    }
-    if (!user.isActive) {
-      return <Badge variant="secondary"><UserX className="w-3 h-3 mr-1" />Suspended</Badge>;
-    }
-    if (!user.emailVerified) {
-      return <Badge variant="outline"><Mail className="w-3 h-3 mr-1" />Unverified</Badge>;
-    }
-    return <Badge variant="default"><UserCheck className="w-3 h-3 mr-1" />Active</Badge>;
+    return <UserStatusBadge user={user} />;
   };
 
   const getRoleBadges = (roles?: string[]) => {
