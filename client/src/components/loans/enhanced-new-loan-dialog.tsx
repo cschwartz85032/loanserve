@@ -376,7 +376,16 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       propertyTaxes: toString(extractedData.propertyTaxes || extractedData.taxAmount || extractedData.taxes) || prev.propertyTaxes,
       hoaFees: toString(extractedData.hoaFees) || prev.hoaFees,
       pmiAmount: toString(extractedData.pmiAmount || extractedData.pmi) || prev.pmiAmount,
+      
+      // Servicing Settings
       servicingFee: toString(extractedData.servicingFee) || prev.servicingFee,
+      servicingFeeType: cleanString(extractedData.servicingFeeType) || prev.servicingFeeType || 'percentage',
+      lateCharge: toString(extractedData.lateCharge || extractedData.lateChargeAmount) || prev.lateCharge,
+      lateChargeType: cleanString(extractedData.lateChargeType) || prev.lateChargeType || 'percentage',
+      feePayer: cleanString(extractedData.feePayer) || prev.feePayer,
+      gracePeriodDays: toString(extractedData.gracePeriodDays || extractedData.gracePeriod) || prev.gracePeriodDays,
+      investorLoanNumber: cleanString(extractedData.investorLoanNumber) || prev.investorLoanNumber,
+      poolNumber: cleanString(extractedData.poolNumber) || prev.poolNumber,
       
       // Enhanced AI-extracted fields
       borrowerSSN: cleanString(extractedData.borrowerSSN) || prev.borrowerSSN,
@@ -606,7 +615,15 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         propertyTaxes: data.propertyTaxes?.toString() || "0",
         hoaFees: data.hoaFees?.toString() || "0",
         pmiAmount: data.pmiAmount?.toString() || "0",
-        servicingFee: data.servicingFee?.toString() || "25"
+        // Servicing Settings
+        servicingFee: data.servicingFee?.toString() || "25",
+        servicingFeeType: cleanString(data.servicingFeeType) || "percentage",
+        lateCharge: data.lateCharge?.toString() || null,
+        lateChargeType: cleanString(data.lateChargeType) || "percentage",
+        feePayer: cleanString(data.feePayer) || null,
+        gracePeriodDays: data.gracePeriodDays ? parseInt(data.gracePeriodDays) : null,
+        investorLoanNumber: cleanString(data.investorLoanNumber) || null,
+        poolNumber: cleanString(data.poolNumber) || null
       };
       
       console.log("=== LOAN DATA TO BE SENT ===");

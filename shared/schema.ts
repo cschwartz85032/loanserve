@@ -437,7 +437,6 @@ export const loans = pgTable("loans", {
   servicingFeeType: text("servicing_fee_type"), // 'fixed' or 'percentage'
   lateCharge: decimal("late_charge", { precision: 10, scale: 2 }),
   lateChargeType: text("late_charge_type"), // 'fixed' or 'percentage'
-  lateChargeAmount: decimal("late_charge_amount", { precision: 10, scale: 2 }), // Legacy field
   feePayer: text("fee_payer"), // 'B', 'S', 'SP'
   gracePeriodDays: integer("grace_period_days"),
   investorLoanNumber: text("investor_loan_number"),
