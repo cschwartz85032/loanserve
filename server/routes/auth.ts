@@ -434,7 +434,8 @@ router.post('/validate-token', async (req, res) => {
     // Find the token
     const [tokenRecord] = await db.select({
       userId: passwordResetTokens.userId,
-      expiresAt: passwordResetTokens.expiresAt
+      expiresAt: passwordResetTokens.expiresAt,
+      usedAt: passwordResetTokens.usedAt
     })
     .from(passwordResetTokens)
     .where(eq(passwordResetTokens.tokenHash, hashedToken))
@@ -444,6 +445,14 @@ router.post('/validate-token', async (req, res) => {
       return res.status(400).json({ 
         error: 'Invalid or expired token',
         code: 'INVALID_TOKEN' 
+      });
+    }
+    
+    // Check if already used
+    if (tokenRecord.usedAt) {
+      return res.status(400).json({ 
+        error: 'Token has already been used',
+        code: 'TOKEN_ALREADY_USED' 
       });
     }
     

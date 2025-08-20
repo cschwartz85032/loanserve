@@ -596,6 +596,45 @@ export async function createPasswordResetToken(email: string): Promise<{
 }
 
 /**
+ * Check if a password reset token is valid without marking it as used
+ */
+export async function checkPasswordResetToken(token: string): Promise<{
+  valid: boolean;
+  userId?: number;
+  error?: string;
+}> {
+  try {
+    const hashedToken = await hashToken(token);
+    
+    // Find valid token
+    const [resetToken] = await db.select({
+      id: passwordResetTokens.id,
+      userId: passwordResetTokens.userId,
+      expiresAt: passwordResetTokens.expiresAt,
+      usedAt: passwordResetTokens.usedAt
+    })
+    .from(passwordResetTokens)
+    .where(and(
+      eq(passwordResetTokens.tokenHash, hashedToken),
+      sql`used_at IS NULL`,
+      gte(passwordResetTokens.expiresAt, new Date())
+    ))
+    .limit(1);
+
+    if (!resetToken) {
+      return { valid: false, error: 'Invalid or expired token' };
+    }
+
+    // Don't mark as used - just check validity
+    return { valid: true, userId: resetToken.userId };
+
+  } catch (error) {
+    console.error('Token check error:', error);
+    return { valid: false, error: 'Token check failed' };
+  }
+}
+
+/**
  * Validate and use password reset token
  */
 export async function validatePasswordResetToken(token: string): Promise<{
