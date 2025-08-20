@@ -410,6 +410,91 @@ router.post('/password-reset/confirm', async (req, res) => {
 });
 
 /**
+ * POST /api/auth/validate-token
+ * Validate an invitation or reset token
+ */
+router.post('/validate-token', async (req, res) => {
+  try {
+    const { token, type = 'invitation' } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ 
+        error: 'Token is required',
+        code: 'MISSING_TOKEN' 
+      });
+    }
+
+    // Import required modules
+    const { passwordResetTokens, users } = await import('@shared/schema');
+    const crypto = await import('crypto');
+    
+    // Hash the token to match storage
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    
+    // Find the token
+    const [tokenRecord] = await db.select({
+      userId: passwordResetTokens.userId,
+      expiresAt: passwordResetTokens.expiresAt
+    })
+    .from(passwordResetTokens)
+    .where(eq(passwordResetTokens.tokenHash, hashedToken))
+    .limit(1);
+    
+    if (!tokenRecord) {
+      return res.status(400).json({ 
+        error: 'Invalid or expired token',
+        code: 'INVALID_TOKEN' 
+      });
+    }
+    
+    // Check if expired
+    if (new Date(tokenRecord.expiresAt) < new Date()) {
+      return res.status(400).json({ 
+        error: 'Token has expired',
+        code: 'EXPIRED_TOKEN' 
+      });
+    }
+    
+    // Get user info
+    const [user] = await db.select({
+      id: users.id,
+      email: users.email,
+      username: users.username,
+      firstName: users.firstName,
+      lastName: users.lastName
+    })
+    .from(users)
+    .where(eq(users.id, tokenRecord.userId))
+    .limit(1);
+    
+    if (!user) {
+      return res.status(400).json({ 
+        error: 'User not found',
+        code: 'USER_NOT_FOUND' 
+      });
+    }
+    
+    res.json({ 
+      success: true,
+      valid: true,
+      user: {
+        email: user.email,
+        username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName
+      }
+    });
+    
+  } catch (error) {
+    console.error('Token validation error:', error);
+    res.status(500).json({ 
+      error: 'An error occurred validating the token',
+      code: 'INTERNAL_ERROR' 
+    });
+  }
+});
+
+/**
  * POST /api/auth/activate
  * Activate account with invitation token
  */
