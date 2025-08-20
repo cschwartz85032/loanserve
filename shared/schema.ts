@@ -548,7 +548,7 @@ export const loanBorrowers = pgTable("loan_borrowers", {
   loanId: integer("loan_id").references(() => loans.id).notNull(),
   borrowerId: integer("borrower_id").references(() => borrowerEntities.id).notNull(),
   borrowerType: text("borrower_type").notNull(), // 'primary', 'co_borrower', 'guarantor'
-  ownershipPercentage: decimal("ownership_percentage", { precision: 5, scale: 2 }),
+  ownershipPercentage: decimal("ownership_percentage", { precision: 8, scale: 6 }), // Aligned with investors table for precise splits
   signingAuthority: boolean("signing_authority").default(true),
   liabilityPercentage: decimal("liability_percentage", { precision: 5, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -616,7 +616,7 @@ export const investors = pgTable("investors", {
   accountType: text("account_type"), // 'checking', 'savings'
   
   // Ownership
-  ownershipPercentage: decimal("ownership_percentage", { precision: 5, scale: 2 }).notNull(), // 0.00 to 100.00
+  ownershipPercentage: decimal("ownership_percentage", { precision: 8, scale: 6 }).notNull(), // 0.000000 to 99.999999 for precise splits
   investmentAmount: decimal("investment_amount", { precision: 15, scale: 2 }),
   investmentDate: date("investment_date"),
   
