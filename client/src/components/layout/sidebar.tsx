@@ -24,13 +24,8 @@ export function Sidebar() {
   const { user, logoutMutation } = useAuth();
   const [activeRole, setActiveRole] = useState(user?.role || "lender");
   
-  // Debug logging
-  console.log('Sidebar user:', user);
-  console.log('User role:', user?.role);
-  
   // Check if user has admin role
   const hasAdminRole = user?.role === 'admin';
-  console.log('Has admin role:', hasAdminRole);
   
   // Build navigation dynamically based on user roles
   const navigation = [
