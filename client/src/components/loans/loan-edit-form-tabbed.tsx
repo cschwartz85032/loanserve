@@ -110,7 +110,14 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       // Map originalAmount to loanAmount for UI display
       setFormData({
         ...loan,
-        loanAmount: loan.originalAmount || loan.loanAmount || ''
+        loanAmount: loan.originalAmount || loan.loanAmount || '',
+        // Ensure servicing settings fields are always included
+        servicingFee: loan.servicingFee || '',
+        servicingFeeType: loan.servicingFeeType || 'percentage',
+        lateCharge: loan.lateCharge || loan.lateChargeAmount || '',
+        lateChargeType: loan.lateChargeType || 'percentage',
+        feePayer: loan.feePayer || '',
+        gracePeriodDays: loan.gracePeriodDays || ''
       });
       calculatePayments(loan, escrowDisbursements);
     }
