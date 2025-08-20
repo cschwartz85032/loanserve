@@ -79,6 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      // Force reload to clear any cached state
+      window.location.href = '/auth';
     },
     onError: (error: Error) => {
       toast({
