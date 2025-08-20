@@ -249,7 +249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/loans", isAuthenticated, async (req, res) => {
-    console.log("=== BACKEND: LOAN CREATION ENDPOINT CALLED ===");
+    console.log("=== BACKEND: LOAN CREATION ENDPOINT CALLED (v2) ===");
     console.log("Request body received:", JSON.stringify(req.body, null, 2));
     
     try {
