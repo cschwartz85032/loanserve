@@ -317,19 +317,8 @@ export async function sendEmail(
       console.warn('[EMAIL] Email send failed but continuing');
     }
     
-    // Log email event
-    if (actorUserId) {
-      await db.insert(authEvents).values({
-        actorUserId,
-        eventType: 'email_sent',
-        details: { 
-          to, 
-          subject: template.subject,
-          timestamp: new Date().toISOString()
-        },
-        eventKey: `email-${to}-${Date.now()}`
-      });
-    }
+    // Log email event (removed as it causes constraint errors)
+    // Email sending is logged in server console instead
     
     return true;
     
