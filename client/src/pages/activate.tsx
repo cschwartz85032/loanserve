@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import { Building2, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
@@ -42,6 +43,7 @@ type ActivateFormData = z.infer<typeof activateSchema>;
 export default function ActivatePage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user, isLoading: authLoading } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(true);
   const [tokenValid, setTokenValid] = useState(false);
@@ -59,8 +61,28 @@ export default function ActivatePage() {
     }
   });
 
+  // Check if user is already logged in
+  useEffect(() => {
+    if (!authLoading && user) {
+      console.log('User is already logged in, redirecting to dashboard');
+      toast({
+        title: "Already logged in",
+        description: "You're already logged in. Redirecting to dashboard...",
+        variant: "default"
+      });
+      setTimeout(() => {
+        setLocation('/dashboard');
+      }, 1000);
+    }
+  }, [authLoading, user, setLocation, toast]);
+
   // Extract token from URL
   useEffect(() => {
+    // Don't validate token if user is logged in
+    if (!authLoading && user) {
+      return;
+    }
+    
     const urlParams = new URLSearchParams(window.location.search);
     const tokenParam = urlParams.get('token');
     
@@ -72,7 +94,7 @@ export default function ActivatePage() {
     
     setToken(tokenParam);
     validateToken(tokenParam);
-  }, []);
+  }, [authLoading, user]);
 
   // Validate the token
   const validateToken = async (tokenValue: string) => {
@@ -159,7 +181,20 @@ export default function ActivatePage() {
     activateMutation.mutate(data);
   };
 
-  console.log('Render states:', { isValidating, tokenError, tokenValid, userInfo });
+  console.log('Render states:', { isValidating, tokenError, tokenValid, userInfo, authLoading, user: user?.username });
+
+  // If user is logged in, show redirect message
+  if (!authLoading && user) {
+    console.log('User is logged in, showing redirect message');
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-slate-600">You're already logged in. Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isValidating) {
     console.log('Rendering: Loading state');
