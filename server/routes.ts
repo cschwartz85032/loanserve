@@ -9,6 +9,7 @@ import { analyzeDocument } from "./openai";
 import feeRoutes from "./routes/fees";
 import { registerLedgerRoutes } from "./routes/ledger";
 import authRoutes from "./routes/auth";
+import adminUserRoutes from "./routes/admin-users";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1177,6 +1178,9 @@ To implement full file serving:
 
   // ============= FEE MANAGEMENT ROUTES =============
   app.use("/api/fees", feeRoutes);
+
+  // Register admin user routes
+  app.use("/api/admin/users", adminUserRoutes);
   
   // Register ledger routes
   registerLedgerRoutes(app);

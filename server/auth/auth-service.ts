@@ -480,6 +480,342 @@ export async function revokeAllUserSessions(userId: number, reason: string): Pro
 }
 
 /**
+ * Generate secure token for password reset or invitation
+ */
+export async function generateSecureToken(): Promise<string> {
+  // Generate 32 bytes of random data and encode as base64url
+  const buffer = crypto.randomBytes(32);
+  return buffer.toString('base64url');
+}
+
+/**
+ * Hash token for storage
+ */
+export async function hashToken(token: string): Promise<string> {
+  // Use SHA-256 for token hashing (not passwords)
+  const hash = crypto.createHash('sha256');
+  hash.update(token);
+  return hash.digest('hex');
+}
+
+/**
+ * Create password reset token
+ */
+export async function createPasswordResetToken(email: string): Promise<{
+  success: boolean;
+  token?: string;
+  error?: string;
+}> {
+  try {
+    // Always return success to prevent account enumeration
+    const [user] = await db.select({
+      id: users.id,
+      email: users.email,
+      status: users.status
+    })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+
+    if (!user || user.status === 'disabled') {
+      // Don't reveal if user exists
+      return { success: true };
+    }
+
+    // Generate token
+    const token = await generateSecureToken();
+    const hashedToken = await hashToken(token);
+    
+    // Set expiry (1 hour)
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    // Store token
+    await db.insert(passwordResetTokens).values({
+      userId: user.id,
+      tokenHash: hashedToken,
+      expiresAt
+    });
+
+    // Log event
+    await db.insert(authEvents).values({
+      targetUserId: user.id,
+      eventType: 'password_reset_requested',
+      details: { email },
+      eventKey: `reset-request-${user.id}-${Date.now()}`
+    });
+
+    return { success: true, token };
+
+  } catch (error) {
+    console.error('Password reset token error:', error);
+    // Always return success to prevent enumeration
+    return { success: true };
+  }
+}
+
+/**
+ * Validate and use password reset token
+ */
+export async function validatePasswordResetToken(token: string): Promise<{
+  valid: boolean;
+  userId?: number;
+  error?: string;
+}> {
+  try {
+    const hashedToken = await hashToken(token);
+    
+    // Find valid token
+    const [resetToken] = await db.select({
+      id: passwordResetTokens.id,
+      userId: passwordResetTokens.userId,
+      expiresAt: passwordResetTokens.expiresAt,
+      usedAt: passwordResetTokens.usedAt
+    })
+    .from(passwordResetTokens)
+    .where(and(
+      eq(passwordResetTokens.tokenHash, hashedToken),
+      sql`used_at IS NULL`,
+      gte(passwordResetTokens.expiresAt, new Date())
+    ))
+    .limit(1);
+
+    if (!resetToken) {
+      return { valid: false, error: 'Invalid or expired token' };
+    }
+
+    // Mark token as used (single use)
+    await db.update(passwordResetTokens)
+      .set({ 
+        usedAt: new Date()
+      })
+      .where(eq(passwordResetTokens.id, resetToken.id));
+
+    return { valid: true, userId: resetToken.userId };
+
+  } catch (error) {
+    console.error('Token validation error:', error);
+    return { valid: false, error: 'Token validation failed' };
+  }
+}
+
+/**
+ * Reset password with token
+ */
+export async function resetPasswordWithToken(
+  token: string,
+  newPassword: string
+): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    // Validate token
+    const tokenValidation = await validatePasswordResetToken(token);
+    if (!tokenValidation.valid || !tokenValidation.userId) {
+      return { success: false, error: tokenValidation.error || 'Invalid token' };
+    }
+
+    // Validate new password
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return { 
+        success: false, 
+        error: 'Password does not meet requirements',
+        errors: passwordValidation.errors 
+      } as any;
+    }
+
+    // Hash new password
+    const hashedPassword = await hashPassword(newPassword);
+
+    // Update password
+    await db.update(users)
+      .set({ 
+        password: hashedPassword,
+        passwordUpdatedAt: new Date(),
+        failedLoginCount: 0, // Reset failed attempts
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, tokenValidation.userId));
+
+    // Revoke all sessions
+    await revokeAllUserSessions(tokenValidation.userId, 'password_reset');
+
+    // Log event
+    await db.insert(authEvents).values({
+      targetUserId: tokenValidation.userId,
+      eventType: 'password_reset_completed',
+      details: { method: 'reset_token' },
+      eventKey: `reset-complete-${tokenValidation.userId}-${Date.now()}`
+    });
+
+    return { success: true };
+
+  } catch (error) {
+    console.error('Password reset error:', error);
+    return { success: false, error: 'Password reset failed' };
+  }
+}
+
+/**
+ * Create invitation token
+ */
+export async function createInvitationToken(
+  email: string,
+  role: string,
+  invitedBy: number
+): Promise<{
+  success: boolean;
+  token?: string;
+  error?: string;
+}> {
+  try {
+    // Check if user already exists
+    const [existingUser] = await db.select({
+      id: users.id
+    })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+
+    if (existingUser) {
+      return { success: false, error: 'User already exists' };
+    }
+
+    // Generate token
+    const token = await generateSecureToken();
+    const hashedToken = await hashToken(token);
+    
+    // Set expiry (7 days)
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Create invited user
+    const [newUser] = await db.insert(users).values({
+      username: email.split('@')[0] + '_' + Date.now(), // Temporary username
+      email,
+      password: crypto.randomBytes(32).toString('hex'), // Random password, will be set on activation
+      role: role as any,
+      status: 'invited',
+      firstName: '',
+      lastName: ''
+    })
+    .returning({ id: users.id });
+
+    // Store invitation token
+    await db.insert(passwordResetTokens).values({
+      userId: newUser.id,
+      tokenHash: hashedToken,
+      expiresAt
+    });
+
+    // Log event
+    await db.insert(authEvents).values({
+      actorUserId: invitedBy,
+      targetUserId: newUser.id,
+      eventType: 'user_invited',
+      details: { email, role },
+      eventKey: `invite-${newUser.id}-${Date.now()}`
+    });
+
+    return { success: true, token };
+
+  } catch (error) {
+    console.error('Invitation token error:', error);
+    return { success: false, error: 'Failed to create invitation' };
+  }
+}
+
+/**
+ * Activate user account with invitation token
+ */
+export async function activateAccountWithToken(
+  token: string,
+  username: string,
+  password: string,
+  firstName: string,
+  lastName: string
+): Promise<{
+  success: boolean;
+  user?: any;
+  error?: string;
+}> {
+  try {
+    // Validate token (reuses password reset token table)
+    const tokenValidation = await validatePasswordResetToken(token);
+    if (!tokenValidation.valid || !tokenValidation.userId) {
+      return { success: false, error: tokenValidation.error || 'Invalid token' };
+    }
+
+    // Get invited user
+    const [invitedUser] = await db.select()
+      .from(users)
+      .where(and(
+        eq(users.id, tokenValidation.userId),
+        eq(users.status, 'invited')
+      ))
+      .limit(1);
+
+    if (!invitedUser) {
+      return { success: false, error: 'Invalid invitation' };
+    }
+
+    // Validate password
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
+      return { 
+        success: false, 
+        error: 'Password does not meet requirements',
+        errors: passwordValidation.errors 
+      } as any;
+    }
+
+    // Hash password
+    const hashedPassword = await hashPassword(password);
+
+    // Activate account
+    await db.update(users)
+      .set({
+        username,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        status: 'active',
+        passwordUpdatedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, tokenValidation.userId));
+
+    // Log activation
+    await db.insert(authEvents).values({
+      actorUserId: tokenValidation.userId,
+      targetUserId: tokenValidation.userId,
+      eventType: 'account_activated',
+      details: { method: 'invitation' },
+      eventKey: `activate-${tokenValidation.userId}-${Date.now()}`
+    });
+
+    // Get updated user
+    const [activatedUser] = await db.select({
+      id: users.id,
+      username: users.username,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      role: users.role
+    })
+    .from(users)
+    .where(eq(users.id, tokenValidation.userId))
+    .limit(1);
+
+    return { success: true, user: activatedUser };
+
+  } catch (error) {
+    console.error('Account activation error:', error);
+    return { success: false, error: 'Account activation failed' };
+  }
+}
+
+/**
  * Rate limiting with token bucket algorithm
  */
 export class RateLimiter {
