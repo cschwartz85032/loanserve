@@ -5,6 +5,12 @@
 
 import { db } from '../db';
 import { authEvents } from '@shared/schema';
+import sgMail from '@sendgrid/mail';
+
+// Initialize SendGrid
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
 // Email templates with generic responses for security
 interface EmailTemplate {
@@ -260,7 +266,7 @@ For security reasons, we cannot confirm whether an account exists with the provi
 }
 
 /**
- * Send email (stub - would integrate with email service)
+ * Send email using SendGrid
  */
 export async function sendEmail(
   to: string,
@@ -271,14 +277,44 @@ export async function sendEmail(
     // Log email send attempt
     console.log(`[EMAIL] Sending to ${to}: ${template.subject}`);
     
-    // In production, this would integrate with SendGrid, AWS SES, etc.
-    // For now, we'll just log the email content
-    if (process.env.NODE_ENV === 'development') {
+    // Check if SendGrid is configured
+    if (!process.env.SENDGRID_API_KEY || !process.env.SENDGRID_FROM_EMAIL) {
+      console.warn('[EMAIL] SendGrid not configured, logging email instead');
       console.log('--- EMAIL CONTENT ---');
       console.log('To:', to);
       console.log('Subject:', template.subject);
       console.log('Text:', template.text.substring(0, 200) + '...');
       console.log('--- END EMAIL ---');
+      return true; // Return true to not break the flow
+    }
+    
+    // Send email via SendGrid
+    const msg = {
+      to,
+      from: process.env.SENDGRID_FROM_EMAIL,
+      subject: template.subject,
+      text: template.text,
+      html: template.html,
+    };
+    
+    try {
+      await sgMail.send(msg);
+      console.log(`[EMAIL] Successfully sent email to ${to}`);
+    } catch (sendError: any) {
+      console.error('[EMAIL] SendGrid error:', sendError?.response?.body || sendError);
+      
+      // If development mode, show email content for debugging
+      if (process.env.NODE_ENV === 'development') {
+        console.log('--- EMAIL CONTENT (SendGrid failed) ---');
+        console.log('To:', to);
+        console.log('From:', process.env.SENDGRID_FROM_EMAIL);
+        console.log('Subject:', template.subject);
+        console.log('Text:', template.text.substring(0, 200) + '...');
+        console.log('--- END EMAIL ---');
+      }
+      
+      // Don't throw - just log and continue
+      console.warn('[EMAIL] Email send failed but continuing');
     }
     
     // Log email event
@@ -295,7 +331,6 @@ export async function sendEmail(
       });
     }
     
-    // Simulate email sending
     return true;
     
   } catch (error) {
