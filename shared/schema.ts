@@ -520,6 +520,13 @@ export const loans = pgTable("loans", {
   homeInsurance: decimal("home_insurance", { precision: 10, scale: 2 }),
   pmi: decimal("pmi", { precision: 10, scale: 2 }),
   otherMonthly: decimal("other_monthly", { precision: 10, scale: 2 }),
+  // Servicing Settings fields
+  servicingFeeType: text("servicing_fee_type"),
+  lateChargeType: text("late_charge_type"),
+  feePayer: text("fee_payer"),
+  gracePeriodDays: integer("grace_period_days"),
+  investorLoanNumber: text("investor_loan_number"),
+  poolNumber: text("pool_number"),
   // Additional fields
   notes: text("notes"),
   metadata: jsonb("metadata"),
