@@ -549,26 +549,72 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="servicingFeeRate">Servicing Fee Rate (%)</Label>
-                      <Input
-                        id="servicingFeeRate"
-                        type="number"
-                        step="0.01"
-                        value={formData.servicingFeeRate || ''}
-                        onChange={(e) => handleInputChange('servicingFeeRate', parseFloat(e.target.value) || 0)}
-                        placeholder="0.25"
-                      />
+                      <Label htmlFor="servicingFee">Servicing Fee</Label>
+                      <div className="flex gap-1">
+                        <Input
+                          id="servicingFee"
+                          type="number"
+                          step="0.01"
+                          value={formData.servicingFee || ''}
+                          onChange={(e) => handleInputChange('servicingFee', parseFloat(e.target.value) || 0)}
+                          placeholder={formData.servicingFeeType === 'percentage' ? '0.25' : '25.00'}
+                          className="flex-1"
+                        />
+                        <div className="flex">
+                          <Button
+                            type="button"
+                            variant={formData.servicingFeeType === 'fixed' ? 'default' : 'outline'}
+                            size="sm"
+                            className="rounded-r-none px-2"
+                            onClick={() => handleInputChange('servicingFeeType', 'fixed')}
+                          >
+                            $
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={formData.servicingFeeType === 'percentage' ? 'default' : 'outline'}
+                            size="sm"
+                            className="rounded-l-none px-2"
+                            onClick={() => handleInputChange('servicingFeeType', 'percentage')}
+                          >
+                            %
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="servicingFeeAmount">Servicing Fee Amount ($)</Label>
-                      <Input
-                        id="servicingFeeAmount"
-                        type="number"
-                        step="0.01"
-                        value={formData.servicingFeeAmount || ''}
-                        onChange={(e) => handleInputChange('servicingFeeAmount', parseFloat(e.target.value) || 0)}
-                        placeholder="25.00"
-                      />
+                      <Label htmlFor="lateCharge">Late Charge</Label>
+                      <div className="flex gap-1">
+                        <Input
+                          id="lateCharge"
+                          type="number"
+                          step="0.01"
+                          value={formData.lateCharge || ''}
+                          onChange={(e) => handleInputChange('lateCharge', parseFloat(e.target.value) || 0)}
+                          placeholder={formData.lateChargeType === 'percentage' ? '5.00' : '50.00'}
+                          className="flex-1"
+                        />
+                        <div className="flex">
+                          <Button
+                            type="button"
+                            variant={formData.lateChargeType === 'fixed' ? 'default' : 'outline'}
+                            size="sm"
+                            className="rounded-r-none px-2"
+                            onClick={() => handleInputChange('lateChargeType', 'fixed')}
+                          >
+                            $
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={formData.lateChargeType === 'percentage' ? 'default' : 'outline'}
+                            size="sm"
+                            className="rounded-l-none px-2"
+                            onClick={() => handleInputChange('lateChargeType', 'percentage')}
+                          >
+                            %
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="feePayer">Fee Payer</Label>
@@ -589,32 +635,6 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                   </div>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="lateChargeType">Late Charge Type</Label>
-                      <Select 
-                        value={formData.lateChargeType || ''} 
-                        onValueChange={(value) => handleInputChange('lateChargeType', value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="percentage">Percentage (%)</SelectItem>
-                          <SelectItem value="fixed">Fixed Amount ($)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lateChargeAmount">Late Charge Amount</Label>
-                      <Input
-                        id="lateChargeAmount"
-                        type="number"
-                        step="0.01"
-                        value={formData.lateChargeAmount || ''}
-                        onChange={(e) => handleInputChange('lateChargeAmount', parseFloat(e.target.value) || 0)}
-                        placeholder={formData.lateChargeType === 'percentage' ? '5.00' : '50.00'}
-                      />
-                    </div>
-                    <div className="space-y-2">
                       <Label htmlFor="gracePeriodDays">Grace Period (Days)</Label>
                       <Input
                         id="gracePeriodDays"
@@ -624,8 +644,6 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                         placeholder="15"
                       />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="investorLoanNumber">Investor Loan Number</Label>
                       <Input
