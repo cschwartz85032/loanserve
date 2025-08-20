@@ -37,7 +37,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     },
     {
       title: 'Users',
-      href: '/users',
+      href: '/admin/users',
       icon: Users,
     },
     {
