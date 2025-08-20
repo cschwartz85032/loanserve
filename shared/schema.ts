@@ -431,10 +431,9 @@ export const loans = pgTable("loans", {
   timesDelinquent90: integer("times_delinquent_90").default(0),
   foreclosureDate: date("foreclosure_date"),
   saleDate: date("sale_date"),
-  // Servicing
-  servicingFeeRate: decimal("servicing_fee_rate", { precision: 5, scale: 4 }),
-  servicingFeeAmount: decimal("servicing_fee_amount", { precision: 10, scale: 2 }),
-  servicingFeeType: text("servicing_fee_type").notNull().default('percentage'), // 'fixed' or 'percentage' - explicitly named
+  // Servicing - single field with type toggle (like late charge)
+  servicingFee: decimal("servicing_fee", { precision: 10, scale: 2 }),
+  servicingFeeType: text("servicing_fee_type").notNull().default('percentage'), // 'amount' or 'percentage' - indicates how to interpret servicingFee
   lateCharge: decimal("late_charge", { precision: 10, scale: 2 }),
   lateChargeType: text("late_charge_type").notNull().default('percentage'), // 'fixed' or 'percentage' - explicitly named
   feePayer: text("fee_payer"), // 'B', 'S', 'SP'

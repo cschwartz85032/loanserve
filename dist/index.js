@@ -517,11 +517,10 @@ var init_schema = __esm({
       timesDelinquent90: integer("times_delinquent_90").default(0),
       foreclosureDate: date("foreclosure_date"),
       saleDate: date("sale_date"),
-      // Servicing
-      servicingFeeRate: decimal("servicing_fee_rate", { precision: 5, scale: 4 }),
-      servicingFeeAmount: decimal("servicing_fee_amount", { precision: 10, scale: 2 }),
+      // Servicing - single field with type toggle (like late charge)
+      servicingFee: decimal("servicing_fee", { precision: 10, scale: 2 }),
       servicingFeeType: text("servicing_fee_type").notNull().default("percentage"),
-      // 'fixed' or 'percentage' - explicitly named
+      // 'amount' or 'percentage' - indicates how to interpret servicingFee
       lateCharge: decimal("late_charge", { precision: 10, scale: 2 }),
       lateChargeType: text("late_charge_type").notNull().default("percentage"),
       // 'fixed' or 'percentage' - explicitly named
@@ -1787,15 +1786,9 @@ var init_storage = __esm({
       async createLoan(insertLoan) {
         console.log("=== STORAGE: createLoan called ===");
         console.log("Insert data received:", JSON.stringify(insertLoan, null, 2));
-        const cleanInsertData = { ...insertLoan };
-        if ("servicingFileType" in cleanInsertData) {
-          console.log("WARNING: Found incorrect field 'servicingFileType', correcting to 'servicingFeeType'");
-          cleanInsertData.servicingFeeType = cleanInsertData.servicingFileType;
-          delete cleanInsertData.servicingFileType;
-        }
         try {
           console.log("Attempting to insert into database...");
-          const [loan] = await db2.insert(loans).values(cleanInsertData).returning();
+          const [loan] = await db2.insert(loans).values(insertLoan).returning();
           console.log("Loan inserted successfully:", loan);
           return loan;
         } catch (error) {
@@ -4829,11 +4822,6 @@ async function registerRoutes(app2) {
       console.log("Validating loan data with insertLoanSchema...");
       const validatedData = insertLoanSchema.parse(req.body);
       console.log("Validation successful. Validated data:", JSON.stringify(validatedData, null, 2));
-      if ("servicingFileType" in validatedData) {
-        console.log("WARNING: Found incorrect field 'servicingFileType', correcting to 'servicingFeeType'");
-        validatedData.servicingFeeType = validatedData.servicingFileType;
-        delete validatedData.servicingFileType;
-      }
       console.log("Calling storage.createLoan...");
       const loan = await storage.createLoan(validatedData);
       console.log("Loan created in database:", loan);
