@@ -298,10 +298,12 @@ export async function sendEmail(
     };
     
     try {
-      await sgMail.send(msg);
-      console.log(`[EMAIL] Successfully sent email to ${to}`);
+      const [response] = await sgMail.send(msg);
+      console.log(`[EMAIL] ✅ Successfully sent email to ${to}`);
+      console.log(`[EMAIL] SendGrid Response Status: ${response.statusCode}`);
+      console.log(`[EMAIL] Message ID: ${response.headers['x-message-id']}`);
     } catch (sendError: any) {
-      console.error('[EMAIL] SendGrid error:', sendError?.response?.body || sendError);
+      console.error('[EMAIL] ❌ SendGrid error:', sendError?.response?.body || sendError);
       
       // If development mode, show email content for debugging
       if (process.env.NODE_ENV === 'development') {
