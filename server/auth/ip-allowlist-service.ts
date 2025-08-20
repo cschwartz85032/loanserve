@@ -237,6 +237,22 @@ export async function addIpToAllowlist(
       cidr = cidr + (isV6 ? '/128' : '/32');
     }
     
+    // Check if this IP/CIDR already exists for the user
+    const existing = await db.select()
+      .from(userIpAllowlist)
+      .where(and(
+        eq(userIpAllowlist.userId, userId),
+        eq(userIpAllowlist.cidr, cidr)
+      ))
+      .limit(1);
+    
+    if (existing.length > 0) {
+      return { 
+        success: false, 
+        error: 'This IP address is already in the allowlist' 
+      };
+    }
+    
     const [result] = await db.insert(userIpAllowlist).values({
       userId,
       cidr,
@@ -245,12 +261,13 @@ export async function addIpToAllowlist(
     })
     .returning({ id: userIpAllowlist.id });
     
-    // Log the addition
+    // Log the addition with a valid event type
     await db.insert(authEvents).values({
       actorUserId: actorUserId || userId,
       targetUserId: userId,
-      eventType: 'ip_allowlist_added',
+      eventType: 'security_event', // Using a valid event type
       details: {
+        action: 'ip_allowlist_added',
         cidr,
         label,
         entryId: result.id
@@ -299,8 +316,9 @@ export async function removeIpFromAllowlist(
     await db.insert(authEvents).values({
       actorUserId: actorUserId || entry.userId,
       targetUserId: entry.userId,
-      eventType: 'ip_allowlist_removed',
+      eventType: 'security_event', // Using a valid event type
       details: {
+        action: 'ip_allowlist_removed',
         cidr: entry.cidr,
         label: entry.label,
         entryId
@@ -365,8 +383,9 @@ export async function updateIpAllowlistEntry(
     await db.insert(authEvents).values({
       actorUserId: actorUserId || entry.userId,
       targetUserId: entry.userId,
-      eventType: 'ip_allowlist_updated',
+      eventType: 'security_event', // Using a valid event type
       details: {
+        action: 'ip_allowlist_updated',
         entryId,
         previousValues: {
           cidr: entry.cidr,
