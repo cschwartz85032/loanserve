@@ -369,41 +369,15 @@ export async function login(
       return { success: false, error: 'Invalid credentials' };
     }
 
-    // Check IP allowlist (after password verification, before session creation)
+    // Check if IP is in trusted list (for logging/audit purposes only, not blocking)
     const { checkIpAllowlist, logIpDecision } = await import('./ip-allowlist-service');
     const ipCheck = await checkIpAllowlist(user.id, ip);
     
-    // Log IP decision
+    // Log IP decision for audit trail
     await logIpDecision(user.id, ip, ipCheck.allowed, ipCheck.reason || '', ipCheck.matchedEntry);
     
-    if (!ipCheck.allowed) {
-      // Record failed login attempt due to IP restriction
-      await db.insert(loginAttempts).values({
-        userId: user.id,
-        emailAttempted: user.email,
-        ip,
-        userAgent,
-        outcome: 'failed',
-        reason: `IP not in allowlist: ${ip}`
-      });
-      
-      // Log auth event for IP block
-      await db.insert(authEvents).values({
-        actorUserId: user.id,
-        eventType: 'login_failed',
-        ip,
-        userAgent,
-        details: { 
-          email: user.email,
-          reason: 'ip_not_allowed',
-          hasAllowlist: ipCheck.hasAllowlist,
-          blockedIp: ip
-        },
-        eventKey: `login-blocked-${user.id}-${Date.now()}`
-      });
-      
-      return { success: false, error: 'Access denied from this IP address' };
-    }
+    // Note: IP allowlist is non-restrictive - we track trusted IPs but don't block untrusted ones
+    // This allows users to login from any IP without constant re-authentication
 
     // Password is valid and IP is allowed - reset failed login count
     await db.update(users)

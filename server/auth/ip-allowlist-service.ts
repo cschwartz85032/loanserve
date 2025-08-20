@@ -175,20 +175,22 @@ export async function checkIpAllowlist(
       };
     }
     
-    // IP not in allowlist
+    // IP not in allowlist - but still allow access
+    // The allowlist is for tracking trusted IPs, not blocking access
     return {
-      allowed: false,
+      allowed: true,
       hasAllowlist: true,
-      reason: `IP ${normalizedIp} not in allowlist`
+      matchedEntry: null,
+      reason: `IP ${normalizedIp} not in trusted list (access allowed)`
     };
     
   } catch (error) {
     console.error('IP allowlist check error:', error);
-    // On error, deny access for security
+    // On error, allow access but log the issue
     return {
-      allowed: false,
-      hasAllowlist: true,
-      reason: 'IP allowlist check failed'
+      allowed: true,
+      hasAllowlist: false,
+      reason: 'IP allowlist check failed (access allowed)'
     };
   }
 }
