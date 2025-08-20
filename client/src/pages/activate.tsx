@@ -83,14 +83,18 @@ export default function ActivatePage() {
         body: JSON.stringify({ token: tokenValue, type: 'invitation' })
       });
 
+      console.log('Token validation response status:', response.status);
+
       if (!response.ok) {
         const error = await response.json();
+        console.log('Token validation error:', error);
         setTokenError(error.error || 'Invalid or expired activation token');
         setIsValidating(false);
         return;
       }
 
       const data = await response.json();
+      console.log('Token validation success data:', data);
       setUserInfo(data.user);
       
       // Populate form with user info
@@ -100,8 +104,10 @@ export default function ActivatePage() {
         form.setValue('lastName', data.user.lastName || '');
       }
       
+      console.log('Setting tokenValid to true and isValidating to false');
       setTokenValid(true);
       setIsValidating(false);
+      console.log('State updates complete');
     } catch (error) {
       setTokenError('Failed to validate activation token');
       setIsValidating(false);
@@ -153,7 +159,10 @@ export default function ActivatePage() {
     activateMutation.mutate(data);
   };
 
+  console.log('Render states:', { isValidating, tokenError, tokenValid, userInfo });
+
   if (isValidating) {
+    console.log('Rendering: Loading state');
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center space-y-4">
@@ -165,6 +174,7 @@ export default function ActivatePage() {
   }
 
   if (tokenError) {
+    console.log('Rendering: Error state - ', tokenError);
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <Card className="w-full max-w-md">
@@ -195,6 +205,7 @@ export default function ActivatePage() {
     );
   }
 
+  console.log('Rendering: Main form');
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <Card className="w-full max-w-md">
