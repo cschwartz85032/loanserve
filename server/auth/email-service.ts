@@ -342,13 +342,29 @@ export async function sendEmail(
 }
 
 /**
+ * Get the application base URL
+ */
+function getBaseUrl(): string {
+  // Check for Replit domains
+  if (process.env.REPLIT_DOMAINS) {
+    const domains = process.env.REPLIT_DOMAINS.split(',');
+    // Use the first domain (usually the .replit.app domain)
+    const primaryDomain = domains[0];
+    return `https://${primaryDomain}`;
+  }
+  
+  // Fallback to APP_URL or localhost
+  return process.env.APP_URL || 'http://localhost:5000';
+}
+
+/**
  * Send password reset email
  */
 export async function sendPasswordResetEmail(
   email: string,
   token: string
 ): Promise<boolean> {
-  const baseUrl = process.env.APP_URL || 'http://localhost:5000';
+  const baseUrl = getBaseUrl();
   const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
   
   const template = getPasswordResetTemplate(resetUrl);
@@ -364,8 +380,10 @@ export async function sendInvitationEmail(
   role: string,
   invitedBy: number
 ): Promise<boolean> {
-  const baseUrl = process.env.APP_URL || 'http://localhost:5000';
+  const baseUrl = getBaseUrl();
   const inviteUrl = `${baseUrl}/activate?token=${encodeURIComponent(token)}`;
+  
+  console.log(`[EMAIL] Using base URL: ${baseUrl}`);
   
   const template = getInvitationTemplate(inviteUrl, role);
   return sendEmail(email, template, invitedBy);
