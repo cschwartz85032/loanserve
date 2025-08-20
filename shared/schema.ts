@@ -239,6 +239,9 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").default(true).notNull(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
+  mfaEnabled: boolean("mfa_enabled").default(false),
+  mfaRequired: boolean("mfa_required").default(false),
+  require_mfa_for_sensitive: boolean("require_mfa_for_sensitive").default(true),
   profileImage: text("profile_image"),
   preferences: jsonb("preferences"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1856,6 +1859,111 @@ export const escrowAdvances = pgTable('escrow_advances', {
   statusIdx: index('escrow_advances_status_idx').on(table.status)
 }));
 
+// ========================================
+// MFA TABLES - Multi-Factor Authentication
+// ========================================
+
+// MFA factors for users (TOTP, SMS, etc.)
+export const userMfaFactors = pgTable('user_mfa_factors', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  factorType: text('factor_type', { enum: ['totp', 'sms', 'email'] }).notNull(),
+  factorName: text('factor_name').notNull(), // e.g., "iPhone Authenticator"
+  // TOTP specific fields
+  totpSecret: text('totp_secret'), // Encrypted at rest
+  totpIssuer: text('totp_issuer').default('LoanServe Pro'),
+  totpAlgorithm: text('totp_algorithm').default('SHA1'),
+  totpDigits: integer('totp_digits').default(6),
+  totpPeriod: integer('totp_period').default(30), // Time step in seconds
+  // SMS/Email specific fields
+  phoneNumber: text('phone_number'),
+  emailAddress: text('email_address'),
+  // Verification status
+  verified: boolean('verified').default(false).notNull(),
+  verifiedAt: timestamp('verified_at'),
+  lastUsedAt: timestamp('last_used_at'),
+  // Device trust
+  trustedDevices: jsonb('trusted_devices').default('[]'), // Array of trusted device fingerprints
+  // Metadata
+  enrolledAt: timestamp('enrolled_at').notNull().defaultNow(),
+  enrolledIp: text('enrolled_ip'),
+  enrolledUserAgent: text('enrolled_user_agent'),
+  isActive: boolean('is_active').default(true).notNull(),
+  metadata: jsonb('metadata').default('{}')
+}, (table) => ({
+  userIdIdx: index('user_mfa_factors_user_id_idx').on(table.userId),
+  factorTypeIdx: index('user_mfa_factors_factor_type_idx').on(table.factorType),
+  activeIdx: index('user_mfa_factors_active_idx').on(table.isActive)
+}));
+
+// MFA backup codes
+export const mfaBackupCodes = pgTable('mfa_backup_codes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(), // Hashed backup code
+  usedAt: timestamp('used_at'),
+  usedIp: text('used_ip'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  expiresAt: timestamp('expires_at')
+}, (table) => ({
+  userIdIdx: index('mfa_backup_codes_user_id_idx').on(table.userId),
+  codeHashIdx: uniqueIndex('mfa_backup_codes_code_hash_idx').on(table.codeHash)
+}));
+
+// MFA challenges (pending MFA verifications)
+export const mfaChallenges = pgTable('mfa_challenges', {
+  id: serial('id').primaryKey(),
+  challengeId: text('challenge_id').notNull().unique(), // UUID for challenge
+  userId: integer('user_id').notNull().references(() => users.id),
+  sessionId: text('session_id'), // Session that initiated the challenge
+  factorId: integer('factor_id').references(() => userMfaFactors.id),
+  challengeType: text('challenge_type', { enum: ['login', 'step_up', 'enrollment'] }).notNull(),
+  // Challenge details
+  action: text('action'), // What action requires MFA (e.g., 'transfer_funds', 'change_password')
+  requiredFactors: integer('required_factors').default(1), // Number of factors required
+  completedFactors: integer('completed_factors').default(0),
+  // Rate limiting
+  attempts: integer('attempts').default(0),
+  maxAttempts: integer('max_attempts').default(5),
+  lastAttemptAt: timestamp('last_attempt_at'),
+  lockedUntil: timestamp('locked_until'),
+  // Status
+  status: text('status', { enum: ['pending', 'verified', 'failed', 'expired'] }).notNull().default('pending'),
+  verifiedAt: timestamp('verified_at'),
+  // Metadata
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  deviceFingerprint: text('device_fingerprint'),
+  metadata: jsonb('metadata').default('{}'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  expiresAt: timestamp('expires_at').notNull() // Challenge expiry (usually 5-10 minutes)
+}, (table) => ({
+  challengeIdIdx: uniqueIndex('mfa_challenges_challenge_id_idx').on(table.challengeId),
+  userIdIdx: index('mfa_challenges_user_id_idx').on(table.userId),
+  statusIdx: index('mfa_challenges_status_idx').on(table.status),
+  expiresAtIdx: index('mfa_challenges_expires_at_idx').on(table.expiresAt)
+}));
+
+// MFA audit log for tracking all MFA events
+export const mfaAuditLog = pgTable('mfa_audit_log', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').notNull().references(() => users.id),
+  factorId: integer('factor_id').references(() => userMfaFactors.id),
+  challengeId: text('challenge_id').references(() => mfaChallenges.challengeId),
+  eventType: text('event_type').notNull(), // enrolled, verified, failed, disabled, backup_used, etc.
+  eventDetails: jsonb('event_details').default('{}'),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  deviceFingerprint: text('device_fingerprint'),
+  success: boolean('success').notNull(),
+  failureReason: text('failure_reason'),
+  createdAt: timestamp('created_at').notNull().defaultNow()
+}, (table) => ({
+  userIdIdx: index('mfa_audit_log_user_id_idx').on(table.userId),
+  eventTypeIdx: index('mfa_audit_log_event_type_idx').on(table.eventType),
+  createdAtIdx: index('mfa_audit_log_created_at_idx').on(table.createdAt)
+}));
+
 // Create insert schemas for servicing cycle tables
 export const insertServicingRunSchema = createInsertSchema(servicingRuns).omit({
   id: true,
@@ -1908,3 +2016,32 @@ export const insertEscrowAdvanceSchema = createInsertSchema(escrowAdvances).omit
 });
 export type InsertEscrowAdvance = z.infer<typeof insertEscrowAdvanceSchema>;
 export type EscrowAdvance = typeof escrowAdvances.$inferSelect;
+
+// MFA schemas
+export const insertUserMfaFactorSchema = createInsertSchema(userMfaFactors).omit({
+  id: true,
+  enrolledAt: true
+});
+export type InsertUserMfaFactor = z.infer<typeof insertUserMfaFactorSchema>;
+export type UserMfaFactor = typeof userMfaFactors.$inferSelect;
+
+export const insertMfaBackupCodeSchema = createInsertSchema(mfaBackupCodes).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertMfaBackupCode = z.infer<typeof insertMfaBackupCodeSchema>;
+export type MfaBackupCode = typeof mfaBackupCodes.$inferSelect;
+
+export const insertMfaChallengeSchema = createInsertSchema(mfaChallenges).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertMfaChallenge = z.infer<typeof insertMfaChallengeSchema>;
+export type MfaChallenge = typeof mfaChallenges.$inferSelect;
+
+export const insertMfaAuditLogSchema = createInsertSchema(mfaAuditLog).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertMfaAuditLog = z.infer<typeof insertMfaAuditLogSchema>;
+export type MfaAuditLog = typeof mfaAuditLog.$inferSelect;

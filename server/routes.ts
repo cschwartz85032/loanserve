@@ -11,6 +11,7 @@ import { registerLedgerRoutes } from "./routes/ledger";
 import authRoutes from "./routes/auth";
 import { adminUsersRouter } from "./routes/admin-users";
 import { ipAllowlistRouter } from "./routes/ip-allowlist";
+import mfaRoutes from "./routes/mfa";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -77,6 +78,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register admin routes (requires authentication)
   app.use('/api/admin/users', adminUsersRouter);
   app.use('/api/ip-allowlist', ipAllowlistRouter);
+  
+  // Register MFA routes
+  app.use('/api/mfa', mfaRoutes);
 
   // ============= BORROWER ENTITY ROUTES =============
   app.get("/api/borrowers", 
