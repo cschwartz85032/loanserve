@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format } from 'date-fns';
@@ -40,7 +40,9 @@ import {
   Calculator,
   DollarSign,
   MapPin,
-  MessageCircle
+  MessageCircle,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -66,6 +68,38 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [textMessage, setTextMessage] = useState('');
   const [callDuration, setCallDuration] = useState('');
   const [callOutcome, setCallOutcome] = useState('');
+  
+  // Contact editing states
+  const [hoveredContact, setHoveredContact] = useState<string | null>(null);
+  const [editPhoneModal, setEditPhoneModal] = useState(false);
+  const [editEmailModal, setEditEmailModal] = useState(false);
+  const [editAddressModal, setEditAddressModal] = useState(false);
+  const [phoneNumbers, setPhoneNumbers] = useState<Array<{number: string, label: string, isBad?: boolean}>>([]);
+  const [emailAddresses, setEmailAddresses] = useState<Array<{email: string, label: string}>>([]);
+
+  // Initialize contact data from loanData
+  useEffect(() => {
+    const phones = [];
+    if (loanData?.borrowerPhone) {
+      phones.push({ number: loanData.borrowerPhone, label: 'test call or text', isBad: false });
+    }
+    if (loanData?.borrowerMobile) {
+      phones.push({ number: loanData.borrowerMobile, label: 'mobile', isBad: false });
+    }
+    if (phones.length === 0) {
+      phones.push({ number: '', label: '', isBad: false });
+    }
+    setPhoneNumbers(phones);
+
+    const emails = [];
+    if (loanData?.borrowerEmail) {
+      emails.push({ email: loanData.borrowerEmail, label: 'primary' });
+    }
+    if (emails.length === 0) {
+      emails.push({ email: '', label: '' });
+    }
+    setEmailAddresses(emails);
+  }, [loanData]);
 
   // Helper function to format currency
   const formatCurrency = (amount: number) => {
@@ -226,38 +260,162 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             {/* Contact Information */}
             <div className="space-y-3 border-t pt-3">
               {/* Phone Numbers */}
-              {loanData?.borrowerPhone && (
-                <div className="flex items-center space-x-2 text-sm">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{loanData.borrowerPhone}</span>
-                </div>
-              )}
-              {loanData?.borrowerMobile && (
-                <div className="flex items-center space-x-2 text-sm">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{loanData.borrowerMobile} (Mobile)</span>
-                </div>
+              {(loanData?.borrowerPhone || loanData?.borrowerMobile) ? (
+                <>
+                  {loanData?.borrowerPhone && (
+                    <div 
+                      className="flex items-center justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                      onMouseEnter={() => setHoveredContact('phone1')}
+                      onMouseLeave={() => setHoveredContact(null)}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span>{loanData.borrowerPhone} (test call or text)</span>
+                      </div>
+                      {hoveredContact === 'phone1' && (
+                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 w-6 p-0"
+                            onClick={() => setEditPhoneModal(true)}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 w-6 p-0"
+                            onClick={() => setEditPhoneModal(true)}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {loanData?.borrowerMobile && (
+                    <div 
+                      className="flex items-center justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                      onMouseEnter={() => setHoveredContact('phone2')}
+                      onMouseLeave={() => setHoveredContact(null)}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span>{loanData.borrowerMobile} (mobile)</span>
+                      </div>
+                      {hoveredContact === 'phone2' && (
+                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 w-6 p-0"
+                            onClick={() => setEditPhoneModal(true)}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 w-6 p-0"
+                            onClick={() => setEditPhoneModal(true)}
+                          >
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <button 
+                  className="flex items-center space-x-2 text-sm text-primary hover:underline"
+                  onClick={() => setEditPhoneModal(true)}
+                >
+                  <Phone className="h-4 w-4" />
+                  <span>Add phone</span>
+                </button>
               )}
               
               {/* Email */}
-              {loanData?.borrowerEmail && (
-                <div className="flex items-center space-x-2 text-sm">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="truncate">{loanData.borrowerEmail}</span>
+              {loanData?.borrowerEmail ? (
+                <div 
+                  className="flex items-center justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                  onMouseEnter={() => setHoveredContact('email')}
+                  onMouseLeave={() => setHoveredContact(null)}
+                >
+                  <div className="flex items-center space-x-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span className="truncate">{loanData.borrowerEmail}</span>
+                  </div>
+                  {hoveredContact === 'email' && (
+                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 w-6 p-0"
+                        onClick={() => setEditEmailModal(true)}
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 w-6 p-0"
+                        onClick={() => setEditEmailModal(true)}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <button 
+                  className="flex items-center space-x-2 text-sm text-primary hover:underline"
+                  onClick={() => setEditEmailModal(true)}
+                >
+                  <Mail className="h-4 w-4" />
+                  <span>Add email</span>
+                </button>
               )}
               
               {/* Property Address */}
-              {loanData?.propertyAddress && (
-                <div className="flex items-start space-x-2 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p>{loanData.propertyAddress}</p>
-                    {loanData.propertyCity && loanData.propertyState && (
-                      <p>{loanData.propertyCity}, {loanData.propertyState} {loanData.propertyZip}</p>
-                    )}
+              {loanData?.propertyAddress ? (
+                <div 
+                  className="flex items-start justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                  onMouseEnter={() => setHoveredContact('address')}
+                  onMouseLeave={() => setHoveredContact(null)}
+                >
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                    <div>
+                      <p>{loanData.propertyAddress}</p>
+                      {loanData.propertyCity && loanData.propertyState && (
+                        <p>{loanData.propertyCity}, {loanData.propertyState} {loanData.propertyZip}</p>
+                      )}
+                    </div>
                   </div>
+                  {hoveredContact === 'address' && (
+                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 w-6 p-0"
+                        onClick={() => setEditAddressModal(true)}
+                      >
+                        <Edit className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <button 
+                  className="flex items-center space-x-2 text-sm text-primary hover:underline"
+                  onClick={() => setEditAddressModal(true)}
+                >
+                  <MapPin className="h-4 w-4" />
+                  <span>Add address</span>
+                </button>
               )}
             </div>
           </CardContent>
@@ -782,6 +940,162 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Edit Phone Numbers Modal */}
+      <Dialog open={editPhoneModal} onOpenChange={setEditPhoneModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Phone className="h-4 w-4" />
+              <span>Edit Phone Numbers</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <div className="grid grid-cols-[200px_140px_60px_40px] gap-2 text-sm font-medium text-muted-foreground">
+                <span>Phone Number</span>
+                <span>Label</span>
+                <span>Bad Number</span>
+                <span></span>
+              </div>
+              {phoneNumbers.map((phone, index) => (
+                <div key={index} className="grid grid-cols-[200px_140px_60px_40px] gap-2 items-center">
+                  <Input 
+                    value={phone.number}
+                    onChange={(e) => {
+                      const updated = [...phoneNumbers];
+                      updated[index].number = e.target.value;
+                      setPhoneNumbers(updated);
+                    }}
+                    placeholder="(555) 555-5555"
+                  />
+                  <Input 
+                    value={phone.label}
+                    onChange={(e) => {
+                      const updated = [...phoneNumbers];
+                      updated[index].label = e.target.value;
+                      setPhoneNumbers(updated);
+                    }}
+                    placeholder="mobile"
+                  />
+                  <div className="flex justify-center">
+                    <input 
+                      type="checkbox"
+                      checked={phone.isBad || false}
+                      onChange={(e) => {
+                        const updated = [...phoneNumbers];
+                        updated[index].isBad = e.target.checked;
+                        setPhoneNumbers(updated);
+                      }}
+                    />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setPhoneNumbers(phoneNumbers.filter((_, i) => i !== index));
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary"
+              onClick={() => setPhoneNumbers([...phoneNumbers, { number: '', label: '', isBad: false }])}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add another phone
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPhoneModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => {
+              // Save phone numbers logic here
+              setEditPhoneModal(false);
+            }}>
+              Save Phone Numbers
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Email Modal */}
+      <Dialog open={editEmailModal} onOpenChange={setEditEmailModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Mail className="h-4 w-4" />
+              <span>Edit Email Addresses</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <div className="grid grid-cols-[250px_120px_40px] gap-2 text-sm font-medium text-muted-foreground">
+                <span>Email Address</span>
+                <span>Label</span>
+                <span></span>
+              </div>
+              {emailAddresses.map((email, index) => (
+                <div key={index} className="grid grid-cols-[250px_120px_40px] gap-2 items-center">
+                  <Input 
+                    value={email.email}
+                    onChange={(e) => {
+                      const updated = [...emailAddresses];
+                      updated[index].email = e.target.value;
+                      setEmailAddresses(updated);
+                    }}
+                    placeholder="email@example.com"
+                  />
+                  <Input 
+                    value={email.label}
+                    onChange={(e) => {
+                      const updated = [...emailAddresses];
+                      updated[index].label = e.target.value;
+                      setEmailAddresses(updated);
+                    }}
+                    placeholder="work"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setEmailAddresses(emailAddresses.filter((_, i) => i !== index));
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary"
+              onClick={() => setEmailAddresses([...emailAddresses, { email: '', label: '' }])}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add another email
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditEmailModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => {
+              // Save email addresses logic here
+              setEditEmailModal(false);
+            }}>
+              Save Email Addresses
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
