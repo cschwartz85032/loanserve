@@ -548,9 +548,15 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
     // Handle attachments
     const attachments: any[] = [];
     
+    console.log('Processing email attachments...');
+    console.log('Document IDs received:', documentIds);
+    console.log('Files received:', req.files ? (req.files as any[]).length : 0);
+    
     // Process document IDs if provided
     if (documentIds) {
       const docIdArray = typeof documentIds === 'string' ? JSON.parse(documentIds) : documentIds;
+      console.log('Document ID array:', docIdArray);
+      
       if (Array.isArray(docIdArray) && docIdArray.length > 0) {
         // Fetch documents from database
         const docs = await db
@@ -558,16 +564,22 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
           .from(documents)
           .where(or(...docIdArray.map((id: number) => eq(documents.id, id))));
         
+        console.log(`Found ${docs.length} documents in database`);
+        
         // Add documents as attachments
         for (const doc of docs) {
           if (doc.filePath && fs.existsSync(doc.filePath)) {
             const fileContent = fs.readFileSync(doc.filePath);
-            attachments.push({
+            const attachment = {
               content: fileContent.toString('base64'),
               filename: doc.name || doc.fileName || 'document',
               type: doc.mimeType || 'application/octet-stream',
               disposition: 'attachment'
-            });
+            };
+            attachments.push(attachment);
+            console.log(`Added document attachment: ${attachment.filename} (${attachment.type})`);
+          } else {
+            console.log(`Document file not found: ${doc.filePath}`);
           }
         }
       }
@@ -575,19 +587,25 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
     
     // Process uploaded files
     if (req.files && Array.isArray(req.files)) {
+      console.log(`Processing ${req.files.length} uploaded files`);
       for (const file of req.files) {
-        attachments.push({
+        const attachment = {
           content: file.buffer.toString('base64'),
           filename: file.originalname,
           type: file.mimetype,
           disposition: 'attachment'
-        });
+        };
+        attachments.push(attachment);
+        console.log(`Added uploaded file: ${attachment.filename} (${attachment.type}, ${file.size} bytes)`);
       }
     }
     
     // Add attachments to email if any
     if (attachments.length > 0) {
       msg.attachments = attachments;
+      console.log(`Total attachments added to email: ${attachments.length}`);
+    } else {
+      console.log('No attachments to add to email');
     }
 
     // Send email
