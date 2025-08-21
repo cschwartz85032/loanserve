@@ -2570,17 +2570,17 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   console.log(`Rendering activity: type=${item.activityType}, desc="${description}"`);
                   
                   return (
-                    <div key={item.id} className="flex items-start space-x-2">
+                    <div key={item.id} className="flex items-start space-x-2" data-activity-type={item.activityType}>
                       <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center">
-                        {item.activityType === 'note' && <MessageSquare className="h-3 w-3" />}
-                        {item.activityType === 'task' && <CheckSquare className="h-3 w-3" />}
-                        {item.activityType === 'call' && <Phone className="h-3 w-3" />}
-                        {item.activityType === 'appointment' && <Calendar className="h-3 w-3" />}
-                        {item.activityType === 'email' && <Mail className="h-3 w-3" />}
-                        {item.activityType === 'text' && <MessageCircle className="h-3 w-3" />}
+                        {item.activityType === 'note' && <MessageSquare className="h-3 w-3 text-primary" />}
+                        {item.activityType === 'task' && <CheckSquare className="h-3 w-3 text-primary" />}
+                        {item.activityType === 'call' && <Phone className="h-3 w-3 text-primary" />}
+                        {item.activityType === 'appointment' && <Calendar className="h-3 w-3 text-primary" />}
+                        {item.activityType === 'email' && <Mail className="h-3 w-3 text-primary" />}
+                        {item.activityType === 'text' && <MessageCircle className="h-3 w-3 text-primary" />}
                       </div>
-                      <div className="flex-1">
-                        <div className="text-xs font-normal">{description}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-normal text-foreground truncate">{description || 'No description'}</div>
                         <div className="text-xs text-muted-foreground">
                           {formatTimeAgo(item.createdAt)}
                         </div>
