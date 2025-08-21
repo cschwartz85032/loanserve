@@ -135,7 +135,10 @@ function DocumentSelector({
           <div className="flex-1">
             <p className="text-sm font-medium">{doc.name || doc.fileName || 'Untitled Document'}</p>
             <p className="text-xs text-muted-foreground">
-              {doc.documentType || 'Document'} • Uploaded {format(new Date(doc.uploadDate), 'MMM d, yyyy')}
+              {doc.documentType || 'Document'} 
+              {doc.uploadDate && !isNaN(new Date(doc.uploadDate).getTime()) && (
+                <span> • Uploaded {format(new Date(doc.uploadDate), 'MMM d, yyyy')}</span>
+              )}
             </p>
           </div>
           {doc.fileSize && (
