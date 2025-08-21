@@ -81,32 +81,14 @@ router.post('/login', async (req, res) => {
     if (req.session) {
       (req.session as any).userId = result.user.id;
       (req.session as any).sessionId = result.sessionId;
-      
-      // Save session before sending response
-      req.session.save((err) => {
-        if (err) {
-          console.error('Session save error:', err);
-          return res.status(500).json({ 
-            error: 'Failed to save session',
-            code: 'SESSION_ERROR' 
-          });
-        }
-        
-        // Return success with user data after session is saved
-        res.json({
-          success: true,
-          user: result.user,
-          sessionId: result.sessionId
-        });
-      });
-    } else {
-      // Return success even if no session (shouldn't happen)
-      res.json({
-        success: true,
-        user: result.user,
-        sessionId: result.sessionId
-      });
     }
+
+    // Return success with user data
+    res.json({
+      success: true,
+      user: result.user,
+      sessionId: result.sessionId
+    });
 
   } catch (error) {
     console.error('Login endpoint error:', error);

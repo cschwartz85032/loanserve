@@ -37,17 +37,15 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  const isProduction = process.env.NODE_ENV === 'production';
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || 'dev-session-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      secure: isProduction, // Use secure cookies in production (HTTPS)
+      secure: false, // Allow non-HTTPS in development
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax', // Allow cookies to work with frontend
     },
   };
 
@@ -115,15 +113,10 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", async (req, res) => {
-    // Debug session
-    console.log('Session ID:', req.sessionID);
-    console.log('Session data:', req.session);
-    
     // Check for session userId (new auth system)
     const userId = (req.session as any)?.userId;
     
     if (!userId) {
-      console.log('No userId in session, returning 401');
       return res.sendStatus(401);
     }
     

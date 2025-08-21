@@ -1,7 +1,7 @@
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { pgTable, text, timestamp, integer, serial, boolean, jsonb, decimal, uuid, varchar, date, index, pgEnum, uniqueIndex, time, primaryKey } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 
 // ========================================
 // ENUMS - Comprehensive status and type enumerations
@@ -1423,7 +1423,7 @@ export const loginOutcomeEnum = pgEnum("login_outcome", ['succeeded', 'failed', 
 
 // Roles table
 export const roles = pgTable("roles", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1446,7 +1446,7 @@ export const userRoles = pgTable("user_roles", {
 
 // Permissions table
 export const permissions = pgTable("permissions", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   resource: text("resource").notNull(),
   level: permissionLevelEnum("level").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1471,7 +1471,7 @@ export const rolePermissions = pgTable("role_permissions", {
 
 // User IP allowlist table
 export const userIpAllowlist = pgTable("user_ip_allowlist", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   label: text("label").notNull(),
   cidr: text("cidr").notNull(), // Storing CIDR as text
@@ -1489,7 +1489,7 @@ export const userIpAllowlist = pgTable("user_ip_allowlist", {
 
 // Auth events table (audit log)
 export const authEvents = pgTable("auth_events", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
   actorUserId: integer("actor_user_id").references(() => users.id),
   targetUserId: integer("target_user_id").references(() => users.id),
@@ -1509,7 +1509,7 @@ export const authEvents = pgTable("auth_events", {
 
 // Login attempts table
 export const loginAttempts = pgTable("login_attempts", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   userId: integer("user_id").references(() => users.id),
   emailAttempted: text("email_attempted"),
   attemptedAt: timestamp("attempted_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1527,7 +1527,7 @@ export const loginAttempts = pgTable("login_attempts", {
 
 // Password reset tokens table
 export const passwordResetTokens = pgTable("password_reset_tokens", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -1543,7 +1543,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
 
 // Sessions table
 export const sessions = pgTable("sessions", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
