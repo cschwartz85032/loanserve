@@ -165,8 +165,19 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       console.log('Calculating from disbursements:', disbursements);
       
       disbursements.forEach(d => {
-        const monthlyAmount = parseFloat(d.monthlyAmount) || 0;
-        console.log(`Disbursement: ${d.disbursementType} - ${d.description}: $${monthlyAmount}/month`);
+        // Only count active disbursements
+        if (d.status !== 'active') {
+          console.log(`Skipping ${d.status} disbursement: ${d.description}`);
+          return;
+        }
+        
+        // Try to get monthly amount, or calculate from annual amount
+        let monthlyAmount = parseFloat(d.monthlyAmount) || 0;
+        if (!monthlyAmount && d.annualAmount) {
+          monthlyAmount = parseFloat(d.annualAmount) / 12;
+        }
+        
+        console.log(`Disbursement: ${d.disbursementType} - ${d.description}: $${monthlyAmount.toFixed(2)}/month (status: ${d.status})`);
         
         if (d.disbursementType === 'insurance') {
           hazardInsurance += monthlyAmount;
@@ -177,9 +188,10 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         }
       });
       
-      console.log('Calculated totals - Insurance:', hazardInsurance, 'Taxes:', propertyTaxes, 'HOA:', hoaFees);
+      console.log('Calculated totals - Insurance:', hazardInsurance.toFixed(2), 'Taxes:', propertyTaxes.toFixed(2), 'HOA:', hoaFees.toFixed(2));
     } else {
       // Fallback to loan data if no disbursements
+      console.log('No disbursements found, using loan data fields');
       hazardInsurance = parseFloat(loanData.hazardInsurance) || 0;
       propertyTaxes = parseFloat(loanData.propertyTaxes) || 0;
       hoaFees = parseFloat(loanData.hoaFees) || 0;
@@ -193,7 +205,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
     const totalMonthlyPayment = principalAndInterest + escrow + hoaFees + pmi + servicingFee;
     
-    console.log('Final calculation - Total escrow:', escrow, 'Total payment:', totalMonthlyPayment);
+    console.log('Final calculation - Total escrow:', escrow.toFixed(2), 'Total payment:', totalMonthlyPayment.toFixed(2));
 
     setCalculations({
       principalAndInterest,
@@ -211,7 +223,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   };
 
   useEffect(() => {
-    if (formData.loanAmount || formData.interestRate || formData.loanTerm) {
+    if (formData.loanAmount || formData.interestRate || formData.loanTerm || escrowDisbursements?.length > 0) {
       calculatePayments(formData, escrowDisbursements);
     }
   }, [formData.loanAmount, formData.interestRate, formData.loanTerm, formData.hazardInsurance, formData.propertyTaxes, formData.hoaFees, formData.pmiAmount, formData.servicingFee, escrowDisbursements]);
