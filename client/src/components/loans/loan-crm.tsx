@@ -883,8 +883,11 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         return response.json();
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+    onSuccess: async () => {
+      // Force immediate refetch of activity timeline
+      await queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      
       setEmailTo('');
       setEmailCc('');
       setEmailBcc('');
@@ -2577,6 +2580,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                       {item.activityType === 'task' && <CheckSquare className="h-3 w-3" />}
                       {item.activityType === 'call' && <Phone className="h-3 w-3" />}
                       {item.activityType === 'appointment' && <Calendar className="h-3 w-3" />}
+                      {item.activityType === 'email' && <Mail className="h-3 w-3" />}
                     </div>
                     <div className="flex-1">
                       <div className="text-xs font-normal">{item.activityData.description}</div>
