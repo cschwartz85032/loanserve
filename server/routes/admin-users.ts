@@ -32,13 +32,14 @@ import {
 } from '../auth/email-service';
 import { ipAllowlistService } from '../auth/ip-allowlist-service';
 import * as crypto from 'crypto';
+import { sendSuccess, sendError, ErrorResponses } from '../utils/response-utils';
 
 const router = Router();
 
 // Middleware to check admin permissions
 const requireAdmin = async (req: any, res: any, next: any) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return ErrorResponses.unauthorized(res);
   }
 
   // Check if user has admin role using RBAC system
@@ -52,7 +53,7 @@ const requireAdmin = async (req: any, res: any, next: any) => {
   const hasAdminRole = userRoleRecords.some(r => r.roleName === 'admin');
   
   if (!hasAdminRole) {
-    return res.status(403).json({ error: 'Admin access required' });
+    return ErrorResponses.forbidden(res, 'Admin access required');
   }
 
   next();

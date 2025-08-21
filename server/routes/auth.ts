@@ -16,6 +16,7 @@ import {
 import { db } from '../db';
 import { users, authEvents } from '@shared/schema';
 import { eq } from 'drizzle-orm';
+import { sendSuccess, sendError, ErrorResponses } from '../utils/response-utils';
 
 const router = Router();
 
@@ -29,10 +30,7 @@ router.post('/login', async (req, res) => {
     
     // Validate input
     if (!email || !password) {
-      return res.status(400).json({ 
-        error: 'Email and password are required',
-        code: 'MISSING_CREDENTIALS' 
-      });
+      return ErrorResponses.badRequest(res, 'Email and password are required');
     }
 
     const ip = req.ip || 'unknown';
@@ -41,21 +39,13 @@ router.post('/login', async (req, res) => {
     // Check IP rate limit
     const ipLimit = await ipRateLimiter.checkLimit(`ip-${ip}`);
     if (!ipLimit.allowed) {
-      return res.status(429).json({ 
-        error: 'Too many login attempts from this IP',
-        code: 'IP_RATE_LIMIT',
-        retryAfter: ipLimit.retryAfter 
-      });
+      return ErrorResponses.tooManyRequests(res, 'Too many login attempts from this IP', ipLimit.retryAfter);
     }
 
     // Check email rate limit
     const emailLimit = await emailRateLimiter.checkLimit(`email-${email.toLowerCase()}`);
     if (!emailLimit.allowed) {
-      return res.status(429).json({ 
-        error: 'Too many login attempts for this email',
-        code: 'EMAIL_RATE_LIMIT',
-        retryAfter: emailLimit.retryAfter 
-      });
+      return ErrorResponses.tooManyRequests(res, 'Too many login attempts for this email', emailLimit.retryAfter);
     }
 
     // Attempt login (email can be either email or username)
@@ -71,10 +61,7 @@ router.post('/login', async (req, res) => {
         eventKey: `login-failed-${email}-${Date.now()}`
       });
 
-      return res.status(401).json({ 
-        error: result.error || 'Invalid credentials',
-        code: 'LOGIN_FAILED' 
-      });
+      return ErrorResponses.unauthorized(res, result.error || 'Invalid credentials');
     }
 
     // Set session in request with IP and userAgent for proper tracking
@@ -86,18 +73,14 @@ router.post('/login', async (req, res) => {
     }
 
     // Return success with user data
-    res.json({
-      success: true,
+    return sendSuccess(res, {
       user: result.user,
       sessionId: result.sessionId
-    });
+    }, 'Login successful');
 
   } catch (error) {
     console.error('Login endpoint error:', error);
-    res.status(500).json({ 
-      error: 'An error occurred during login',
-      code: 'INTERNAL_ERROR' 
-    });
+    return ErrorResponses.internalError(res, 'An error occurred during login', error);
   }
 });
 
