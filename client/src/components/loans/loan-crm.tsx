@@ -118,10 +118,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     if (editServicingModal && loanData) {
       setServicingForm({
         servicingFee: loanData.servicingFee || '',
-        servicingFeeType: loanData.servicingFeeType || 'fixed',
+        servicingFeeType: loanData.servicingFeeType || 'percentage',
         lateCharge: loanData.lateCharge || '',
         lateChargeType: loanData.lateChargeType || 'fixed',
         gracePeriodDays: loanData.gracePeriodDays || '',
+        feePayer: loanData.feePayer || '',
+        investorLoanNumber: loanData.investorLoanNumber || '',
+        poolNumber: loanData.poolNumber || '',
         prepaymentPenalty: loanData.prepaymentPenalty || false,
         prepaymentPenaltyAmount: loanData.prepaymentPenaltyAmount || '',
         prepaymentExpirationDate: loanData.prepaymentExpirationDate || ''
@@ -1344,14 +1347,24 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                 <span className="text-muted-foreground font-normal">Servicing Fee:</span>
                 <span className="font-normal">
                   {loanData?.servicingFee ? 
-                    `${formatCurrency(parseFloat(loanData.servicingFee))} ${loanData?.servicingFeeType === 'percentage' ? '(%)' : ''}` : 
+                    `${loanData?.servicingFeeType === 'percentage' ? `${loanData.servicingFee}%` : formatCurrency(parseFloat(loanData.servicingFee))}` : 
                     'N/A'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground font-normal">Late Charge:</span>
                 <span className="font-normal">
-                  {loanData?.lateCharge ? formatCurrency(parseFloat(loanData.lateCharge)) : 'N/A'}
+                  {loanData?.lateCharge ? 
+                    `${loanData?.lateChargeType === 'percentage' ? `${loanData.lateCharge}%` : formatCurrency(parseFloat(loanData.lateCharge))}` : 
+                    'N/A'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Fee Payer:</span>
+                <span className="font-normal">
+                  {loanData?.feePayer === 'B' ? 'Borrower' : 
+                   loanData?.feePayer === 'S' ? 'Servicer' : 
+                   loanData?.feePayer === 'SP' ? 'Split' : 'N/A'}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1359,8 +1372,12 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                 <span className="font-normal">{loanData?.gracePeriodDays || '0'} days</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Late Charge Type:</span>
-                <span className="font-normal capitalize">{loanData?.lateChargeType || 'N/A'}</span>
+                <span className="text-muted-foreground font-normal">Investor Loan #:</span>
+                <span className="font-normal">{loanData?.investorLoanNumber || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Pool Number:</span>
+                <span className="font-normal">{loanData?.poolNumber || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground font-normal">Prepayment Penalty:</span>
@@ -1801,78 +1818,135 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
       {/* Edit Servicing Settings Modal */}
       <Dialog open={editServicingModal} onOpenChange={setEditServicingModal}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Settings className="h-4 w-4" />
-              <span>Edit Servicing Settings</span>
-            </DialogTitle>
+            <DialogTitle>Servicing Settings</DialogTitle>
+            <p className="text-sm text-muted-foreground">Loan servicing configuration and fee settings</p>
           </DialogHeader>
           <div className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Servicing Fee</label>
-              <Input 
-                type="number"
-                step="0.01"
-                value={servicingForm.servicingFee}
-                onChange={(e) => setServicingForm({...servicingForm, servicingFee: e.target.value})}
-                placeholder="0.00"
-              />
+            {/* Row 1: Servicing Fee and Late Charge */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Servicing Fee</label>
+                <div className="flex gap-1">
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    value={servicingForm.servicingFee || ''}
+                    onChange={(e) => setServicingForm({...servicingForm, servicingFee: e.target.value})}
+                    placeholder="0.00"
+                    className="flex-1"
+                  />
+                  <div className="flex border rounded-md">
+                    <Button
+                      type="button"
+                      variant={servicingForm.servicingFeeType === 'amount' ? 'secondary' : 'ghost'}
+                      className="px-3 h-10 rounded-r-none"
+                      onClick={() => setServicingForm({...servicingForm, servicingFeeType: 'amount'})}
+                    >
+                      $
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={servicingForm.servicingFeeType === 'percentage' ? 'secondary' : 'ghost'}
+                      className="px-3 h-10 rounded-l-none"
+                      onClick={() => setServicingForm({...servicingForm, servicingFeeType: 'percentage'})}
+                    >
+                      %
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Late Charge</label>
+                <div className="flex gap-1">
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    value={servicingForm.lateCharge || ''}
+                    onChange={(e) => setServicingForm({...servicingForm, lateCharge: e.target.value})}
+                    placeholder="0.00"
+                    className="flex-1"
+                  />
+                  <div className="flex border rounded-md">
+                    <Button
+                      type="button"
+                      variant={servicingForm.lateChargeType === 'fixed' ? 'secondary' : 'ghost'}
+                      className="px-3 h-10 rounded-r-none"
+                      onClick={() => setServicingForm({...servicingForm, lateChargeType: 'fixed'})}
+                    >
+                      $
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={servicingForm.lateChargeType === 'percentage' ? 'secondary' : 'ghost'}
+                      className="px-3 h-10 rounded-l-none"
+                      onClick={() => setServicingForm({...servicingForm, lateChargeType: 'percentage'})}
+                    >
+                      %
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
+
+            {/* Row 2: Fee Payer */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Servicing Fee Type</label>
+              <label className="text-sm font-medium">Fee Payer</label>
               <Select 
-                value={servicingForm.servicingFeeType}
-                onValueChange={(value) => setServicingForm({...servicingForm, servicingFeeType: value})}
+                value={servicingForm.feePayer || ''}
+                onValueChange={(value) => setServicingForm({...servicingForm, feePayer: value})}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select fee payer" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fixed">Fixed</SelectItem>
-                  <SelectItem value="percentage">Percentage</SelectItem>
+                  <SelectItem value="B">Borrower (B)</SelectItem>
+                  <SelectItem value="S">Servicer (S)</SelectItem>
+                  <SelectItem value="SP">Split (SP)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Row 3: Grace Period and Investor Loan Number */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Grace Period (Days)</label>
+                <Input 
+                  type="number"
+                  value={servicingForm.gracePeriodDays || ''}
+                  onChange={(e) => setServicingForm({...servicingForm, gracePeriodDays: e.target.value})}
+                  placeholder="15"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Investor Loan Number</label>
+                <Input 
+                  type="text"
+                  value={servicingForm.investorLoanNumber || ''}
+                  onChange={(e) => setServicingForm({...servicingForm, investorLoanNumber: e.target.value})}
+                  placeholder="Enter investor loan"
+                />
+              </div>
+            </div>
+
+            {/* Row 4: Pool Number */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Late Charge</label>
+              <label className="text-sm font-medium">Pool Number</label>
               <Input 
-                type="number"
-                step="0.01"
-                value={servicingForm.lateCharge}
-                onChange={(e) => setServicingForm({...servicingForm, lateCharge: e.target.value})}
-                placeholder="0.00"
+                type="text"
+                value={servicingForm.poolNumber || ''}
+                onChange={(e) => setServicingForm({...servicingForm, poolNumber: e.target.value})}
+                placeholder="Enter pool number"
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Late Charge Type</label>
-              <Select 
-                value={servicingForm.lateChargeType}
-                onValueChange={(value) => setServicingForm({...servicingForm, lateChargeType: value})}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fixed">Fixed</SelectItem>
-                  <SelectItem value="percentage">Percentage</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Grace Period (days)</label>
-              <Input 
-                type="number"
-                value={servicingForm.gracePeriodDays}
-                onChange={(e) => setServicingForm({...servicingForm, gracePeriodDays: e.target.value})}
-                placeholder="0"
-              />
-            </div>
+
+            {/* Row 5: Prepayment Penalty */}
             <div className="flex items-center space-x-2">
               <input 
                 type="checkbox"
                 id="prepaymentPenalty"
-                checked={servicingForm.prepaymentPenalty}
+                checked={servicingForm.prepaymentPenalty || false}
                 onChange={(e) => setServicingForm({...servicingForm, prepaymentPenalty: e.target.checked})}
                 className="h-4 w-4"
               />
@@ -1881,26 +1955,26 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               </label>
             </div>
             {servicingForm.prepaymentPenalty && (
-              <>
+              <div className="grid grid-cols-2 gap-4 pl-6">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Prepayment Penalty Amount</label>
+                  <label className="text-sm font-medium">Penalty Amount</label>
                   <Input 
                     type="number"
                     step="0.01"
-                    value={servicingForm.prepaymentPenaltyAmount}
+                    value={servicingForm.prepaymentPenaltyAmount || ''}
                     onChange={(e) => setServicingForm({...servicingForm, prepaymentPenaltyAmount: e.target.value})}
                     placeholder="0.00"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Prepayment Expiration Date</label>
+                  <label className="text-sm font-medium">Expiration Date</label>
                   <Input 
                     type="date"
-                    value={servicingForm.prepaymentExpirationDate}
+                    value={servicingForm.prepaymentExpirationDate || ''}
                     onChange={(e) => setServicingForm({...servicingForm, prepaymentExpirationDate: e.target.value})}
                   />
                 </div>
-              </>
+              </div>
             )}
           </div>
           <DialogFooter>
