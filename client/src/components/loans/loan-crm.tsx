@@ -58,6 +58,97 @@ interface LoanCRMProps {
   loanData?: any;
 }
 
+// Document Selector Component for attachments
+function DocumentSelector({ 
+  loanId, 
+  selectedDocuments, 
+  onSelectionChange 
+}: { 
+  loanId: number;
+  selectedDocuments: number[];
+  onSelectionChange: (docs: Array<{id: number, name: string, size?: number}>) => void;
+}) {
+  // Fetch all documents
+  const { data: documents = [], isLoading } = useQuery({
+    queryKey: [`/api/documents`],
+  });
+
+  // Filter documents related to this loan or general documents
+  const relevantDocs = documents.filter((doc: any) => 
+    doc.loanId === loanId || doc.loanId === null
+  );
+
+  const [selected, setSelected] = useState<Set<number>>(new Set(selectedDocuments));
+
+  const handleToggleDocument = (docId: number) => {
+    const newSelected = new Set(selected);
+    if (newSelected.has(docId)) {
+      newSelected.delete(docId);
+    } else {
+      newSelected.add(docId);
+    }
+    setSelected(newSelected);
+    
+    // Call the callback with selected documents
+    const selectedDocs = relevantDocs
+      .filter((doc: any) => newSelected.has(doc.id))
+      .map((doc: any) => ({
+        id: doc.id,
+        name: doc.name || doc.fileName || 'Untitled Document',
+        size: doc.fileSize
+      }));
+    onSelectionChange(selectedDocs);
+  };
+
+  if (isLoading) {
+    return <div className="text-center py-4">Loading documents...</div>;
+  }
+
+  if (relevantDocs.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+        <p>No documents available</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {relevantDocs.map((doc: any) => (
+        <div 
+          key={doc.id}
+          className={`flex items-center space-x-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+            selected.has(doc.id) ? 'bg-primary/10 border-primary' : 'hover:bg-muted/50'
+          }`}
+          onClick={() => handleToggleDocument(doc.id)}
+        >
+          <div className="flex items-center justify-center w-5 h-5">
+            <input
+              type="checkbox"
+              checked={selected.has(doc.id)}
+              onChange={() => {}}
+              className="h-4 w-4"
+            />
+          </div>
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <div className="flex-1">
+            <p className="text-sm font-medium">{doc.name || doc.fileName || 'Untitled Document'}</p>
+            <p className="text-xs text-muted-foreground">
+              {doc.documentType || 'Document'} • Uploaded {format(new Date(doc.uploadDate), 'MMM d, yyyy')}
+            </p>
+          </div>
+          {doc.fileSize && (
+            <span className="text-xs text-muted-foreground">
+              {(doc.fileSize / 1024).toFixed(1)} KB
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState('notes');
@@ -77,6 +168,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [textMessage, setTextMessage] = useState('');
   const [callDuration, setCallDuration] = useState('');
   const [callOutcome, setCallOutcome] = useState('');
+  const [emailAttachments, setEmailAttachments] = useState<Array<{id?: number, name: string, size?: number, file?: File}>>([]);
+  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   
   // Contact editing states
   const [hoveredContact, setHoveredContact] = useState<string | null>(null);
@@ -737,12 +831,54 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   });
 
   const sendEmailMutation = useMutation({
-    mutationFn: async (emailData: { to: string; cc?: string; bcc?: string; subject: string; content: string }) => {
-      const response = await apiRequest(`/api/loans/${loanId}/crm/send-email`, {
-        method: 'POST',
-        body: emailData,  // Don't stringify here, apiRequest will handle it
-      });
-      return response.json();
+    mutationFn: async (emailData: { to: string; cc?: string; bcc?: string; subject: string; content: string; attachments?: any[] }) => {
+      // If we have attachments with files (uploaded), we need to use FormData
+      const hasUploadedFiles = emailData.attachments?.some(a => a.file);
+      
+      if (hasUploadedFiles) {
+        const formData = new FormData();
+        formData.append('to', emailData.to);
+        if (emailData.cc) formData.append('cc', emailData.cc);
+        if (emailData.bcc) formData.append('bcc', emailData.bcc);
+        formData.append('subject', emailData.subject);
+        formData.append('content', emailData.content);
+        
+        // Add document IDs
+        const docIds = emailData.attachments?.filter(a => a.id).map(a => a.id) || [];
+        if (docIds.length > 0) {
+          formData.append('documentIds', JSON.stringify(docIds));
+        }
+        
+        // Add uploaded files
+        emailData.attachments?.forEach(attachment => {
+          if (attachment.file) {
+            formData.append('files', attachment.file, attachment.name);
+          }
+        });
+        
+        const response = await fetch(`/api/loans/${loanId}/crm/send-email`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(error);
+        }
+        
+        return response.json();
+      } else {
+        // Standard JSON request if no uploaded files
+        const response = await apiRequest(`/api/loans/${loanId}/crm/send-email`, {
+          method: 'POST',
+          body: {
+            ...emailData,
+            documentIds: emailData.attachments?.filter(a => a.id).map(a => a.id)
+          }
+        });
+        return response.json();
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
@@ -751,6 +887,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       setEmailBcc('');
       setEmailSubject('');
       setEmailContent('');
+      setEmailAttachments([]);
       setShowCc(false);
       setShowBcc(false);
       toast({ title: 'Success', description: 'Email sent successfully' });
@@ -790,7 +927,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         cc: emailCc || undefined,
         bcc: emailBcc || undefined,
         subject: emailSubject,
-        content: emailContent
+        content: emailContent,
+        attachments: emailAttachments
       });
     }
   };
@@ -1844,6 +1982,47 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     />
                   </div>
 
+                  {/* Attachments Section */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium">Attachments:</label>
+                      <Button
+                        onClick={() => setShowAttachmentModal(true)}
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-xs"
+                      >
+                        <Paperclip className="h-3 w-3 mr-1" />
+                        Add Attachments
+                      </Button>
+                    </div>
+                    {emailAttachments.length > 0 && (
+                      <div className="border rounded-md p-2 space-y-1">
+                        {emailAttachments.map((attachment, index) => (
+                          <div key={index} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+                            <div className="flex items-center space-x-2">
+                              <FileText className="h-3 w-3 text-muted-foreground" />
+                              <span className="truncate max-w-[200px]">{attachment.name}</span>
+                              {attachment.size && (
+                                <span className="text-muted-foreground">
+                                  ({(attachment.size / 1024).toFixed(1)} KB)
+                                </span>
+                              )}
+                            </div>
+                            <Button
+                              onClick={() => setEmailAttachments(prev => prev.filter((_, i) => i !== index))}
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex justify-between items-center">
                     <Button
                       onClick={async () => {
@@ -2845,6 +3024,122 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             </Button>
             <Button onClick={saveServicingSettings}>
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attachment Selection Modal */}
+      <Dialog open={showAttachmentModal} onOpenChange={setShowAttachmentModal}>
+        <DialogContent className="sm:max-w-[700px] max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Paperclip className="h-4 w-4" />
+              <span>Select Attachments</span>
+            </DialogTitle>
+            <DialogDescription>
+              Choose documents from the system or upload new files
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Tabs defaultValue="documents" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="documents">System Documents</TabsTrigger>
+              <TabsTrigger value="upload">Upload Files</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="documents" className="mt-4">
+              <ScrollArea className="h-[400px] w-full border rounded-md p-4">
+                <DocumentSelector 
+                  loanId={loanId}
+                  selectedDocuments={emailAttachments.filter(a => a.id).map(a => a.id!)}
+                  onSelectionChange={(docs) => {
+                    // Update attachments with selected documents
+                    const docAttachments = docs.map(doc => ({
+                      id: doc.id,
+                      name: doc.name,
+                      size: doc.size
+                    }));
+                    // Keep uploaded files and add selected documents
+                    const uploadedFiles = emailAttachments.filter(a => !a.id);
+                    setEmailAttachments([...uploadedFiles, ...docAttachments]);
+                  }}
+                />
+              </ScrollArea>
+            </TabsContent>
+            
+            <TabsContent value="upload" className="mt-4">
+              <div className="space-y-4">
+                <div className="border-2 border-dashed rounded-lg p-8 text-center">
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      const newAttachments = files.map(file => ({
+                        name: file.name,
+                        size: file.size,
+                        file: file
+                      }));
+                      setEmailAttachments(prev => [...prev, ...newAttachments]);
+                      if (attachmentInputRef.current) {
+                        attachmentInputRef.current.value = '';
+                      }
+                    }}
+                  />
+                  <Paperclip className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Click to browse or drag and drop files here
+                  </p>
+                  <Button
+                    onClick={() => attachmentInputRef.current?.click()}
+                    variant="secondary"
+                  >
+                    Browse Files
+                  </Button>
+                </div>
+                
+                {/* Show uploaded files */}
+                {emailAttachments.filter(a => a.file).length > 0 && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Uploaded Files:</label>
+                    <div className="border rounded-md p-2 space-y-1">
+                      {emailAttachments.filter(a => a.file).map((attachment, index) => (
+                        <div key={index} className="flex items-center justify-between text-sm bg-muted/50 rounded px-2 py-1">
+                          <div className="flex items-center space-x-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span>{attachment.name}</span>
+                            <span className="text-muted-foreground">
+                              ({(attachment.size! / 1024).toFixed(1)} KB)
+                            </span>
+                          </div>
+                          <Button
+                            onClick={() => {
+                              setEmailAttachments(prev => prev.filter((a) => a !== attachment));
+                            }}
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 w-5 p-0"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAttachmentModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => setShowAttachmentModal(false)}>
+              Done ({emailAttachments.length} selected)
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -9,11 +9,15 @@ import {
   crmCollaborators,
   crmDeals,
   users,
-  loans
+  loans,
+  documents
 } from '@shared/schema';
 import { eq, desc, and, or } from 'drizzle-orm';
 import { z } from 'zod';
 import sgMail from '@sendgrid/mail';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 
@@ -21,6 +25,14 @@ const router = Router();
 if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
+
+// Configure multer for file uploads
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit per file
+  }
+});
 
 // Helper function to log activity
 async function logActivity(
@@ -493,8 +505,8 @@ router.get('/crm/check-email-config', async (req, res) => {
   }
 });
 
-// Send email via SendGrid
-router.post('/loans/:loanId/crm/send-email', async (req, res) => {
+// Send email via SendGrid with attachment support
+router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (req, res) => {
   // Clean and validate email addresses - remove all whitespace
   const cleanEmail = (email: string) => email.replace(/\s+/g, '').trim();
   
@@ -504,7 +516,7 @@ router.post('/loans/:loanId/crm/send-email', async (req, res) => {
   try {
     const loanId = parseInt(req.params.loanId);
     const userId = (req as any).user?.id || 1;
-    const { to, cc, bcc, subject, content } = req.body;
+    const { to, cc, bcc, subject, content, documentIds } = req.body;
 
     if (!process.env.SENDGRID_API_KEY) {
       return res.status(500).json({ error: 'Email service not configured' });
@@ -533,19 +545,65 @@ router.post('/loans/:loanId/crm/send-email', async (req, res) => {
       msg.bcc = bcc.split(',').map((email: string) => cleanEmail(email)).filter(Boolean);
     }
 
+    // Handle attachments
+    const attachments: any[] = [];
+    
+    // Process document IDs if provided
+    if (documentIds) {
+      const docIdArray = typeof documentIds === 'string' ? JSON.parse(documentIds) : documentIds;
+      if (Array.isArray(docIdArray) && docIdArray.length > 0) {
+        // Fetch documents from database
+        const docs = await db
+          .select()
+          .from(documents)
+          .where(or(...docIdArray.map((id: number) => eq(documents.id, id))));
+        
+        // Add documents as attachments
+        for (const doc of docs) {
+          if (doc.filePath && fs.existsSync(doc.filePath)) {
+            const fileContent = fs.readFileSync(doc.filePath);
+            attachments.push({
+              content: fileContent.toString('base64'),
+              filename: doc.name || doc.fileName || 'document',
+              type: doc.mimeType || 'application/octet-stream',
+              disposition: 'attachment'
+            });
+          }
+        }
+      }
+    }
+    
+    // Process uploaded files
+    if (req.files && Array.isArray(req.files)) {
+      for (const file of req.files) {
+        attachments.push({
+          content: file.buffer.toString('base64'),
+          filename: file.originalname,
+          type: file.mimetype,
+          disposition: 'attachment'
+        });
+      }
+    }
+    
+    // Add attachments to email if any
+    if (attachments.length > 0) {
+      msg.attachments = attachments;
+    }
+
     // Send email
     await sgMail.send(msg);
 
-    // Log activity
+    // Log activity with attachment info
     await logActivity(loanId, userId, 'email', {
       description: `Email sent to ${to}`,
       subject,
       to,
       cc: cc || null,
-      bcc: bcc || null
+      bcc: bcc || null,
+      attachmentCount: attachments.length
     });
 
-    res.json({ success: true, message: 'Email sent successfully' });
+    res.json({ success: true, message: 'Email sent successfully', attachmentCount: attachments.length });
   } catch (error: any) {
     console.error('Error sending email:', error);
     
@@ -647,7 +705,7 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     
     if (emails && emails.length > 0) {
       // Store all emails as JSON to preserve multiple addresses and labels
-      updateData.borrowerEmail = JSON.stringify(emails.map(e => ({
+      updateData.borrowerEmail = JSON.stringify(emails.map((e: any) => ({
         email: e.email,
         label: e.label || 'Primary'
       })));
