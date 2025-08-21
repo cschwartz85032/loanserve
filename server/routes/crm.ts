@@ -555,11 +555,23 @@ router.post('/loans/:loanId/crm/send-email', async (req, res) => {
       const { body, headers } = response;
       console.error('SendGrid error details:', { code, message, body });
       
+      // Log the actual error details
+      if (body && body.errors) {
+        console.error('SendGrid specific errors:', JSON.stringify(body.errors, null, 2));
+      }
+      
       // Provide more specific error messages based on SendGrid response
       if (code === 400 || code === 403) {
+        // Extract the actual error message from SendGrid
+        let errorDetails = `The sender email address (${fromEmail}) may not be verified with SendGrid.`;
+        if (body && body.errors && body.errors[0]) {
+          errorDetails = body.errors[0].message || errorDetails;
+        }
+        
         return res.status(500).json({ 
-          error: 'Email configuration error', 
-          details: `The sender email address (${fromEmail}) may not be verified with SendGrid. Please verify the sender email in your SendGrid account.`
+          error: 'SendGrid Configuration Issue', 
+          details: errorDetails,
+          from: fromEmail
         });
       }
     }
