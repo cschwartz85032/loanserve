@@ -165,9 +165,9 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       console.log('Calculating from disbursements:', disbursements);
       
       disbursements.forEach(d => {
-        // Only count active disbursements
-        if (d.status !== 'active') {
-          console.log(`Skipping ${d.status} disbursement: ${d.description}`);
+        // Only count active disbursements (check both status and isOnHold flag)
+        if (d.status !== 'active' || d.isOnHold) {
+          console.log(`Skipping disbursement (status: ${d.status}, onHold: ${d.isOnHold}): ${d.description}`);
           return;
         }
         
