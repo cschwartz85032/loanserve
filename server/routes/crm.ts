@@ -465,20 +465,15 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     const { phones, emails } = req.body;
     const userId = (req as any).user?.id || 1;
 
+    console.log('Updating contact info for loan', loanId, { phones, emails });
+
     // Prepare update data
     const updateData: any = {};
     
     if (phones && phones.length > 0) {
-      // Set the first phone as primary, second as mobile
+      // Only save the first phone as primary (no mobile field exists)
       if (phones[0] && phones[0].number) {
         updateData.borrowerPhone = phones[0].number;
-      }
-      if (phones[1] && phones[1].number) {
-        updateData.borrowerMobile = phones[1].number;
-      }
-      // Clear second phone if only one is provided
-      if (phones.length === 1) {
-        updateData.borrowerMobile = null;
       }
     }
     
@@ -488,6 +483,8 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
         updateData.borrowerEmail = emails[0].email;
       }
     }
+
+    console.log('Update data:', updateData);
 
     // Update the loan
     await db.update(loans)
