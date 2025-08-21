@@ -1035,7 +1035,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             <Button onClick={() => {
               // Save phone numbers
               const validPhones = phoneNumbers.filter(p => p.number && p.number.trim() !== '');
-              updateContactInfoMutation.mutate({ phones: validPhones }, {
+              const currentEmails = loanData?.borrowerEmail ? [{ email: loanData.borrowerEmail, label: 'Primary' }] : [];
+              console.log('Saving phones with existing emails:', { phones: validPhones, emails: currentEmails });
+              updateContactInfoMutation.mutate({ phones: validPhones, emails: currentEmails }, {
                 onSuccess: () => {
                   setEditPhoneModal(false);
                 }
@@ -1112,9 +1114,15 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             <Button onClick={() => {
               // Save email addresses
               const validEmails = emailAddresses.filter(e => e.email && e.email.trim() !== '');
-              updateContactInfoMutation.mutate({ emails: validEmails }, {
+              const currentPhones = loanData?.borrowerPhone ? [{ number: loanData.borrowerPhone, label: 'Primary', isBad: false }] : [];
+              console.log('Saving emails with existing phones:', { emails: validEmails, phones: currentPhones });
+              updateContactInfoMutation.mutate({ emails: validEmails, phones: currentPhones }, {
                 onSuccess: () => {
+                  console.log('Emails saved successfully');
                   setEditEmailModal(false);
+                },
+                onError: (error) => {
+                  console.error('Failed to save emails:', error);
                 }
               });
             }}>
