@@ -1,6 +1,6 @@
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { pgTable, text, timestamp, integer, serial, boolean, jsonb, decimal, uuid, varchar, date, index, pgEnum, uniqueIndex, time, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, serial, boolean, jsonb, json, decimal, uuid, varchar, date, index, pgEnum, uniqueIndex, time, primaryKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // ========================================
@@ -1432,13 +1432,13 @@ export const roles = pgTable("roles", {
 
 // User roles junction table
 export const userRoles = pgTable("user_roles", {
+  id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  assignedAt: timestamp("assigned_at", { withTimezone: true }).defaultNow().notNull(),
-  assignedBy: integer("assigned_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => {
   return {
-    pk: primaryKey({ columns: [table.userId, table.roleId] }),
     userIdx: index("idx_user_roles_user_id").on(table.userId),
     roleIdx: index("idx_user_roles_role_id").on(table.roleId),
   };
@@ -1456,15 +1456,16 @@ export const permissions = pgTable("permissions", {
   };
 });
 
-// Role permissions table
+// Role permissions table (denormalized structure)
 export const rolePermissions = pgTable("role_permissions", {
+  id: serial("id").primaryKey(),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  permissionId: uuid("permission_id").notNull().references(() => permissions.id, { onDelete: 'cascade' }),
-  scope: jsonb("scope"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  resource: text("resource").notNull(),
+  permission: text("permission").notNull(), // Level: none, read, write, admin
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => {
   return {
-    pk: primaryKey({ columns: [table.roleId, table.permissionId] }),
     roleIdx: index("idx_role_permissions_role_id").on(table.roleId),
   };
 });
@@ -1473,16 +1474,17 @@ export const rolePermissions = pgTable("role_permissions", {
 export const userIpAllowlist = pgTable("user_ip_allowlist", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  label: text("label").notNull(),
-  cidr: text("cidr").notNull(), // Storing CIDR as text
-  isActive: boolean("is_active").notNull().default(true),
-  beginsAt: timestamp("begins_at", { withTimezone: true }).defaultNow().notNull(), // Start date for allowlist entry
-  expiresAt: timestamp("expires_at", { withTimezone: true }), // Optional expiration date
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  ipAddress: text("ip_address").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  useCount: integer("use_count").default(0),
+  cidr: text("cidr"),
+  label: text("label"),
 }, (table) => {
   return {
-    uniqueUserCidr: uniqueIndex("unique_user_cidr").on(table.userId, table.cidr),
     activeIdx: index("idx_user_ip_allowlist_user_id").on(table.userId),
   };
 });
@@ -1541,20 +1543,24 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   };
 });
 
-// Sessions table
+// Sessions table (express-session compatible)
 export const sessions = pgTable("sessions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
-  ip: text("ip"), // Using text for inet type
+  id: text("id").primaryKey(),
+  sid: varchar("sid", { length: 255 }).notNull().unique(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire").notNull(),
+  userId: varchar("user_id", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastActivity: timestamp("last_activity"),
+  lastSeenAt: timestamp("last_seen_at"),
+  ip: text("ip"),
   userAgent: text("user_agent"),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at"),
   revokeReason: text("revoke_reason"),
 }, (table) => {
   return {
-    userIdx: index("idx_sessions_user_id").on(table.userId),
-    lastSeenIdx: index("idx_sessions_last_seen_at").on(table.lastSeenAt),
+    sidIdx: index("idx_sessions_sid").on(table.sid),
+    expireIdx: index("idx_sessions_expire").on(table.expire),
   };
 });
 

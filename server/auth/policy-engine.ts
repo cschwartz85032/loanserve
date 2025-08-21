@@ -135,7 +135,7 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
     roleNames = userRolesData.map((r: any) => r.roleName);
     const roleIds = userRolesData.map((r: any) => r.roleId);
 
-    // Get permissions using simpler query
+    // Get permissions directly from role_permissions table
     if (roleIds.length > 0) {
       // Query permissions one by one to avoid array issues
       for (const roleId of roleIds) {

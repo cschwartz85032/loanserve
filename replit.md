@@ -15,7 +15,18 @@ When encountering database or field-related errors:
 5. **Avoid overcomplicating** - check simple causes (duplicate columns, mismatched schemas) before complex theories (build issues, caching)
 
 ## Recent Achievements (August 21, 2025)
-Fixed critical session management system:
+
+### Permission & Role System Comprehensive Fix
+Fixed critical mismatches between database schema and application code:
+- **role_permissions table**: Fixed to use denormalized structure (resource and permission stored directly, not as foreign keys)
+- **userRoles table**: Removed non-existent assignedAt/assignedBy columns, using created_at/updated_at instead
+- **sessions table**: Aligned with express-session structure (sid, sess, expire columns)
+- **userIpAllowlist table**: Fixed column names (ip_address instead of cidr, description instead of label)
+- **Policy Engine**: Updated queries to work with denormalized role_permissions structure
+- **Admin Routes**: Fixed all permission queries to match actual database structure
+
+### Session Management System Fix
+Fixed critical session management issues:
 - Created custom session store (CustomSessionStore) to properly integrate with schema-defined sessions table
 - Fixed sessions table structure with migration to add required columns (sid, sess, expire)
 - Resolved TypeScript errors by using correct column names (isActive instead of status, etc.)

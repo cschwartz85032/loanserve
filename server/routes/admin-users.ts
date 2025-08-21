@@ -202,8 +202,8 @@ router.get('/:id', async (req, res) => {
       roleId: roles.id,
       roleName: roles.name,
       roleDescription: roles.description,
-      assignedAt: userRoles.assignedAt,
-      assignedBy: userRoles.assignedBy
+      createdAt: userRoles.createdAt,
+      updatedAt: userRoles.updatedAt
     })
     .from(userRoles)
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
@@ -497,8 +497,7 @@ router.post('/:id/roles', async (req, res) => {
     // Assign role
     await db.insert(userRoles).values({
       userId,
-      roleId,
-      assignedBy: req.user.id
+      roleId
     });
 
     // Log the action
@@ -801,11 +800,10 @@ router.get('/roles', async (req, res) => {
     const rolesWithPermissions = await Promise.all(
       rolesList.map(async (role) => {
         const perms = await db.select({
-          resource: permissions.resource,
-          level: permissions.level
+          resource: rolePermissions.resource,
+          level: rolePermissions.permission
         })
         .from(rolePermissions)
-        .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
         .where(eq(rolePermissions.roleId, role.id));
 
         return {
