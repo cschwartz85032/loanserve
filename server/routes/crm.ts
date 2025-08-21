@@ -508,23 +508,26 @@ router.post('/loans/:loanId/crm/send-email', async (req, res) => {
       return res.status(500).json({ error: 'From email address not configured' });
     }
 
+    // Clean and validate email addresses - remove all whitespace
+    const cleanEmail = (email: string) => email.replace(/\s+/g, '').trim();
+    
     // Prepare email message
     const msg: any = {
-      to,
+      to: cleanEmail(to),
       from: process.env.SENDGRID_FROM_EMAIL,
-      subject,
+      subject: subject.trim(),
       text: content,
       html: content.replace(/\n/g, '<br>'), // Basic HTML conversion
     };
 
     // Add CC recipients if provided
     if (cc && cc.trim()) {
-      msg.cc = cc.split(',').map((email: string) => email.trim());
+      msg.cc = cc.split(',').map((email: string) => cleanEmail(email)).filter(Boolean);
     }
 
     // Add BCC recipients if provided
     if (bcc && bcc.trim()) {
-      msg.bcc = bcc.split(',').map((email: string) => email.trim());
+      msg.bcc = bcc.split(',').map((email: string) => cleanEmail(email)).filter(Boolean);
     }
 
     // Send email
