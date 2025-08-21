@@ -2580,7 +2580,10 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                         {item.activityType === 'text' && <MessageCircle className="h-3 w-3 text-primary" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs font-normal text-foreground truncate">{description || 'No description'}</div>
+                        <div className="text-xs font-normal text-foreground">
+                          <span className="block truncate">{description || 'No description'}</span>
+                          <span className="text-[10px] text-muted-foreground">({item.activityType})</span>
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {formatTimeAgo(item.createdAt)}
                         </div>
