@@ -11,9 +11,15 @@ export async function apiRequest(
   url: string,
   options?: RequestInit,
 ): Promise<Response> {
+  // Check if body needs to be stringified
+  let body = options?.body;
+  if (body && typeof body !== 'string') {
+    body = JSON.stringify(body);
+  }
+  
   const res = await fetch(url, {
     ...options,
-    body: options?.body ? JSON.stringify(options.body) : undefined,
+    body,
     headers: {
       "Content-Type": "application/json",
       ...options?.headers,
