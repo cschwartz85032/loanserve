@@ -536,7 +536,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="firstPaymentDate">First Payment Date</Label>
                       <Input
@@ -553,6 +553,16 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                         type="date"
                         value={formData.maturityDate || ''}
                         onChange={(e) => handleInputChange('maturityDate', e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="gracePeriodDays">Grace Period (Days)</Label>
+                      <Input
+                        id="gracePeriodDays"
+                        type="number"
+                        value={formData.gracePeriodDays || ''}
+                        onChange={(e) => handleInputChange('gracePeriodDays', e.target.value === '' ? '' : parseInt(e.target.value))}
+                        placeholder="15"
                       />
                     </div>
                   </div>
@@ -652,17 +662,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       </Select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="gracePeriodDays">Grace Period (Days)</Label>
-                      <Input
-                        id="gracePeriodDays"
-                        type="number"
-                        value={formData.gracePeriodDays || ''}
-                        onChange={(e) => handleInputChange('gracePeriodDays', e.target.value === '' ? '' : parseInt(e.target.value))}
-                        placeholder="15"
-                      />
-                    </div>
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="investorLoanNumber">Investor Loan Number</Label>
                       <Input
