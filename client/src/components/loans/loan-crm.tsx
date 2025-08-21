@@ -2699,9 +2699,10 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             <Button onClick={() => {
               // Save phone numbers
               const validPhones = phoneNumbers.filter(p => p.number && p.number.trim() !== '');
-              const currentEmails = loanData?.borrowerEmail ? [{ email: loanData.borrowerEmail, label: 'Primary' }] : [];
-              console.log('Saving phones with existing emails:', { phones: validPhones, emails: currentEmails });
-              updateContactInfoMutation.mutate({ phones: validPhones, emails: currentEmails }, {
+              // Use the already parsed email addresses from state
+              const validEmails = emailAddresses.filter(e => e.email && e.email.trim() !== '');
+              console.log('Saving phones with existing emails:', { phones: validPhones, emails: validEmails });
+              updateContactInfoMutation.mutate({ phones: validPhones, emails: validEmails }, {
                 onSuccess: () => {
                   setEditPhoneModal(false);
                 }

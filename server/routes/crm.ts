@@ -711,17 +711,7 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     if (phones && phones.length > 0) {
       // Store phone data as JSON string to preserve labels and isBad status
       if (phones[0]) {
-        // Extract the actual phone number if it's nested
-        let phoneNumber = phones[0].number;
-        // Check if the number is actually a stringified JSON object
-        if (phoneNumber && phoneNumber.startsWith('{')) {
-          try {
-            const parsed = JSON.parse(phoneNumber);
-            phoneNumber = parsed.number || phoneNumber;
-          } catch {
-            // Keep as is if not valid JSON
-          }
-        }
+        const phoneNumber = phones[0].number;
         
         if (phoneNumber) {
           // Store as JSON to preserve metadata
@@ -734,16 +724,7 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       }
       // Store second phone if available
       if (phones[1]) {
-        let phoneNumber = phones[1].number;
-        // Check if the number is actually a stringified JSON object
-        if (phoneNumber && phoneNumber.startsWith('{')) {
-          try {
-            const parsed = JSON.parse(phoneNumber);
-            phoneNumber = parsed.number || phoneNumber;
-          } catch {
-            // Keep as is if not valid JSON
-          }
-        }
+        const phoneNumber = phones[1].number;
         
         if (phoneNumber) {
           updateData.borrowerMobile = JSON.stringify({
@@ -760,10 +741,14 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     
     if (emails && emails.length > 0) {
       // Store all emails as JSON to preserve multiple addresses and labels
-      updateData.borrowerEmail = JSON.stringify(emails.map((e: any) => ({
-        email: e.email,
-        label: e.label || 'Primary'
-      })));
+      // Filter out any empty emails first
+      const validEmails = emails.filter((e: any) => e.email && e.email.trim() !== '');
+      if (validEmails.length > 0) {
+        updateData.borrowerEmail = JSON.stringify(validEmails.map((e: any) => ({
+          email: e.email,
+          label: e.label || 'Primary'
+        })));
+      }
     }
 
     console.log('Update data:', updateData);
