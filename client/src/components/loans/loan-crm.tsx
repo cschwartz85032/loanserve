@@ -113,7 +113,19 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
     const emails = [];
     if (loanData?.borrowerEmail) {
-      emails.push({ email: loanData.borrowerEmail, label: 'primary' });
+      try {
+        // Try to parse as JSON array first (new format)
+        const emailData = JSON.parse(loanData.borrowerEmail);
+        if (Array.isArray(emailData)) {
+          emails.push(...emailData);
+        } else {
+          // Single email object from old JSON format
+          emails.push(emailData);
+        }
+      } catch {
+        // Fallback to plain string (old format)
+        emails.push({ email: loanData.borrowerEmail, label: 'Primary' });
+      }
     }
     if (emails.length === 0) {
       emails.push({ email: '', label: '' });
@@ -430,37 +442,45 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               )}
               
               {/* Email */}
-              {loanData?.borrowerEmail ? (
-                <div 
-                  className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
-                  onMouseEnter={() => setHoveredContact('email')}
-                  onMouseLeave={() => setHoveredContact(null)}
-                >
-                  <div className="flex items-center space-x-2">
-                    <Mail className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-muted-foreground font-normal truncate">{loanData.borrowerEmail}</span>
-                  </div>
-                  {hoveredContact === 'email' && (
-                    <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-5 w-5 p-0"
-                        onClick={() => setEditEmailModal(true)}
-                      >
-                        <Edit className="h-3 w-3 text-muted-foreground" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-5 w-5 p-0"
-                        onClick={() => setEditEmailModal(true)}
-                      >
-                        <Plus className="h-3 w-3 text-muted-foreground" />
-                      </Button>
+              {emailAddresses.some(e => e.email) ? (
+                <>
+                  {emailAddresses.filter(e => e.email).map((emailObj, index) => (
+                    <div 
+                      key={index}
+                      className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
+                      onMouseEnter={() => setHoveredContact(`email${index}`)}
+                      onMouseLeave={() => setHoveredContact(null)}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <Mail className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground font-normal truncate">{emailObj.email}</span>
+                        {emailObj.label && (
+                          <span className="text-xs text-muted-foreground">({emailObj.label})</span>
+                        )}
+                      </div>
+                      {hoveredContact === `email${index}` && (
+                        <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-5 w-5 p-0"
+                            onClick={() => setEditEmailModal(true)}
+                          >
+                            <Edit className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-5 w-5 p-0"
+                            onClick={() => setEditEmailModal(true)}
+                          >
+                            <Plus className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  ))}
+                </>
               ) : (
                 <button 
                   className="flex items-center space-x-2 text-xs text-primary hover:underline"
@@ -1234,7 +1254,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             <Button onClick={() => {
               // Save email addresses
               const validEmails = emailAddresses.filter(e => e.email && e.email.trim() !== '');
-              const currentPhones = loanData?.borrowerPhone ? [{ number: loanData.borrowerPhone, label: 'Primary', isBad: false }] : [];
+              // Use the already parsed phone numbers from state
+              const currentPhones = phoneNumbers.filter(p => p.number && p.number.trim() !== '');
               console.log('Saving emails with existing phones:', { emails: validEmails, phones: currentPhones });
               updateContactInfoMutation.mutate({ emails: validEmails, phones: currentPhones }, {
                 onSuccess: () => {
