@@ -270,6 +270,27 @@ router.post('/loans/:loanId/crm/appointments', async (req, res) => {
   }
 });
 
+// Text messages endpoint
+router.post('/loans/:loanId/crm/texts', async (req, res) => {
+  try {
+    const loanId = parseInt(req.params.loanId);
+    const userId = (req as any).user?.id || 1;
+    const { message, recipientPhone } = req.body;
+    
+    // Log activity for text message
+    await logActivity(loanId, userId, 'text', {
+      description: `Sent text message: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
+      phone: recipientPhone,
+      message: message
+    });
+    
+    res.json({ success: true, message: 'Text message logged' });
+  } catch (error) {
+    console.error('Error logging text message:', error);
+    res.status(500).json({ error: 'Failed to log text message' });
+  }
+});
+
 // Calls endpoints
 router.get('/loans/:loanId/crm/calls', async (req, res) => {
   try {
