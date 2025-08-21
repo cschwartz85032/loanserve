@@ -2539,7 +2539,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           <CardContent>
             <div className="space-y-2 max-h-[180px] overflow-y-auto">
               <div className="text-xs font-semibold mb-2 text-blue-600">Total activities: {activity.length}</div>
-              <div className="text-xs text-red-600 mb-2">Debug: {JSON.stringify(activity.slice(0, 2).map((a: any) => ({type: a.activityType, desc: a.activityData?.description || a.activityData?.subject})))}</div>
+              <div className="text-xs text-red-600 mb-2">Activity types: {activity.map((a: any) => a.activityType).join(', ')}</div>
+              <div className="text-xs text-green-600 mb-2">First 3: {JSON.stringify(activity.slice(0, 3))}</div>
               {activity.length === 0 ? (
                 <p className="text-xs text-muted-foreground">No activity yet</p>
               ) : (
