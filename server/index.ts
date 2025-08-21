@@ -38,11 +38,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Run database migrations in production
-  if (process.env.NODE_ENV === 'production') {
-    const { runMigrations } = await import('./migrations');
-    await runMigrations();
-  }
+  // Run database migrations (idempotent and forward-only)
+  // Running in both dev and production ensures schema consistency
+  const { runMigrations } = await import('./migrations');
+  await runMigrations();
   
   const server = await registerRoutes(app);
 
