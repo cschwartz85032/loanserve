@@ -86,6 +86,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [editServicingModal, setEditServicingModal] = useState(false);
   const [loanTermsForm, setLoanTermsForm] = useState<any>({});
   const [servicingForm, setServicingForm] = useState<any>({});
+  const [editingBorrowerName, setEditingBorrowerName] = useState(false);
+  const [borrowerNameValue, setBorrowerNameValue] = useState('');
 
   // Initialize forms when modals open
   useEffect(() => {
@@ -116,6 +118,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       });
     }
   }, [editServicingModal, loanData]);
+
+  // Initialize borrower name
+  useEffect(() => {
+    if (loanData?.borrowerName) {
+      setBorrowerNameValue(loanData.borrowerName);
+    }
+  }, [loanData?.borrowerName]);
 
   // Initialize contact data from loanData
   useEffect(() => {
@@ -217,6 +226,28 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({
         title: 'Error',
         description: 'Failed to update servicing settings',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Save borrower name
+  const saveBorrowerName = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { borrowerName: borrowerNameValue }
+      });
+      toast({
+        title: 'Success',
+        description: 'Borrower name updated successfully'
+      });
+      setEditingBorrowerName(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update borrower name',
         variant: 'destructive'
       });
     }
@@ -425,7 +456,31 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <h3 className="text-base font-medium">{loanData?.borrowerName || 'Unknown Borrower'}</h3>
+                {editingBorrowerName ? (
+                  <Input
+                    value={borrowerNameValue}
+                    onChange={(e) => setBorrowerNameValue(e.target.value)}
+                    onBlur={saveBorrowerName}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        saveBorrowerName();
+                      } else if (e.key === 'Escape') {
+                        setBorrowerNameValue(loanData?.borrowerName || '');
+                        setEditingBorrowerName(false);
+                      }
+                    }}
+                    className="text-base font-medium h-7 mb-1"
+                    autoFocus
+                  />
+                ) : (
+                  <h3 
+                    className="text-base font-medium cursor-pointer hover:text-primary transition-colors"
+                    onClick={() => setEditingBorrowerName(true)}
+                    title="Click to edit"
+                  >
+                    {loanData?.borrowerName || 'Unknown Borrower'}
+                  </h3>
+                )}
                 <p className="text-xs text-muted-foreground">
                   {loanData?.lastPaymentDate ? 
                     `Last payment: ${format(new Date(loanData.lastPaymentDate), 'MMM dd, yyyy')}` : 
