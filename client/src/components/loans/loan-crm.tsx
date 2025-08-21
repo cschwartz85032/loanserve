@@ -89,6 +89,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [editServicingModal, setEditServicingModal] = useState(false);
   const [loanTermsForm, setLoanTermsForm] = useState<any>({});
   const [servicingForm, setServicingForm] = useState<any>({});
+  const [editPropertyModal, setEditPropertyModal] = useState(false);
+  const [propertyForm, setPropertyForm] = useState<any>({});
   const [editingBorrowerName, setEditingBorrowerName] = useState(false);
   const [borrowerNameValue, setBorrowerNameValue] = useState('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
@@ -182,6 +184,22 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       });
     }
   }, [editLoanTermsModal, loanData]);
+
+  useEffect(() => {
+    if (editPropertyModal && loanData) {
+      setPropertyForm({
+        propertyAddress: loanData.propertyAddress || '',
+        propertyCity: loanData.propertyCity || '',
+        propertyState: loanData.propertyState || '',
+        propertyZip: loanData.propertyZip || '',
+        propertyType: loanData.propertyType || '',
+        propertyValue: loanData.propertyValue || '',
+        downPayment: loanData.downPayment || '',
+        parcelNumber: loanData.parcelNumber || '',
+        legalDescription: loanData.legalDescription || ''
+      });
+    }
+  }, [editPropertyModal, loanData]);
 
   useEffect(() => {
     if (editServicingModal && loanData) {
@@ -308,6 +326,28 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({
         title: 'Error',
         description: 'Failed to update servicing settings',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Save property information
+  const saveProperty = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: propertyForm
+      });
+      toast({
+        title: 'Success',
+        description: 'Property information updated successfully'
+      });
+      setEditPropertyModal(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update property information',
         variant: 'destructive'
       });
     }
@@ -983,44 +1023,93 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                 </button>
               )}
               
-              {/* Property Address */}
-              {loanData?.propertyAddress ? (
-                <div 
-                  className="flex items-start justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
-                  onMouseEnter={() => setHoveredContact('address')}
-                  onMouseLeave={() => setHoveredContact(null)}
-                >
-                  <div className="flex items-start space-x-2">
-                    <MapPin className="h-3 w-3 text-muted-foreground mt-0.5" />
-                    <div className="text-muted-foreground font-normal">
-                      <p>{loanData.propertyAddress}</p>
-                      {loanData.propertyCity && loanData.propertyState && (
-                        <p>{loanData.propertyCity}, {loanData.propertyState} {loanData.propertyZip}</p>
-                      )}
-                    </div>
+
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Property Information Card */}
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+                <MapPin className="h-3 w-3" />
+                Property
+              </CardTitle>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 w-6 p-0"
+                onClick={() => setEditPropertyModal(true)}
+              >
+                <Edit className="h-3 w-3" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Property Address */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Address</label>
+              <div className="text-sm">
+                {loanData?.propertyAddress ? (
+                  <div>
+                    <p>{loanData.propertyAddress}</p>
+                    {loanData.propertyCity && (
+                      <p className="text-muted-foreground">
+                        {loanData.propertyCity}, {loanData.propertyState} {loanData.propertyZip}
+                      </p>
+                    )}
                   </div>
-                  {hoveredContact === 'address' && (
-                    <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-5 w-5 p-0"
-                        onClick={() => setEditAddressModal(true)}
-                      >
-                        <Edit className="h-3 w-3 text-muted-foreground" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <button 
-                  className="flex items-center space-x-2 text-xs text-primary hover:underline"
-                  onClick={() => setEditAddressModal(true)}
-                >
-                  <MapPin className="h-3 w-3" />
-                  <span>Add address</span>
-                </button>
-              )}
+                ) : (
+                  <span className="text-muted-foreground">No address</span>
+                )}
+              </div>
+            </div>
+
+            {/* Property Type */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Property Type</label>
+              <p className="text-sm">
+                {loanData?.propertyType || <span className="text-muted-foreground">Not specified</span>}
+              </p>
+            </div>
+
+            {/* Property Value */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Property Value</label>
+              <p className="text-sm">
+                {loanData?.propertyValue ? 
+                  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(parseFloat(loanData.propertyValue)) :
+                  <span className="text-muted-foreground">Not specified</span>
+                }
+              </p>
+            </div>
+
+            {/* Down Payment */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Down Payment</label>
+              <p className="text-sm">
+                {loanData?.downPayment ? 
+                  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(parseFloat(loanData.downPayment)) :
+                  <span className="text-muted-foreground">Not specified</span>
+                }
+              </p>
+            </div>
+
+            {/* Parcel Number (APN) */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Parcel Number (APN)</label>
+              <p className="text-sm">
+                {loanData?.parcelNumber || <span className="text-muted-foreground">Not specified</span>}
+              </p>
+            </div>
+
+            {/* Legal Description */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Legal Description</label>
+              <p className="text-sm text-muted-foreground">
+                {loanData?.legalDescription || <span className="text-muted-foreground">Not specified</span>}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -2755,6 +2844,148 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               Cancel
             </Button>
             <Button onClick={saveServicingSettings}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Property Modal */}
+      <Dialog open={editPropertyModal} onOpenChange={setEditPropertyModal}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <MapPin className="h-4 w-4" />
+              <span>Edit Property Information</span>
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">Update property details and location</p>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            {/* Property Address */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Property Address</label>
+              <Input 
+                type="text"
+                value={propertyForm.propertyAddress || ''}
+                onChange={(e) => setPropertyForm({...propertyForm, propertyAddress: e.target.value})}
+                placeholder="Enter street address"
+              />
+            </div>
+            
+            {/* City, State, Zip Row */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">City</label>
+                <Input 
+                  type="text"
+                  value={propertyForm.propertyCity || ''}
+                  onChange={(e) => setPropertyForm({...propertyForm, propertyCity: e.target.value})}
+                  placeholder="City"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">State</label>
+                <Input 
+                  type="text"
+                  value={propertyForm.propertyState || ''}
+                  onChange={(e) => setPropertyForm({...propertyForm, propertyState: e.target.value})}
+                  placeholder="State"
+                  maxLength={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">ZIP Code</label>
+                <Input 
+                  type="text"
+                  value={propertyForm.propertyZip || ''}
+                  onChange={(e) => setPropertyForm({...propertyForm, propertyZip: e.target.value})}
+                  placeholder="ZIP"
+                />
+              </div>
+            </div>
+
+            {/* Property Type */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Property Type</label>
+              <Select 
+                value={propertyForm.propertyType || ''}
+                onValueChange={(value) => setPropertyForm({...propertyForm, propertyType: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select property type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single_family">Single Family</SelectItem>
+                  <SelectItem value="condo">Condominium</SelectItem>
+                  <SelectItem value="townhouse">Townhouse</SelectItem>
+                  <SelectItem value="multi_family">Multi-Family</SelectItem>
+                  <SelectItem value="commercial">Commercial</SelectItem>
+                  <SelectItem value="land">Land</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Property Value and Down Payment Row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Property Value</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">$</span>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    value={propertyForm.propertyValue || ''}
+                    onChange={(e) => setPropertyForm({...propertyForm, propertyValue: e.target.value})}
+                    placeholder="0.00"
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Down Payment</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">$</span>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    value={propertyForm.downPayment || ''}
+                    onChange={(e) => setPropertyForm({...propertyForm, downPayment: e.target.value})}
+                    placeholder="0.00"
+                    className="pl-8"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Parcel Number (APN) */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Parcel Number (APN)</label>
+              <Input 
+                type="text"
+                value={propertyForm.parcelNumber || ''}
+                onChange={(e) => setPropertyForm({...propertyForm, parcelNumber: e.target.value})}
+                placeholder="Enter parcel number"
+              />
+            </div>
+
+            {/* Legal Description */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Legal Description</label>
+              <textarea 
+                value={propertyForm.legalDescription || ''}
+                onChange={(e) => setPropertyForm({...propertyForm, legalDescription: e.target.value})}
+                placeholder="Enter legal description"
+                className="w-full p-2 border rounded-md min-h-[80px] text-sm"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPropertyModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveProperty}>
               Save Changes
             </Button>
           </DialogFooter>
