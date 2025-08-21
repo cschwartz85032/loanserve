@@ -799,16 +799,25 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
   const createCallMutation = useMutation({
     mutationFn: async (call: any) => {
+      console.log('Creating call log:', call);
       const response = await apiRequest(`/api/loans/${loanId}/crm/calls`, {
         method: 'POST',
         body: JSON.stringify(call),
       });
-      return response.json();
+      const result = await response.json();
+      console.log('Call created:', result);
+      return result;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/calls`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+    onSuccess: async () => {
+      console.log('Call logged successfully, invalidating queries...');
+      // Force immediate refetch of activity timeline
+      await queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/calls`] });
+      await queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      
       setNewCallNotes('');
+      setCallDuration('');
+      setCallOutcome('');
       toast({ title: 'Success', description: 'Call logged successfully' });
     },
   });
@@ -2115,7 +2124,19 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     className="min-h-[100px]"
                   />
                   <div className="flex justify-end">
-                    <Button>
+                    <Button onClick={() => {
+                      if (newCallNotes.trim()) {
+                        createCallMutation.mutate({
+                          contactName: loanData?.borrowerName || 'Borrower',
+                          contactPhone: phoneNumbers[0]?.number || emailTo || '',
+                          direction: 'outbound',
+                          status: 'completed',
+                          duration: callDuration || '0',
+                          outcome: callOutcome || 'answered',
+                          notes: newCallNotes
+                        });
+                      }
+                    }}>
                       <Phone className="h-4 w-4 mr-2" />
                       Log Call
                     </Button>
