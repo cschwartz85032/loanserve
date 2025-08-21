@@ -564,36 +564,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             )}
           </CardContent>
         </Card>
-        
-        {/* Quick Stats Card */}
-        <Card>
-          <CardHeader className="pb-2 pt-4">
-            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
-              <Activity className="h-3 w-3" />
-              Quick Stats
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Total Notes:</span>
-                <span className="font-normal">{notes.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Open Tasks:</span>
-                <span className="font-normal">{tasks.filter((t: any) => t.status !== 'completed').length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Total Calls:</span>
-                <span className="font-normal">{calls.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Collaborators:</span>
-                <span className="font-normal">{collaborators.length}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Middle Column - Main Content Area */}
