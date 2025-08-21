@@ -82,6 +82,40 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [editAddressModal, setEditAddressModal] = useState(false);
   const [phoneNumbers, setPhoneNumbers] = useState<Array<{number: string, label: string, isBad?: boolean}>>([]);
   const [emailAddresses, setEmailAddresses] = useState<Array<{email: string, label: string}>>([]);
+  const [editLoanTermsModal, setEditLoanTermsModal] = useState(false);
+  const [editServicingModal, setEditServicingModal] = useState(false);
+  const [loanTermsForm, setLoanTermsForm] = useState<any>({});
+  const [servicingForm, setServicingForm] = useState<any>({});
+
+  // Initialize forms when modals open
+  useEffect(() => {
+    if (editLoanTermsModal && loanData) {
+      setLoanTermsForm({
+        originalAmount: loanData.originalAmount || '',
+        principalBalance: loanData.principalBalance || '',
+        interestRate: loanData.interestRate || '',
+        loanTerm: loanData.loanTerm || '',
+        paymentFrequency: loanData.paymentFrequency || 'monthly',
+        firstPaymentDate: loanData.firstPaymentDate || '',
+        maturityDate: loanData.maturityDate || ''
+      });
+    }
+  }, [editLoanTermsModal, loanData]);
+
+  useEffect(() => {
+    if (editServicingModal && loanData) {
+      setServicingForm({
+        servicingFee: loanData.servicingFee || '',
+        servicingFeeType: loanData.servicingFeeType || 'fixed',
+        lateCharge: loanData.lateCharge || '',
+        lateChargeType: loanData.lateChargeType || 'fixed',
+        gracePeriodDays: loanData.gracePeriodDays || '',
+        prepaymentPenalty: loanData.prepaymentPenalty || false,
+        prepaymentPenaltyAmount: loanData.prepaymentPenaltyAmount || '',
+        prepaymentExpirationDate: loanData.prepaymentExpirationDate || ''
+      });
+    }
+  }, [editServicingModal, loanData]);
 
   // Initialize contact data from loanData
   useEffect(() => {
@@ -142,6 +176,50 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount || 0);
+  };
+
+  // Save loan terms
+  const saveLoanTerms = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: loanTermsForm
+      });
+      toast({
+        title: 'Success',
+        description: 'Loan terms updated successfully'
+      });
+      setEditLoanTermsModal(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update loan terms',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Save servicing settings
+  const saveServicingSettings = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: servicingForm
+      });
+      toast({
+        title: 'Success',
+        description: 'Servicing settings updated successfully'
+      });
+      setEditServicingModal(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update servicing settings',
+        variant: 'destructive'
+      });
+    }
   };
 
   // Fetch CRM data
@@ -962,10 +1040,20 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         {/* Loan Terms Card */}
         <Card>
           <CardHeader className="pb-2 pt-4">
-            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
-              <FileText className="h-3 w-3" />
-              Loan Terms
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+                <FileText className="h-3 w-3" />
+                Loan Terms
+              </CardTitle>
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                className="h-5 w-5 p-0"
+                onClick={() => setEditLoanTermsModal(true)}
+              >
+                <Edit className="h-3 w-3" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-xs space-y-1">
@@ -1008,10 +1096,20 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         {/* Servicing Settings Card */}
         <Card>
           <CardHeader className="pb-2 pt-4">
-            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
-              <Settings className="h-3 w-3" />
-              Servicing Settings
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+                <Settings className="h-3 w-3" />
+                Servicing Settings
+              </CardTitle>
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                className="h-5 w-5 p-0"
+                onClick={() => setEditServicingModal(true)}
+              >
+                <Edit className="h-3 w-3" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="text-xs space-y-1">
@@ -1376,6 +1474,214 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               });
             }}>
               Save Email Addresses
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Loan Terms Modal */}
+      <Dialog open={editLoanTermsModal} onOpenChange={setEditLoanTermsModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <FileText className="h-4 w-4" />
+              <span>Edit Loan Terms</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Original Amount</label>
+              <Input 
+                type="number"
+                value={loanTermsForm.originalAmount}
+                onChange={(e) => setLoanTermsForm({...loanTermsForm, originalAmount: e.target.value})}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Principal Balance</label>
+              <Input 
+                type="number"
+                value={loanTermsForm.principalBalance}
+                onChange={(e) => setLoanTermsForm({...loanTermsForm, principalBalance: e.target.value})}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Interest Rate (%)</label>
+              <Input 
+                type="number"
+                step="0.001"
+                value={loanTermsForm.interestRate}
+                onChange={(e) => setLoanTermsForm({...loanTermsForm, interestRate: e.target.value})}
+                placeholder="0.000"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Loan Term (months)</label>
+              <Input 
+                type="number"
+                value={loanTermsForm.loanTerm}
+                onChange={(e) => setLoanTermsForm({...loanTermsForm, loanTerm: e.target.value})}
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Payment Frequency</label>
+              <Select 
+                value={loanTermsForm.paymentFrequency}
+                onValueChange={(value) => setLoanTermsForm({...loanTermsForm, paymentFrequency: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="biweekly">Bi-Weekly</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="quarterly">Quarterly</SelectItem>
+                  <SelectItem value="annually">Annually</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">First Payment Date</label>
+              <Input 
+                type="date"
+                value={loanTermsForm.firstPaymentDate}
+                onChange={(e) => setLoanTermsForm({...loanTermsForm, firstPaymentDate: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Maturity Date</label>
+              <Input 
+                type="date"
+                value={loanTermsForm.maturityDate}
+                onChange={(e) => setLoanTermsForm({...loanTermsForm, maturityDate: e.target.value})}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditLoanTermsModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveLoanTerms}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Servicing Settings Modal */}
+      <Dialog open={editServicingModal} onOpenChange={setEditServicingModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Settings className="h-4 w-4" />
+              <span>Edit Servicing Settings</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Servicing Fee</label>
+              <Input 
+                type="number"
+                step="0.01"
+                value={servicingForm.servicingFee}
+                onChange={(e) => setServicingForm({...servicingForm, servicingFee: e.target.value})}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Servicing Fee Type</label>
+              <Select 
+                value={servicingForm.servicingFeeType}
+                onValueChange={(value) => setServicingForm({...servicingForm, servicingFeeType: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fixed</SelectItem>
+                  <SelectItem value="percentage">Percentage</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Late Charge</label>
+              <Input 
+                type="number"
+                step="0.01"
+                value={servicingForm.lateCharge}
+                onChange={(e) => setServicingForm({...servicingForm, lateCharge: e.target.value})}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Late Charge Type</label>
+              <Select 
+                value={servicingForm.lateChargeType}
+                onValueChange={(value) => setServicingForm({...servicingForm, lateChargeType: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fixed</SelectItem>
+                  <SelectItem value="percentage">Percentage</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Grace Period (days)</label>
+              <Input 
+                type="number"
+                value={servicingForm.gracePeriodDays}
+                onChange={(e) => setServicingForm({...servicingForm, gracePeriodDays: e.target.value})}
+                placeholder="0"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <input 
+                type="checkbox"
+                id="prepaymentPenalty"
+                checked={servicingForm.prepaymentPenalty}
+                onChange={(e) => setServicingForm({...servicingForm, prepaymentPenalty: e.target.checked})}
+                className="h-4 w-4"
+              />
+              <label htmlFor="prepaymentPenalty" className="text-sm font-medium">
+                Prepayment Penalty
+              </label>
+            </div>
+            {servicingForm.prepaymentPenalty && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Prepayment Penalty Amount</label>
+                  <Input 
+                    type="number"
+                    step="0.01"
+                    value={servicingForm.prepaymentPenaltyAmount}
+                    onChange={(e) => setServicingForm({...servicingForm, prepaymentPenaltyAmount: e.target.value})}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Prepayment Expiration Date</label>
+                  <Input 
+                    type="date"
+                    value={servicingForm.prepaymentExpirationDate}
+                    onChange={(e) => setServicingForm({...servicingForm, prepaymentExpirationDate: e.target.value})}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditServicingModal(false)}>
+              Cancel
+            </Button>
+            <Button onClick={saveServicingSettings}>
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
