@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
+      console.log('Attempting login with:', credentials.username);
       const res = await apiRequest("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ 
@@ -41,14 +42,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }),
       });
       const data = await res.json();
+      console.log('Login response:', data);
+      
+      // Check if login was successful
+      if (!data.success || !data.user) {
+        throw new Error(data.error || 'Login failed');
+      }
+      
       // Return just the user object from the response
       return data.user;
     },
     onSuccess: (user: SelectUser) => {
+      console.log('Login successful, user:', user);
       queryClient.setQueryData(["/api/user"], user);
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error: Error) => {
+      console.error('Login error:', error);
       toast({
         title: "Login failed",
         description: error.message,
