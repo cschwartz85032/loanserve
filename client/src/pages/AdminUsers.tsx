@@ -73,8 +73,8 @@ interface UserDetail {
     roleId: string;
     roleName: string;
     roleDescription?: string;
-    assignedAt: string;
-    assignedBy?: number;
+    createdAt: string;
+    updatedAt?: string;
   }>;
   recentLogins: Array<{
     id: string;

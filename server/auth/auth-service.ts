@@ -796,9 +796,7 @@ export async function createInvitationToken(
         // It's a role ID, assign directly
         await db.insert(userRoles).values({
           userId: newUser.id,
-          roleId: roleIdOrName,
-          assignedBy: invitedBy,
-          assignedAt: new Date()
+          roleId: roleIdOrName
         });
       } else {
         // It's a role name, find the role first
@@ -810,9 +808,7 @@ export async function createInvitationToken(
         if (role) {
           await db.insert(userRoles).values({
             userId: newUser.id,
-            roleId: role.id,
-            assignedBy: invitedBy,
-            assignedAt: new Date()
+            roleId: role.id
           });
         }
       }
