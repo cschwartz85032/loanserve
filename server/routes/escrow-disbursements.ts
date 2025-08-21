@@ -57,11 +57,16 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
       });
     }
     
-    const validatedData = insertEscrowDisbursementSchema.parse({
+    // Clean up date fields - convert empty strings to null
+    const cleanedData = {
       ...req.body,
       loanId,
-      escrowAccountId: escrowAccount.id
-    });
+      escrowAccountId: escrowAccount.id,
+      nextDueDate: req.body.nextDueDate && req.body.nextDueDate !== '' ? req.body.nextDueDate : null,
+      lastPaymentDate: req.body.lastPaymentDate && req.body.lastPaymentDate !== '' ? req.body.lastPaymentDate : null
+    };
+    
+    const validatedData = insertEscrowDisbursementSchema.parse(cleanedData);
     
     const disbursement = await storage.createEscrowDisbursement(validatedData);
     
@@ -84,7 +89,14 @@ router.patch("/api/escrow-disbursements/:id", async (req, res) => {
       return res.status(404).json({ error: "Disbursement not found" });
     }
     
-    const updatedDisbursement = await storage.updateEscrowDisbursement(id, req.body);
+    // Clean up date fields - convert empty strings to null
+    const cleanedData = {
+      ...req.body,
+      nextDueDate: req.body.nextDueDate && req.body.nextDueDate !== '' ? req.body.nextDueDate : null,
+      lastPaymentDate: req.body.lastPaymentDate && req.body.lastPaymentDate !== '' ? req.body.lastPaymentDate : null
+    };
+    
+    const updatedDisbursement = await storage.updateEscrowDisbursement(id, cleanedData);
     
     res.json(updatedDisbursement);
   } catch (error) {
