@@ -96,6 +96,7 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
     id: users.id,
     username: users.username,
     email: users.email,
+    role: users.role,
   })
   .from(users)
   .where(eq(users.id, userId))
@@ -105,27 +106,48 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
     throw new Error(`User ${userId} not found`);
   }
 
-  // Get user's roles
-  const userRolesData = await db.select({
-    roleId: userRoles.roleId,
-    roleName: roles.name,
-  })
-  .from(userRoles)
-  .innerJoin(roles, eq(userRoles.roleId, roles.id))
-  .where(eq(userRoles.userId, userId));
+  // For admin users, grant full permissions without complex queries
+  let roleNames: string[] = [];
+  let userPermissions: any[] = [];
+  
+  if (user[0].role === 'admin') {
+    // Admin gets full permissions
+    userPermissions = [
+      'Users', 'Loans', 'Payments', 'Escrow', 
+      'Investor Positions', 'Reports', 'Settings', 'Audit Logs'
+    ].map(resource => ({
+      resource,
+      level: 'admin',
+      scope: null
+    }));
+    
+    roleNames = ['admin'];
+  } else {
+    // Get user's roles for non-admin users
+    const userRolesData = await db.select({
+      roleId: userRoles.roleId,
+      roleName: roles.name,
+    })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, userId));
 
-  const roleNames = userRolesData.map((r: any) => r.roleName);
-  const roleIds = userRolesData.map((r: any) => r.roleId);
+    roleNames = userRolesData.map((r: any) => r.roleName);
+    const roleIds = userRolesData.map((r: any) => r.roleId);
 
-  // Get permissions for all user's roles
-  const userPermissions = await db.select({
-    resource: permissions.resource,
-    level: permissions.level,
-    scope: rolePermissions.scope,
-  })
-  .from(rolePermissions)
-  .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-  .where(inArray(rolePermissions.roleId, roleIds));
+    // Get permissions using simpler query
+    if (roleIds.length > 0) {
+      // Query permissions one by one to avoid array issues
+      for (const roleId of roleIds) {
+        const perms = await db.execute(sql`
+          SELECT resource, permission as level, null as scope
+          FROM role_permissions
+          WHERE role_id = ${roleId}::uuid
+        `);
+        userPermissions.push(...perms);
+      }
+    }
+  }
 
   // Merge permissions, taking the highest level for each resource
   const mergedPermissions = new Map<string, UserPermission>();
