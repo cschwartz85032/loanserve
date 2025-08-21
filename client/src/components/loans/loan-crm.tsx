@@ -45,7 +45,8 @@ import {
   Trash2,
   Settings,
   Check,
-  X
+  X,
+  Camera
 } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -2201,8 +2202,14 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   } else if (item.activityType === 'note') {
                     description = item.activityData?.description || item.content || 'Note added';
                     icon = <MessageSquare className="h-4 w-4 text-gray-500" />;
+                  } else if (item.activityType === 'contact_update') {
+                    description = item.activityData?.description || 'Updated contact information';
+                    icon = <Edit className="h-4 w-4 text-orange-500" />;
+                  } else if (item.activityType === 'profile_photo') {
+                    description = item.activityData?.description || 'Updated profile photo';
+                    icon = <Camera className="h-4 w-4 text-indigo-500" />;
                   } else {
-                    description = item.activityData?.description || 'Activity';
+                    description = item.activityData?.description || `Activity: ${item.activityType}`;
                     icon = <Activity className="h-4 w-4 text-gray-500" />;
                   }
                   
