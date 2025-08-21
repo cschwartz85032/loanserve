@@ -324,6 +324,12 @@ export class DatabaseStorage implements IStorage {
     // Transform the result to include property data at the right level
     return result.map(row => ({
       ...row.loans,
+      propertyAddress: row.properties?.address,
+      propertyCity: row.properties?.city,
+      propertyState: row.properties?.state,
+      propertyZip: row.properties?.zipCode,
+      propertyType: row.properties?.propertyType,
+      propertyValue: row.properties?.purchasePrice || row.properties?.currentValue,
       property: row.properties
     })) as any[];
   }
@@ -344,6 +350,9 @@ export class DatabaseStorage implements IStorage {
       parcelNumber: result.properties?.apn,
       legalDescription: result.properties?.legalDescription,
       propertyAddress: result.properties?.address,
+      propertyCity: result.properties?.city,
+      propertyState: result.properties?.state,
+      propertyZip: result.properties?.zipCode,
       propertyType: result.properties?.propertyType,
       propertyValue: result.properties?.purchasePrice || result.properties?.currentValue,
       property: result.properties
