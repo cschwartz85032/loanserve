@@ -335,7 +335,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     >
                       <div className="flex items-center space-x-2">
                         <Phone className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-muted-foreground font-normal">{loanData.borrowerPhone} (test call or text)</span>
+                        <span className="text-muted-foreground font-normal">{loanData.borrowerPhone}</span>
                       </div>
                       {hoveredContact === 'phone1' && (
                         <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -367,7 +367,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     >
                       <div className="flex items-center space-x-2">
                         <Phone className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-muted-foreground font-normal">{loanData.borrowerMobile} (mobile)</span>
+                        <span className="text-muted-foreground font-normal">{loanData.borrowerMobile}</span>
                       </div>
                       {hoveredContact === 'phone2' && (
                         <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
