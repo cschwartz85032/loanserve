@@ -46,6 +46,7 @@ export function setupAuth(app: Express) {
       secure: false, // Allow non-HTTPS in development
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'lax', // Allow cookies to work with frontend
     },
   };
 
