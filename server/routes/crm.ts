@@ -13,8 +13,14 @@ import {
 } from '@shared/schema';
 import { eq, desc, and, or } from 'drizzle-orm';
 import { z } from 'zod';
+import sgMail from '@sendgrid/mail';
 
 const router = Router();
+
+// Initialize SendGrid
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
 // Helper function to log activity
 async function logActivity(
@@ -455,6 +461,70 @@ router.post('/loans/:loanId/crm/deals', async (req, res) => {
   } catch (error) {
     console.error('Error creating CRM deal:', error);
     res.status(500).json({ error: 'Failed to create deal' });
+  }
+});
+
+// Send email via SendGrid
+router.post('/loans/:loanId/crm/send-email', async (req, res) => {
+  try {
+    const loanId = parseInt(req.params.loanId);
+    const userId = (req as any).user?.id || 1;
+    const { to, cc, bcc, subject, content } = req.body;
+
+    if (!process.env.SENDGRID_API_KEY) {
+      return res.status(500).json({ error: 'Email service not configured' });
+    }
+
+    if (!process.env.SENDGRID_FROM_EMAIL) {
+      return res.status(500).json({ error: 'From email address not configured' });
+    }
+
+    // Prepare email message
+    const msg: any = {
+      to,
+      from: process.env.SENDGRID_FROM_EMAIL,
+      subject,
+      text: content,
+      html: content.replace(/\n/g, '<br>'), // Basic HTML conversion
+    };
+
+    // Add CC recipients if provided
+    if (cc && cc.trim()) {
+      msg.cc = cc.split(',').map((email: string) => email.trim());
+    }
+
+    // Add BCC recipients if provided
+    if (bcc && bcc.trim()) {
+      msg.bcc = bcc.split(',').map((email: string) => email.trim());
+    }
+
+    // Send email
+    await sgMail.send(msg);
+
+    // Log activity
+    await logActivity(loanId, userId, 'email', {
+      description: `Email sent to ${to}`,
+      subject,
+      to,
+      cc: cc || null,
+      bcc: bcc || null
+    });
+
+    res.json({ success: true, message: 'Email sent successfully' });
+  } catch (error: any) {
+    console.error('Error sending email:', error);
+    
+    // Check for SendGrid specific errors
+    if (error.response) {
+      const { message, code, response } = error;
+      const { body, headers } = response;
+      console.error('SendGrid error details:', { code, message, body });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to send email', 
+      details: error.message || 'Unknown error'
+    });
   }
 });
 

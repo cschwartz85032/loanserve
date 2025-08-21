@@ -65,6 +65,10 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailContent, setEmailContent] = useState('');
+  const [emailTo, setEmailTo] = useState('');
+  const [emailCc, setEmailCc] = useState('');
+  const [emailBcc, setEmailBcc] = useState('');
+  const [showCcBcc, setShowCcBcc] = useState(false);
   const [textMessage, setTextMessage] = useState('');
   const [callDuration, setCallDuration] = useState('');
   const [callOutcome, setCallOutcome] = useState('');
@@ -135,6 +139,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const { data: collaborators = [], isLoading: collaboratorsLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/collaborators`],
   });
+
+  // Initialize To field with borrower's email when switching to email tab
+  useEffect(() => {
+    if (communicationType === 'email' && loanData?.borrowerEmail && !emailTo) {
+      setEmailTo(loanData.borrowerEmail);
+    }
+  }, [communicationType, loanData?.borrowerEmail]);
 
   // Mutations
   const createNoteMutation = useMutation({
@@ -215,6 +226,33 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     },
   });
 
+  const sendEmailMutation = useMutation({
+    mutationFn: async (emailData: { to: string; cc?: string; bcc?: string; subject: string; content: string }) => {
+      const response = await apiRequest(`/api/loans/${loanId}/crm/send-email`, {
+        method: 'POST',
+        body: JSON.stringify(emailData),
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      setEmailTo('');
+      setEmailCc('');
+      setEmailBcc('');
+      setEmailSubject('');
+      setEmailContent('');
+      setShowCcBcc(false);
+      toast({ title: 'Success', description: 'Email sent successfully' });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'Error', 
+        description: error.message || 'Failed to send email',
+        variant: 'destructive'
+      });
+    }
+  });
+
   const handleAddNote = () => {
     if (newNoteContent.trim()) {
       createNoteMutation.mutate(newNoteContent);
@@ -232,6 +270,18 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
   const handleTaskStatusChange = (taskId: number, status: string) => {
     updateTaskStatusMutation.mutate({ taskId, status });
+  };
+
+  const handleSendEmail = () => {
+    if (emailTo && emailSubject && emailContent) {
+      sendEmailMutation.mutate({
+        to: emailTo,
+        cc: emailCc || undefined,
+        bcc: emailBcc || undefined,
+        subject: emailSubject,
+        content: emailContent
+      });
+    }
   };
 
   const formatTimeAgo = (date: string) => {
@@ -606,21 +656,82 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               {/* Email Tab Content */}
               <TabsContent value="email" className="mt-4">
                 <div className="border rounded-lg p-3 space-y-3">
-                  <Input
-                    placeholder="Subject"
-                    value={emailSubject}
-                    onChange={(e) => setEmailSubject(e.target.value)}
-                  />
-                  <Textarea
-                    placeholder="Email content..."
-                    value={emailContent}
-                    onChange={(e) => setEmailContent(e.target.value)}
-                    className="min-h-[150px]"
-                  />
+                  {/* To Field */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium">To:</label>
+                      {!showCcBcc && (
+                        <button
+                          onClick={() => setShowCcBcc(true)}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Add CC/BCC
+                        </button>
+                      )}
+                    </div>
+                    <Input
+                      placeholder="recipient@example.com"
+                      value={emailTo}
+                      onChange={(e) => setEmailTo(e.target.value)}
+                      className="text-xs"
+                    />
+                  </div>
+
+                  {/* CC and BCC Fields */}
+                  {showCcBcc && (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium">CC:</label>
+                        <Input
+                          placeholder="cc@example.com (separate multiple with commas)"
+                          value={emailCc}
+                          onChange={(e) => setEmailCc(e.target.value)}
+                          className="text-xs"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium">BCC:</label>
+                        <Input
+                          placeholder="bcc@example.com (separate multiple with commas)"
+                          value={emailBcc}
+                          onChange={(e) => setEmailBcc(e.target.value)}
+                          className="text-xs"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Subject Field */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Subject:</label>
+                    <Input
+                      placeholder="Email subject"
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                      className="text-xs"
+                    />
+                  </div>
+
+                  {/* Email Content */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Message:</label>
+                    <Textarea
+                      placeholder="Email content..."
+                      value={emailContent}
+                      onChange={(e) => setEmailContent(e.target.value)}
+                      className="min-h-[150px] text-xs"
+                    />
+                  </div>
+
                   <div className="flex justify-end">
-                    <Button>
-                      <Mail className="h-4 w-4 mr-2" />
-                      Send Email
+                    <Button 
+                      onClick={handleSendEmail}
+                      disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
+                      size="sm"
+                      className="h-7 text-xs"
+                    >
+                      <Mail className="h-3 w-3 mr-1" />
+                      {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
                     </Button>
                   </div>
                 </div>
