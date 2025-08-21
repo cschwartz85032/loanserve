@@ -77,10 +77,12 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Set session in request
+    // Set session in request with IP and userAgent for proper tracking
     if (req.session) {
       (req.session as any).userId = result.user.id;
       (req.session as any).sessionId = result.sessionId;
+      (req.session as any).ip = ip;
+      (req.session as any).userAgent = userAgent;
     }
 
     // Return success with user data

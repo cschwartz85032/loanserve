@@ -260,10 +260,14 @@ export async function addIpToAllowlist(
       };
     }
     
+    // Extract the IP address from CIDR (remove the subnet mask)
+    const ipAddress = cidr.split('/')[0];
+    
     const [result] = await db.insert(userIpAllowlist).values({
       userId,
-      cidr,
-      label: label || `IP allowlist entry for ${cidr}`,
+      ipAddress, // Required field - the actual IP address
+      cidr, // Optional field - the CIDR notation with subnet
+      description: label || `IP allowlist entry for ${cidr}`,
       isActive: true,
       expiresAt: expiresAt ? new Date(expiresAt) : null
     })
@@ -378,12 +382,19 @@ export async function updateIpAllowlistEntry(
       updates.cidr = updates.cidr + (isV6 ? '/128' : '/32');
     }
     
+    // Process updates - if CIDR is updated, also update ipAddress
+    const updateData: any = { ...updates };
+    if (updates.cidr) {
+      updateData.ipAddress = updates.cidr.split('/')[0];
+      updateData.cidr = updates.cidr;
+    }
+    if (updates.label) {
+      updateData.description = updates.label;
+    }
+    
     // Update the entry
     await db.update(userIpAllowlist)
-      .set({
-        ...updates,
-        updatedAt: new Date()
-      })
+      .set(updateData)
       .where(eq(userIpAllowlist.id, entryId));
     
     // Log the update
@@ -468,13 +479,19 @@ export async function bulkUpdateIpAllowlist(
     
     // Add new entries
     if (entries.length > 0) {
-      const newEntries = entries.map(entry => ({
-        userId,
-        cidr: entry.cidr.includes('/') ? entry.cidr : 
-              (net.isIPv6(entry.cidr) ? entry.cidr + '/128' : entry.cidr + '/32'),
-        label: entry.label || `IP allowlist entry`,
-        isActive: entry.isActive !== false
-      }));
+      const newEntries = entries.map(entry => {
+        const cidr = entry.cidr.includes('/') ? entry.cidr : 
+              (net.isIPv6(entry.cidr) ? entry.cidr + '/128' : entry.cidr + '/32');
+        const ipAddress = cidr.split('/')[0]; // Extract IP from CIDR
+        
+        return {
+          userId,
+          ipAddress, // Required field
+          cidr, // Optional field
+          description: entry.label || `IP allowlist entry`,
+          isActive: entry.isActive !== false
+        };
+      });
       
       await db.insert(userIpAllowlist).values(newEntries);
     }
