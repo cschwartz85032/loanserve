@@ -43,7 +43,9 @@ import {
   MessageCircle,
   Edit,
   Trash2,
-  Settings
+  Settings,
+  Check,
+  X
 } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -92,6 +94,40 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Trustee editing states
+  const [editingTrusteeName, setEditingTrusteeName] = useState(false);
+  const [trusteeNameValue, setTrusteeNameValue] = useState('');
+  const [editingTrusteeCompany, setEditingTrusteeCompany] = useState(false);
+  const [trusteeCompanyValue, setTrusteeCompanyValue] = useState('');
+  const [editingTrusteeAddress, setEditingTrusteeAddress] = useState(false);
+  const [trusteeAddressForm, setTrusteeAddressForm] = useState({
+    street: '',
+    city: '',
+    state: '',
+    zip: ''
+  });
+  const [editingTrusteePhone, setEditingTrusteePhone] = useState(false);
+  const [trusteePhoneValue, setTrusteePhoneValue] = useState('');
+  const [editingTrusteeEmail, setEditingTrusteeEmail] = useState(false);
+  const [trusteeEmailValue, setTrusteeEmailValue] = useState('');
+  
+  // Escrow editing states
+  const [editingEscrowCompany, setEditingEscrowCompany] = useState(false);
+  const [escrowCompanyValue, setEscrowCompanyValue] = useState('');
+  const [editingEscrowNumber, setEditingEscrowNumber] = useState(false);
+  const [escrowNumberValue, setEscrowNumberValue] = useState('');
+  const [editingEscrowAddress, setEditingEscrowAddress] = useState(false);
+  const [escrowAddressForm, setEscrowAddressForm] = useState({
+    street: '',
+    city: '',
+    state: '',
+    zip: ''
+  });
+  const [editingEscrowPhone, setEditingEscrowPhone] = useState(false);
+  const [escrowPhoneValue, setEscrowPhoneValue] = useState('');
+  const [editingEscrowEmail, setEditingEscrowEmail] = useState(false);
+  const [escrowEmailValue, setEscrowEmailValue] = useState('');
 
   // Initialize profile photo from loan data
   useEffect(() => {
@@ -99,6 +135,38 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       setProfilePhoto(loanData.borrowerPhoto);
     }
   }, [loanData?.borrowerPhoto]);
+  
+  // Initialize trustee data from loan data
+  useEffect(() => {
+    if (loanData) {
+      setTrusteeNameValue(loanData.trusteeName || '');
+      setTrusteeCompanyValue(loanData.trusteeCompanyName || '');
+      setTrusteePhoneValue(loanData.trusteePhone || '');
+      setTrusteeEmailValue(loanData.trusteeEmail || '');
+      setTrusteeAddressForm({
+        street: loanData.trusteeStreetAddress || '',
+        city: loanData.trusteeCity || '',
+        state: loanData.trusteeState || '',
+        zip: loanData.trusteeZipCode || ''
+      });
+    }
+  }, [loanData]);
+  
+  // Initialize escrow data from loan data
+  useEffect(() => {
+    if (loanData) {
+      setEscrowCompanyValue(loanData.escrowCompanyName || '');
+      setEscrowNumberValue(loanData.escrowNumber || '');
+      setEscrowPhoneValue(loanData.escrowCompanyPhone || '');
+      setEscrowEmailValue(loanData.escrowCompanyEmail || '');
+      setEscrowAddressForm({
+        street: loanData.escrowCompanyStreetAddress || '',
+        city: loanData.escrowCompanyCity || '',
+        state: loanData.escrowCompanyState || '',
+        zip: loanData.escrowCompanyZipCode || ''
+      });
+    }
+  }, [loanData]);
 
   // Initialize forms when modals open
   useEffect(() => {
@@ -264,6 +332,158 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         description: 'Failed to update borrower name',
         variant: 'destructive'
       });
+    }
+  };
+  
+  // Save trustee information
+  const saveTrusteeName = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { trusteeName: trusteeNameValue }
+      });
+      toast({ title: 'Success', description: 'Trustee name updated' });
+      setEditingTrusteeName(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveTrusteeCompany = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { trusteeCompanyName: trusteeCompanyValue }
+      });
+      toast({ title: 'Success', description: 'Company updated' });
+      setEditingTrusteeCompany(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveTrusteeAddress = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: {
+          trusteeStreetAddress: trusteeAddressForm.street,
+          trusteeCity: trusteeAddressForm.city,
+          trusteeState: trusteeAddressForm.state,
+          trusteeZipCode: trusteeAddressForm.zip
+        }
+      });
+      toast({ title: 'Success', description: 'Address updated' });
+      setEditingTrusteeAddress(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveTrusteePhone = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { trusteePhone: trusteePhoneValue }
+      });
+      toast({ title: 'Success', description: 'Phone updated' });
+      setEditingTrusteePhone(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveTrusteeEmail = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { trusteeEmail: trusteeEmailValue }
+      });
+      toast({ title: 'Success', description: 'Email updated' });
+      setEditingTrusteeEmail(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  // Save escrow information
+  const saveEscrowCompany = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { escrowCompanyName: escrowCompanyValue }
+      });
+      toast({ title: 'Success', description: 'Escrow company updated' });
+      setEditingEscrowCompany(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveEscrowNumber = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { escrowNumber: escrowNumberValue }
+      });
+      toast({ title: 'Success', description: 'Escrow number updated' });
+      setEditingEscrowNumber(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveEscrowAddress = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: {
+          escrowCompanyStreetAddress: escrowAddressForm.street,
+          escrowCompanyCity: escrowAddressForm.city,
+          escrowCompanyState: escrowAddressForm.state,
+          escrowCompanyZipCode: escrowAddressForm.zip
+        }
+      });
+      toast({ title: 'Success', description: 'Address updated' });
+      setEditingEscrowAddress(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveEscrowPhone = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { escrowCompanyPhone: escrowPhoneValue }
+      });
+      toast({ title: 'Success', description: 'Phone updated' });
+      setEditingEscrowPhone(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
+    }
+  };
+  
+  const saveEscrowEmail = async () => {
+    try {
+      await apiRequest(`/api/loans/${loanId}`, {
+        method: 'PATCH',
+        body: { escrowCompanyEmail: escrowEmailValue }
+      });
+      toast({ title: 'Success', description: 'Email updated' });
+      setEditingEscrowEmail(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
   };
 
@@ -800,6 +1020,569 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   <MapPin className="h-3 w-3" />
                   <span>Add address</span>
                 </button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Trustee Information Card */}
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+                <User className="h-3 w-3" />
+                Trustee
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Trustee Name */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Name</label>
+              {editingTrusteeName ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={trusteeNameValue}
+                    onChange={(e) => setTrusteeNameValue(e.target.value)}
+                    className="h-8 text-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveTrusteeName();
+                      if (e.key === 'Escape') {
+                        setEditingTrusteeName(false);
+                        setTrusteeNameValue(loanData?.trusteeName || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveTrusteeName}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingTrusteeName(false);
+                    setTrusteeNameValue(loanData?.trusteeName || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <p className="text-sm font-medium">
+                    {trusteeNameValue || <span className="text-muted-foreground">Add trustee name</span>}
+                  </p>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingTrusteeName(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Trustee Company */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Company</label>
+              {editingTrusteeCompany ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={trusteeCompanyValue}
+                    onChange={(e) => setTrusteeCompanyValue(e.target.value)}
+                    className="h-8 text-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveTrusteeCompany();
+                      if (e.key === 'Escape') {
+                        setEditingTrusteeCompany(false);
+                        setTrusteeCompanyValue(loanData?.trusteeCompanyName || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveTrusteeCompany}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingTrusteeCompany(false);
+                    setTrusteeCompanyValue(loanData?.trusteeCompanyName || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <p className="text-sm">
+                    {trusteeCompanyValue || <span className="text-muted-foreground">Add company</span>}
+                  </p>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingTrusteeCompany(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Trustee Phone */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Phone</label>
+              {editingTrusteePhone ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={trusteePhoneValue}
+                    onChange={(e) => setTrusteePhoneValue(e.target.value)}
+                    className="h-8 text-xs"
+                    placeholder="(555) 555-5555"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveTrusteePhone();
+                      if (e.key === 'Escape') {
+                        setEditingTrusteePhone(false);
+                        setTrusteePhoneValue(loanData?.trusteePhone || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveTrusteePhone}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingTrusteePhone(false);
+                    setTrusteePhoneValue(loanData?.trusteePhone || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <div className="flex items-center space-x-2">
+                    <Phone className="h-3 w-3 text-muted-foreground" />
+                    <p className="text-sm">
+                      {trusteePhoneValue || <span className="text-muted-foreground">Add phone</span>}
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingTrusteePhone(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Trustee Email */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Email</label>
+              {editingTrusteeEmail ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={trusteeEmailValue}
+                    onChange={(e) => setTrusteeEmailValue(e.target.value)}
+                    className="h-8 text-xs"
+                    placeholder="trustee@example.com"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveTrusteeEmail();
+                      if (e.key === 'Escape') {
+                        setEditingTrusteeEmail(false);
+                        setTrusteeEmailValue(loanData?.trusteeEmail || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveTrusteeEmail}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingTrusteeEmail(false);
+                    setTrusteeEmailValue(loanData?.trusteeEmail || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <div className="flex items-center space-x-2">
+                    <Mail className="h-3 w-3 text-muted-foreground" />
+                    <p className="text-sm">
+                      {trusteeEmailValue || <span className="text-muted-foreground">Add email</span>}
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingTrusteeEmail(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Trustee Address */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Address</label>
+              {editingTrusteeAddress ? (
+                <div className="space-y-2">
+                  <Input
+                    value={trusteeAddressForm.street}
+                    onChange={(e) => setTrusteeAddressForm({...trusteeAddressForm, street: e.target.value})}
+                    className="h-8 text-xs"
+                    placeholder="Street address"
+                  />
+                  <div className="flex space-x-2">
+                    <Input
+                      value={trusteeAddressForm.city}
+                      onChange={(e) => setTrusteeAddressForm({...trusteeAddressForm, city: e.target.value})}
+                      className="h-8 text-xs flex-1"
+                      placeholder="City"
+                    />
+                    <Input
+                      value={trusteeAddressForm.state}
+                      onChange={(e) => setTrusteeAddressForm({...trusteeAddressForm, state: e.target.value})}
+                      className="h-8 text-xs w-20"
+                      placeholder="State"
+                      maxLength={2}
+                    />
+                    <Input
+                      value={trusteeAddressForm.zip}
+                      onChange={(e) => setTrusteeAddressForm({...trusteeAddressForm, zip: e.target.value})}
+                      className="h-8 text-xs w-24"
+                      placeholder="ZIP"
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-1">
+                    <Button size="sm" variant="ghost" className="h-6 px-2" onClick={saveTrusteeAddress}>
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => {
+                      setEditingTrusteeAddress(false);
+                      setTrusteeAddressForm({
+                        street: loanData?.trusteeStreetAddress || '',
+                        city: loanData?.trusteeCity || '',
+                        state: loanData?.trusteeState || '',
+                        zip: loanData?.trusteeZipCode || ''
+                      });
+                    }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between group">
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="h-3 w-3 text-muted-foreground mt-0.5" />
+                    <div className="text-sm">
+                      {trusteeAddressForm.street ? (
+                        <div>
+                          <p>{trusteeAddressForm.street}</p>
+                          {trusteeAddressForm.city && (
+                            <p className="text-muted-foreground">
+                              {trusteeAddressForm.city}, {trusteeAddressForm.state} {trusteeAddressForm.zip}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Add address</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingTrusteeAddress(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Escrow Company Card */}
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+                <Briefcase className="h-3 w-3" />
+                Escrow Company
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Escrow Company Name */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Company Name</label>
+              {editingEscrowCompany ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={escrowCompanyValue}
+                    onChange={(e) => setEscrowCompanyValue(e.target.value)}
+                    className="h-8 text-xs"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveEscrowCompany();
+                      if (e.key === 'Escape') {
+                        setEditingEscrowCompany(false);
+                        setEscrowCompanyValue(loanData?.escrowCompanyName || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveEscrowCompany}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingEscrowCompany(false);
+                    setEscrowCompanyValue(loanData?.escrowCompanyName || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <p className="text-sm font-medium">
+                    {escrowCompanyValue || <span className="text-muted-foreground">Add company name</span>}
+                  </p>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingEscrowCompany(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Escrow Number */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Escrow Number</label>
+              {editingEscrowNumber ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={escrowNumberValue}
+                    onChange={(e) => setEscrowNumberValue(e.target.value)}
+                    className="h-8 text-xs"
+                    placeholder="ESC-12345"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveEscrowNumber();
+                      if (e.key === 'Escape') {
+                        setEditingEscrowNumber(false);
+                        setEscrowNumberValue(loanData?.escrowNumber || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveEscrowNumber}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingEscrowNumber(false);
+                    setEscrowNumberValue(loanData?.escrowNumber || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <p className="text-sm">
+                    {escrowNumberValue || <span className="text-muted-foreground">Add escrow number</span>}
+                  </p>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingEscrowNumber(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Escrow Phone */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Phone</label>
+              {editingEscrowPhone ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={escrowPhoneValue}
+                    onChange={(e) => setEscrowPhoneValue(e.target.value)}
+                    className="h-8 text-xs"
+                    placeholder="(555) 555-5555"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveEscrowPhone();
+                      if (e.key === 'Escape') {
+                        setEditingEscrowPhone(false);
+                        setEscrowPhoneValue(loanData?.escrowCompanyPhone || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveEscrowPhone}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingEscrowPhone(false);
+                    setEscrowPhoneValue(loanData?.escrowCompanyPhone || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <div className="flex items-center space-x-2">
+                    <Phone className="h-3 w-3 text-muted-foreground" />
+                    <p className="text-sm">
+                      {escrowPhoneValue || <span className="text-muted-foreground">Add phone</span>}
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingEscrowPhone(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Escrow Email */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Email</label>
+              {editingEscrowEmail ? (
+                <div className="flex items-center space-x-1">
+                  <Input
+                    value={escrowEmailValue}
+                    onChange={(e) => setEscrowEmailValue(e.target.value)}
+                    className="h-8 text-xs"
+                    placeholder="escrow@example.com"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveEscrowEmail();
+                      if (e.key === 'Escape') {
+                        setEditingEscrowEmail(false);
+                        setEscrowEmailValue(loanData?.escrowCompanyEmail || '');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveEscrowEmail}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => {
+                    setEditingEscrowEmail(false);
+                    setEscrowEmailValue(loanData?.escrowCompanyEmail || '');
+                  }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between group">
+                  <div className="flex items-center space-x-2">
+                    <Mail className="h-3 w-3 text-muted-foreground" />
+                    <p className="text-sm">
+                      {escrowEmailValue || <span className="text-muted-foreground">Add email</span>}
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingEscrowEmail(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Escrow Address */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Address</label>
+              {editingEscrowAddress ? (
+                <div className="space-y-2">
+                  <Input
+                    value={escrowAddressForm.street}
+                    onChange={(e) => setEscrowAddressForm({...escrowAddressForm, street: e.target.value})}
+                    className="h-8 text-xs"
+                    placeholder="Street address"
+                  />
+                  <div className="flex space-x-2">
+                    <Input
+                      value={escrowAddressForm.city}
+                      onChange={(e) => setEscrowAddressForm({...escrowAddressForm, city: e.target.value})}
+                      className="h-8 text-xs flex-1"
+                      placeholder="City"
+                    />
+                    <Input
+                      value={escrowAddressForm.state}
+                      onChange={(e) => setEscrowAddressForm({...escrowAddressForm, state: e.target.value})}
+                      className="h-8 text-xs w-20"
+                      placeholder="State"
+                      maxLength={2}
+                    />
+                    <Input
+                      value={escrowAddressForm.zip}
+                      onChange={(e) => setEscrowAddressForm({...escrowAddressForm, zip: e.target.value})}
+                      className="h-8 text-xs w-24"
+                      placeholder="ZIP"
+                    />
+                  </div>
+                  <div className="flex justify-end space-x-1">
+                    <Button size="sm" variant="ghost" className="h-6 px-2" onClick={saveEscrowAddress}>
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-6 px-2" onClick={() => {
+                      setEditingEscrowAddress(false);
+                      setEscrowAddressForm({
+                        street: loanData?.escrowCompanyStreetAddress || '',
+                        city: loanData?.escrowCompanyCity || '',
+                        state: loanData?.escrowCompanyState || '',
+                        zip: loanData?.escrowCompanyZipCode || ''
+                      });
+                    }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between group">
+                  <div className="flex items-start space-x-2">
+                    <MapPin className="h-3 w-3 text-muted-foreground mt-0.5" />
+                    <div className="text-sm">
+                      {escrowAddressForm.street ? (
+                        <div>
+                          <p>{escrowAddressForm.street}</p>
+                          {escrowAddressForm.city && (
+                            <p className="text-muted-foreground">
+                              {escrowAddressForm.city}, {escrowAddressForm.state} {escrowAddressForm.zip}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Add address</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                    onClick={() => setEditingEscrowAddress(true)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
               )}
             </div>
           </CardContent>
