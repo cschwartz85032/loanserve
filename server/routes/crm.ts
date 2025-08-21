@@ -660,4 +660,61 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
   }
 });
 
+// Profile photo upload endpoint
+router.post('/loans/:loanId/profile-photo', async (req, res) => {
+  try {
+    const loanId = parseInt(req.params.loanId);
+    const userId = (req as any).user?.id || 1;
+    
+    // For now, we'll store the photo URL in the loan record
+    // In production, you'd handle actual file upload to storage
+    const { photoUrl } = req.body;
+    
+    if (!photoUrl) {
+      return res.status(400).json({ error: 'No photo URL provided' });
+    }
+    
+    // Update loan record with photo URL
+    await db
+      .update(loans)
+      .set({ 
+        borrowerPhoto: photoUrl,
+        updatedAt: new Date()
+      })
+      .where(eq(loans.id, loanId));
+    
+    // Log activity
+    await logActivity(loanId, userId, 'profile_photo', {
+      description: 'Profile photo updated'
+    });
+    
+    res.json({ success: true, photoUrl });
+  } catch (error) {
+    console.error('Error updating profile photo:', error);
+    res.status(500).json({ error: 'Failed to update profile photo' });
+  }
+});
+
+// Get profile photo endpoint
+router.get('/loans/:loanId/profile-photo', async (req, res) => {
+  try {
+    const loanId = parseInt(req.params.loanId);
+    
+    const [loan] = await db
+      .select({ borrowerPhoto: loans.borrowerPhoto })
+      .from(loans)
+      .where(eq(loans.id, loanId))
+      .limit(1);
+    
+    if (!loan?.borrowerPhoto) {
+      return res.status(404).json({ error: 'No photo found' });
+    }
+    
+    res.json({ photoUrl: loan.borrowerPhoto });
+  } catch (error) {
+    console.error('Error fetching profile photo:', error);
+    res.status(500).json({ error: 'Failed to fetch profile photo' });
+  }
+});
+
 export default router;
