@@ -742,12 +742,25 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     if (emails && emails.length > 0) {
       // Store all emails as JSON to preserve multiple addresses and labels
       // Filter out any empty emails first
-      const validEmails = emails.filter((e: any) => e.email && e.email.trim() !== '');
+      const validEmails = emails.filter((e: any) => {
+        // Handle both string emails and object emails
+        const emailValue = typeof e === 'string' ? e : e.email;
+        return emailValue && emailValue.trim() !== '';
+      });
+      
       if (validEmails.length > 0) {
-        updateData.borrowerEmail = JSON.stringify(validEmails.map((e: any) => ({
-          email: e.email,
-          label: e.label || 'Primary'
-        })));
+        // Ensure we have proper email objects
+        const emailObjects = validEmails.map((e: any) => {
+          if (typeof e === 'string') {
+            return { email: e, label: 'Primary' };
+          }
+          // Already an object, just ensure it has proper structure
+          return {
+            email: e.email,
+            label: e.label || 'Primary'
+          };
+        });
+        updateData.borrowerEmail = JSON.stringify(emailObjects);
       }
     }
 
@@ -758,10 +771,13 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       .set(updateData)
       .where(eq(loans.id, loanId));
 
-    // Log activity
+    // Log activity - ensure we're not double-stringifying
     await logActivity(loanId, userId, 'contact_update', {
       description: 'Updated contact information',
-      changes: { phones, emails }
+      changes: { 
+        phones: phones || [], 
+        emails: emails || []
+      }
     });
 
     // Fetch and return the updated loan
