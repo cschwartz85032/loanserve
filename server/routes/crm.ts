@@ -541,9 +541,25 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     const updateData: any = {};
     
     if (phones && phones.length > 0) {
-      // Only save the first phone as primary (no mobile field exists)
+      // Store phone data as JSON string to preserve labels and isBad status
       if (phones[0] && phones[0].number) {
-        updateData.borrowerPhone = phones[0].number;
+        // Store as JSON to preserve metadata
+        updateData.borrowerPhone = JSON.stringify({
+          number: phones[0].number,
+          label: phones[0].label || 'Primary',
+          isBad: phones[0].isBad || false
+        });
+      }
+      // Store second phone if available
+      if (phones[1] && phones[1].number) {
+        updateData.borrowerMobile = JSON.stringify({
+          number: phones[1].number,
+          label: phones[1].label || 'Mobile',
+          isBad: phones[1].isBad || false
+        });
+      } else {
+        // Clear mobile if only one phone provided
+        updateData.borrowerMobile = null;
       }
     }
     
