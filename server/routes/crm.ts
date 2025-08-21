@@ -495,6 +495,12 @@ router.get('/crm/check-email-config', async (req, res) => {
 
 // Send email via SendGrid
 router.post('/loans/:loanId/crm/send-email', async (req, res) => {
+  // Clean and validate email addresses - remove all whitespace
+  const cleanEmail = (email: string) => email.replace(/\s+/g, '').trim();
+  
+  // Clean the from email address (define at top level for error handler access)
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL ? cleanEmail(process.env.SENDGRID_FROM_EMAIL) : '';
+  
   try {
     const loanId = parseInt(req.params.loanId);
     const userId = (req as any).user?.id || 1;
@@ -504,17 +510,14 @@ router.post('/loans/:loanId/crm/send-email', async (req, res) => {
       return res.status(500).json({ error: 'Email service not configured' });
     }
 
-    if (!process.env.SENDGRID_FROM_EMAIL) {
+    if (!fromEmail) {
       return res.status(500).json({ error: 'From email address not configured' });
     }
-
-    // Clean and validate email addresses - remove all whitespace
-    const cleanEmail = (email: string) => email.replace(/\s+/g, '').trim();
     
     // Prepare email message
     const msg: any = {
       to: cleanEmail(to),
-      from: process.env.SENDGRID_FROM_EMAIL,
+      from: fromEmail,
       subject: subject.trim(),
       text: content,
       html: content.replace(/\n/g, '<br>'), // Basic HTML conversion
@@ -556,7 +559,7 @@ router.post('/loans/:loanId/crm/send-email', async (req, res) => {
       if (code === 400 || code === 403) {
         return res.status(500).json({ 
           error: 'Email configuration error', 
-          details: `The sender email address (${process.env.SENDGRID_FROM_EMAIL}) may not be verified with SendGrid. Please verify the sender email in your SendGrid account.`
+          details: `The sender email address (${fromEmail}) may not be verified with SendGrid. Please verify the sender email in your SendGrid account.`
         });
       }
     }
