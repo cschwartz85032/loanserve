@@ -2181,42 +2181,66 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               </TabsContent>
             </Tabs>
 
-            {/* Notes List */}
+            {/* Activity List (All Types) */}
             <ScrollArea className="h-[400px]">
               <div className="space-y-4">
-                {notes.map((note: any) => (
-                  <div key={note.id} className="border-l-2 border-primary pl-4">
-                    <div className="flex items-start space-x-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback>
-                          {note.userName?.split(' ').map((n: string) => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-medium">{note.userName}</span>
-                            <span className="text-sm text-muted-foreground">
-                              {formatTimeAgo(note.createdAt)}
-                            </span>
+                {activity.map((item: any) => {
+                  // Get description based on activity type
+                  let description = '';
+                  let icon = null;
+                  
+                  if (item.activityType === 'email') {
+                    description = `Sent email: ${item.activityData?.subject || 'No subject'}`;
+                    icon = <Mail className="h-4 w-4 text-blue-500" />;
+                  } else if (item.activityType === 'call') {
+                    description = item.activityData?.description || 'Call logged';
+                    icon = <Phone className="h-4 w-4 text-green-500" />;
+                  } else if (item.activityType === 'text') {
+                    description = `Text: ${item.activityData?.message || 'Message sent'}`;
+                    icon = <MessageCircle className="h-4 w-4 text-purple-500" />;
+                  } else if (item.activityType === 'note') {
+                    description = item.activityData?.description || item.content || 'Note added';
+                    icon = <MessageSquare className="h-4 w-4 text-gray-500" />;
+                  } else {
+                    description = item.activityData?.description || 'Activity';
+                    icon = <Activity className="h-4 w-4 text-gray-500" />;
+                  }
+                  
+                  return (
+                    <div key={item.id} className="border-l-2 border-primary pl-4">
+                      <div className="flex items-start space-x-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback>
+                            {item.userName?.split(' ').map((n: string) => n[0]).join('')}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              {icon}
+                              <span className="font-medium">{item.userName}</span>
+                              <span className="text-sm text-muted-foreground">
+                                {formatTimeAgo(item.createdAt)}
+                              </span>
+                            </div>
+                            <Button variant="ghost" size="sm">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
                           </div>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
+                          <div className="mt-1 text-sm">{description}</div>
+                          {item.activityData?.attachmentCount > 0 && (
+                            <div className="mt-2 flex items-center space-x-2">
+                              <Paperclip className="h-4 w-4" />
+                              <span className="text-sm text-muted-foreground">
+                                {item.activityData.attachmentCount} attachment(s)
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <div className="mt-1 text-sm">{note.content}</div>
-                        {note.attachments?.length > 0 && (
-                          <div className="mt-2 flex items-center space-x-2">
-                            <Paperclip className="h-4 w-4" />
-                            <span className="text-sm text-muted-foreground">
-                              {note.attachments.length} attachment(s)
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </ScrollArea>
           </CardContent>
