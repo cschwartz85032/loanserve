@@ -50,10 +50,7 @@ import {
 import { db } from "./db";
 import { eq, desc, and, or, sql, count, sum, isNull, gte } from "drizzle-orm";
 import session, { Store } from "express-session";
-import connectPg from "connect-pg-simple";
-import { pool } from "./db";
-
-const PostgresSessionStore = connectPg(session);
+import { CustomSessionStore } from "./auth/custom-session-store";
 
 export interface IStorage {
   // User methods
@@ -181,9 +178,9 @@ export class DatabaseStorage implements IStorage {
   sessionStore: Store;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({ 
-      pool, 
-      createTableIfMissing: true 
+    this.sessionStore = new CustomSessionStore({ 
+      ttl: 86400, // 24 hours
+      pruneSessionInterval: 60000 // 1 minute
     });
   }
 

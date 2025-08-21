@@ -261,7 +261,7 @@ export async function recordLoginAttempt(
   // Check if we should lock the account
   const shouldLock = failureCount >= settings.threshold;
 
-  if (shouldLock && user.status !== 'locked') {
+  if (shouldLock && (!user.lockedUntil || new Date(user.lockedUntil) < new Date())) {
     await lockAccount(userId, 'threshold_exceeded');
   }
 
@@ -391,30 +391,31 @@ export async function login(
     // Record successful login
     await recordLoginAttempt(user.email, true, ip, userAgent);
 
-    // Create session - using raw SQL to match actual database structure
+    // Create session with proper structure
     const sessionId = crypto.randomUUID();
-    const sessionSid = `sess:${crypto.randomUUID()}`; // Generate sid for connect-pg-simple compatibility
+    const sessionSid = `sess:${crypto.randomUUID()}`; // Generate sid for session store
     const expireTime = new Date(Date.now() + 86400000); // 24 hours from now
-    const sessionData = {
-      cookie: { 
-        originalMaxAge: 86400000, // 24 hours
-        expires: expireTime.toISOString(),
-        httpOnly: true,
-        path: '/'
-      },
-      userId: user.id,
-      passport: { user: user.id }
-    };
     
-    // Insert directly into sessions table with correct structure
+    // Insert session into the sessions table with all required fields
     await db.execute(sql`
       INSERT INTO sessions (id, sid, sess, expire, user_id, created_at, last_seen_at, ip, user_agent)
       VALUES (
         ${sessionId},
         ${sessionSid},
-        ${JSON.stringify(sessionData)}::json,
+        ${JSON.stringify({
+          cookie: { 
+            originalMaxAge: 86400000, // 24 hours
+            expires: expireTime.toISOString(),
+            httpOnly: true,
+            path: '/'
+          },
+          userId: user.id,
+          passport: { user: user.id },
+          ip: ip,
+          userAgent: userAgent
+        })}::json,
         ${expireTime},
-        ${user.id.toString()},
+        ${user.id},
         ${new Date()},
         ${new Date()},
         ${ip},
@@ -437,12 +438,12 @@ export async function login(
       eventKey: `login-${user.id}-${Date.now()}`
     });
 
-    // Return user without password
+    // Return user without password  
     const { password: _, ...userWithoutPassword } = user;
     return { 
       success: true, 
       user: userWithoutPassword,
-      sessionId 
+      sessionId: sessionSid 
     };
 
   } catch (error) {
@@ -556,13 +557,13 @@ export async function createPasswordResetToken(email: string): Promise<{
     const [user] = await db.select({
       id: users.id,
       email: users.email,
-      status: users.status
+      isActive: users.isActive
     })
     .from(users)
     .where(eq(users.email, email))
     .limit(1);
 
-    if (!user || user.status === 'disabled') {
+    if (!user || !user.isActive) {
       // Don't reveal if user exists
       return { success: true };
     }
@@ -716,8 +717,7 @@ export async function resetPasswordWithToken(
     await db.update(users)
       .set({ 
         password: hashedPassword,
-        passwordUpdatedAt: new Date(),
-        failedLoginCount: 0, // Reset failed attempts
+        failedLoginAttempts: 0, // Reset failed attempts
         updatedAt: new Date()
       })
       .where(eq(users.id, tokenValidation.userId));
@@ -779,11 +779,11 @@ export async function createInvitationToken(
       username: email.split('@')[0] + '_' + Date.now(), // Temporary username
       email,
       password: await argon2.hash(crypto.randomBytes(32).toString('hex')), // Random hashed password
+      role: 'borrower', // Default role, can be updated later
       emailVerified: false,
       isActive: true, // Active but not verified
       firstName: '',
-      lastName: '',
-      phone: ''
+      lastName: ''
     })
     .returning({ id: users.id });
 
@@ -982,7 +982,9 @@ export class RateLimiter {
     const now = Date.now();
     const expiry = this.windowMs;
     
-    for (const [key, bucket] of this.buckets.entries()) {
+    // Convert to array to avoid iterator issues
+    const entries = Array.from(this.buckets.entries());
+    for (const [key, bucket] of entries) {
       if (now - bucket.lastRefill > expiry) {
         this.buckets.delete(key);
       }
