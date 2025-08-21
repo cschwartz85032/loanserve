@@ -542,21 +542,48 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     
     if (phones && phones.length > 0) {
       // Store phone data as JSON string to preserve labels and isBad status
-      if (phones[0] && phones[0].number) {
-        // Store as JSON to preserve metadata
-        updateData.borrowerPhone = JSON.stringify({
-          number: phones[0].number,
-          label: phones[0].label || 'Primary',
-          isBad: phones[0].isBad || false
-        });
+      if (phones[0]) {
+        // Extract the actual phone number if it's nested
+        let phoneNumber = phones[0].number;
+        // Check if the number is actually a stringified JSON object
+        if (phoneNumber && phoneNumber.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(phoneNumber);
+            phoneNumber = parsed.number || phoneNumber;
+          } catch {
+            // Keep as is if not valid JSON
+          }
+        }
+        
+        if (phoneNumber) {
+          // Store as JSON to preserve metadata
+          updateData.borrowerPhone = JSON.stringify({
+            number: phoneNumber,
+            label: phones[0].label || 'Primary',
+            isBad: phones[0].isBad || false
+          });
+        }
       }
       // Store second phone if available
-      if (phones[1] && phones[1].number) {
-        updateData.borrowerMobile = JSON.stringify({
-          number: phones[1].number,
-          label: phones[1].label || 'Mobile',
-          isBad: phones[1].isBad || false
-        });
+      if (phones[1]) {
+        let phoneNumber = phones[1].number;
+        // Check if the number is actually a stringified JSON object
+        if (phoneNumber && phoneNumber.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(phoneNumber);
+            phoneNumber = parsed.number || phoneNumber;
+          } catch {
+            // Keep as is if not valid JSON
+          }
+        }
+        
+        if (phoneNumber) {
+          updateData.borrowerMobile = JSON.stringify({
+            number: phoneNumber,
+            label: phones[1].label || 'Mobile',
+            isBad: phones[1].isBad || false
+          });
+        }
       } else {
         // Clear mobile if only one phone provided
         updateData.borrowerMobile = null;
