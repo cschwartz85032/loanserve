@@ -2543,17 +2543,31 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   <p className="text-xs text-muted-foreground">No activity yet</p>
                 ) : (
                   activity.slice(0, 10).map((item: any) => {
-                  // Debug logging for ALL activity items
-                  console.log(`Activity item type: ${item.activityType}`, item);
-                  console.log(`Activity data:`, item.activityData);
-                  
                   // Get description from proper location
-                  const description = item.activityData?.description || 
-                                    item.description || 
-                                    (item.activityType === 'email' ? `Email: ${item.activityData?.subject || 'No subject'}` : 
-                                     item.activityType === 'call' ? `Call: ${item.activityData?.notes || 'No notes'}` :
-                                     item.activityType === 'text' ? `Text: ${item.activityData?.message || 'No message'}` : 
-                                     'Activity');
+                  let description = '';
+                  
+                  if (item.activityType === 'email') {
+                    description = item.activityData?.subject ? 
+                      `Email: ${item.activityData.subject}` : 
+                      'Email sent';
+                  } else if (item.activityType === 'call') {
+                    description = item.activityData?.description || 
+                      'Call logged';
+                  } else if (item.activityType === 'text') {
+                    description = item.activityData?.message ? 
+                      `Text: ${item.activityData.message}` : 
+                      'Text sent';
+                  } else if (item.activityType === 'note') {
+                    description = item.activityData?.description || 
+                      item.description || 
+                      'Note added';
+                  } else {
+                    description = item.activityData?.description || 
+                      item.description || 
+                      'Activity';
+                  }
+                  
+                  console.log(`Rendering activity: type=${item.activityType}, desc="${description}"`);
                   
                   return (
                     <div key={item.id} className="flex items-start space-x-2">
