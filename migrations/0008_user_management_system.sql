@@ -3,8 +3,8 @@
 -- Author: System
 -- Date: 2025-01-24
 
--- Enable uuid extension if not already enabled
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Note: Using gen_random_uuid() instead of uuid_generate_v4() for better compatibility
+-- No extension needed as gen_random_uuid() is built-in to PostgreSQL
 
 -- Create enum types
 DO $$ BEGIN
@@ -30,7 +30,7 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
         CREATE TABLE users (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             email CITEXT NOT NULL UNIQUE,
             password_hash TEXT,
             status user_status NOT NULL DEFAULT 'active',
@@ -58,7 +58,7 @@ END $$;
 
 -- Create roles table
 CREATE TABLE IF NOT EXISTS roles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL UNIQUE,
     description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
 
 -- Create permissions table
 CREATE TABLE IF NOT EXISTS permissions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     resource TEXT NOT NULL,
     level permission_level NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -106,7 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role
 
 -- Create user_ip_allowlist table
 CREATE TABLE IF NOT EXISTS user_ip_allowlist (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     label TEXT NOT NULL,
     cidr CIDR NOT NULL,
@@ -121,7 +121,7 @@ CREATE INDEX IF NOT EXISTS idx_user_ip_allowlist_user_id ON user_ip_allowlist(us
 
 -- Create auth_events table (append-only audit log)
 CREATE TABLE IF NOT EXISTS auth_events (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     actor_user_id UUID REFERENCES users(id),
     target_user_id UUID REFERENCES users(id),
@@ -153,7 +153,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_events_event_type ON auth_events(event_type)
 
 -- Create login_attempts table
 CREATE TABLE IF NOT EXISTS login_attempts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id),
     email_attempted CITEXT,
     attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -169,7 +169,7 @@ CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip);
 
 -- Create password_reset_tokens table
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
@@ -183,7 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_rese
 
 -- Create sessions table
 CREATE TABLE IF NOT EXISTS sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
