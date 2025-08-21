@@ -2571,23 +2571,15 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   console.log(`Rendering activity: type=${item.activityType}, desc="${description}"`);
                   
                   return (
-                    <div key={item.id} className="flex items-start space-x-2" data-activity-type={item.activityType}>
-                      <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center">
-                        {item.activityType === 'note' && <MessageSquare className="h-3 w-3 text-primary" />}
-                        {item.activityType === 'task' && <CheckSquare className="h-3 w-3 text-primary" />}
-                        {item.activityType === 'call' && <Phone className="h-3 w-3 text-primary" />}
-                        {item.activityType === 'appointment' && <Calendar className="h-3 w-3 text-primary" />}
-                        {item.activityType === 'email' && <Mail className="h-3 w-3 text-primary" />}
-                        {item.activityType === 'text' && <MessageCircle className="h-3 w-3 text-primary" />}
+                    <div key={item.id} className="p-2 border border-blue-500 bg-yellow-50 mb-1" data-activity-type={item.activityType}>
+                      <div className="text-xs text-black font-bold">
+                        Activity #{index + 1}: {item.activityType}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-normal text-foreground">
-                          <span className="block truncate">{description || 'No description'}</span>
-                          <span className="text-[10px] text-muted-foreground">({item.activityType})</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatTimeAgo(item.createdAt)}
-                        </div>
+                      <div className="text-xs text-black">
+                        Description: {description}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        Time: {formatTimeAgo(item.createdAt)}
                       </div>
                     </div>
                   );
