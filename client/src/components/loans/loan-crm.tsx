@@ -89,6 +89,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [editingBorrowerName, setEditingBorrowerName] = useState(false);
   const [borrowerNameValue, setBorrowerNameValue] = useState('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize profile photo from loan data
@@ -324,6 +325,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     }
 
     // Convert to base64
+    setUploadingPhoto(true);
     const reader = new FileReader();
     reader.onloadend = async () => {
       const base64 = reader.result as string;
@@ -337,7 +339,10 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           body: JSON.stringify({ photoUrl: base64 }),
         });
 
-        if (!response.ok) throw new Error('Upload failed');
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Upload failed with status ${response.status}`);
+        }
 
         const data = await response.json();
         setProfilePhoto(base64);
@@ -349,12 +354,15 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           title: 'Success',
           description: 'Profile photo updated successfully'
         });
-      } catch (error) {
+      } catch (error: any) {
+        console.error('Profile photo upload error:', error);
         toast({
           title: 'Error',
-          description: 'Failed to upload profile photo',
+          description: error.message || 'Failed to upload profile photo',
           variant: 'destructive'
         });
+      } finally {
+        setUploadingPhoto(false);
       }
     };
     reader.readAsDataURL(file);
@@ -559,9 +567,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             <div className="flex items-center space-x-3 mb-3">
               <div className="relative">
                 <Avatar 
-                  className="h-12 w-12 cursor-pointer hover:opacity-80 transition-opacity"
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Click to upload profile photo"
+                  className={`h-12 w-12 cursor-pointer hover:opacity-80 transition-opacity ${uploadingPhoto ? 'opacity-50' : ''}`}
+                  onClick={() => !uploadingPhoto && fileInputRef.current?.click()}
+                  title={uploadingPhoto ? "Uploading..." : "Click to upload profile photo"}
                 >
                   {getProfilePhotoUrl() ? (
                     <img 
@@ -575,6 +583,11 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     </AvatarFallback>
                   )}
                 </Avatar>
+                {uploadingPhoto && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
