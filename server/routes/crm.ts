@@ -8,7 +8,8 @@ import {
   crmActivity, 
   crmCollaborators,
   crmDeals,
-  users
+  users,
+  loans
 } from '@shared/schema';
 import { eq, desc, and, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -454,6 +455,60 @@ router.post('/loans/:loanId/crm/deals', async (req, res) => {
   } catch (error) {
     console.error('Error creating CRM deal:', error);
     res.status(500).json({ error: 'Failed to create deal' });
+  }
+});
+
+// Update loan contact info
+router.patch('/loans/:loanId/contact-info', async (req, res) => {
+  try {
+    const loanId = parseInt(req.params.loanId);
+    const { phones, emails } = req.body;
+    const userId = (req as any).user?.id || 1;
+
+    // Prepare update data
+    const updateData: any = {};
+    
+    if (phones && phones.length > 0) {
+      // Set the first phone as primary, second as mobile
+      if (phones[0] && phones[0].number) {
+        updateData.borrowerPhone = phones[0].number;
+      }
+      if (phones[1] && phones[1].number) {
+        updateData.borrowerMobile = phones[1].number;
+      }
+      // Clear second phone if only one is provided
+      if (phones.length === 1) {
+        updateData.borrowerMobile = null;
+      }
+    }
+    
+    if (emails && emails.length > 0) {
+      // Set the first email as primary
+      if (emails[0] && emails[0].email) {
+        updateData.borrowerEmail = emails[0].email;
+      }
+    }
+
+    // Update the loan
+    await db.update(loans)
+      .set(updateData)
+      .where(eq(loans.id, loanId));
+
+    // Log activity
+    await logActivity(loanId, userId, 'contact_update', {
+      description: 'Updated contact information',
+      changes: { phones, emails }
+    });
+
+    // Fetch and return the updated loan
+    const [updatedLoan] = await db.select()
+      .from(loans)
+      .where(eq(loans.id, loanId));
+
+    res.json(updatedLoan);
+  } catch (error) {
+    console.error('Error updating contact info:', error);
+    res.status(500).json({ error: 'Failed to update contact information' });
   }
 });
 

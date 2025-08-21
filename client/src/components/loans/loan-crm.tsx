@@ -153,6 +153,21 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     },
   });
 
+  // Update contact info mutation
+  const updateContactInfoMutation = useMutation({
+    mutationFn: async (contactInfo: { phones?: any[], emails?: any[] }) => {
+      const response = await apiRequest(`/api/loans/${loanId}/contact-info`, {
+        method: 'PATCH',
+        body: JSON.stringify(contactInfo),
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      toast({ title: 'Success', description: 'Contact information updated successfully' });
+    },
+  });
+
   const createTaskMutation = useMutation({
     mutationFn: async (task: { title: string; description: string }) => {
       const response = await apiRequest(`/api/loans/${loanId}/crm/tasks`, {
@@ -1018,8 +1033,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               Cancel
             </Button>
             <Button onClick={() => {
-              // Save phone numbers logic here
-              setEditPhoneModal(false);
+              // Save phone numbers
+              const validPhones = phoneNumbers.filter(p => p.number && p.number.trim() !== '');
+              updateContactInfoMutation.mutate({ phones: validPhones }, {
+                onSuccess: () => {
+                  setEditPhoneModal(false);
+                }
+              });
             }}>
               Save Phone Numbers
             </Button>
@@ -1090,8 +1110,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               Cancel
             </Button>
             <Button onClick={() => {
-              // Save email addresses logic here
-              setEditEmailModal(false);
+              // Save email addresses
+              const validEmails = emailAddresses.filter(e => e.email && e.email.trim() !== '');
+              updateContactInfoMutation.mutate({ emails: validEmails }, {
+                onSuccess: () => {
+                  setEditEmailModal(false);
+                }
+              });
             }}>
               Save Email Addresses
             </Button>
