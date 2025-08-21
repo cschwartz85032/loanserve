@@ -751,8 +751,7 @@ router.post('/bulk-assign-roles', async (req, res) => {
         // Assign role
         await db.insert(userRoles).values({
           userId,
-          roleId,
-          assignedBy: req.user.id
+          roleId
         });
 
         results.push({ userId, success: true });

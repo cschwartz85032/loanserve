@@ -774,12 +774,12 @@ export async function createInvitationToken(
     // Set expiry (7 days)
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    // Create invited user with proper fields
+    // Create invited user with proper fields (no enum role assignment)
     const [newUser] = await db.insert(users).values({
       username: email.split('@')[0] + '_' + Date.now(), // Temporary username
       email,
       password: await argon2.hash(crypto.randomBytes(32).toString('hex')), // Random hashed password
-      role: 'borrower', // Default role, can be updated later
+      // Don't set enum role - will use RBAC system exclusively
       emailVerified: false,
       isActive: true, // Active but not verified
       firstName: '',

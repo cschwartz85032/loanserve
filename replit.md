@@ -14,24 +14,38 @@ When encountering database or field-related errors:
 4. **Use diagnostic scripts** - run `node debug-db-schema.cjs [table] [search]` to quickly check columns
 5. **Avoid overcomplicating** - check simple causes (duplicate columns, mismatched schemas) before complex theories (build issues, caching)
 
+## Critical Architecture Decisions
+### Role Management System (August 21, 2025)
+- **SINGLE ROLE SYSTEM**: Application uses RBAC (Role-Based Access Control) exclusively via `roles` and `user_roles` tables
+- **NO ENUM ROLES**: The `users.role` enum field is deprecated and must NOT be used for authorization
+- **UUID ROLE IDS**: All role IDs are UUIDs (strings), never integers
+- **Policy Engine**: Updated to check RBAC roles only, not the legacy enum field
+- The system has 7 predefined roles: admin, lender, borrower, investor, escrow_officer, legal, servicer
+
 ## Recent Achievements (August 21, 2025)
+
+### Dual Role System Elimination
+Successfully consolidated to single RBAC system:
+- **Policy Engine**: Now uses ONLY the RBAC roles/user_roles tables, ignoring legacy users.role enum
+- **Auth Service**: Removed default enum role assignments for new users
+- **Type Safety**: Confirmed all roleId values are correctly handled as UUID strings, not integers
+- **Consistent Authorization**: All permission checks now flow through the unified RBAC system
+
+### Session Management & IP Allowlist Fix
+Fixed critical database schema mismatches:
+- **Sessions Table**: Now properly tracks user_id, ip, and user_agent for audit logging
+- **IP Allowlist**: Fixed to populate required ipAddress field alongside optional cidr field
+- **Field Removals**: Eliminated all references to non-existent assignedAt/assignedBy fields
+- **Custom Session Store**: Properly integrates with enhanced session tracking
 
 ### Permission & Role System Comprehensive Fix
 Fixed critical mismatches between database schema and application code:
 - **role_permissions table**: Fixed to use denormalized structure (resource and permission stored directly, not as foreign keys)
 - **userRoles table**: Removed non-existent assignedAt/assignedBy columns, using created_at/updated_at instead
 - **sessions table**: Aligned with express-session structure (sid, sess, expire columns)
-- **userIpAllowlist table**: Fixed column names (ip_address instead of cidr, description instead of label)
+- **userIpAllowlist table**: Fixed column names (ip_address required, cidr optional, description instead of label)
 - **Policy Engine**: Updated queries to work with denormalized role_permissions structure
 - **Admin Routes**: Fixed all permission queries to match actual database structure
-
-### Session Management System Fix
-Fixed critical session management issues:
-- Created custom session store (CustomSessionStore) to properly integrate with schema-defined sessions table
-- Fixed sessions table structure with migration to add required columns (sid, sess, expire)
-- Resolved TypeScript errors by using correct column names (isActive instead of status, etc.)
-- Successfully tested authentication with both username and email login
-- Sessions now properly track user_id, IP addresses, user agents as designed
 
 ## Previous Achievements (August 20, 2025)
 Successfully implemented and tested user activation flow:

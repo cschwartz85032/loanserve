@@ -91,12 +91,11 @@ export interface UserPolicy {
  * Combines all permissions from assigned roles
  */
 export async function resolveUserPermissions(userId: number): Promise<UserPolicy> {
-  // Get user details
+  // Get user details (ignoring the legacy enum role field)
   const user = await db.select({
     id: users.id,
     username: users.username,
     email: users.email,
-    role: users.role,
   })
   .from(users)
   .where(eq(users.id, userId))
@@ -106,11 +105,24 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
     throw new Error(`User ${userId} not found`);
   }
 
-  // For admin users, grant full permissions without complex queries
-  let roleNames: string[] = [];
+  // Get user's roles from RBAC system ONLY
+  const userRolesData = await db.select({
+    roleId: userRoles.roleId,
+    roleName: roles.name,
+  })
+  .from(userRoles)
+  .innerJoin(roles, eq(userRoles.roleId, roles.id))
+  .where(eq(userRoles.userId, userId));
+
+  const roleNames = userRolesData.map((r: any) => r.roleName);
+  const roleIds = userRolesData.map((r: any) => r.roleId);
+  
   let userPermissions: any[] = [];
   
-  if (user[0].role === 'admin') {
+  // Check if user has admin role in RBAC system
+  const hasAdminRole = roleNames.includes('admin');
+  
+  if (hasAdminRole) {
     // Admin gets full permissions
     userPermissions = [
       'Users', 'Loans', 'Payments', 'Escrow', 
@@ -120,21 +132,7 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
       level: 'admin',
       scope: null
     }));
-    
-    roleNames = ['admin'];
   } else {
-    // Get user's roles for non-admin users
-    const userRolesData = await db.select({
-      roleId: userRoles.roleId,
-      roleName: roles.name,
-    })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(eq(userRoles.userId, userId));
-
-    roleNames = userRolesData.map((r: any) => r.roleName);
-    const roleIds = userRolesData.map((r: any) => r.roleId);
-
     // Get permissions directly from role_permissions table
     if (roleIds.length > 0) {
       // Query permissions one by one to avoid array issues
