@@ -464,6 +464,35 @@ router.post('/loans/:loanId/crm/deals', async (req, res) => {
   }
 });
 
+// Check SendGrid configuration
+router.get('/crm/check-email-config', async (req, res) => {
+  try {
+    const hasApiKey = !!process.env.SENDGRID_API_KEY;
+    const hasFromEmail = !!process.env.SENDGRID_FROM_EMAIL;
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'Not configured';
+    
+    // Try to verify the API key by setting it
+    if (hasApiKey) {
+      sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
+    }
+    
+    res.json({
+      configured: hasApiKey && hasFromEmail,
+      hasApiKey,
+      hasFromEmail,
+      fromEmail: hasFromEmail ? fromEmail : 'Not configured',
+      message: !hasApiKey || !hasFromEmail 
+        ? 'SendGrid is not fully configured. Both SENDGRID_API_KEY and SENDGRID_FROM_EMAIL must be set.'
+        : `SendGrid is configured with sender: ${fromEmail}. Make sure this email is verified in your SendGrid account.`
+    });
+  } catch (error: any) {
+    res.status(500).json({ 
+      error: 'Failed to check email configuration',
+      details: error.message 
+    });
+  }
+});
+
 // Send email via SendGrid
 router.post('/loans/:loanId/crm/send-email', async (req, res) => {
   try {
@@ -519,6 +548,14 @@ router.post('/loans/:loanId/crm/send-email', async (req, res) => {
       const { message, code, response } = error;
       const { body, headers } = response;
       console.error('SendGrid error details:', { code, message, body });
+      
+      // Provide more specific error messages based on SendGrid response
+      if (code === 400 || code === 403) {
+        return res.status(500).json({ 
+          error: 'Email configuration error', 
+          details: `The sender email address (${process.env.SENDGRID_FROM_EMAIL}) may not be verified with SendGrid. Please verify the sender email in your SendGrid account.`
+        });
+      }
     }
     
     res.status(500).json({ 

@@ -783,7 +783,38 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     />
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex justify-between items-center">
+                    <Button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/crm/check-email-config');
+                          const data = await response.json();
+                          if (data.configured) {
+                            toast({
+                              title: 'Email Configuration',
+                              description: data.message
+                            });
+                          } else {
+                            toast({
+                              title: 'Email Not Configured',
+                              description: data.message,
+                              variant: 'destructive'
+                            });
+                          }
+                        } catch (error) {
+                          toast({
+                            title: 'Error',
+                            description: 'Failed to check email configuration',
+                            variant: 'destructive'
+                          });
+                        }
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                    >
+                      Check Config
+                    </Button>
                     <Button 
                       onClick={handleSendEmail}
                       disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
