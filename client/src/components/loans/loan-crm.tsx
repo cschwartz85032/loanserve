@@ -42,7 +42,8 @@ import {
   MapPin,
   MessageCircle,
   Edit,
-  Trash2
+  Trash2,
+  Settings
 } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -955,6 +956,109 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             ) : (
               <div className="text-xs text-muted-foreground">No payment data available</div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Loan Terms Card */}
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+              <FileText className="h-3 w-3" />
+              Loan Terms
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Original Amount:</span>
+                <span className="font-normal">{formatCurrency(parseFloat(loanData?.originalAmount || '0'))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Principal Balance:</span>
+                <span className="font-normal">{formatCurrency(parseFloat(loanData?.principalBalance || '0'))}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Interest Rate:</span>
+                <span className="font-normal">{loanData?.interestRate || '0'}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Loan Term:</span>
+                <span className="font-normal">{loanData?.loanTerm || '0'} months</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Payment Frequency:</span>
+                <span className="font-normal capitalize">{loanData?.paymentFrequency || 'monthly'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">First Payment:</span>
+                <span className="font-normal">
+                  {loanData?.firstPaymentDate ? format(new Date(loanData.firstPaymentDate), 'MMM dd, yyyy') : 'N/A'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Maturity Date:</span>
+                <span className="font-normal">
+                  {loanData?.maturityDate ? format(new Date(loanData.maturityDate), 'MMM dd, yyyy') : 'N/A'}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Servicing Settings Card */}
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+              <Settings className="h-3 w-3" />
+              Servicing Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Servicing Fee:</span>
+                <span className="font-normal">
+                  {loanData?.servicingFee ? 
+                    `${formatCurrency(parseFloat(loanData.servicingFee))} ${loanData?.servicingFeeType === 'percentage' ? '(%)' : ''}` : 
+                    'N/A'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Late Charge:</span>
+                <span className="font-normal">
+                  {loanData?.lateCharge ? formatCurrency(parseFloat(loanData.lateCharge)) : 'N/A'}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Grace Period:</span>
+                <span className="font-normal">{loanData?.gracePeriodDays || '0'} days</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Late Charge Type:</span>
+                <span className="font-normal capitalize">{loanData?.lateChargeType || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground font-normal">Prepayment Penalty:</span>
+                <span className="font-normal">{loanData?.prepaymentPenalty ? 'Yes' : 'No'}</span>
+              </div>
+              {loanData?.prepaymentPenalty && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-normal">Penalty Amount:</span>
+                    <span className="font-normal">
+                      {loanData?.prepaymentPenaltyAmount ? formatCurrency(parseFloat(loanData.prepaymentPenaltyAmount)) : 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-normal">Penalty Expires:</span>
+                    <span className="font-normal">
+                      {loanData?.prepaymentExpirationDate ? 
+                        format(new Date(loanData.prepaymentExpirationDate), 'MMM dd, yyyy') : 'N/A'}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
 
