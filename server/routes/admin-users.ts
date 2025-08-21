@@ -41,8 +41,17 @@ const requireAdmin = async (req: any, res: any, next: any) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  // Check if user has admin role (simplified - users table already has role field)
-  if (req.user.role !== 'admin') {
+  // Check if user has admin role using RBAC system
+  const userRoleRecords = await db.select({
+    roleName: roles.name
+  })
+  .from(userRoles)
+  .innerJoin(roles, eq(userRoles.roleId, roles.id))
+  .where(eq(userRoles.userId, req.user.id));
+
+  const hasAdminRole = userRoleRecords.some(r => r.roleName === 'admin');
+  
+  if (!hasAdminRole) {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
@@ -653,12 +662,18 @@ router.get('/:id/audit-logs', async (req, res) => {
  * POST /api/admin/users/bulk-invite
  * Bulk invite users
  */
-router.post('/bulk-invite', async (req, res) => {
+router.post('/bulk-invite', async (req: any, res) => {
   try {
     const { invitations: invitationList } = req.body;
 
     if (!Array.isArray(invitationList)) {
       return res.status(400).json({ error: 'Invitations must be an array' });
+    }
+
+    // Ensure user is authenticated and get their ID
+    const userId = req.user?.id || (req.session as any)?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
     const results = [];
@@ -680,7 +695,7 @@ router.post('/bulk-invite', async (req, res) => {
         }
 
         // Create invitation
-        const result = await createInvitationToken(email, roleId, req.user.id);
+        const result = await createInvitationToken(email, roleId, userId);
         
         if (result.success) {
           results.push({ email, success: true, invitationUrl: result.invitationUrl });
