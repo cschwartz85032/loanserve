@@ -48,6 +48,7 @@ import {
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
+import MD5 from 'crypto-js/md5';
 
 interface LoanCRMProps {
   loanId: number;
@@ -266,22 +267,11 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     }
   };
 
-  // Simple MD5 hash implementation for Gravatar
-  const md5 = (str: string): string => {
-    // This is a simplified hash function - in production use a proper MD5 library
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return Math.abs(hash).toString(16).padStart(32, '0');
-  };
-
-  // Generate Gravatar URL
+  // Generate Gravatar URL using proper MD5 hash
   const getGravatarUrl = (email: string, size: number = 80) => {
     if (!email) return null;
-    const hash = md5(email.trim().toLowerCase());
+    // Use crypto-js MD5 for proper hashing
+    const hash = MD5(email.trim().toLowerCase()).toString();
     return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=mp`;
   };
 
