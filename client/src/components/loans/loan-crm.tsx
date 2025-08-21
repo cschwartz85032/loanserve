@@ -805,8 +805,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
   const sendEmailMutation = useMutation({
     mutationFn: async (emailData: { to: string; cc?: string; bcc?: string; subject: string; content: string; attachments?: any[] }) => {
+      console.log('Sending email with data:', emailData);
+      console.log('Attachments:', emailData.attachments);
+      
       // If we have attachments with files (uploaded), we need to use FormData
       const hasUploadedFiles = emailData.attachments?.some(a => a.file);
+      
+      console.log('Has uploaded files:', hasUploadedFiles);
       
       if (hasUploadedFiles) {
         const formData = new FormData();
@@ -820,15 +825,21 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         const docIds = emailData.attachments?.filter(a => a.id).map(a => a.id) || [];
         if (docIds.length > 0) {
           formData.append('documentIds', JSON.stringify(docIds));
+          console.log('Document IDs being sent:', docIds);
         }
         
         // Add uploaded files
+        let fileCount = 0;
         emailData.attachments?.forEach(attachment => {
           if (attachment.file) {
             formData.append('files', attachment.file, attachment.name);
+            fileCount++;
+            console.log(`Added file to FormData: ${attachment.name}`);
           }
         });
+        console.log(`Total files added to FormData: ${fileCount}`);
         
+        console.log('Sending FormData request to:', `/api/loans/${loanId}/crm/send-email`);
         const response = await fetch(`/api/loans/${loanId}/crm/send-email`, {
           method: 'POST',
           body: formData,
@@ -837,12 +848,16 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         
         if (!response.ok) {
           const error = await response.text();
+          console.error('Email send error:', error);
           throw new Error(error);
         }
         
-        return response.json();
+        const result = await response.json();
+        console.log('Email send result:', result);
+        return result;
       } else {
         // Standard JSON request if no uploaded files
+        console.log('Sending JSON request (no uploaded files)');
         const response = await apiRequest(`/api/loans/${loanId}/crm/send-email`, {
           method: 'POST',
           body: {
@@ -850,11 +865,16 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             documentIds: emailData.attachments?.filter(a => a.id).map(a => a.id)
           }
         });
-        return response.json();
+        const result = await response.json();
+        console.log('Email send result:', result);
+        return result;
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      console.log('Email sent successfully, result:', result);
+      
       // Force immediate refetch of activity timeline
+      console.log('Invalidating and refetching activity...');
       await queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
       await queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
       
@@ -866,7 +886,11 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       setEmailAttachments([]);
       setShowCc(false);
       setShowBcc(false);
-      toast({ title: 'Success', description: 'Email sent successfully' });
+      
+      const attachmentText = result?.attachmentCount > 0 
+        ? ` with ${result.attachmentCount} attachment${result.attachmentCount > 1 ? 's' : ''}` 
+        : '';
+      toast({ title: 'Success', description: `Email sent successfully${attachmentText}` });
     },
     onError: (error: any) => {
       toast({ 
