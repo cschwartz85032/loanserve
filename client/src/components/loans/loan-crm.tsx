@@ -38,7 +38,9 @@ import {
   Filter,
   Search,
   Calculator,
-  DollarSign
+  DollarSign,
+  MapPin,
+  MessageCircle
 } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
@@ -47,16 +49,23 @@ import { useAuth } from '@/hooks/use-auth';
 interface LoanCRMProps {
   loanId: number;
   calculations?: any;
+  loanData?: any;
 }
 
-export function LoanCRM({ loanId, calculations }: LoanCRMProps) {
+export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState('notes');
+  const [communicationType, setCommunicationType] = useState('note');
   const [newNoteContent, setNewNoteContent] = useState('');
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newCallNotes, setNewCallNotes] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailContent, setEmailContent] = useState('');
+  const [textMessage, setTextMessage] = useState('');
+  const [callDuration, setCallDuration] = useState('');
+  const [callOutcome, setCallOutcome] = useState('');
 
   // Helper function to format currency
   const formatCurrency = (amount: number) => {
@@ -193,8 +202,67 @@ export function LoanCRM({ loanId, calculations }: LoanCRMProps) {
 
   return (
     <div className="grid grid-cols-12 gap-6">
-      {/* Left Column - Payment Breakdown and Info Cards */}
+      {/* Left Column - Borrower Info, Payment Breakdown and Info Cards */}
       <div className="col-span-3 space-y-6">
+        {/* Borrower Information Card */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <Avatar className="h-16 w-16">
+                <AvatarFallback className="text-lg">
+                  {loanData?.borrowerName?.split(' ').map((n: string) => n[0]).join('') || 'N/A'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold">{loanData?.borrowerName || 'Unknown Borrower'}</h3>
+                <p className="text-sm text-muted-foreground">
+                  Last Payment: {loanData?.lastPaymentDate ? 
+                    format(new Date(loanData.lastPaymentDate), 'MMM dd, yyyy') : 
+                    'No payments recorded'}
+                </p>
+              </div>
+            </div>
+            
+            {/* Contact Information */}
+            <div className="space-y-3 border-t pt-3">
+              {/* Phone Numbers */}
+              {loanData?.borrowerPhone && (
+                <div className="flex items-center space-x-2 text-sm">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span>{loanData.borrowerPhone}</span>
+                </div>
+              )}
+              {loanData?.borrowerMobile && (
+                <div className="flex items-center space-x-2 text-sm">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span>{loanData.borrowerMobile} (Mobile)</span>
+                </div>
+              )}
+              
+              {/* Email */}
+              {loanData?.borrowerEmail && (
+                <div className="flex items-center space-x-2 text-sm">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="truncate">{loanData.borrowerEmail}</span>
+                </div>
+              )}
+              
+              {/* Property Address */}
+              {loanData?.propertyAddress && (
+                <div className="flex items-start space-x-2 text-sm">
+                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p>{loanData.propertyAddress}</p>
+                    {loanData.propertyCity && loanData.propertyState && (
+                      <p>{loanData.propertyCity}, {loanData.propertyState} {loanData.propertyZip}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Payment Breakdown Card */}
         <Card>
           <CardHeader>
@@ -295,47 +363,148 @@ export function LoanCRM({ loanId, calculations }: LoanCRMProps) {
             </div>
           </CardHeader>
           <CardContent>
-            {/* Note Editor */}
-            <div className="border rounded-lg p-3 mb-4">
-              <div className="flex items-center space-x-2 mb-3 border-b pb-2">
-                <Button variant="ghost" size="sm">
-                  <Bold className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Italic className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Link className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <List className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Image className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="sm">
-                  <Paperclip className="h-4 w-4" />
-                </Button>
-              </div>
-              <Textarea
-                placeholder="Add notes or type @name to notify"
-                value={newNoteContent}
-                onChange={(e) => setNewNoteContent(e.target.value)}
-                className="min-h-[100px] border-0 p-0 focus:ring-0"
-              />
-              <div className="flex justify-between items-center mt-3">
-                <div className="text-sm text-muted-foreground">
-                  My Team Members
+            {/* Communication Type Tabs */}
+            <Tabs value={communicationType} onValueChange={setCommunicationType} className="mb-4">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="note">
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Create Note
+                </TabsTrigger>
+                <TabsTrigger value="email">
+                  <Mail className="h-4 w-4 mr-2" />
+                  Send Email
+                </TabsTrigger>
+                <TabsTrigger value="text">
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  Text
+                </TabsTrigger>
+                <TabsTrigger value="call">
+                  <Phone className="h-4 w-4 mr-2" />
+                  Log Call
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Note Tab Content */}
+              <TabsContent value="note" className="mt-4">
+                <div className="border rounded-lg p-3">
+                  <div className="flex items-center space-x-2 mb-3 border-b pb-2">
+                    <Button variant="ghost" size="sm">
+                      <Bold className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm">
+                      <Italic className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm">
+                      <Link className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm">
+                      <List className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm">
+                      <Image className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm">
+                      <Paperclip className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Textarea
+                    placeholder="Add notes or type @name to notify"
+                    value={newNoteContent}
+                    onChange={(e) => setNewNoteContent(e.target.value)}
+                    className="min-h-[100px] border-0 p-0 focus:ring-0"
+                  />
+                  <div className="flex justify-between items-center mt-3">
+                    <div className="text-sm text-muted-foreground">
+                      My Team Members
+                    </div>
+                    <Button 
+                      onClick={handleAddNote}
+                      disabled={!newNoteContent.trim() || createNoteMutation.isPending}
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      Send Note
+                    </Button>
+                  </div>
                 </div>
-                <Button 
-                  onClick={handleAddNote}
-                  disabled={!newNoteContent.trim() || createNoteMutation.isPending}
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  Send Note
-                </Button>
-              </div>
-            </div>
+              </TabsContent>
+
+              {/* Email Tab Content */}
+              <TabsContent value="email" className="mt-4">
+                <div className="border rounded-lg p-3 space-y-3">
+                  <Input
+                    placeholder="Subject"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                  />
+                  <Textarea
+                    placeholder="Email content..."
+                    value={emailContent}
+                    onChange={(e) => setEmailContent(e.target.value)}
+                    className="min-h-[150px]"
+                  />
+                  <div className="flex justify-end">
+                    <Button>
+                      <Mail className="h-4 w-4 mr-2" />
+                      Send Email
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Text Tab Content */}
+              <TabsContent value="text" className="mt-4">
+                <div className="border rounded-lg p-3 space-y-3">
+                  <Textarea
+                    placeholder="Type your message..."
+                    value={textMessage}
+                    onChange={(e) => setTextMessage(e.target.value)}
+                    className="min-h-[100px]"
+                  />
+                  <div className="flex justify-end">
+                    <Button>
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Send Text
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Log Call Tab Content */}
+              <TabsContent value="call" className="mt-4">
+                <div className="border rounded-lg p-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input
+                      placeholder="Duration (minutes)"
+                      value={callDuration}
+                      onChange={(e) => setCallDuration(e.target.value)}
+                    />
+                    <Select value={callOutcome} onValueChange={setCallOutcome}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Call outcome" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="answered">Answered</SelectItem>
+                        <SelectItem value="voicemail">Voicemail</SelectItem>
+                        <SelectItem value="no_answer">No Answer</SelectItem>
+                        <SelectItem value="busy">Busy</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Textarea
+                    placeholder="Call notes..."
+                    value={newCallNotes}
+                    onChange={(e) => setNewCallNotes(e.target.value)}
+                    className="min-h-[100px]"
+                  />
+                  <div className="flex justify-end">
+                    <Button>
+                      <Phone className="h-4 w-4 mr-2" />
+                      Log Call
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
 
             {/* Notes List */}
             <ScrollArea className="h-[400px]">
