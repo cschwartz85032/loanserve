@@ -114,10 +114,15 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", async (req, res) => {
+    // Debug session
+    console.log('Session ID:', req.sessionID);
+    console.log('Session data:', req.session);
+    
     // Check for session userId (new auth system)
     const userId = (req.session as any)?.userId;
     
     if (!userId) {
+      console.log('No userId in session, returning 401');
       return res.sendStatus(401);
     }
     
