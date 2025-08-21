@@ -68,7 +68,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [emailTo, setEmailTo] = useState('');
   const [emailCc, setEmailCc] = useState('');
   const [emailBcc, setEmailBcc] = useState('');
-  const [showCcBcc, setShowCcBcc] = useState(false);
+  const [showCc, setShowCc] = useState(false);
+  const [showBcc, setShowBcc] = useState(false);
   const [textMessage, setTextMessage] = useState('');
   const [callDuration, setCallDuration] = useState('');
   const [callOutcome, setCallOutcome] = useState('');
@@ -256,7 +257,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       setEmailBcc('');
       setEmailSubject('');
       setEmailContent('');
-      setShowCcBcc(false);
+      setShowCc(false);
+      setShowBcc(false);
       toast({ title: 'Success', description: 'Email sent successfully' });
     },
     onError: (error: any) => {
@@ -685,14 +687,24 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-medium">To:</label>
-                      {!showCcBcc && (
-                        <button
-                          onClick={() => setShowCcBcc(true)}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          Add CC/BCC
-                        </button>
-                      )}
+                      <div className="space-x-2">
+                        {!showCc && (
+                          <button
+                            onClick={() => setShowCc(true)}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            CC
+                          </button>
+                        )}
+                        {!showBcc && (
+                          <button
+                            onClick={() => setShowBcc(true)}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            BCC
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <Input
                       placeholder="recipient@example.com"
@@ -702,28 +714,30 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     />
                   </div>
 
-                  {/* CC and BCC Fields */}
-                  {showCcBcc && (
-                    <>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium">CC:</label>
-                        <Input
-                          placeholder="cc@example.com (separate multiple with commas)"
-                          value={emailCc}
-                          onChange={(e) => setEmailCc(e.target.value)}
-                          className="text-xs"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium">BCC:</label>
-                        <Input
-                          placeholder="bcc@example.com (separate multiple with commas)"
-                          value={emailBcc}
-                          onChange={(e) => setEmailBcc(e.target.value)}
-                          className="text-xs"
-                        />
-                      </div>
-                    </>
+                  {/* CC Field */}
+                  {showCc && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">CC:</label>
+                      <Input
+                        placeholder="cc@example.com (separate multiple with commas)"
+                        value={emailCc}
+                        onChange={(e) => setEmailCc(e.target.value)}
+                        className="text-xs"
+                      />
+                    </div>
+                  )}
+                  
+                  {/* BCC Field */}
+                  {showBcc && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">BCC:</label>
+                      <Input
+                        placeholder="bcc@example.com (separate multiple with commas)"
+                        value={emailBcc}
+                        onChange={(e) => setEmailBcc(e.target.value)}
+                        className="text-xs"
+                      />
+                    </div>
                   )}
 
                   {/* Subject Field */}
