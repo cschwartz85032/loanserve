@@ -152,13 +152,17 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           // Use the correct field names from the database
           let monthlyAmount = 0;
           
-          // Try different field names for the amount
-          if (disbursement.monthlyAmount) {
-            monthlyAmount = parseFloat(disbursement.monthlyAmount);
-          } else if (disbursement.annualAmount) {
-            monthlyAmount = parseFloat(disbursement.annualAmount) / 12;
-          } else if (disbursement.paymentAmount) {
-            // Determine monthly amount based on frequency
+          // Log all available amount fields for debugging
+          console.log(`Disbursement ${type} data:`, {
+            paymentAmount: disbursement.paymentAmount,
+            annualAmount: disbursement.annualAmount,
+            monthlyAmount: disbursement.monthlyAmount,
+            frequency: disbursement.frequency,
+            isOnHold: disbursement.isOnHold
+          });
+          
+          // Use paymentAmount with frequency as the primary source
+          if (disbursement.paymentAmount) {
             const amount = parseFloat(disbursement.paymentAmount);
             switch (disbursement.frequency) {
               case 'monthly':
@@ -168,18 +172,30 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                 monthlyAmount = amount / 3;
                 break;
               case 'semi_annual':
+              case 'semi-annual':
                 monthlyAmount = amount / 6;
                 break;
               case 'annual':
+              case 'annually':
               case 'once':
                 monthlyAmount = amount / 12;
                 break;
               default:
+                // Default to annual if frequency is not specified
                 monthlyAmount = amount / 12;
             }
+            console.log(`Using paymentAmount ${amount} with frequency ${disbursement.frequency}, monthly = ${monthlyAmount}`);
+          } else if (disbursement.annualAmount) {
+            // Fallback to annualAmount if no paymentAmount
+            monthlyAmount = parseFloat(disbursement.annualAmount) / 12;
+            console.log(`Using annualAmount ${disbursement.annualAmount}, monthly = ${monthlyAmount}`);
+          } else if (disbursement.monthlyAmount) {
+            // Fallback to monthlyAmount if available
+            monthlyAmount = parseFloat(disbursement.monthlyAmount);
+            console.log(`Using monthlyAmount directly: ${monthlyAmount}`);
           }
           
-          console.log(`Disbursement ${type}: monthly amount = ${monthlyAmount}`);
+          console.log(`Disbursement ${type}: final monthly amount = ${monthlyAmount}`);
           acc[type] += monthlyAmount;
         }
         return acc;
