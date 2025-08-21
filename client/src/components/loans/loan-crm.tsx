@@ -84,11 +84,26 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   // Initialize contact data from loanData
   useEffect(() => {
     const phones = [];
+    // Parse stored phone data which might include isBad status
     if (loanData?.borrowerPhone) {
-      phones.push({ number: loanData.borrowerPhone, label: 'test call or text', isBad: false });
+      try {
+        // Try to parse as JSON first (new format)
+        const phoneData = JSON.parse(loanData.borrowerPhone);
+        phones.push(phoneData);
+      } catch {
+        // Fallback to plain string (old format)
+        phones.push({ number: loanData.borrowerPhone, label: 'Primary', isBad: false });
+      }
     }
     if (loanData?.borrowerMobile) {
-      phones.push({ number: loanData.borrowerMobile, label: 'mobile', isBad: false });
+      try {
+        // Try to parse as JSON first (new format)
+        const phoneData = JSON.parse(loanData.borrowerMobile);
+        phones.push(phoneData);
+      } catch {
+        // Fallback to plain string (old format)
+        phones.push({ number: loanData.borrowerMobile, label: 'Mobile', isBad: false });
+      }
     }
     if (phones.length === 0) {
       phones.push({ number: '', label: '', isBad: false });
@@ -325,9 +340,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             {/* Contact Information */}
             <div className="space-y-2 border-t pt-3">
               {/* Phone Numbers */}
-              {(loanData?.borrowerPhone || loanData?.borrowerMobile) ? (
+              {(phoneNumbers[0]?.number || phoneNumbers[1]?.number) ? (
                 <>
-                  {loanData?.borrowerPhone && (
+                  {phoneNumbers[0]?.number && (
                     <div 
                       className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
                       onMouseEnter={() => setHoveredContact('phone1')}
@@ -335,7 +350,12 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     >
                       <div className="flex items-center space-x-2">
                         <Phone className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-muted-foreground font-normal">{loanData.borrowerPhone}</span>
+                        <span className={`font-normal ${phoneNumbers[0]?.isBad ? 'text-red-500 line-through' : 'text-muted-foreground'}`}>
+                          {phoneNumbers[0]?.number || loanData.borrowerPhone}
+                        </span>
+                        {phoneNumbers[0]?.label && (
+                          <span className="text-xs text-muted-foreground">({phoneNumbers[0].label})</span>
+                        )}
                       </div>
                       {hoveredContact === 'phone1' && (
                         <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -359,7 +379,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                       )}
                     </div>
                   )}
-                  {loanData?.borrowerMobile && (
+                  {phoneNumbers[1]?.number && (
                     <div 
                       className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
                       onMouseEnter={() => setHoveredContact('phone2')}
@@ -367,7 +387,12 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     >
                       <div className="flex items-center space-x-2">
                         <Phone className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-muted-foreground font-normal">{loanData.borrowerMobile}</span>
+                        <span className={`font-normal ${phoneNumbers[1]?.isBad ? 'text-red-500 line-through' : 'text-muted-foreground'}`}>
+                          {phoneNumbers[1]?.number || loanData.borrowerMobile}
+                        </span>
+                        {phoneNumbers[1]?.label && (
+                          <span className="text-xs text-muted-foreground">({phoneNumbers[1].label})</span>
+                        )}
                       </div>
                       {hoveredContact === 'phone2' && (
                         <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
