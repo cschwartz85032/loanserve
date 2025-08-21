@@ -112,27 +112,27 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   };
 
   // Fetch CRM data
-  const { data: notes = [], isLoading: notesLoading } = useQuery({
+  const { data: notes = [], isLoading: notesLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/notes`],
   });
 
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/tasks`],
   });
 
-  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery({
+  const { data: appointments = [], isLoading: appointmentsLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/appointments`],
   });
 
-  const { data: calls = [], isLoading: callsLoading } = useQuery({
+  const { data: calls = [], isLoading: callsLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/calls`],
   });
 
-  const { data: activity = [], isLoading: activityLoading } = useQuery({
+  const { data: activity = [], isLoading: activityLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/activity`],
   });
 
-  const { data: collaborators = [], isLoading: collaboratorsLoading } = useQuery({
+  const { data: collaborators = [], isLoading: collaboratorsLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/collaborators`],
   });
 
@@ -241,54 +241,54 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         {/* Borrower Information Card */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <Avatar className="h-16 w-16">
-                <AvatarFallback className="text-lg">
+            <div className="flex items-center space-x-3 mb-3">
+              <Avatar className="h-12 w-12">
+                <AvatarFallback className="text-sm font-normal">
                   {loanData?.borrowerName?.split(' ').map((n: string) => n[0]).join('') || 'N/A'}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold">{loanData?.borrowerName || 'Unknown Borrower'}</h3>
-                <p className="text-sm text-muted-foreground">
-                  Last Payment: {loanData?.lastPaymentDate ? 
-                    format(new Date(loanData.lastPaymentDate), 'MMM dd, yyyy') : 
-                    'No payments recorded'}
+                <h3 className="text-base font-medium">{loanData?.borrowerName || 'Unknown Borrower'}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {loanData?.lastPaymentDate ? 
+                    `Last payment: ${format(new Date(loanData.lastPaymentDate), 'MMM dd, yyyy')}` : 
+                    'No communication yet'}
                 </p>
               </div>
             </div>
             
             {/* Contact Information */}
-            <div className="space-y-3 border-t pt-3">
+            <div className="space-y-2 border-t pt-3">
               {/* Phone Numbers */}
               {(loanData?.borrowerPhone || loanData?.borrowerMobile) ? (
                 <>
                   {loanData?.borrowerPhone && (
                     <div 
-                      className="flex items-center justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                      className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
                       onMouseEnter={() => setHoveredContact('phone1')}
                       onMouseLeave={() => setHoveredContact(null)}
                     >
                       <div className="flex items-center space-x-2">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span>{loanData.borrowerPhone} (test call or text)</span>
+                        <Phone className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground font-normal">{loanData.borrowerPhone} (test call or text)</span>
                       </div>
                       {hoveredContact === 'phone1' && (
-                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="h-6 w-6 p-0"
+                            className="h-5 w-5 p-0"
                             onClick={() => setEditPhoneModal(true)}
                           >
-                            <Edit className="h-3 w-3" />
+                            <Edit className="h-3 w-3 text-muted-foreground" />
                           </Button>
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="h-6 w-6 p-0"
+                            className="h-5 w-5 p-0"
                             onClick={() => setEditPhoneModal(true)}
                           >
-                            <Plus className="h-3 w-3" />
+                            <Plus className="h-3 w-3 text-muted-foreground" />
                           </Button>
                         </div>
                       )}
@@ -296,31 +296,31 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   )}
                   {loanData?.borrowerMobile && (
                     <div 
-                      className="flex items-center justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                      className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
                       onMouseEnter={() => setHoveredContact('phone2')}
                       onMouseLeave={() => setHoveredContact(null)}
                     >
                       <div className="flex items-center space-x-2">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span>{loanData.borrowerMobile} (mobile)</span>
+                        <Phone className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground font-normal">{loanData.borrowerMobile} (mobile)</span>
                       </div>
                       {hoveredContact === 'phone2' && (
-                        <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="h-6 w-6 p-0"
+                            className="h-5 w-5 p-0"
                             onClick={() => setEditPhoneModal(true)}
                           >
-                            <Edit className="h-3 w-3" />
+                            <Edit className="h-3 w-3 text-muted-foreground" />
                           </Button>
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="h-6 w-6 p-0"
+                            className="h-5 w-5 p-0"
                             onClick={() => setEditPhoneModal(true)}
                           >
-                            <Plus className="h-3 w-3" />
+                            <Plus className="h-3 w-3 text-muted-foreground" />
                           </Button>
                         </div>
                       )}
@@ -329,10 +329,10 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                 </>
               ) : (
                 <button 
-                  className="flex items-center space-x-2 text-sm text-primary hover:underline"
+                  className="flex items-center space-x-2 text-xs text-primary hover:underline"
                   onClick={() => setEditPhoneModal(true)}
                 >
-                  <Phone className="h-4 w-4" />
+                  <Phone className="h-3 w-3" />
                   <span>Add phone</span>
                 </button>
               )}
@@ -340,41 +340,41 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               {/* Email */}
               {loanData?.borrowerEmail ? (
                 <div 
-                  className="flex items-center justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                  className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
                   onMouseEnter={() => setHoveredContact('email')}
                   onMouseLeave={() => setHoveredContact(null)}
                 >
                   <div className="flex items-center space-x-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span className="truncate">{loanData.borrowerEmail}</span>
+                    <Mail className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-muted-foreground font-normal truncate">{loanData.borrowerEmail}</span>
                   </div>
                   {hoveredContact === 'email' && (
-                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="h-6 w-6 p-0"
+                        className="h-5 w-5 p-0"
                         onClick={() => setEditEmailModal(true)}
                       >
-                        <Edit className="h-3 w-3" />
+                        <Edit className="h-3 w-3 text-muted-foreground" />
                       </Button>
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="h-6 w-6 p-0"
+                        className="h-5 w-5 p-0"
                         onClick={() => setEditEmailModal(true)}
                       >
-                        <Plus className="h-3 w-3" />
+                        <Plus className="h-3 w-3 text-muted-foreground" />
                       </Button>
                     </div>
                   )}
                 </div>
               ) : (
                 <button 
-                  className="flex items-center space-x-2 text-sm text-primary hover:underline"
+                  className="flex items-center space-x-2 text-xs text-primary hover:underline"
                   onClick={() => setEditEmailModal(true)}
                 >
-                  <Mail className="h-4 w-4" />
+                  <Mail className="h-3 w-3" />
                   <span>Add email</span>
                 </button>
               )}
@@ -382,13 +382,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               {/* Property Address */}
               {loanData?.propertyAddress ? (
                 <div 
-                  className="flex items-start justify-between text-sm group cursor-pointer hover:bg-muted/30 px-2 py-1 rounded transition-colors"
+                  className="flex items-start justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
                   onMouseEnter={() => setHoveredContact('address')}
                   onMouseLeave={() => setHoveredContact(null)}
                 >
                   <div className="flex items-start space-x-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                    <div>
+                    <MapPin className="h-3 w-3 text-muted-foreground mt-0.5" />
+                    <div className="text-muted-foreground font-normal">
                       <p>{loanData.propertyAddress}</p>
                       {loanData.propertyCity && loanData.propertyState && (
                         <p>{loanData.propertyCity}, {loanData.propertyState} {loanData.propertyZip}</p>
@@ -396,24 +396,24 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     </div>
                   </div>
                   {hoveredContact === 'address' && (
-                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="h-6 w-6 p-0"
+                        className="h-5 w-5 p-0"
                         onClick={() => setEditAddressModal(true)}
                       >
-                        <Edit className="h-3 w-3" />
+                        <Edit className="h-3 w-3 text-muted-foreground" />
                       </Button>
                     </div>
                   )}
                 </div>
               ) : (
                 <button 
-                  className="flex items-center space-x-2 text-sm text-primary hover:underline"
+                  className="flex items-center space-x-2 text-xs text-primary hover:underline"
                   onClick={() => setEditAddressModal(true)}
                 >
-                  <MapPin className="h-4 w-4" />
+                  <MapPin className="h-3 w-3" />
                   <span>Add address</span>
                 </button>
               )}
@@ -423,81 +423,81 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
         {/* Payment Breakdown Card */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calculator className="h-5 w-5" />
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+              <Calculator className="h-3 w-3" />
               Payment Breakdown
             </CardTitle>
           </CardHeader>
           <CardContent>
             {calculations ? (
-              <div className="text-sm space-y-1">
+              <div className="text-xs space-y-1">
                 <div className="flex justify-between">
-                  <span>Hazard Insurance:</span>
-                  <span>{formatCurrency(calculations.breakdown?.hazardInsurance || 0)}</span>
+                  <span className="text-muted-foreground font-normal">Hazard Insurance:</span>
+                  <span className="font-normal">{formatCurrency(calculations.breakdown?.hazardInsurance || 0)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Property Taxes:</span>
-                  <span>{formatCurrency(calculations.breakdown?.propertyTaxes || 0)}</span>
+                  <span className="text-muted-foreground font-normal">Property Taxes:</span>
+                  <span className="font-normal">{formatCurrency(calculations.breakdown?.propertyTaxes || 0)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Escrow Cushion:</span>
-                  <span>{formatCurrency(calculations.breakdown?.escrowCushion || 0)}</span>
+                  <span className="text-muted-foreground font-normal">Escrow Cushion:</span>
+                  <span className="font-normal">{formatCurrency(calculations.breakdown?.escrowCushion || 0)}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t">
-                  <span>Sub-Total Escrows:</span>
-                  <span>{formatCurrency(calculations?.escrow || 0)}</span>
+                  <span className="text-muted-foreground font-normal">Sub-Total Escrows:</span>
+                  <span className="font-normal">{formatCurrency(calculations?.escrow || 0)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>+ Principal & Interest:</span>
-                  <span>{formatCurrency(calculations?.principalAndInterest || 0)}</span>
+                  <span className="text-muted-foreground font-normal">+ Principal & Interest:</span>
+                  <span className="font-normal">{formatCurrency(calculations?.principalAndInterest || 0)}</span>
                 </div>
                 {calculations?.hoaFees > 0 && (
                   <div className="flex justify-between">
-                    <span>+ HOA:</span>
-                    <span>{formatCurrency(calculations.hoaFees)}</span>
+                    <span className="text-muted-foreground font-normal">+ HOA:</span>
+                    <span className="font-normal">{formatCurrency(calculations.hoaFees)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span>+ Servicing Fees:</span>
-                  <span>{formatCurrency(calculations?.servicingFee || 0)}</span>
+                  <span className="text-muted-foreground font-normal">+ Servicing Fees:</span>
+                  <span className="font-normal">{formatCurrency(calculations?.servicingFee || 0)}</span>
                 </div>
                 <div className="flex justify-between pt-1 border-t">
-                  <span>Total Payment:</span>
-                  <span>{formatCurrency(calculations?.totalMonthlyPayment || 0)}</span>
+                  <span className="font-medium">Total Payment:</span>
+                  <span className="font-medium">{formatCurrency(calculations?.totalMonthlyPayment || 0)}</span>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-muted-foreground">No payment data available</div>
+              <div className="text-xs text-muted-foreground">No payment data available</div>
             )}
           </CardContent>
         </Card>
         
         {/* Quick Stats Card */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+              <Activity className="h-3 w-3" />
               Quick Stats
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2 text-sm">
+            <div className="space-y-1.5 text-xs">
               <div className="flex justify-between">
-                <span>Total Notes:</span>
-                <span className="font-medium">{notes.length}</span>
+                <span className="text-muted-foreground font-normal">Total Notes:</span>
+                <span className="font-normal">{notes.length}</span>
               </div>
               <div className="flex justify-between">
-                <span>Open Tasks:</span>
-                <span className="font-medium">{tasks.filter((t: any) => t.status !== 'completed').length}</span>
+                <span className="text-muted-foreground font-normal">Open Tasks:</span>
+                <span className="font-normal">{tasks.filter((t: any) => t.status !== 'completed').length}</span>
               </div>
               <div className="flex justify-between">
-                <span>Total Calls:</span>
-                <span className="font-medium">{calls.length}</span>
+                <span className="text-muted-foreground font-normal">Total Calls:</span>
+                <span className="font-normal">{calls.length}</span>
               </div>
               <div className="flex justify-between">
-                <span>Collaborators:</span>
-                <span className="font-medium">{collaborators.length}</span>
+                <span className="text-muted-foreground font-normal">Collaborators:</span>
+                <span className="font-normal">{collaborators.length}</span>
               </div>
             </div>
           </CardContent>
@@ -508,78 +508,80 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       <div className="col-span-6 space-y-6">
         {/* Notes Section */}
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3 pt-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <MessageSquare className="h-5 w-5" />
-                <CardTitle>Notes</CardTitle>
+              <div className="flex items-center space-x-1.5">
+                <MessageSquare className="h-3 w-3" />
+                <CardTitle className="text-xs font-medium">Notes</CardTitle>
               </div>
-              <Button size="sm" variant="outline">
-                <Filter className="h-4 w-4 mr-2" />
+              <Button size="sm" variant="outline" className="h-7 text-xs">
+                <Filter className="h-3 w-3 mr-1" />
                 Filter
               </Button>
             </div>
           </CardHeader>
           <CardContent>
             {/* Communication Type Tabs */}
-            <Tabs value={communicationType} onValueChange={setCommunicationType} className="mb-4">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="note">
-                  <MessageSquare className="h-4 w-4 mr-2" />
+            <Tabs value={communicationType} onValueChange={setCommunicationType} className="mb-3">
+              <TabsList className="grid w-full grid-cols-4 h-8">
+                <TabsTrigger value="note" className="text-xs">
+                  <MessageSquare className="h-3 w-3 mr-1" />
                   Create Note
                 </TabsTrigger>
-                <TabsTrigger value="email">
-                  <Mail className="h-4 w-4 mr-2" />
+                <TabsTrigger value="email" className="text-xs">
+                  <Mail className="h-3 w-3 mr-1" />
                   Send Email
                 </TabsTrigger>
-                <TabsTrigger value="text">
-                  <MessageCircle className="h-4 w-4 mr-2" />
+                <TabsTrigger value="text" className="text-xs">
+                  <MessageCircle className="h-3 w-3 mr-1" />
                   Text
                 </TabsTrigger>
-                <TabsTrigger value="call">
-                  <Phone className="h-4 w-4 mr-2" />
+                <TabsTrigger value="call" className="text-xs">
+                  <Phone className="h-3 w-3 mr-1" />
                   Log Call
                 </TabsTrigger>
               </TabsList>
 
               {/* Note Tab Content */}
-              <TabsContent value="note" className="mt-4">
-                <div className="border rounded-lg p-3">
-                  <div className="flex items-center space-x-2 mb-3 border-b pb-2">
-                    <Button variant="ghost" size="sm">
-                      <Bold className="h-4 w-4" />
+              <TabsContent value="note" className="mt-3">
+                <div className="border rounded-lg p-2">
+                  <div className="flex items-center space-x-1 mb-2 border-b pb-1.5">
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                      <Bold className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="sm">
-                      <Italic className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                      <Italic className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="sm">
-                      <Link className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                      <Link className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="sm">
-                      <List className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                      <List className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="sm">
-                      <Image className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                      <Image className="h-3 w-3" />
                     </Button>
-                    <Button variant="ghost" size="sm">
-                      <Paperclip className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                      <Paperclip className="h-3 w-3" />
                     </Button>
                   </div>
                   <Textarea
                     placeholder="Add notes or type @name to notify"
                     value={newNoteContent}
                     onChange={(e) => setNewNoteContent(e.target.value)}
-                    className="min-h-[100px] border-0 p-0 focus:ring-0"
+                    className="min-h-[80px] border-0 p-0 focus:ring-0 text-xs"
                   />
-                  <div className="flex justify-between items-center mt-3">
-                    <div className="text-sm text-muted-foreground">
+                  <div className="flex justify-between items-center mt-2">
+                    <div className="text-xs text-muted-foreground">
                       My Team Members
                     </div>
                     <Button 
                       onClick={handleAddNote}
                       disabled={!newNoteContent.trim() || createNoteMutation.isPending}
+                      size="sm"
+                      className="h-7 text-xs"
                     >
-                      <Send className="h-4 w-4 mr-2" />
+                      <Send className="h-3 w-3 mr-1" />
                       Send Note
                     </Button>
                   </div>
@@ -873,36 +875,36 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
         {/* Collaborators */}
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-2 pt-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Users className="h-5 w-5" />
-                <CardTitle className="text-base">Collaborators</CardTitle>
+              <div className="flex items-center space-x-1.5">
+                <Users className="h-3 w-3" />
+                <CardTitle className="text-xs font-medium">Collaborators</CardTitle>
               </div>
-              <Button size="sm" variant="ghost">
-                <Plus className="h-4 w-4" />
+              <Button size="sm" variant="ghost" className="h-5 w-5 p-0">
+                <Plus className="h-3 w-3" />
               </Button>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-2">
               {collaborators.map((collab: any) => (
                 <div key={collab.id} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback>
+                  <div className="flex items-center space-x-2">
+                    <Avatar className="h-6 w-6">
+                      <AvatarFallback className="text-xs">
                         {collab.userName?.split(' ').map((n: string) => n[0]).join('')}
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <div className="font-medium text-sm">{collab.userName}</div>
+                      <div className="font-normal text-xs">{collab.userName}</div>
                       <div className="text-xs text-muted-foreground">{collab.role}</div>
                     </div>
                   </div>
                 </div>
               ))}
               {collaborators.length === 0 && (
-                <p className="text-sm text-muted-foreground">No collaborators</p>
+                <p className="text-xs text-muted-foreground">No collaborators</p>
               )}
             </div>
           </CardContent>
@@ -910,25 +912,25 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
         {/* Activity Timeline */}
         <Card>
-          <CardHeader>
-            <div className="flex items-center space-x-2">
-              <Activity className="h-5 w-5" />
-              <CardTitle className="text-base">Activity</CardTitle>
+          <CardHeader className="pb-2 pt-4">
+            <div className="flex items-center space-x-1.5">
+              <Activity className="h-3 w-3" />
+              <CardTitle className="text-xs font-medium">Activity</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[200px]">
-              <div className="space-y-3">
+            <ScrollArea className="h-[180px]">
+              <div className="space-y-2">
                 {activity.slice(0, 10).map((item: any) => (
-                  <div key={item.id} className="flex items-start space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                      {item.activityType === 'note' && <MessageSquare className="h-4 w-4" />}
-                      {item.activityType === 'task' && <CheckSquare className="h-4 w-4" />}
-                      {item.activityType === 'call' && <Phone className="h-4 w-4" />}
-                      {item.activityType === 'appointment' && <Calendar className="h-4 w-4" />}
+                  <div key={item.id} className="flex items-start space-x-2">
+                    <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center">
+                      {item.activityType === 'note' && <MessageSquare className="h-3 w-3" />}
+                      {item.activityType === 'task' && <CheckSquare className="h-3 w-3" />}
+                      {item.activityType === 'call' && <Phone className="h-3 w-3" />}
+                      {item.activityType === 'appointment' && <Calendar className="h-3 w-3" />}
                     </div>
                     <div className="flex-1">
-                      <div className="text-sm">{item.activityData.description}</div>
+                      <div className="text-xs font-normal">{item.activityData.description}</div>
                       <div className="text-xs text-muted-foreground">
                         {formatTimeAgo(item.createdAt)}
                       </div>
