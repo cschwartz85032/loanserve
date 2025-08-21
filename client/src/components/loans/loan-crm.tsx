@@ -536,58 +536,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             </div>
           </CardContent>
         </Card>
-
-        {/* Payment Breakdown Card */}
-        <Card>
-          <CardHeader className="pb-2 pt-4">
-            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
-              <Calculator className="h-3 w-3" />
-              Payment Breakdown
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {calculations ? (
-              <div className="text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">Hazard Insurance:</span>
-                  <span className="font-normal">{formatCurrency(calculations.breakdown?.hazardInsurance || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">Property Taxes:</span>
-                  <span className="font-normal">{formatCurrency(calculations.breakdown?.propertyTaxes || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">Escrow Cushion:</span>
-                  <span className="font-normal">{formatCurrency(calculations.breakdown?.escrowCushion || 0)}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t">
-                  <span className="text-muted-foreground font-normal">Sub-Total Escrows:</span>
-                  <span className="font-normal">{formatCurrency(calculations?.escrow || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">+ Principal & Interest:</span>
-                  <span className="font-normal">{formatCurrency(calculations?.principalAndInterest || 0)}</span>
-                </div>
-                {calculations?.hoaFees > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground font-normal">+ HOA:</span>
-                    <span className="font-normal">{formatCurrency(calculations.hoaFees)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">+ Servicing Fees:</span>
-                  <span className="font-normal">{formatCurrency(calculations?.servicingFee || 0)}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t">
-                  <span className="font-medium">Total Payment:</span>
-                  <span className="font-medium">{formatCurrency(calculations?.totalMonthlyPayment || 0)}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">No payment data available</div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       {/* Middle Column - Main Content Area */}
@@ -956,8 +904,60 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       </div>
 
       {/* Sidebar - Right Side */}
-      {/* Right Column - Activity Timeline and Sidebar */}
+      {/* Right Column - Payment Breakdown, Activity Timeline and Sidebar */}
       <div className="col-span-3 space-y-6">
+        {/* Payment Breakdown Card */}
+        <Card>
+          <CardHeader className="pb-2 pt-4">
+            <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
+              <Calculator className="h-3 w-3" />
+              Payment Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {calculations ? (
+              <div className="text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground font-normal">Hazard Insurance:</span>
+                  <span className="font-normal">{formatCurrency(calculations.breakdown?.hazardInsurance || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground font-normal">Property Taxes:</span>
+                  <span className="font-normal">{formatCurrency(calculations.breakdown?.propertyTaxes || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground font-normal">Escrow Cushion:</span>
+                  <span className="font-normal">{formatCurrency(calculations.breakdown?.escrowCushion || 0)}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t">
+                  <span className="text-muted-foreground font-normal">Sub-Total Escrows:</span>
+                  <span className="font-normal">{formatCurrency(calculations?.escrow || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground font-normal">+ Principal & Interest:</span>
+                  <span className="font-normal">{formatCurrency(calculations?.principalAndInterest || 0)}</span>
+                </div>
+                {calculations?.hoaFees > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-normal">+ HOA:</span>
+                    <span className="font-normal">{formatCurrency(calculations.hoaFees)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground font-normal">+ Servicing Fees:</span>
+                  <span className="font-normal">{formatCurrency(calculations?.servicingFee || 0)}</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t">
+                  <span className="font-medium">Total Payment:</span>
+                  <span className="font-medium">{formatCurrency(calculations?.totalMonthlyPayment || 0)}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">No payment data available</div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Appointments */}
         <Card>
           <CardHeader>
