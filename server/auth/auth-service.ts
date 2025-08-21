@@ -391,26 +391,36 @@ export async function login(
     // Record successful login
     await recordLoginAttempt(user.email, true, ip, userAgent);
 
-    // Create session
+    // Create session - using raw SQL to match actual database structure
     const sessionId = crypto.randomUUID();
     const sessionSid = `sess:${crypto.randomUUID()}`; // Generate sid for connect-pg-simple compatibility
-    await db.insert(sessions).values({
-      id: sessionId,
-      sid: sessionSid,
+    const expireTime = new Date(Date.now() + 86400000); // 24 hours from now
+    const sessionData = {
+      cookie: { 
+        originalMaxAge: 86400000, // 24 hours
+        expires: expireTime.toISOString(),
+        httpOnly: true,
+        path: '/'
+      },
       userId: user.id,
-      ip,
-      userAgent,
-      sess: JSON.stringify({ // Session data for connect-pg-simple
-        cookie: { 
-          originalMaxAge: 86400000, // 24 hours
-          expires: new Date(Date.now() + 86400000).toISOString(),
-          httpOnly: true,
-          path: '/'
-        },
-        userId: user.id
-      }),
-      expire: new Date(Date.now() + 86400000) // 24 hours from now
-    });
+      passport: { user: user.id }
+    };
+    
+    // Insert directly into sessions table with correct structure
+    await db.execute(sql`
+      INSERT INTO sessions (id, sid, sess, expire, user_id, created_at, last_seen_at, ip, user_agent)
+      VALUES (
+        ${sessionId},
+        ${sessionSid},
+        ${JSON.stringify(sessionData)}::json,
+        ${expireTime},
+        ${user.id.toString()},
+        ${new Date()},
+        ${new Date()},
+        ${ip},
+        ${userAgent}
+      )
+    `);
 
     // Log login event with IP allowlist info
     await db.insert(authEvents).values({
