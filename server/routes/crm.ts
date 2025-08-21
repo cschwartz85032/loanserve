@@ -568,18 +568,34 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
         
         // Add documents as attachments
         for (const doc of docs) {
-          if (doc.filePath && fs.existsSync(doc.filePath)) {
-            const fileContent = fs.readFileSync(doc.filePath);
+          // Construct the actual file path from storageUrl
+          let actualFilePath = '';
+          if (doc.storageUrl) {
+            // Use the same logic as the file serving endpoint
+            if (doc.storageUrl.startsWith('/documents/')) {
+              actualFilePath = path.join('server/uploads', doc.storageUrl.replace('/documents/', ''));
+            } else if (doc.storageUrl.startsWith('/uploads/')) {
+              actualFilePath = path.join('server', doc.storageUrl);
+            } else {
+              // Assume it's just the filename
+              actualFilePath = path.join('server/uploads', doc.storageUrl);
+            }
+          }
+          
+          console.log(`Checking document: ${doc.fileName || doc.title}, storageUrl: ${doc.storageUrl}, actualPath: ${actualFilePath}`);
+          
+          if (actualFilePath && fs.existsSync(actualFilePath)) {
+            const fileContent = fs.readFileSync(actualFilePath);
             const attachment = {
               content: fileContent.toString('base64'),
-              filename: doc.name || doc.fileName || 'document',
+              filename: doc.fileName || doc.title || 'document',
               type: doc.mimeType || 'application/octet-stream',
               disposition: 'attachment'
             };
             attachments.push(attachment);
-            console.log(`Added document attachment: ${attachment.filename} (${attachment.type})`);
+            console.log(`Successfully added document attachment: ${attachment.filename} (${attachment.type})`);
           } else {
-            console.log(`Document file not found: ${doc.filePath}`);
+            console.log(`Document file not found at: ${actualFilePath}`);
           }
         }
       }
