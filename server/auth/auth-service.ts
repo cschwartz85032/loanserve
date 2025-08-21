@@ -393,11 +393,23 @@ export async function login(
 
     // Create session
     const sessionId = crypto.randomUUID();
+    const sessionSid = `sess:${crypto.randomUUID()}`; // Generate sid for connect-pg-simple compatibility
     await db.insert(sessions).values({
       id: sessionId,
+      sid: sessionSid,
       userId: user.id,
       ip,
-      userAgent
+      userAgent,
+      sess: JSON.stringify({ // Session data for connect-pg-simple
+        cookie: { 
+          originalMaxAge: 86400000, // 24 hours
+          expires: new Date(Date.now() + 86400000).toISOString(),
+          httpOnly: true,
+          path: '/'
+        },
+        userId: user.id
+      }),
+      expire: new Date(Date.now() + 86400000) // 24 hours from now
     });
 
     // Log login event with IP allowlist info
