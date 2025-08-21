@@ -453,6 +453,7 @@ export const loans = pgTable("loans", {
   borrowerEmail: text("borrower_email"),
   borrowerPhone: text("borrower_phone"),
   borrowerMobile: text("borrower_mobile"),
+  borrowerPhoto: text("borrower_photo"),
   // Borrower mailing address (separate from property address)
   borrowerAddress: text("borrower_address"),
   borrowerCity: text("borrower_city"),

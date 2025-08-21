@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -88,6 +88,15 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [servicingForm, setServicingForm] = useState<any>({});
   const [editingBorrowerName, setEditingBorrowerName] = useState(false);
   const [borrowerNameValue, setBorrowerNameValue] = useState('');
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize profile photo from loan data
+  useEffect(() => {
+    if (loanData?.borrowerPhoto) {
+      setProfilePhoto(loanData.borrowerPhoto);
+    }
+  }, [loanData?.borrowerPhoto]);
 
   // Initialize forms when modals open
   useEffect(() => {
@@ -251,6 +260,104 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         variant: 'destructive'
       });
     }
+  };
+
+  // Simple MD5 hash implementation for Gravatar
+  const md5 = (str: string): string => {
+    // This is a simplified hash function - in production use a proper MD5 library
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return Math.abs(hash).toString(16).padStart(32, '0');
+  };
+
+  // Generate Gravatar URL
+  const getGravatarUrl = (email: string, size: number = 80) => {
+    if (!email) return null;
+    const hash = md5(email.trim().toLowerCase());
+    return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=mp`;
+  };
+
+  // Get profile photo URL (custom or Gravatar)
+  const getProfilePhotoUrl = () => {
+    if (profilePhoto) {
+      return profilePhoto;
+    }
+    if (loanData?.borrowerPhoto) {
+      return loanData.borrowerPhoto;
+    }
+    // Use first email address for Gravatar
+    const email = emailAddresses[0]?.email || loanData?.borrowerEmail;
+    if (email) {
+      return getGravatarUrl(email, 200);
+    }
+    return null;
+  };
+
+  // Handle profile photo upload
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Check file type
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      toast({
+        title: 'Invalid file type',
+        description: 'Please upload a JPG, PNG, GIF or WebP image',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: 'File too large',
+        description: 'Please upload an image smaller than 5MB',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+      
+      try {
+        const response = await fetch(`/api/loans/${loanId}/profile-photo`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ photoUrl: base64 }),
+        });
+
+        if (!response.ok) throw new Error('Upload failed');
+
+        const data = await response.json();
+        setProfilePhoto(base64);
+        
+        // Invalidate query to refresh loan data
+        queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+        
+        toast({
+          title: 'Success',
+          description: 'Profile photo updated successfully'
+        });
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to upload profile photo',
+          variant: 'destructive'
+        });
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   // Fetch CRM data
@@ -450,11 +557,32 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center space-x-3 mb-3">
-              <Avatar className="h-12 w-12">
-                <AvatarFallback className="text-sm font-normal">
-                  {loanData?.borrowerName?.split(' ').map((n: string) => n[0]).join('') || 'N/A'}
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative">
+                <Avatar 
+                  className="h-12 w-12 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Click to upload profile photo"
+                >
+                  {getProfilePhotoUrl() ? (
+                    <img 
+                      src={getProfilePhotoUrl() || ''} 
+                      alt={loanData?.borrowerName || 'Profile'} 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <AvatarFallback className="text-sm font-normal">
+                      {loanData?.borrowerName?.split(' ').map((n: string) => n[0]).join('') || 'N/A'}
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+              </div>
               <div className="flex-1">
                 {editingBorrowerName ? (
                   <Input
