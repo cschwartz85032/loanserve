@@ -1,0 +1,46 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[INFO] Successfully loaded pdf2pic module
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+[INFO] Successfully loaded pdfjs-dist module
+Re-optimizing dependencies because lockfile has changed
+9:46:46 PM [express] serving on port 5000
+9:47:05 PM [express] GET /api/user 401 in 24ms
+9:47:12 PM [express] GET /api/user 401 in 1ms
+9:56:47 PM [express] POST /api/auth/login 200 in 381ms :: {"success":true,"user":{"id":1,"username":…
+9:56:47 PM [express] GET /api/user 200 in 103ms :: {"id":1,"username":"loanatik","email":"cschwartz@…
+9:56:47 PM [express] GET /api/loans/metrics 304 in 293ms :: {"totalPortfolio":"2541900.00","activeLo…
+9:56:55 PM [express] GET /api/documents 304 in 190ms :: [{"id":88,"loanId":22,"borrowerId":null,"pro…
+9:56:55 PM [express] GET /api/loans 200 in 272ms :: [{"id":22,"loanNumber":"LN1755696743654","loanTy…
+file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345
+o?t(o):n(u)},"cb"),s=new r(function(o,u){n=o,t=u}).catch(o=>{throw Error.captureStackTrace(
+                                                                         ^
+
+error: column user_roles.assigned_at does not exist
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async NeonPreparedQuery.execute (/home/runner/workspace/node_modules/src/neon-serverless/session.ts:102:18)
+    at async requireAdmin (/home/runner/workspace/server/routes/admin-users.ts:45:21) {
+  length: 120,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '56',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3722',
+  routine: 'errorMissingColumn'
+}
+
+Node.js v20.19.3

@@ -41,17 +41,8 @@ const requireAdmin = async (req: any, res: any, next: any) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  // Check if user has admin role
-  const adminRole = await db.select()
-    .from(userRoles)
-    .innerJoin(roles, eq(roles.id, userRoles.roleId))
-    .where(and(
-      eq(userRoles.userId, req.user.id),
-      eq(roles.name, 'admin')
-    ))
-    .limit(1);
-
-  if (adminRole.length === 0) {
+  // Check if user has admin role (simplified - users table already has role field)
+  if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
   }
 
