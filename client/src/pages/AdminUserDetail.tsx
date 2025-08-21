@@ -225,7 +225,7 @@ function RolesDragDrop({
                         </div>
                       )}
                       <div className="text-xs text-muted-foreground mt-1">
-                        Assigned {formatDistanceToNow(new Date(role.assignedAt), { addSuffix: true })}
+                        Assigned {role.createdAt ? formatDistanceToNow(new Date(role.createdAt), { addSuffix: true }) : 'recently'}
                       </div>
                     </div>
                     <button
