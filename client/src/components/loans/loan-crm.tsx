@@ -2539,17 +2539,21 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           <CardContent>
             <ScrollArea className="h-[180px]">
               <div className="space-y-2">
-                {activity.slice(0, 10).map((item: any) => {
-                  // Debug logging for activity items
-                  if (item.activityType === 'email') {
-                    console.log('Email activity item:', item);
-                    console.log('Email activity data:', item.activityData);
-                  }
+                {activity.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No activity yet</p>
+                ) : (
+                  activity.slice(0, 10).map((item: any) => {
+                  // Debug logging for ALL activity items
+                  console.log(`Activity item type: ${item.activityType}`, item);
+                  console.log(`Activity data:`, item.activityData);
                   
                   // Get description from proper location
                   const description = item.activityData?.description || 
                                     item.description || 
-                                    (item.activityType === 'email' ? `Email: ${item.activityData?.subject || 'No subject'}` : 'Activity');
+                                    (item.activityType === 'email' ? `Email: ${item.activityData?.subject || 'No subject'}` : 
+                                     item.activityType === 'call' ? `Call: ${item.activityData?.notes || 'No notes'}` :
+                                     item.activityType === 'text' ? `Text: ${item.activityData?.message || 'No message'}` : 
+                                     'Activity');
                   
                   return (
                     <div key={item.id} className="flex items-start space-x-2">
@@ -2569,7 +2573,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                       </div>
                     </div>
                   );
-                })}
+                })
+                )}
               </div>
             </ScrollArea>
           </CardContent>
