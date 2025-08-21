@@ -564,10 +564,11 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     }
     
     if (emails && emails.length > 0) {
-      // Set the first email as primary
-      if (emails[0] && emails[0].email) {
-        updateData.borrowerEmail = emails[0].email;
-      }
+      // Store all emails as JSON to preserve multiple addresses and labels
+      updateData.borrowerEmail = JSON.stringify(emails.map(e => ({
+        email: e.email,
+        label: e.label || 'Primary'
+      })));
     }
 
     console.log('Update data:', updateData);
