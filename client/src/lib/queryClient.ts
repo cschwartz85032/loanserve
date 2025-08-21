@@ -7,9 +7,13 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
+  body?: any;  // Allow any type for body, we'll handle stringification
+}
+
 export async function apiRequest(
   url: string,
-  options?: RequestInit,
+  options?: ApiRequestOptions,
 ): Promise<Response> {
   // Check if body needs to be stringified
   let body = options?.body;

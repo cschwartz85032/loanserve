@@ -622,7 +622,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     mutationFn: async (content: string) => {
       const response = await apiRequest(`/api/loans/${loanId}/crm/notes`, {
         method: 'POST',
-        body: JSON.stringify({ content }),
+        body: { content },  // Don't stringify here, apiRequest will handle it
       });
       return response.json();
     },
@@ -700,7 +700,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     mutationFn: async (emailData: { to: string; cc?: string; bcc?: string; subject: string; content: string }) => {
       const response = await apiRequest(`/api/loans/${loanId}/crm/send-email`, {
         method: 'POST',
-        body: JSON.stringify(emailData),
+        body: emailData,  // Don't stringify here, apiRequest will handle it
       });
       return response.json();
     },
