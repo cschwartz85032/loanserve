@@ -57,34 +57,43 @@ export interface EmailInfo {
 }
 
 /**
- * Parse phone data from database (handles both JSON and plain string formats)
+ * Parse phone data from database (handles array, object, and plain string formats)
  */
-export function parsePhoneData(phoneData: string | null): PhoneInfo | null {
-  if (!phoneData) return null;
+export function parsePhoneData(phoneData: string | null): PhoneInfo[] {
+  if (!phoneData) return [];
   
   try {
-    // Try to parse as JSON first (new format)
-    if (phoneData.startsWith('{')) {
+    // Try to parse as JSON first
+    if (phoneData.startsWith('[')) {
+      // New array format - multiple phones
       const parsed = JSON.parse(phoneData);
-      return {
+      return parsed.map((p: any) => ({
+        number: p.number || p,
+        label: p.label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
+        isBad: p.isBad || false
+      }));
+    } else if (phoneData.startsWith('{')) {
+      // Old single object format
+      const parsed = JSON.parse(phoneData);
+      return [{
         number: parsed.number || '',
         label: parsed.label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
         isBad: parsed.isBad || false
-      };
+      }];
     }
     // Fallback to plain string (old format)
-    return {
+    return [{
       number: phoneData,
       label: CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
       isBad: false
-    };
+    }];
   } catch {
     // If parsing fails, treat as plain string
-    return {
+    return [{
       number: phoneData,
       label: CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
       isBad: false
-    };
+    }];
   }
 }
 

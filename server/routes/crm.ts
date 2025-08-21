@@ -710,25 +710,18 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     const updateData: any = {};
     
     if (phones && phones.length > 0) {
-      // Store phone data using utility functions
-      if (phones[0] && phones[0].number) {
-        updateData.borrowerPhone = formatPhoneForStorage({
-          number: phones[0].number,
-          label: phones[0].label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
-          isBad: phones[0].isBad || false
-        });
+      // Store ALL phones as an array in borrowerPhone field
+      const validPhones = phones.filter((p: any) => p.number && p.number.trim() !== '');
+      if (validPhones.length > 0) {
+        // Store all phones as JSON array
+        updateData.borrowerPhone = JSON.stringify(validPhones.map((p: any) => ({
+          number: p.number,
+          label: p.label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
+          isBad: p.isBad || false
+        })));
       }
-      // Store second phone if available
-      if (phones[1] && phones[1].number) {
-        updateData.borrowerMobile = formatPhoneForStorage({
-          number: phones[1].number,
-          label: phones[1].label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_MOBILE,
-          isBad: phones[1].isBad || false
-        });
-      } else if (phones.length === 1) {
-        // Clear mobile if only one phone provided
-        updateData.borrowerMobile = null;
-      }
+      // Clear the old mobile field - we now store all phones in borrowerPhone
+      updateData.borrowerMobile = null;
     }
     
     if (emails && emails.length > 0) {

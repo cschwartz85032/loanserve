@@ -333,52 +333,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
   // Initialize contact data from loanData
   useEffect(() => {
-    const phones = [];
-    // Parse stored phone data which might include isBad status
-    if (loanData?.borrowerPhone) {
-      try {
-        // Try to parse as JSON first (new format)
-        const phoneData = JSON.parse(loanData.borrowerPhone);
-        phones.push(phoneData);
-      } catch {
-        // Fallback to plain string (old format)
-        phones.push({ number: loanData.borrowerPhone, label: 'Primary', isBad: false });
-      }
-    }
-    if (loanData?.borrowerMobile) {
-      try {
-        // Try to parse as JSON first (new format)
-        const phoneData = JSON.parse(loanData.borrowerMobile);
-        phones.push(phoneData);
-      } catch {
-        // Fallback to plain string (old format)
-        phones.push({ number: loanData.borrowerMobile, label: 'Mobile', isBad: false });
-      }
-    }
-    if (phones.length === 0) {
-      phones.push({ number: '', label: '', isBad: false });
-    }
+    if (!loanData) return;
+    
+    // Use utility functions to parse phone and email data
+    const phones = getPhonesFromLoan(loanData);
     setPhoneNumbers(phones);
 
-    const emails = [];
-    if (loanData?.borrowerEmail) {
-      try {
-        // Try to parse as JSON array first (new format)
-        const emailData = JSON.parse(loanData.borrowerEmail);
-        if (Array.isArray(emailData)) {
-          emails.push(...emailData);
-        } else {
-          // Single email object from old JSON format
-          emails.push(emailData);
-        }
-      } catch {
-        // Fallback to plain string (old format)
-        emails.push({ email: loanData.borrowerEmail, label: 'Primary' });
-      }
-    }
-    if (emails.length === 0) {
-      emails.push({ email: '', label: '' });
-    }
+    const emails = getEmailsFromLoan(loanData);
     setEmailAddresses(emails);
   }, [loanData]);
 
@@ -1072,24 +1033,25 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             {/* Contact Information */}
             <div className="space-y-2 border-t pt-3">
               {/* Phone Numbers */}
-              {(phoneNumbers[0]?.number || phoneNumbers[1]?.number) ? (
+              {phoneNumbers.some(p => p.number) ? (
                 <>
-                  {phoneNumbers[0]?.number && (
+                  {phoneNumbers.filter(p => p.number).map((phone, index) => (
                     <div 
+                      key={index}
                       className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
-                      onMouseEnter={() => setHoveredContact('phone1')}
+                      onMouseEnter={() => setHoveredContact(`phone${index}`)}
                       onMouseLeave={() => setHoveredContact(null)}
                     >
                       <div className="flex items-center space-x-2">
                         <Phone className="h-3 w-3 text-muted-foreground" />
-                        <span className={`font-normal ${phoneNumbers[0]?.isBad ? 'text-red-500 line-through' : 'text-muted-foreground'}`}>
-                          {phoneNumbers[0]?.number || loanData.borrowerPhone}
+                        <span className={`font-normal ${phone.isBad ? 'text-red-500 line-through' : 'text-muted-foreground'}`}>
+                          {phone.number}
                         </span>
-                        {phoneNumbers[0]?.label && (
-                          <span className="text-xs text-muted-foreground">({phoneNumbers[0].label})</span>
+                        {phone.label && (
+                          <span className="text-xs text-muted-foreground">({phone.label})</span>
                         )}
                       </div>
-                      {hoveredContact === 'phone1' && (
+                      {hoveredContact === `phone${index}` && (
                         <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button 
                             variant="ghost" 
@@ -1110,44 +1072,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                         </div>
                       )}
                     </div>
-                  )}
-                  {phoneNumbers[1]?.number && (
-                    <div 
-                      className="flex items-center justify-between text-xs group cursor-pointer hover:bg-muted/20 px-1 py-0.5 rounded transition-colors"
-                      onMouseEnter={() => setHoveredContact('phone2')}
-                      onMouseLeave={() => setHoveredContact(null)}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <Phone className="h-3 w-3 text-muted-foreground" />
-                        <span className={`font-normal ${phoneNumbers[1]?.isBad ? 'text-red-500 line-through' : 'text-muted-foreground'}`}>
-                          {phoneNumbers[1]?.number || loanData.borrowerMobile}
-                        </span>
-                        {phoneNumbers[1]?.label && (
-                          <span className="text-xs text-muted-foreground">({phoneNumbers[1].label})</span>
-                        )}
-                      </div>
-                      {hoveredContact === 'phone2' && (
-                        <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-5 w-5 p-0"
-                            onClick={() => setEditPhoneModal(true)}
-                          >
-                            <Edit className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-5 w-5 p-0"
-                            onClick={() => setEditPhoneModal(true)}
-                          >
-                            <Plus className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  ))}
                 </>
               ) : (
                 <button 

@@ -52,34 +52,43 @@ export interface EmailInfo {
 export type ActivityType = typeof CRM_CONSTANTS.ACTIVITY_TYPES[keyof typeof CRM_CONSTANTS.ACTIVITY_TYPES];
 
 /**
- * Parse phone data from loan record (handles both JSON and plain string formats)
+ * Parse phone data from loan record (handles array, object, and plain string formats)
  */
-export function parsePhoneData(phoneData: string | null): PhoneInfo | null {
-  if (!phoneData) return null;
+export function parsePhoneData(phoneData: string | null): PhoneInfo[] {
+  if (!phoneData) return [];
   
   try {
-    // Try to parse as JSON first (new format)
-    if (typeof phoneData === 'string' && phoneData.startsWith('{')) {
+    // Try to parse as JSON first
+    if (typeof phoneData === 'string' && phoneData.startsWith('[')) {
+      // New array format - multiple phones
       const parsed = JSON.parse(phoneData);
-      return {
+      return parsed.map((p: any) => ({
+        number: p.number || p,
+        label: p.label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
+        isBad: p.isBad || false
+      }));
+    } else if (typeof phoneData === 'string' && phoneData.startsWith('{')) {
+      // Old single object format
+      const parsed = JSON.parse(phoneData);
+      return [{
         number: parsed.number || '',
         label: parsed.label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
         isBad: parsed.isBad || false
-      };
+      }];
     }
     // Fallback to plain string (old format)
-    return {
+    return [{
       number: phoneData,
       label: CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
       isBad: false
-    };
+    }];
   } catch {
     // If parsing fails, treat as plain string
-    return {
+    return [{
       number: phoneData,
       label: CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
       isBad: false
-    };
+    }];
   }
 }
 
@@ -129,13 +138,26 @@ export function parseEmailData(emailData: string | null): EmailInfo[] {
  * Get all phone numbers from loan data
  */
 export function getPhonesFromLoan(loanData: any): PhoneInfo[] {
+  // Try new array format first (all phones in borrowerPhone)
+  const phonesFromArray = parsePhoneData(loanData?.borrowerPhone);
+  if (phonesFromArray.length > 0) {
+    return phonesFromArray;
+  }
+  
+  // Fallback for old format (separate borrowerPhone and borrowerMobile)
   const phones: PhoneInfo[] = [];
   
-  const primaryPhone = parsePhoneData(loanData?.borrowerPhone);
-  if (primaryPhone) phones.push(primaryPhone);
+  // Check if borrowerPhone is not an array but a single phone
+  if (loanData?.borrowerPhone && !loanData.borrowerPhone.startsWith('[')) {
+    const primaryPhones = parsePhoneData(loanData.borrowerPhone);
+    phones.push(...primaryPhones);
+  }
   
-  const mobilePhone = parsePhoneData(loanData?.borrowerMobile);
-  if (mobilePhone) phones.push(mobilePhone);
+  // Also check borrowerMobile for old data
+  if (loanData?.borrowerMobile) {
+    const mobilePhones = parsePhoneData(loanData.borrowerMobile);
+    phones.push(...mobilePhones);
+  }
   
   // If no phones found, return empty phone template
   if (phones.length === 0) {
