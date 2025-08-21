@@ -170,10 +170,14 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
   // Initialize To field with borrower's email when switching to email tab
   useEffect(() => {
-    if (communicationType === 'email' && loanData?.borrowerEmail && !emailTo) {
-      setEmailTo(loanData.borrowerEmail);
+    if (communicationType === 'email' && emailAddresses.length > 0 && !emailTo) {
+      // Use the first email address from the parsed data
+      const firstEmail = emailAddresses.find(e => e.email)?.email;
+      if (firstEmail) {
+        setEmailTo(firstEmail);
+      }
     }
-  }, [communicationType, loanData?.borrowerEmail]);
+  }, [communicationType, emailAddresses]);
 
   // Mutations
   const createNoteMutation = useMutation({
