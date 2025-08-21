@@ -797,6 +797,35 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
 
 
+  const createTextMutation = useMutation({
+    mutationFn: async (textData: { message: string; recipientPhone?: string }) => {
+      console.log('Sending text message:', textData);
+      const response = await apiRequest(`/api/loans/${loanId}/crm/texts`, {
+        method: 'POST',
+        body: JSON.stringify(textData),
+      });
+      const result = await response.json();
+      console.log('Text message logged:', result);
+      return result;
+    },
+    onSuccess: async () => {
+      console.log('Text message logged successfully, invalidating queries...');
+      // Force immediate refetch of activity timeline
+      await queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      
+      setTextMessage('');
+      toast({ title: 'Success', description: 'Text message logged' });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: 'Error', 
+        description: error.message || 'Failed to log text message',
+        variant: 'destructive'
+      });
+    }
+  });
+
   const createCallMutation = useMutation({
     mutationFn: async (call: any) => {
       console.log('Creating call log:', call);
@@ -2088,7 +2117,14 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     className="min-h-[100px]"
                   />
                   <div className="flex justify-end">
-                    <Button>
+                    <Button onClick={() => {
+                      if (textMessage.trim()) {
+                        createTextMutation.mutate({
+                          message: textMessage,
+                          recipientPhone: phoneNumbers[0]?.number || ''
+                        });
+                      }
+                    }}>
                       <MessageCircle className="h-4 w-4 mr-2" />
                       Send Text
                     </Button>
@@ -2523,6 +2559,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                         {item.activityType === 'call' && <Phone className="h-3 w-3" />}
                         {item.activityType === 'appointment' && <Calendar className="h-3 w-3" />}
                         {item.activityType === 'email' && <Mail className="h-3 w-3" />}
+                        {item.activityType === 'text' && <MessageCircle className="h-3 w-3" />}
                       </div>
                       <div className="flex-1">
                         <div className="text-xs font-normal">{description}</div>
