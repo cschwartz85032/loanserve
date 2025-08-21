@@ -464,7 +464,7 @@ export async function logout(sessionId: string, userId: number): Promise<void> {
     })
     .where(and(
       eq(sessions.id, sessionId),
-      eq(sessions.userId, userId)
+      eq(sessions.userId, userId.toString())
     ));
 
   // Log logout event
@@ -500,7 +500,7 @@ export async function validateSession(sessionId: string): Promise<{
     .set({ lastSeenAt: new Date() })
     .where(eq(sessions.id, sessionId));
 
-  return { valid: true, userId: session.userId };
+  return { valid: true, userId: session.userId ? parseInt(session.userId) : undefined };
 }
 
 /**
@@ -513,7 +513,7 @@ export async function revokeAllUserSessions(userId: number, reason: string): Pro
       revokeReason: reason
     })
     .where(and(
-      eq(sessions.userId, userId),
+      eq(sessions.userId, userId.toString()),
       sql`revoked_at IS NULL`
     ));
 

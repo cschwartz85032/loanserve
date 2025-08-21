@@ -142,7 +142,7 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
           FROM role_permissions
           WHERE role_id = ${roleId}::uuid
         `);
-        userPermissions.push(...perms);
+        userPermissions.push(...perms.rows);
       }
     }
   }
