@@ -12,6 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format } from 'date-fns';
 import { 
+  CRM_CONSTANTS,
+  getPhonesFromLoan,
+  getEmailsFromLoan,
+  getActivityDescription,
+  type PhoneInfo,
+  type EmailInfo
+} from '@/utils/crm-utils';
+import { 
   MessageSquare, 
   Phone, 
   Calendar, 

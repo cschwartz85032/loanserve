@@ -18,6 +18,22 @@ import sgMail from '@sendgrid/mail';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { 
+  CRM_CONSTANTS,
+  logActivity as logCrmActivity,
+  parsePhoneData,
+  parseEmailData,
+  formatPhoneForStorage,
+  formatEmailsForStorage,
+  getActivityDescription
+} from '../utils/crm-utils';
+import { 
+  SESSION_CONFIG,
+  AUTH_CONFIG,
+  RATE_LIMIT_CONFIG,
+  EMAIL_CONFIG,
+  FILE_UPLOAD_CONFIG
+} from '../config/constants';
 
 const router = Router();
 
@@ -30,27 +46,12 @@ if (process.env.SENDGRID_API_KEY) {
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit per file
+    fileSize: FILE_UPLOAD_CONFIG.MAX_FILE_SIZE
   }
 });
 
-// Helper function to log activity
-async function logActivity(
-  loanId: number,
-  userId: number,
-  activityType: string,
-  activityData: any,
-  relatedId?: number
-) {
-  await db.insert(crmActivity).values({
-    loanId,
-    userId,
-    activityType,
-    activityData,
-    relatedId,
-    isSystem: false
-  });
-}
+// Use the imported logCrmActivity function instead of duplicating it
+const logActivity = logCrmActivity;
 
 // Notes endpoints
 router.get('/loans/:loanId/crm/notes', async (req, res) => {
@@ -99,7 +100,7 @@ router.post('/loans/:loanId/crm/notes', async (req, res) => {
       .returning();
     
     // Log activity
-    await logActivity(loanId, userId, 'note', {
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.NOTE, {
       description: `Added a note: ${content.substring(0, 100)}...`
     }, note.id);
     
@@ -259,7 +260,7 @@ router.post('/loans/:loanId/crm/appointments', async (req, res) => {
       .returning();
     
     // Log activity
-    await logActivity(loanId, userId, 'appointment', {
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.APPOINTMENT, {
       description: `Scheduled appointment: ${title}`
     }, appointment.id);
     
@@ -278,7 +279,7 @@ router.post('/loans/:loanId/crm/texts', async (req, res) => {
     const { message, recipientPhone } = req.body;
     
     // Log activity for text message
-    await logActivity(loanId, userId, 'text', {
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.TEXT, {
       description: `Sent text message: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
       phone: recipientPhone,
       message: message
@@ -342,7 +343,7 @@ router.post('/loans/:loanId/crm/calls', async (req, res) => {
       .returning();
     
     // Log activity
-    await logActivity(loanId, userId, 'call', {
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.CALL, {
       description: `${status === 'scheduled' ? 'Scheduled' : 'Logged'} call with ${contactName}`
     }, call.id);
     
@@ -649,7 +650,7 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
     await sgMail.send(msg);
 
     // Log activity with attachment info
-    await logActivity(loanId, userId, 'email', {
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.EMAIL, {
       description: `Email sent to ${to}`,
       subject,
       to,
@@ -709,58 +710,41 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     const updateData: any = {};
     
     if (phones && phones.length > 0) {
-      // Store phone data as JSON string to preserve labels and isBad status
-      if (phones[0]) {
-        const phoneNumber = phones[0].number;
-        
-        if (phoneNumber) {
-          // Store as JSON to preserve metadata
-          updateData.borrowerPhone = JSON.stringify({
-            number: phoneNumber,
-            label: phones[0].label || 'Primary',
-            isBad: phones[0].isBad || false
-          });
-        }
+      // Store phone data using utility functions
+      if (phones[0] && phones[0].number) {
+        updateData.borrowerPhone = formatPhoneForStorage({
+          number: phones[0].number,
+          label: phones[0].label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_PRIMARY,
+          isBad: phones[0].isBad || false
+        });
       }
       // Store second phone if available
-      if (phones[1]) {
-        const phoneNumber = phones[1].number;
-        
-        if (phoneNumber) {
-          updateData.borrowerMobile = JSON.stringify({
-            number: phoneNumber,
-            label: phones[1].label || 'Mobile',
-            isBad: phones[1].isBad || false
-          });
-        }
-      } else {
+      if (phones[1] && phones[1].number) {
+        updateData.borrowerMobile = formatPhoneForStorage({
+          number: phones[1].number,
+          label: phones[1].label || CRM_CONSTANTS.DEFAULT_LABELS.PHONE_MOBILE,
+          isBad: phones[1].isBad || false
+        });
+      } else if (phones.length === 1) {
         // Clear mobile if only one phone provided
         updateData.borrowerMobile = null;
       }
     }
     
     if (emails && emails.length > 0) {
-      // Store all emails as JSON to preserve multiple addresses and labels
-      // Filter out any empty emails first
-      const validEmails = emails.filter((e: any) => {
-        // Handle both string emails and object emails
-        const emailValue = typeof e === 'string' ? e : e.email;
-        return emailValue && emailValue.trim() !== '';
-      });
+      // Use utility function to format emails
+      const emailObjects = emails
+        .filter((e: any) => {
+          const emailValue = typeof e === 'string' ? e : e.email;
+          return emailValue && emailValue.trim() !== '';
+        })
+        .map((e: any) => ({
+          email: typeof e === 'string' ? e : e.email,
+          label: (typeof e === 'object' ? e.label : null) || CRM_CONSTANTS.DEFAULT_LABELS.EMAIL_PRIMARY
+        }));
       
-      if (validEmails.length > 0) {
-        // Ensure we have proper email objects
-        const emailObjects = validEmails.map((e: any) => {
-          if (typeof e === 'string') {
-            return { email: e, label: 'Primary' };
-          }
-          // Already an object, just ensure it has proper structure
-          return {
-            email: e.email,
-            label: e.label || 'Primary'
-          };
-        });
-        updateData.borrowerEmail = JSON.stringify(emailObjects);
+      if (emailObjects.length > 0) {
+        updateData.borrowerEmail = formatEmailsForStorage(emailObjects);
       }
     }
 
@@ -771,8 +755,8 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       .set(updateData)
       .where(eq(loans.id, loanId));
 
-    // Log activity - ensure we're not double-stringifying
-    await logActivity(loanId, userId, 'contact_update', {
+    // Log activity using the utility function
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.CONTACT_UPDATE, {
       description: 'Updated contact information',
       changes: { 
         phones: phones || [], 
@@ -816,7 +800,7 @@ router.post('/loans/:loanId/profile-photo', async (req, res) => {
       .where(eq(loans.id, loanId));
     
     // Log activity
-    await logActivity(loanId, userId, 'profile_photo', {
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.PROFILE_PHOTO, {
       description: 'Profile photo updated'
     });
     
