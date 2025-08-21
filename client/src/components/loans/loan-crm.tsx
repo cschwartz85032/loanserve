@@ -157,8 +157,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [selectedTab, setSelectedTab] = useState('notes');
   const [communicationType, setCommunicationType] = useState('note');
   const [newNoteContent, setNewNoteContent] = useState('');
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskDescription, setNewTaskDescription] = useState('');
+
   const [newCallNotes, setNewCallNotes] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
@@ -723,9 +722,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     queryKey: [`/api/loans/${loanId}/crm/notes`],
   });
 
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: [`/api/loans/${loanId}/crm/tasks`],
-  });
+
 
   const { data: appointments = [], isLoading: appointmentsLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/appointments`],
@@ -786,36 +783,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     },
   });
 
-  const createTaskMutation = useMutation({
-    mutationFn: async (task: { title: string; description: string }) => {
-      const response = await apiRequest(`/api/loans/${loanId}/crm/tasks`, {
-        method: 'POST',
-        body: JSON.stringify(task),
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/tasks`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
-      setNewTaskTitle('');
-      setNewTaskDescription('');
-      toast({ title: 'Success', description: 'Task created successfully' });
-    },
-  });
 
-  const updateTaskStatusMutation = useMutation({
-    mutationFn: async ({ taskId, status }: { taskId: number; status: string }) => {
-      const response = await apiRequest(`/api/loans/${loanId}/crm/tasks/${taskId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status }),
-      });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/tasks`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
-    },
-  });
+
+
 
   const createCallMutation = useMutation({
     mutationFn: async (call: any) => {
@@ -913,18 +883,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     }
   };
 
-  const handleAddTask = () => {
-    if (newTaskTitle.trim()) {
-      createTaskMutation.mutate({
-        title: newTaskTitle,
-        description: newTaskDescription,
-      });
-    }
-  };
 
-  const handleTaskStatusChange = (taskId: number, status: string) => {
-    updateTaskStatusMutation.mutate({ taskId, status });
-  };
+
+
 
   const handleSendEmail = () => {
     if (emailTo && emailSubject && emailContent) {
@@ -2170,93 +2131,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           </CardContent>
         </Card>
 
-        {/* Tasks Section */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <CheckSquare className="h-5 w-5" />
-                <CardTitle>Tasks</CardTitle>
-                <Badge variant="secondary">{tasks.length}</Badge>
-              </div>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Task
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create New Task</DialogTitle>
-                    <DialogDescription>
-                      Add a new task for this loan
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <Input
-                      placeholder="Task title"
-                      value={newTaskTitle}
-                      onChange={(e) => setNewTaskTitle(e.target.value)}
-                    />
-                    <Textarea
-                      placeholder="Task description"
-                      value={newTaskDescription}
-                      onChange={(e) => setNewTaskDescription(e.target.value)}
-                    />
-                    <Button onClick={handleAddTask} className="w-full">
-                      Create Task
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {tasks.map((task: any) => (
-                <div key={task.id} className="flex items-start space-x-3 p-3 border rounded-lg">
-                  <input
-                    type="checkbox"
-                    checked={task.status === 'completed'}
-                    onChange={(e) => handleTaskStatusChange(
-                      task.id,
-                      e.target.checked ? 'completed' : 'pending'
-                    )}
-                    className="mt-1"
-                  />
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h4 className={`font-medium ${task.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}>
-                        {task.title}
-                      </h4>
-                      <Badge variant={task.priority === 'high' ? 'destructive' : 'secondary'}>
-                        {task.priority}
-                      </Badge>
-                    </div>
-                    {task.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
-                    )}
-                    <div className="flex items-center space-x-4 mt-2">
-                      {task.assignedToName && (
-                        <div className="flex items-center space-x-1 text-sm text-muted-foreground">
-                          <User className="h-3 w-3" />
-                          <span>{task.assignedToName}</span>
-                        </div>
-                      )}
-                      {task.dueDate && (
-                        <div className="flex items-center space-x-1 text-sm text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          <span>{format(new Date(task.dueDate), 'MMM dd')}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+
       </div>
 
       {/* Sidebar - Right Side */}
