@@ -13,6 +13,7 @@ export async function apiRequest(
 ): Promise<Response> {
   const res = await fetch(url, {
     ...options,
+    body: options?.body ? JSON.stringify(options.body) : undefined,
     headers: {
       "Content-Type": "application/json",
       ...options?.headers,
