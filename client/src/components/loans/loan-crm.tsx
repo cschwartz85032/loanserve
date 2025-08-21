@@ -734,6 +734,16 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
   const { data: activity = [], isLoading: activityLoading } = useQuery<any[]>({
     queryKey: [`/api/loans/${loanId}/crm/activity`],
+    queryFn: async () => {
+      const response = await fetch(`/api/loans/${loanId}/crm/activity`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch activity');
+      const data = await response.json();
+      console.log('Activity data fetched:', data);
+      console.log('Email activities:', data.filter((a: any) => a.activityType === 'email'));
+      return data;
+    }
   });
 
   const { data: collaborators = [], isLoading: collaboratorsLoading } = useQuery<any[]>({
@@ -2472,23 +2482,36 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           <CardContent>
             <ScrollArea className="h-[180px]">
               <div className="space-y-2">
-                {activity.slice(0, 10).map((item: any) => (
-                  <div key={item.id} className="flex items-start space-x-2">
-                    <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center">
-                      {item.activityType === 'note' && <MessageSquare className="h-3 w-3" />}
-                      {item.activityType === 'task' && <CheckSquare className="h-3 w-3" />}
-                      {item.activityType === 'call' && <Phone className="h-3 w-3" />}
-                      {item.activityType === 'appointment' && <Calendar className="h-3 w-3" />}
-                      {item.activityType === 'email' && <Mail className="h-3 w-3" />}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-xs font-normal">{item.activityData.description}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatTimeAgo(item.createdAt)}
+                {activity.slice(0, 10).map((item: any) => {
+                  // Debug logging for activity items
+                  if (item.activityType === 'email') {
+                    console.log('Email activity item:', item);
+                    console.log('Email activity data:', item.activityData);
+                  }
+                  
+                  // Get description from proper location
+                  const description = item.activityData?.description || 
+                                    item.description || 
+                                    (item.activityType === 'email' ? `Email: ${item.activityData?.subject || 'No subject'}` : 'Activity');
+                  
+                  return (
+                    <div key={item.id} className="flex items-start space-x-2">
+                      <div className="flex-shrink-0 w-6 h-6 bg-primary/10 rounded-full flex items-center justify-center">
+                        {item.activityType === 'note' && <MessageSquare className="h-3 w-3" />}
+                        {item.activityType === 'task' && <CheckSquare className="h-3 w-3" />}
+                        {item.activityType === 'call' && <Phone className="h-3 w-3" />}
+                        {item.activityType === 'appointment' && <Calendar className="h-3 w-3" />}
+                        {item.activityType === 'email' && <Mail className="h-3 w-3" />}
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-xs font-normal">{description}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatTimeAgo(item.createdAt)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </ScrollArea>
           </CardContent>
