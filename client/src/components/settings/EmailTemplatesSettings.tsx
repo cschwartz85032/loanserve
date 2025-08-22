@@ -102,6 +102,13 @@ export default function EmailTemplatesSettings() {
     data: EmailTemplate[];
   }>({
     queryKey: ["/api/email-templates", selectedFolder],
+    queryFn: async () => {
+      const url = selectedFolder 
+        ? `/api/email-templates?folderId=${selectedFolder}`
+        : "/api/email-templates";
+      const response = await apiRequest(url);
+      return response.json();
+    },
     enabled: selectedFolder !== null,
   });
   const templates: EmailTemplate[] = templatesResponse?.data || [];
