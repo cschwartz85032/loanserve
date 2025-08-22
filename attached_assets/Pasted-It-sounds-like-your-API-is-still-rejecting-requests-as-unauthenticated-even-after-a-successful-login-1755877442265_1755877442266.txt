@@ -1,0 +1,39 @@
+It sounds like your API is still rejecting requests as unauthenticated even after a successful login. Given the analysis so far, there are two common reasons for persistent 401 Unauthorized responses in this codebase:
+
+The session cookie isn’t being set or read. In production the app is served over HTTPS, but the session cookie is always configured with secure: false
+GitHub
+. Many browsers will refuse to store an unsecure cookie on an HTTPS site, so although login succeeds, the session identifier isn’t returned on subsequent requests, causing them to fail authentication.
+
+The policy-engine fails to load permissions. The RBAC migration (0009_user_management_system_fixed.sql) creates a role_permissions table keyed by (role_id, permission_id)
+GitHub
+, but shared/schema.ts still defines rolePermissions with resource and permission columns
+GitHub
+. In production, if the database schema follows the migration, the code tries to join on a non‑existent permission_id, which throws an SQL error. The loadUserPolicy middleware catches the error, logs it, but leaves req.userPolicy undefined; the subsequent requireAuth returns 401 Unauthorized for all protected routes.
+
+How to diagnose and fix the 401s
+
+Confirm cookie handling
+
+Inspect the network traffic in the browser’s developer tools for the /api/login response. Check if a Set-Cookie header is present and verify the cookie has a Secure attribute when served over HTTPS.
+
+In server/auth.ts, update the session cookie settings to set secure: true and sameSite: 'none' when NODE_ENV !== 'development', so cookies are accepted in production but remain relaxed in dev. Keep secure: false only for local HTTP testing.
+
+Synchronize the RBAC schema
+
+Pick one RBAC design and stick with it. If you intend to use the normalized role_permissions table from migration 0009, update shared/schema.ts so that rolePermissions has roleId and permissionId (UUIDs) with a composite primary key
+GitHub
+. Remove the denormalized resource/permission columns
+GitHub
+.
+
+Adjust resolveUserPermissions to perform a single query that joins role_permissions with permissions for all of the user’s role IDs, rather than looping and selecting from non‑existent columns.
+
+Apply the latest migrations on both dev and production databases so the structure matches the code.
+
+Deploy and test
+
+Redeploy the API with the updated cookie settings and schema. Verify that login now returns a secure session cookie and that subsequent authenticated calls include it.
+
+Test protected routes; if they still return 401, check server logs for SQL errors from resolveUserPermissions. Fix any lingering column mismatches.
+
+Until you address both the session cookie configuration and the RBAC schema mismatch, the application will continue to respond with 401 Unauthorized for authenticated endpoints. By aligning those components and ensuring the cookie is accepted by the browser, the 401 errors should be resolved.

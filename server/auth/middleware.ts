@@ -36,8 +36,8 @@ export async function loadUserPolicy(
   next: NextFunction
 ): Promise<void> {
   try {
-    // Get user ID from session
-    const userId = (req.session as any)?.userId || (req.user as any)?.id;
+    // Get user ID from passport session first, then fall back to custom session
+    const userId = (req.user as any)?.id || (req.session as any)?.passport?.user || (req.session as any)?.userId;
     
     if (!userId) {
       return next();
@@ -67,7 +67,19 @@ export async function loadUserPolicy(
     next();
   } catch (error) {
     console.error('Failed to load user policy:', error);
-    next();
+    // Log more details for debugging
+    console.error('Session data:', {
+      hasUser: !!req.user,
+      hasSession: !!req.session,
+      sessionData: req.session ? Object.keys(req.session) : [],
+      userId: (req.user as any)?.id || (req.session as any)?.passport?.user || (req.session as any)?.userId
+    });
+    // Don't silently continue - this is a critical error
+    // If we can't load policies, authentication is broken
+    res.status(500).json({ 
+      error: 'Failed to load user permissions',
+      code: 'POLICY_LOAD_ERROR' 
+    });
   }
 }
 
