@@ -270,6 +270,18 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           if (dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
             return dateValue;
           }
+          
+          // Handle dates with two-digit years (MM/DD/YY or MM-DD-YY)
+          const twoDigitYearMatch = dateValue.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+          if (twoDigitYearMatch) {
+            const month = twoDigitYearMatch[1].padStart(2, '0');
+            const day = twoDigitYearMatch[2].padStart(2, '0');
+            const year = parseInt(twoDigitYearMatch[3]);
+            // Use pivot year: 00-49 becomes 2000-2049, 50-99 becomes 1950-1999
+            const fullYear = year < 50 ? 2000 + year : 1900 + year;
+            return `${fullYear}-${month}-${day}`;
+          }
+          
           // Try to parse and format the date
           const parsedDate = new Date(dateValue);
           if (!isNaN(parsedDate.getTime())) {
