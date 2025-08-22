@@ -109,7 +109,7 @@ export default function EmailTemplatesSettings() {
     mutationFn: async (name: string) => {
       return apiRequest("/api/email-template-folders", {
         method: "POST",
-        body: JSON.stringify({ name, parentId: null })
+        body: JSON.stringify({ name, parentId: selectedFolder })
       });
     },
     onSuccess: () => {
