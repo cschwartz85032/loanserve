@@ -1169,9 +1169,11 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
       setNewEntry({ label: '', cidr: '', beginsAt: '', expiresAt: '' });
     },
     onError: (error: any) => {
+      // Extract the actual error message from the API response
+      const errorMessage = error?.error || error?.message || error?.response?.data?.error || "This IP might already be in the allowlist";
       toast({ 
         title: "Failed to add IP entry", 
-        description: error.message || "This IP might already be in the allowlist",
+        description: errorMessage,
         variant: "destructive"
       });
     }

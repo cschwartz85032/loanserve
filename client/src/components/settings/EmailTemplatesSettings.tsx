@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Folder, FileText, Plus, Trash2, Edit, ChevronRight, Mail, Bold, Italic, Underline, List, ListOrdered, Link, Image, Smile, Code } from "lucide-react";
+import { Folder, FileText, Plus, Trash2, Edit, ChevronRight, Mail, Bold, Italic, Underline, List, ListOrdered, Link, Image, Smile, Code, Home, ArrowLeft } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface EmailTemplateFolder {
@@ -69,6 +69,7 @@ const MERGE_FIELDS: MergeField[] = [
 export default function EmailTemplatesSettings() {
   const { toast } = useToast();
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
+  const [folderBreadcrumbs, setFolderBreadcrumbs] = useState<{id: number | null, name: string}[]>([{id: null, name: 'All Folders'}]);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [showCreateTemplate, setShowCreateTemplate] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -238,6 +239,29 @@ export default function EmailTemplatesSettings() {
     }));
   };
 
+  const navigateToFolder = (folder: EmailTemplateFolder) => {
+    setSelectedFolder(folder.id);
+    setFolderBreadcrumbs(prev => [
+      ...prev,
+      { id: folder.id, name: folder.name }
+    ]);
+  };
+
+  const navigateToBreadcrumb = (index: number) => {
+    const targetBreadcrumb = folderBreadcrumbs[index];
+    setSelectedFolder(targetBreadcrumb.id);
+    setFolderBreadcrumbs(prev => prev.slice(0, index + 1));
+  };
+
+  const goBack = () => {
+    if (folderBreadcrumbs.length > 1) {
+      const newBreadcrumbs = folderBreadcrumbs.slice(0, -1);
+      const parentBreadcrumb = newBreadcrumbs[newBreadcrumbs.length - 1];
+      setSelectedFolder(parentBreadcrumb.id);
+      setFolderBreadcrumbs(newBreadcrumbs);
+    }
+  };
+
   if (foldersLoading) {
     return <div>Loading email templates...</div>;
   }
@@ -266,6 +290,39 @@ export default function EmailTemplatesSettings() {
           </div>
         </CardHeader>
         <CardContent>
+          {/* Breadcrumb Navigation */}
+          {folderBreadcrumbs.length > 1 && (
+            <div className="flex items-center gap-2 mb-4 text-sm">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={goBack}
+                className="h-8 px-2"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Back
+              </Button>
+              <div className="flex items-center gap-1 text-muted-foreground">
+                {folderBreadcrumbs.map((breadcrumb, index) => (
+                  <div key={index} className="flex items-center gap-1">
+                    {index > 0 && <ChevronRight className="h-3 w-3" />}
+                    <button
+                      onClick={() => navigateToBreadcrumb(index)}
+                      className="hover:text-foreground underline-offset-4 hover:underline"
+                      data-testid={`breadcrumb-${breadcrumb.name.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
+                      {index === 0 ? (
+                        <Home className="h-4 w-4" />
+                      ) : (
+                        breadcrumb.name
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Folders List */}
           <div className="border rounded-lg">
             <table className="w-full">
@@ -285,7 +342,12 @@ export default function EmailTemplatesSettings() {
                   </tr>
                 ) : (
                   folders.map((folder) => (
-                    <tr key={folder.id} className="border-b hover:bg-gray-50 cursor-pointer">
+                    <tr 
+                      key={folder.id} 
+                      className="border-b hover:bg-gray-50 cursor-pointer"
+                      onClick={() => navigateToFolder(folder)}
+                      data-testid={`folder-row-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
+                    >
                       <td className="p-3">
                         <div className="flex items-center gap-2">
                           <Folder className="h-4 w-4 text-blue-500" />
@@ -304,8 +366,9 @@ export default function EmailTemplatesSettings() {
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setSelectedFolder(folder.id);
+                              navigateToFolder(folder);
                             }}
+                            data-testid={`navigate-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
                           >
                             <ChevronRight className="h-4 w-4" />
                           </Button>
@@ -316,6 +379,7 @@ export default function EmailTemplatesSettings() {
                               e.stopPropagation();
                               // TODO: Edit folder
                             }}
+                            data-testid={`edit-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -328,6 +392,7 @@ export default function EmailTemplatesSettings() {
                                 deleteFolderMutation.mutate(folder.id);
                               }
                             }}
+                            data-testid={`delete-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
                           >
                             <Trash2 className="h-4 w-4 text-red-500" />
                           </Button>
@@ -343,9 +408,23 @@ export default function EmailTemplatesSettings() {
           {/* Templates List (when folder selected) */}
           {selectedFolder && (
             <div className="mt-6">
-              <h3 className="font-semibold mb-3">
-                Templates in {folders.find(f => f.id === selectedFolder)?.name}
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold">
+                  Templates in {folders.find(f => f.id === selectedFolder)?.name}
+                </h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowCreateTemplate(true);
+                    setSelectedFolderForTemplate(selectedFolder);
+                  }}
+                  data-testid="add-template-to-folder"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Template
+                </Button>
+              </div>
               <div className="border rounded-lg">
                 {templatesLoading ? (
                   <div className="p-4">Loading templates...</div>

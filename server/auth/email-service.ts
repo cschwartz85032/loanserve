@@ -345,8 +345,13 @@ export async function sendEmail(
  * Get the application base URL
  */
 function getBaseUrl(): string {
-  // Use the specific Replit app URL
-  return 'https://mortgage-servicing-serinova1.replit.app';
+  // Use environment variable for base URL, with fallback for development
+  const baseUrl = process.env.BASE_URL || process.env.REPLIT_DEV_DOMAIN 
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
+    : 'https://mortgage-servicing-serinova1.replit.app';
+  
+  console.log(`[EMAIL] Determined base URL: ${baseUrl}`);
+  return baseUrl;
 }
 
 /**
