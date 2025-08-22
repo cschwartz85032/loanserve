@@ -15,7 +15,8 @@ import {
   Receipt,
   Zap,
   Settings,
-  Users
+  Users,
+  Mail
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -36,11 +37,12 @@ export function Sidebar() {
     { name: "Payments", href: "/payments", icon: CreditCard },
     { name: "Fee Management", href: "/fees", icon: Receipt },
     { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
+    { name: "Mailroom", href: "/mailroom", icon: Mail },
     { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
     { name: "Compliance", href: "/compliance", icon: Shield },
     { name: "Settings", href: "/settings", icon: Settings },
     // Only show Admin menu if user has admin role
-    ...(hasAdminRole ? [{ name: "Admin", href: "/admin/documents", icon: Settings }] : []),
+    ...(hasAdminRole ? [{ name: "Admin", href: "/admin/users", icon: Settings }] : []),
   ];
 
   const handleLogout = () => {

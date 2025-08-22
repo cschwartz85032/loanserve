@@ -15,7 +15,7 @@ import Reports from "@/pages/reports";
 import Compliance from "@/pages/compliance";
 import FeeManagement from "@/pages/FeeManagement";
 import ServicingCycle from "@/pages/servicing-cycle";
-import AdminDocuments from "@/pages/admin/AdminDocuments";
+import Mailroom from "@/pages/Mailroom";
 import AdminEscrow from "@/pages/admin/AdminEscrow";
 import { AdminUsers } from "@/pages/AdminUsers";
 import { AdminUserDetail } from "@/pages/AdminUserDetail";
@@ -34,7 +34,7 @@ function Router() {
       <ProtectedRoute path="/loans" component={Loans} />
       <ProtectedRoute path="/payments" component={Payments} />
       <ProtectedRoute path="/documents" component={Documents} />
-      <ProtectedRoute path="/admin/documents" component={AdminDocuments} />
+      <ProtectedRoute path="/mailroom" component={Mailroom} />
       <ProtectedRoute path="/escrow" component={Escrow} />
       <ProtectedRoute path="/admin/escrow" component={AdminEscrow} />
       <ProtectedRoute path="/admin/users" component={AdminUsers} />

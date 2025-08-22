@@ -1,0 +1,47 @@
+The modal in your screenshot is calling POST /api/ip-allowlist with a body that looks roughly like:
+
+{
+  "label": "home",
+  "cidr": "192.169.01.01",
+  "beginDate": "08/23/2025 02:03 PM",
+  "expirationDate": "09/06/2025 02:03 PM"
+}
+
+
+On the server side the ip-allowlist router does four things:
+
+It requires a cidr field and rejects the request with a 400 MISSING_CIDR if the field is absent
+raw.githubusercontent.com
+.
+
+It forwards the cidr, label, userId and expiresAt fields to the addIpToAllowlist service
+raw.githubusercontent.com
+.
+
+The service normalises the CIDR; if there is no / it appends /32 for IPv4
+raw.githubusercontent.com
+.
+
+It then inserts the record into user_ip_allowlist, logs an auth event and returns success true or an error
+raw.githubusercontent.com
+.
+
+In your case, the browser passes expirationDate and a malformed IPv4 address. Two problems arise:
+
+Invalid date format: addIpToAllowlist only accepts an expiresAt parameter. It calls new Date(expiresAt); if a string like "09/06/2025 02:03 PM" is passed, Node’s Date parser returns Invalid Date. When Drizzle tries to persist this into a timestamp column, PostgreSQL throws a type error, which is reported back as a generic 400 with an empty message.
+
+Malformed IP: The library assumes any string without a subnet mask is an IP and appends /32. Leading zeros in octets (e.g. 192.169.01.01) are not accepted by PostgreSQL’s inet/cidr types. Inserting 192.169.01.01/32 can therefore trigger a database syntax error.
+
+How to fix and validate
+
+Use a valid CIDR/IP. Enter a standard IPv4 address (192.169.0.1) or a proper CIDR (192.169.0.0/24). Avoid leading zeros in octets; PostgreSQL treats them as invalid.
+
+Send ISO‑formatted dates and use the correct parameter. The backend expects an expiresAt field of type ISO 8601 (e.g. "2025-09-06T14:03:00Z"). The “Begin Date” field is currently unused in the API; either remove it from the form or update the API to accept beginsAt and parse it safely.
+
+Add server‑side validation. Before inserting the record, call net.isIPv4/net.isIPv6 to ensure the address is valid and use a date parsing library (e.g. date-fns or zod) to validate expiresAt. If validation fails, return a descriptive 400 error instead of letting the database throw.
+
+Normalize and deduplicate addresses. When a bare IP is supplied, strip leading zeros and normalise to canonical dotted‑decimal notation so that duplicate IPs are detected consistently.
+
+Update the frontend. Modify the form to convert date picker values to ISO strings and send them as expiresAt. Use a client‑side validator (e.g. Zod) to ensure the IP address or CIDR is well‑formed before making the request. If validation fails, display a friendly message instead of showing “Failed to add IP entry 400:”.
+
+Once the client sends a valid cidr and expiresAt in the expected formats, the addIpToAllowlist function should insert the entry successfully or return a meaningful error (“This IP address is already in the allowlist”)
