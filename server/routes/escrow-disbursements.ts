@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { escrowDisbursementPayments, loanLedger } from "../../shared/schema";
+import { escrowDisbursementPayments, escrowAccounts, loanLedger } from "../../shared/schema";
 import { eq } from "drizzle-orm";
 import { insertEscrowDisbursementSchema, insertEscrowDisbursementPaymentSchema } from "../../shared/schema";
 
@@ -75,9 +75,18 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
     
     // Clean up all fields - convert empty strings to null for dates, strings, and numerics
     const cleanedData = {
-      ...req.body,
+      // Don't spread req.body - build cleanedData from scratch
       loanId,
       escrowAccountId: escrowAccount.id,
+      // Copy over required fields from body
+      disbursementType: req.body.disbursementType,
+      description: req.body.description,
+      payeeName: req.body.payeeName,
+      frequency: req.body.frequency,
+      paymentMethod: req.body.paymentMethod || 'check',
+      status: req.body.status || 'active',
+      isOnHold: req.body.isOnHold || false,
+      autoPayEnabled: req.body.autoPayEnabled ?? true,
       // Required date field
       nextDueDate: cleanString(req.body.nextDueDate),
       // Optional date fields - convert empty strings to null
@@ -140,12 +149,15 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
       // Other fields
       category: cleanString(req.body.category),
       holdReason: cleanString(req.body.holdReason),
-      holdRequestedBy: cleanString(req.body.holdRequestedBy)
+      holdRequestedBy: cleanString(req.body.holdRequestedBy),
+      // Insurance tracking fields
+      insuranceDocumentId: cleanNumeric(req.body.insuranceDocumentId),
+      insuranceTracking: req.body.insuranceTracking
     };
     
-    // Final cleanup - remove any remaining undefined or empty string fields
+    // Remove null/undefined values from cleanedData to avoid overwriting defaults
     Object.keys(cleanedData).forEach(key => {
-      if (cleanedData[key] === undefined || cleanedData[key] === '') {
+      if (cleanedData[key] === null || cleanedData[key] === undefined) {
         delete cleanedData[key];
       }
     });
