@@ -8,13 +8,24 @@ import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+// Extended user type that includes role information from RBAC system
+type UserWithRoles = SelectUser & {
+  role?: string;  // Legacy field for backward compatibility
+  roleNames?: string[];  // Array of role names
+  roles?: Array<{
+    roleId: number;
+    roleName: string;
+    roleDescription: string | null;
+  }>;
+};
+
 type AuthContextType = {
-  user: SelectUser | null;
+  user: UserWithRoles | null;
   isLoading: boolean;
   error: Error | null;
-  loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
+  loginMutation: UseMutationResult<UserWithRoles, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
-  registerMutation: UseMutationResult<SelectUser, Error, InsertUser>;
+  registerMutation: UseMutationResult<UserWithRoles, Error, InsertUser>;
 };
 
 type LoginData = Pick<InsertUser, "username" | "password">;
@@ -26,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     data: user,
     error,
     isLoading,
-  } = useQuery<SelectUser | undefined, Error>({
+  } = useQuery<UserWithRoles | undefined, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
@@ -44,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Return just the user object from the response
       return data.user;
     },
-    onSuccess: (user: SelectUser) => {
+    onSuccess: (user: UserWithRoles) => {
       queryClient.setQueryData(["/api/user"], user);
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
@@ -65,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return await res.json();
     },
-    onSuccess: (user: SelectUser) => {
+    onSuccess: (user: UserWithRoles) => {
       queryClient.setQueryData(["/api/user"], user);
     },
     onError: (error: Error) => {

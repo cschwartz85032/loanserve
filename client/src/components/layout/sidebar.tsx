@@ -24,8 +24,10 @@ export function Sidebar() {
   const { user, logoutMutation } = useAuth();
   const [activeRole, setActiveRole] = useState(user?.role || "lender");
   
-  // Check if user has admin role
-  const hasAdminRole = user?.role === 'admin';
+  // Check if user has admin role - supports both legacy and RBAC systems
+  const hasAdminRole = user?.role === 'admin' || 
+                       user?.roleNames?.includes('admin') || 
+                       user?.roles?.some(r => r.roleName === 'admin');
   
   // Build navigation dynamically based on user roles
   const navigation = [

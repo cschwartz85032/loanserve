@@ -89,7 +89,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
+    passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         return res.status(500).json({ error: "Internal server error" });
       }
@@ -123,7 +123,7 @@ export function setupAuth(app: Express) {
     try {
       // Get user from database
       const { db } = await import('./db');
-      const { users } = await import('@shared/schema');
+      const { users, userRoles, roles } = await import('@shared/schema');
       const { eq } = await import('drizzle-orm');
       
       const [user] = await db
@@ -136,9 +136,33 @@ export function setupAuth(app: Express) {
         return res.sendStatus(401);
       }
       
+      // Get user's roles from RBAC system
+      const userRolesList = await db
+        .select({
+          roleId: roles.id,
+          roleName: roles.name,
+          roleDescription: roles.description
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, userId));
+      
+      // Extract role names for easy checking
+      const roleNames = userRolesList.map(r => r.roleName);
+      
       // Don't send password to client
       const { password, ...userWithoutPassword } = user;
-      res.json(userWithoutPassword);
+      
+      // Include roles in the response
+      const userWithRoles = {
+        ...userWithoutPassword,
+        roles: userRolesList,
+        roleNames: roleNames,
+        // Add a backward-compatible role field for admin detection
+        role: roleNames.includes('admin') ? 'admin' : (roleNames[0] || 'user')
+      };
+      
+      res.json(userWithRoles);
     } catch (error) {
       console.error('Error fetching user:', error);
       res.sendStatus(500);
