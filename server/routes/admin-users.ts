@@ -505,7 +505,10 @@ router.post('/:id/roles', async (req, res) => {
     }
 
     // Check if user already has this role
-    const existing = await db.select()
+    const existing = await db.select({ 
+      userId: userRoles.userId,
+      roleId: userRoles.roleId 
+    })
       .from(userRoles)
       .where(and(
         eq(userRoles.userId, userId),
@@ -520,7 +523,8 @@ router.post('/:id/roles', async (req, res) => {
     // Assign role
     await db.insert(userRoles).values({
       userId,
-      roleId
+      roleId,
+      assignedBy: req.user?.id || null
     });
 
     // Log the action
@@ -559,16 +563,11 @@ router.delete('/:id/roles/:roleId', async (req, res) => {
       .limit(1);
 
     // Remove role
-    const result = await db.delete(userRoles)
+    await db.delete(userRoles)
       .where(and(
         eq(userRoles.userId, userId),
         eq(userRoles.roleId, roleId)
-      ))
-      .returning();
-
-    if (result.length === 0) {
-      return res.status(404).json({ error: 'Role assignment not found' });
-    }
+      ));
 
     // Log the action
     await db.insert(authEvents).values({

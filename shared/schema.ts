@@ -1470,15 +1470,15 @@ export const roles = pgTable("roles", {
 
 // User roles junction table
 export const userRoles = pgTable("user_roles", {
-  id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }).defaultNow(),
+  assignedBy: integer("assigned_by").references(() => users.id),
 }, (table) => {
   return {
     userIdx: index("idx_user_roles_user_id").on(table.userId),
     roleIdx: index("idx_user_roles_role_id").on(table.roleId),
+    pk: primaryKey({ columns: [table.userId, table.roleId] })
   };
 });
 
