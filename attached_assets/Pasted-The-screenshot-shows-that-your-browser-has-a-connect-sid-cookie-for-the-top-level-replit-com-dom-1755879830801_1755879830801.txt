@@ -1,0 +1,51 @@
+The screenshot shows that your browser has a `connect.sid` cookie for the top‑level `replit.com` domain, but there is **no session cookie from your `loanserve` API at `readysetclose.*`**.  The only `connect.sid` present belongs to Replit’s own app (its value is short and the domain is `.replit.com`), not to your Express server.  This confirms that your login request isn’t setting a session cookie for your domain, which is why every subsequent `/api/user` or `/api/auth/login` call returns `401`.
+
+A few points to note:
+
+* When your `POST /api/login` call succeeds, Express should set a cookie like `connect.sid=s:<very‑long‑value>` scoped to the API’s domain (e.g. `.readysetclose.repl.co`).  The cookie in your screenshot is scoped to `.replit.com` and is likely created by Replit itself, not by your app.  No cookie from your API exists, so the server has no way to recognise the session.
+
+* The default cookie configuration in your `server/auth.ts` does **not** set a domain, so the cookie is scoped to the request host.  If your frontend and API are on different subdomains or different top‑level domains (e.g. `app.example.com` and `api.example.com`), the cookie will not be sent unless you explicitly set a common domain and specify `sameSite: 'none'` and `secure: true`.  Modern browsers also reject cookies with `SameSite=None` if the `Secure` flag is missing.
+
+* In your current code the cookie configuration never sets `secure: true`, so browsers will refuse to store it on an HTTPS site.  This is why you only see Replit cookies but not your API’s session cookie.
+
+### How to fix this
+
+1. **Confirm the login request hits the correct API endpoint.**
+   Open your browser’s Network tab and inspect the POST `/api/login` request.  Check the response headers for a `Set-Cookie` header.  If none is present, the login is failing before a session is created (e.g. wrong credentials or server error).  If the `Set-Cookie` header is present but the cookie isn’t stored, then the cookie attributes are wrong.
+
+2. **Update the session cookie configuration for production.**
+   Modify your `sessionSettings.cookie` in `server/auth.ts` so that when running in production it looks like this:
+
+   ```ts
+   const isProd = process.env.NODE_ENV === 'production';
+   cookie: {
+     httpOnly: true,
+     maxAge: 24 * 60 * 60 * 1000,
+     secure: isProd,         // require HTTPS in production
+     sameSite: isProd ? 'none' : 'lax',
+     domain: isProd ? '.yourdomain.com' : undefined
+   }
+   ```
+
+   Replace `.yourdomain.com` with a domain common to both your frontend and API (for example, if your frontend is `readysetclose.repl.co` and your API is on the same host, you can omit `domain` entirely; if they are separate subdomains, use a shared base like `.repl.co`).  Without setting `sameSite: 'none'`, browsers will drop the cookie for cross‑site requests; without `secure: true`, they will reject `SameSite=None` cookies altogether.
+
+3. **Enable CORS with credentials if the frontend and API are on different origins.**
+   In your Express server, add:
+
+   ```ts
+   import cors from 'cors';
+   app.use(cors({
+     origin: 'https://your-frontend-domain.com',
+     credentials: true
+   }));
+   ```
+
+   Then in your frontend fetch/axios calls, set `withCredentials: true`.  This ensures the browser sends and receives cookies for cross‑origin requests.
+
+4. **Redeploy and verify.**
+   Redeploy the API with these settings.  Clear your browser cookies and reload the page.  After logging in, check the Application tab again.  You should see a new `connect.sid` cookie with a long value and a domain matching your application.  Subsequent calls to `/api/user` should now return `200 OK`.
+
+5. **Check for RBAC schema mismatches if login succeeds but you still see 401 on protected routes.**
+   A final source of 401s is a failure in the RBAC policy engine when loading permissions.  Ensure that the `role_permissions` table matches the code (it must include `permission_id` and `scope` if your code expects those fields) and that migrations have been run.
+
+By ensuring the session cookie is actually being set and scoped to the correct domain with `secure` and `SameSite` attributes, you should eliminate the persistent 401s.

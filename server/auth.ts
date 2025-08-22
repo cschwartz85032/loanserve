@@ -119,6 +119,10 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
+    console.log('Login attempt for:', req.body.username);
+    console.log('Session ID before auth:', req.sessionID);
+    console.log('Session cookie settings:', sessionSettings.cookie);
+    
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         console.error('Login authentication error:', err);
@@ -134,7 +138,18 @@ export function setupAuth(app: Express) {
         }
         // Log successful login
         console.log(`User ${user.username} logged in successfully`);
-        return res.status(200).json(user);
+        console.log('Session ID after login:', req.sessionID);
+        console.log('Session data:', req.session);
+        console.log('Response headers about to be sent');
+        
+        // Ensure session is saved before sending response
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error('Session save error:', saveErr);
+          }
+          console.log('Session saved, sending response');
+          return res.status(200).json(user);
+        });
       });
     })(req, res, next);
   });
