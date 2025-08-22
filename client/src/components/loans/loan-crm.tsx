@@ -2109,16 +2109,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
                   {/* Email Content with Rich Text Editor */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium">Message:</label>
-                      <button
-                        onClick={() => setShowTemplatesModal(true)}
-                        className="text-xs text-primary hover:underline flex items-center gap-1"
-                      >
-                        <FileText className="h-3 w-3" />
-                        Templates
-                      </button>
-                    </div>
+                    <label className="text-xs font-medium">Message:</label>
                     <div className="border rounded-lg">
                       <div className="flex items-center space-x-1 p-2 border-b">
                         <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
@@ -2146,7 +2137,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     </div>
                   </div>
 
-                  {/* Attachments and Templates Section */}
+                  {/* Attachments, Templates and Action Buttons on same line */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Button
@@ -2167,7 +2158,53 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                         <FileText className="h-3 w-3 mr-1" />
                         Templates
                       </Button>
+                      
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => {
+                          // Clear all email fields
+                          setEmailTo('');
+                          setEmailCc('');
+                          setEmailBcc('');
+                          setEmailSubject('');
+                          setEmailContent('');
+                          setEmailAttachments([]);
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                      
+                      <div className="flex-1" />
+                      
+                      <Button 
+                        onClick={handleSendEmail}
+                        disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
+                        {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          // Schedule send functionality
+                          toast({
+                            title: 'Scheduled Send',
+                            description: 'Email scheduled for later delivery'
+                          });
+                        }}
+                        disabled={!emailTo || !emailSubject || !emailContent}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        title="Schedule"
+                      >
+                        <Clock className="h-3 w-3" />
+                      </Button>
                     </div>
+                    
                     {emailAttachments.length > 0 && (
                       <div className="border rounded-md p-2 space-y-1">
                         {emailAttachments.map((attachment, index) => (
@@ -2193,54 +2230,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                         ))}
                       </div>
                     )}
-                  </div>
-
-                  {/* Action Buttons on same line */}
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        // Clear all email fields
-                        setEmailTo('');
-                        setEmailCc('');
-                        setEmailBcc('');
-                        setEmailSubject('');
-                        setEmailContent('');
-                        setEmailAttachments([]);
-                      }}
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" />
-                      Delete
-                    </Button>
-                    
-                    <div className="flex-1" />
-                    
-                    <Button 
-                      onClick={handleSendEmail}
-                      disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
-                      size="sm"
-                      className="h-7 text-xs"
-                    >
-                      {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        // Schedule send functionality
-                        toast({
-                          title: 'Scheduled Send',
-                          description: 'Email scheduled for later delivery'
-                        });
-                      }}
-                      disabled={!emailTo || !emailSubject || !emailContent}
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs px-2"
-                    >
-                      <Clock className="h-3 w-3 mr-1" />
-                      Schedule
-                    </Button>
                   </div>
                 </div>
               </TabsContent>
