@@ -67,6 +67,167 @@ interface LoanCRMProps {
   loanData?: any;
 }
 
+// Email Templates Content Component
+const EmailTemplatesContent = React.memo(({ 
+  onSelectTemplate, 
+  onClose 
+}: { 
+  onSelectTemplate: (template: any) => void;
+  onClose: () => void;
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
+  const [folderPath, setFolderPath] = useState<Array<{id: number | null, name: string}>>([
+    { id: null, name: 'Email Templates' }
+  ]);
+  
+  // Fetch folders with template count
+  const { data: foldersResponse, isLoading: loadingFolders } = useQuery({
+    queryKey: ['/api/email-template-folders'],
+  });
+  const folders = foldersResponse?.data || [];
+  
+  // Fetch templates for current folder or all templates
+  const { data: templatesResponse, isLoading: loadingTemplates } = useQuery({
+    queryKey: ['/api/email-templates', currentFolderId, searchTerm],
+    queryFn: async () => {
+      let url = '/api/email-templates';
+      const params = new URLSearchParams();
+      if (currentFolderId) params.append('folderId', currentFolderId.toString());
+      if (searchTerm) params.append('search', searchTerm);
+      if (params.toString()) url += `?${params}`;
+      
+      const response = await fetch(url, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch templates');
+      return response.json();
+    }
+  });
+  const templates = templatesResponse?.data || [];
+
+  const navigateToFolder = (folder: { id: number | null, name: string }) => {
+    setCurrentFolderId(folder.id);
+    
+    // Update breadcrumb path
+    const folderIndex = folderPath.findIndex(f => f.id === folder.id);
+    if (folderIndex !== -1) {
+      // Navigate back in breadcrumb
+      setFolderPath(folderPath.slice(0, folderIndex + 1));
+    } else {
+      // Navigate forward to new folder
+      setFolderPath([...folderPath, folder]);
+    }
+  };
+
+  const totalTemplates = templates.length + folders.reduce((sum: number, folder: any) => sum + (folder.templateCount || 0), 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Breadcrumb Navigation */}
+      {folderPath.length > 1 && (
+        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+          {folderPath.map((folder, index) => (
+            <React.Fragment key={index}>
+              {index > 0 && <ChevronDown className="h-3 w-3 rotate-[-90deg]" />}
+              <button
+                onClick={() => navigateToFolder(folder)}
+                className="hover:text-primary transition-colors"
+              >
+                {folder.name}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+      
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search Email Templates"
+          className="pl-8"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+      
+      {/* Folders and Templates */}
+      <ScrollArea className="h-[350px]">
+        <div className="space-y-1">
+          {/* Show All Templates folder at root */}
+          {!currentFolderId && !searchTerm && (
+            <div
+              className="flex items-center justify-between p-3 hover:bg-muted/50 cursor-pointer transition-colors border rounded"
+              onClick={() => navigateToFolder({ id: null, name: 'All Email Templates' })}
+            >
+              <div className="flex items-center gap-2">
+                <ChevronDown className="h-4 w-4 rotate-[-90deg]" />
+                <span className="text-sm font-medium">All Email Templates ({totalTemplates} Templates)</span>
+              </div>
+            </div>
+          )}
+          
+          {/* Display folders for current level */}
+          {!searchTerm && folders
+            .filter((folder: any) => folder.parentId === currentFolderId)
+            .map((folder: any) => (
+              <div
+                key={folder.id}
+                className="flex items-center justify-between p-3 hover:bg-muted/50 cursor-pointer transition-colors border rounded"
+                onClick={() => navigateToFolder({ id: folder.id, name: folder.name })}
+              >
+                <div className="flex items-center gap-2">
+                  <ChevronDown className="h-4 w-4 rotate-[-90deg]" />
+                  <span className="text-sm font-medium">{folder.name} ({folder.templateCount} Templates)</span>
+                </div>
+              </div>
+            ))}
+          
+          {/* Display templates */}
+          {templates.map((template: any) => (
+            <div
+              key={template.id}
+              className="p-3 hover:bg-muted/50 rounded cursor-pointer transition-colors border"
+              onClick={() => onSelectTemplate(template)}
+            >
+              <p className="text-sm font-medium">{template.name}</p>
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                {template.subject || 'No subject'}
+              </p>
+            </div>
+          ))}
+          
+          {/* Loading state */}
+          {(loadingFolders || loadingTemplates) && (
+            <div className="text-center py-4">
+              <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                Loading...
+              </div>
+            </div>
+          )}
+          
+          {/* Empty state */}
+          {!loadingFolders && !loadingTemplates && templates.length === 0 && 
+           folders.filter((f: any) => f.parentId === currentFolderId).length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              <Mail className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No templates found</p>
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+      
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+});
+
 // Document Selector Component for attachments
 function DocumentSelector({ 
   loanId, 
@@ -3204,83 +3365,18 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               Select a template to use for your email
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Search Bar */}
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search Email Templates"
-                className="pl-8"
-              />
-            </div>
-            
-            {/* Template Folders */}
-            <div className="border rounded-lg">
-              <div
-                className="flex items-center justify-between p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                onClick={() => {
-                  // Expand folder logic here
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <ChevronDown className="h-4 w-4" />
-                  <span className="text-sm font-medium">All Email Templates (93 Templates)</span>
-                </div>
-              </div>
-              
-              <div
-                className="flex items-center justify-between p-3 hover:bg-muted/50 cursor-pointer transition-colors border-t"
-                onClick={() => {
-                  // Expand folder logic here
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <ChevronDown className="h-4 w-4" />
-                  <span className="text-sm font-medium">Follow Up Boss (76 Templates)</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Sample Templates List */}
-            <ScrollArea className="h-[300px] border rounded-lg p-3">
-              <div className="space-y-2">
-                {[
-                  'Ask for testimonials/referrals - (NEED TO EDIT)',
-                  'BKA C01E01',
-                  'BKA C01E02',
-                  'BKA C01E03',
-                  'BKA C01E04',
-                  'BKA C01E05',
-                  'BKA C01E06'
-                ].map((template, index) => (
-                  <div
-                    key={index}
-                    className="p-2 hover:bg-muted/50 rounded cursor-pointer transition-colors"
-                    onClick={() => {
-                      // Load template content
-                      setEmailSubject(`Template: ${template}`);
-                      setEmailContent(`This is a sample template content for ${template}`);
-                      setShowTemplatesModal(false);
-                      toast({
-                        title: 'Template Loaded',
-                        description: `${template} has been loaded into your email`
-                      });
-                    }}
-                  >
-                    <p className="text-sm">{template}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Hi Contact First Name, Let's hit the ground running with this property...
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTemplatesModal(false)}>
-              Cancel
-            </Button>
-          </DialogFooter>
+          <EmailTemplatesContent 
+            onSelectTemplate={(template: any) => {
+              setEmailSubject(template.subject);
+              setEmailContent(template.content);
+              setShowTemplatesModal(false);
+              toast({
+                title: 'Template Loaded',
+                description: `${template.name} has been loaded into your email`
+              });
+            }}
+            onClose={() => setShowTemplatesModal(false)}
+          />
         </DialogContent>
       </Dialog>
 
