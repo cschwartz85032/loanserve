@@ -3,6 +3,7 @@
 **Replit Workspace:** LoanServe Pro (Mortgage Loan Servicing Platform)  
 **Report Period:** Last 72 hours  
 **Severity:** CRITICAL - Data Loss & System Instability  
+**Last Updated:** January 24, 2025 - Added Production Authentication Issue  
 
 ---
 
@@ -105,6 +106,35 @@ Detail: Key (id)=(14) is still referenced from table "auth_events"
 - Session data format inconsistencies
 - User ID tracking failures in session store
 - Session cleanup processes failing
+
+---
+
+## CRITICAL ISSUE #5: PRODUCTION AUTHENTICATION FAILURE (RESOLVED)
+**Severity:** HIGH  
+**Impact:** Complete authentication failure in production deployment  
+**Status:** RESOLVED on January 24, 2025
+
+### Problem Description:
+- Users unable to authenticate in production deployment
+- All API requests returning 401 Unauthorized after successful login
+- Session cookies being rejected by browsers in HTTPS environment
+
+### Root Cause:
+The session cookie configuration was using `sameSite: 'lax'` which caused browsers to block cookies in cross-site HTTPS contexts. Modern browsers require `sameSite: 'none'` with `secure: true` for cookies to work properly over HTTPS.
+
+### Resolution:
+Changed session cookie configuration in `server/auth.ts`:
+- FROM: `sameSite: isProduction ? 'lax' : 'strict'`
+- TO: `sameSite: isProduction ? 'none' : 'strict'`
+
+### Critical Note:
+**The solution was clearly documented in user-provided troubleshooting documentation but was initially overlooked by the development team**, causing unnecessary delays in resolution. This highlights the importance of thoroughly reviewing all user-provided documentation before attempting fixes.
+
+### Deployment Configuration Required:
+Production deployment secrets must include:
+- `SESSION_SECRET`: Secure random string (64+ characters)
+- `NODE_ENV`: Set to "production"
+- Both must be configured in Replit's Deployment Secrets (not just App Secrets)
 
 ---
 
