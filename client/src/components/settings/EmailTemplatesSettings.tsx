@@ -145,7 +145,8 @@ export default function EmailTemplatesSettings() {
         title: "Folder deleted",
         description: "The folder has been deleted successfully.",
       });
-      setSelectedFolder(null);
+      // Don't reset to top level - stay in current location
+      // setSelectedFolder(null); // Removed this line
     },
     onError: (error) => {
       toast({
