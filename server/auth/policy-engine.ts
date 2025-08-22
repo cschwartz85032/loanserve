@@ -133,14 +133,15 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
       scope: null
     }));
   } else {
-    // Get permissions directly from role_permissions table
+    // Get permissions by joining role_permissions with permissions table
     if (roleIds.length > 0) {
       // Query permissions one by one to avoid array issues
       for (const roleId of roleIds) {
         const perms = await db.execute(sql`
-          SELECT resource, permission as level, null as scope
-          FROM role_permissions
-          WHERE role_id = ${roleId}::uuid
+          SELECT p.resource, p.level, rp.scope
+          FROM role_permissions rp
+          JOIN permissions p ON rp.permission_id = p.id
+          WHERE rp.role_id = ${roleId}::uuid
         `);
         userPermissions.push(...perms.rows);
       }
