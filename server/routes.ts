@@ -16,6 +16,7 @@ import { ipAllowlistRouter } from "./routes/ip-allowlist";
 import mfaRoutes from "./routes/mfa";
 import crmRoutes from "./routes/crm";
 import { settingsRouter } from "./routes/settings";
+import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -83,6 +84,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/admin/users', adminUsersRouter);
   app.use('/api/ip-allowlist', ipAllowlistRouter);
   app.use(settingsRouter);
+  app.use('/api', noticeTemplatesRouter);
   
   // Register MFA routes
   app.use('/api/mfa', mfaRoutes);

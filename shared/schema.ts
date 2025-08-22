@@ -1359,6 +1359,44 @@ export const systemSettings = pgTable("system_settings", {
   };
 });
 
+// Notice Templates
+export const noticeTemplates = pgTable("notice_templates", {
+  id: serial("id").primaryKey(),
+  category: text("category").notNull(), // 'late', 'insurance', 'nsf', 'payoff', 'hud', 'arm', 'other'
+  subcategory: text("subcategory"), // 'balloon', 'beneficiary', 'reinstate', 'gtm', etc.
+  name: text("name").notNull(),
+  description: text("description"),
+  filename: text("filename"),
+  fileUrl: text("file_url"),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  isActive: boolean("is_active").default(true),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    categoryIdx: index("notice_template_category_idx").on(table.category),
+    categorySubcategoryIdx: index("notice_template_cat_subcat_idx").on(table.category, table.subcategory),
+  };
+});
+
+// Notice Settings
+export const noticeSettings = pgTable("notice_settings", {
+  id: serial("id").primaryKey(),
+  category: text("category").notNull(), // 'late', 'nsf', 'payoff', etc.
+  settingKey: text("setting_key").notNull(),
+  settingValue: jsonb("setting_value").notNull(),
+  description: text("description"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    categoryKeyIdx: uniqueIndex("notice_settings_category_key_idx").on(table.category, table.settingKey),
+  };
+});
+
 // ========================================
 // DEFINE RELATIONSHIPS
 // ========================================
