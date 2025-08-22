@@ -1,0 +1,52 @@
+[INFO] Successfully loaded pdf2pic module
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+[INFO] Successfully loaded pdfjs-dist module
+[Migration] Starting database migrations...
+[Migration] Error running migrations: error: type "collection_status" already exists
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async migrate (/home/runner/workspace/node_modules/src/neon-http/migrator.ts:45:5)
+    at async runMigrations (/home/runner/workspace/server/migrations.ts:13:5)
+    at async <anonymous> (/home/runner/workspace/server/index.ts:80:3) {
+  length: 97,
+  severity: 'ERROR',
+  code: '42710',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'typecmds.c',
+  line: '1167',
+  routine: 'DefineEnum'
+}
+5:22:58 PM [express] serving on port 5000
+node:internal/process/promises:391
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+[Failed to load PostCSS config: Failed to load PostCSS config (searchPath: /home/runner/workspace/client): [Error] Loading PostCSS Plugin failed: Cannot find module 'autoprefixer'
+Require stack:
+- /home/runner/workspace/postcss.config.js
+
+(@/home/runner/workspace/postcss.config.js)
+Error: Loading PostCSS Plugin failed: Cannot find module 'autoprefixer'
+Require stack:
+- /home/runner/workspace/postcss.config.js
+
+(@/home/runner/workspace/postcss.config.js)
+    at load (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-C6uTJdX2.js:33632:11)
+    at <anonymous> (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-C6uTJdX2.js:33657:16)
+    at Array.map (<anonymous>)
+    at plugins (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-C6uTJdX2.js:33656:8)
+    at processResult (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-C6uTJdX2.js:33726:14)
+    at <anonymous> (/home/runner/workspace/node_modules/vite/dist/node/chunks/dep-C6uTJdX2.js:33856:14)]
+
+Node.js v20.19.3
