@@ -3,7 +3,7 @@ import {
   userRoles,
   roles, 
   loans, 
-  payments, 
+  payments,
   escrowAccounts, 
   escrowTransactions, 
   documents, 
@@ -15,6 +15,8 @@ import {
   paymentSchedule,
   escrowDisbursements,
   escrowDisbursementPayments,
+  loanLedger,
+  loanFees,
   type User, 
   type InsertUser,
   type Loan,
@@ -48,7 +50,7 @@ import {
   type InsertInvestor
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, sql, count, sum, isNull, gte } from "drizzle-orm";
+import { eq, desc, and, or, sql, count, sum, isNull, gte, inArray } from "drizzle-orm";
 import session, { Store } from "express-session";
 import { CustomSessionStore } from "./auth/custom-session-store";
 
@@ -366,17 +368,57 @@ export class DatabaseStorage implements IStorage {
     console.log("Insert data received:", JSON.stringify(insertLoan, null, 2));
     
     try {
-      console.log("Attempting to insert into database...");
-      const [loan] = await db
-        .insert(loans)
-        .values(insertLoan)
-        .returning();
+      console.log("Attempting to insert into database with transaction...");
       
-      console.log("Loan inserted successfully:", loan);
-      return loan;
+      // Use transaction to ensure atomicity
+      const result = await db.transaction(async (tx) => {
+        // Insert the loan
+        const [loan] = await tx
+          .insert(loans)
+          .values(insertLoan)
+          .returning();
+        
+        console.log("Loan inserted successfully:", loan);
+        
+        // Create initial escrow account if property has escrow
+        if (insertLoan.monthlyEscrow && parseFloat(insertLoan.monthlyEscrow) > 0) {
+          await tx.insert(escrowAccounts).values({
+            loanId: loan.id,
+            accountType: 'standard',
+            balance: '0.00',
+            monthlyAmount: insertLoan.monthlyEscrow,
+            status: 'active',
+            lastAnalysisDate: new Date()
+          });
+          console.log("Escrow account created for loan:", loan.id);
+        }
+        
+        // Create initial ledger entry for loan origination
+        await tx.insert(loanLedger).values({
+          loanId: loan.id,
+          transactionDate: new Date(),
+          transactionId: `ORIG-${loan.id}-${Date.now()}`,
+          description: 'Loan Origination',
+          transactionType: 'origination',
+          category: 'loan',
+          creditAmount: loan.originalAmount,
+          debitAmount: '0',
+          runningBalance: loan.originalAmount,
+          principalBalance: loan.originalAmount,
+          interestBalance: '0',
+          status: 'posted',
+          createdBy: null,
+          notes: `Loan ${loan.loanNumber} originated`
+        });
+        console.log("Initial ledger entry created for loan:", loan.id);
+        
+        return loan;
+      });
+      
+      return result;
     } catch (error: any) {
       console.error("=== DATABASE ERROR ===");
-      console.error("Error inserting loan:", error);
+      console.error("Error in loan creation transaction:", error);
       console.error("Error message:", error.message);
       console.error("Error code:", error.code);
       console.error("Error detail:", error.detail);
@@ -422,18 +464,63 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteLoan(id: number): Promise<void> {
-    // Delete related documents first to avoid foreign key constraint violation
-    await db.delete(documents).where(eq(documents.loanId, id));
-    // Delete related loan borrowers
-    await db.delete(loanBorrowers).where(eq(loanBorrowers.loanId, id));
-    // Delete related investors
-    await db.delete(investors).where(eq(investors.loanId, id));
-    // Delete related payments
-    await db.delete(payments).where(eq(payments.loanId, id));
-    // Delete related payment schedule
-    await db.delete(paymentSchedule).where(eq(paymentSchedule.loanId, id));
-    // Finally delete the loan
-    await db.delete(loans).where(eq(loans.id, id));
+    // Use transaction to ensure all related records are deleted atomically
+    await db.transaction(async (tx) => {
+      console.log(`Starting transaction to delete loan ${id}`);
+      
+      // Delete all related records in proper order to avoid foreign key violations
+      // Delete documents
+      const docsDeleted = await tx.delete(documents).where(eq(documents.loanId, id));
+      console.log(`Deleted documents for loan ${id}`);
+      
+      // Delete loan borrowers
+      await tx.delete(loanBorrowers).where(eq(loanBorrowers.loanId, id));
+      console.log(`Deleted loan borrowers for loan ${id}`);
+      
+      // Delete investors
+      await tx.delete(investors).where(eq(investors.loanId, id));
+      console.log(`Deleted investors for loan ${id}`);
+      
+      // Note: No separate payment allocations table - allocations are part of payments table
+      
+      // Delete payments
+      await tx.delete(payments).where(eq(payments.loanId, id));
+      console.log(`Deleted payments for loan ${id}`);
+      
+      // Delete payment schedule
+      await tx.delete(paymentSchedule).where(eq(paymentSchedule.loanId, id));
+      console.log(`Deleted payment schedule for loan ${id}`);
+      
+      // Delete escrow disbursements and related records
+      await tx.delete(escrowDisbursementPayments)
+        .where(
+          inArray(
+            escrowDisbursementPayments.disbursementId,
+            tx.select({ id: escrowDisbursements.id })
+              .from(escrowDisbursements)
+              .where(eq(escrowDisbursements.loanId, id))
+          )
+        );
+      await tx.delete(escrowDisbursements).where(eq(escrowDisbursements.loanId, id));
+      console.log(`Deleted escrow disbursements for loan ${id}`);
+      
+      // Delete escrow transactions and accounts
+      await tx.delete(escrowTransactions).where(eq(escrowTransactions.loanId, id));
+      await tx.delete(escrowAccounts).where(eq(escrowAccounts.loanId, id));
+      console.log(`Deleted escrow accounts for loan ${id}`);
+      
+      // Delete loan ledger entries
+      await tx.delete(loanLedger).where(eq(loanLedger.loanId, id));
+      console.log(`Deleted ledger entries for loan ${id}`);
+      
+      // Delete loan fees
+      await tx.delete(loanFees).where(eq(loanFees.loanId, id));
+      console.log(`Deleted loan fees for loan ${id}`);
+      
+      // Finally delete the loan itself
+      await tx.delete(loans).where(eq(loans.id, id));
+      console.log(`Successfully deleted loan ${id} and all related records`);
+    });
   }
 
   async getLoanMetrics(userId?: number): Promise<{

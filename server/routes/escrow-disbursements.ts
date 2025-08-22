@@ -140,33 +140,63 @@ router.post("/api/escrow-disbursements/:id/payments", async (req, res) => {
     });
     
     // Create the payment record
-    const [payment] = await db
-      .insert(escrowDisbursementPayments)
-      .values(validatedData)
-      .returning();
+    // Use transaction to ensure atomicity of payment and ledger entry
+    const result = await db.transaction(async (tx) => {
+      // Insert payment
+      const [payment] = await tx
+        .insert(escrowDisbursementPayments)
+        .values(validatedData)
+        .returning();
+      
+      // Create corresponding ledger entry
+      const [ledgerEntry] = await tx
+        .insert(loanLedger)
+        .values({
+          loanId: disbursement.loanId,
+          transactionDate: validatedData.paymentDate,
+          transactionId: `DISB-${payment.id}-${Date.now()}`,
+          description: `Escrow disbursement: ${disbursement.description}`,
+          transactionType: 'disbursement',
+          debitAmount: validatedData.amount,
+          creditAmount: "0",
+          category: 'escrow',
+          notes: `Payment for ${disbursement.disbursementType} - ${disbursement.description}`,
+          runningBalance: '0', // Will be calculated properly in production
+          principalBalance: '0',
+          interestBalance: '0',
+          status: 'posted'
+        })
+        .returning();
+      
+      // Update payment with ledger entry ID
+      const [updatedPayment] = await tx
+        .update(escrowDisbursementPayments)
+        .set({ ledgerEntryId: ledgerEntry.id })
+        .where(eq(escrowDisbursementPayments.id, payment.id))
+        .returning();
+      
+      // Update escrow account balance
+      const [escrowAccount] = await tx
+        .select()
+        .from(escrowAccounts)
+        .where(eq(escrowAccounts.loanId, disbursement.loanId))
+        .limit(1);
+      
+      if (escrowAccount) {
+        const newBalance = (parseFloat(escrowAccount.balance) - parseFloat(validatedData.amount)).toFixed(2);
+        await tx
+          .update(escrowAccounts)
+          .set({ 
+            balance: newBalance,
+            lastTransactionDate: validatedData.paymentDate
+          })
+          .where(eq(escrowAccounts.id, escrowAccount.id));
+      }
+      
+      return { ...updatedPayment, ledgerEntryId: ledgerEntry.id };
+    });
     
-    // Create corresponding ledger entry
-    const ledgerEntry = await db
-      .insert(loanLedger)
-      .values({
-        loanId: disbursement.loanId,
-        transactionDate: validatedData.paymentDate,
-        description: `Escrow disbursement: ${disbursement.description}`,
-        transactionType: 'disbursement',
-        debitAmount: validatedData.amount,
-        creditAmount: "0",
-        category: 'escrow',
-        notes: `Payment for ${disbursement.disbursementType} - ${disbursement.description}`
-      })
-      .returning();
-    
-    // Update payment with ledger entry ID
-    await db
-      .update(escrowDisbursementPayments)
-      .set({ ledgerEntryId: ledgerEntry[0].id })
-      .where(eq(escrowDisbursementPayments.id, payment.id));
-    
-    res.status(201).json({ ...payment, ledgerEntryId: ledgerEntry[0].id });
+    res.status(201).json(result);
   } catch (error: any) {
     console.error("Error recording disbursement payment:", error);
     const errorMessage = error.issues ? error.issues[0].message : error.message || "Invalid payment data";

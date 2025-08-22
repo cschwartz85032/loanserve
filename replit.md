@@ -24,6 +24,12 @@ When encountering database or field-related errors:
 
 ## Recent Fixes (August 22, 2025)
 
+### Critical Database Transaction Fixes
+Implemented proper database transactions for multi-table operations to ensure data integrity:
+- **Loan Creation Transaction**: Now atomically creates loan, initial escrow account (if needed), and initial ledger entry. All succeed or rollback together.
+- **Loan Deletion Transaction**: All related records (documents, borrowers, payments, escrow, ledger entries, fees) are now deleted atomically. No more orphaned records on partial failure.
+- **Escrow Disbursement Transaction**: Payment recording, ledger entry creation, and escrow balance updates now happen atomically to prevent inconsistent states.
+
 ### Critical Authentication & Session Fixes
 Fixed critical issues identified in code analysis:
 - **Session Authentication Fix**: Updated `/api/user` endpoint to check both `req.user?.id` (Passport) and `req.session.userId` (new auth) to prevent 401 errors
