@@ -101,22 +101,10 @@ export default function EmailTemplatesSettings() {
     success: boolean;
     data: EmailTemplate[];
   }>({
-    queryKey: ["/api/email-templates", selectedFolder],
-    queryFn: async () => {
-      const url = selectedFolder 
-        ? `/api/email-templates?folderId=${selectedFolder}`
-        : "/api/email-templates";
-      console.log('Fetching templates from URL:', url);
-      console.log('Selected folder ID:', selectedFolder);
-      const response = await apiRequest(url);
-      const data = await response.json();
-      console.log('Templates response:', data);
-      return data;
-    },
+    queryKey: ["/api/email-templates", { folderId: selectedFolder }],
     enabled: selectedFolder !== null,
   });
   const templates: EmailTemplate[] = templatesResponse?.data || [];
-  console.log('Final templates to display:', templates);
 
   // Create folder mutation
   const createFolderMutation = useMutation({
