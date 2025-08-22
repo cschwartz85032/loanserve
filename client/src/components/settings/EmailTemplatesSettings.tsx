@@ -323,98 +323,98 @@ export default function EmailTemplatesSettings() {
             </div>
           )}
 
-          {/* Folders List */}
-          <div className="border rounded-lg">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b bg-gray-50">
-                  <th className="text-left p-3 font-medium">Name</th>
-                  <th className="text-left p-3 font-medium">Email Templates</th>
-                  <th className="text-right p-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {folders.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="text-center p-8 text-muted-foreground">
-                      No folders yet. Create your first folder to organize email templates.
-                    </td>
+          {/* Folders List - Only show when no folder is selected */}
+          {!selectedFolder && (
+            <div className="border rounded-lg">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b bg-gray-50">
+                    <th className="text-left p-3 font-medium">Name</th>
+                    <th className="text-left p-3 font-medium">Email Templates</th>
+                    <th className="text-right p-3 font-medium">Actions</th>
                   </tr>
-                ) : (
-                  folders.map((folder) => (
-                    <tr 
-                      key={folder.id} 
-                      className="border-b hover:bg-gray-50 cursor-pointer"
-                      onClick={() => navigateToFolder(folder)}
-                      data-testid={`folder-row-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-                    >
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <Folder className="h-4 w-4 text-blue-500" />
-                          <span className="font-medium">{folder.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <span className="text-muted-foreground">
-                          {folder.templateCount || 0}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigateToFolder(folder);
-                            }}
-                            data-testid={`navigate-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // TODO: Edit folder
-                            }}
-                            data-testid={`edit-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm("Are you sure you want to delete this folder?")) {
-                                deleteFolderMutation.mutate(folder.id);
-                              }
-                            }}
-                            data-testid={`delete-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
+                </thead>
+                <tbody>
+                  {folders.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="text-center p-8 text-muted-foreground">
+                        No folders yet. Create your first folder to organize email templates.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    folders.map((folder) => (
+                      <tr 
+                        key={folder.id} 
+                        className="border-b hover:bg-gray-50 cursor-pointer"
+                        onClick={() => navigateToFolder(folder)}
+                        data-testid={`folder-row-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <Folder className="h-4 w-4 text-blue-500" />
+                            <span className="font-medium">{folder.name}</span>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className="text-muted-foreground">
+                            {folder.templateCount || 0}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToFolder(folder);
+                              }}
+                              data-testid={`navigate-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // TODO: Edit folder
+                              }}
+                              data-testid={`edit-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Are you sure you want to delete this folder?")) {
+                                  deleteFolderMutation.mutate(folder.id);
+                                }
+                              }}
+                              data-testid={`delete-folder-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
-          {/* Templates List (when folder selected) */}
+          {/* Templates List (when folder selected) - Replace the entire view */}
           {selectedFolder && (
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">
                   Templates in {folders.find(f => f.id === selectedFolder)?.name}
                 </h3>
                 <Button
-                  variant="outline"
-                  size="sm"
                   onClick={() => {
                     setShowCreateTemplate(true);
                     setSelectedFolderForTemplate(selectedFolder);
@@ -427,37 +427,78 @@ export default function EmailTemplatesSettings() {
               </div>
               <div className="border rounded-lg">
                 {templatesLoading ? (
-                  <div className="p-4">Loading templates...</div>
+                  <div className="p-8 text-center text-muted-foreground">Loading templates...</div>
                 ) : templates.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground">
-                    No templates in this folder yet.
+                  <div className="p-8 text-center text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p className="text-lg font-medium mb-2">No templates yet</p>
+                    <p>Create your first email template in this folder.</p>
+                    <Button
+                      className="mt-4"
+                      onClick={() => {
+                        setShowCreateTemplate(true);
+                        setSelectedFolderForTemplate(selectedFolder);
+                      }}
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Create Template
+                    </Button>
                   </div>
                 ) : (
-                  <div className="space-y-2 p-2">
-                    {templates.map((template) => (
-                      <div key={template.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-gray-400" />
-                          <div>
-                            <div className="font-medium">{template.name}</div>
-                            <div className="text-sm text-muted-foreground">{template.subject}</div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {template.isShared && (
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">Shared</span>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteTemplateMutation.mutate(template.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left p-3 font-medium">Template Name</th>
+                        <th className="text-left p-3 font-medium">Subject</th>
+                        <th className="text-left p-3 font-medium">Status</th>
+                        <th className="text-right p-3 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {templates.map((template) => (
+                        <tr key={template.id} className="border-b hover:bg-gray-50">
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-gray-400" />
+                              <span className="font-medium">{template.name}</span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <span className="text-muted-foreground">{template.subject}</span>
+                          </td>
+                          <td className="p-3">
+                            {template.isShared && (
+                              <Badge variant="secondary">Shared</Badge>
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  // TODO: Edit template
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  if (confirm("Are you sure you want to delete this template?")) {
+                                    deleteTemplateMutation.mutate(template.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             </div>
