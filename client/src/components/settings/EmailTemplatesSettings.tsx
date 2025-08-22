@@ -74,6 +74,7 @@ export default function EmailTemplatesSettings() {
   const [showCreateTemplate, setShowCreateTemplate] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedFolderForTemplate, setSelectedFolderForTemplate] = useState<number | null>(null);
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   
   // Template form state
   const [templateForm, setTemplateForm] = useState({
@@ -153,22 +154,28 @@ export default function EmailTemplatesSettings() {
     }
   });
 
-  // Create template mutation
-  const createTemplateMutation = useMutation({
-    mutationFn: async (data: typeof templateForm) => {
-      return apiRequest("/api/email-templates", {
-        method: "POST",
+  // Create/Update template mutation
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (data: typeof templateForm & { id?: number }) => {
+      const isEditing = editingTemplate !== null;
+      const url = isEditing ? `/api/email-templates/${editingTemplate.id}` : "/api/email-templates";
+      const method = isEditing ? "PUT" : "POST";
+      
+      return apiRequest(url, {
+        method,
         body: JSON.stringify(data)
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/email-templates"] });
       queryClient.invalidateQueries({ queryKey: ["/api/email-template-folders"] });
+      const isEditing = editingTemplate !== null;
       toast({
-        title: "Template created",
-        description: "The email template has been created successfully.",
+        title: isEditing ? "Template updated" : "Template created",
+        description: `The email template has been ${isEditing ? 'updated' : 'created'} successfully.`,
       });
       setShowCreateTemplate(false);
+      setEditingTemplate(null);
       setTemplateForm({
         name: "",
         subject: "",
@@ -178,8 +185,9 @@ export default function EmailTemplatesSettings() {
       });
     },
     onError: (error) => {
+      const isEditing = editingTemplate !== null;
       toast({
-        title: "Failed to create template",
+        title: `Failed to ${isEditing ? 'update' : 'create'} template`,
         description: error.message,
         variant: "destructive",
       });
@@ -216,13 +224,40 @@ export default function EmailTemplatesSettings() {
     }
   };
 
-  const handleCreateTemplate = () => {
+  const handleSaveTemplate = () => {
     if (templateForm.name.trim() && templateForm.subject.trim()) {
-      createTemplateMutation.mutate({
+      saveTemplateMutation.mutate({
         ...templateForm,
-        folderId: selectedFolderForTemplate
+        folderId: selectedFolderForTemplate,
+        ...(editingTemplate && { id: editingTemplate.id })
       });
     }
+  };
+
+  const handleEditTemplate = (template: EmailTemplate) => {
+    setEditingTemplate(template);
+    setTemplateForm({
+      name: template.name,
+      subject: template.subject,
+      body: template.body,
+      isShared: template.isShared,
+      folderId: template.folderId
+    });
+    setSelectedFolderForTemplate(template.folderId);
+    setShowCreateTemplate(true);
+  };
+
+  const handleCancelEdit = () => {
+    setShowCreateTemplate(false);
+    setEditingTemplate(null);
+    setTemplateForm({
+      name: "",
+      subject: "",
+      body: "",
+      isShared: false,
+      folderId: null
+    });
+    setSelectedFolderForTemplate(null);
   };
 
   const insertMergeField = (field: string) => {
@@ -476,9 +511,8 @@ export default function EmailTemplatesSettings() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => {
-                                  // TODO: Edit template
-                                }}
+                                onClick={() => handleEditTemplate(template)}
+                                data-testid={`edit-template-${template.name.toLowerCase().replace(/\s+/g, '-')}`}
                               >
                                 <Edit className="h-4 w-4" />
                               </Button>
@@ -543,8 +577,13 @@ export default function EmailTemplatesSettings() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5" />
-              Create Email Template
+              {editingTemplate ? 'Edit Email Template' : 'Create Email Template'}
             </DialogTitle>
+            {editingTemplate && (
+              <DialogDescription>
+                Editing: {editingTemplate.name}
+              </DialogDescription>
+            )}
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -716,14 +755,14 @@ export default function EmailTemplatesSettings() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreateTemplate(false)}>
+            <Button variant="outline" onClick={handleCancelEdit}>
               Cancel
             </Button>
             <Button 
-              onClick={handleCreateTemplate} 
-              disabled={!templateForm.name.trim() || !templateForm.subject.trim()}
+              onClick={handleSaveTemplate} 
+              disabled={!templateForm.name.trim() || !templateForm.subject.trim() || saveTemplateMutation.isPending}
             >
-              Save
+              {saveTemplateMutation.isPending ? 'Saving...' : (editingTemplate ? 'Update' : 'Save')}
             </Button>
           </DialogFooter>
         </DialogContent>
