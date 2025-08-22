@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, CalendarIcon, TrendingUp, DollarSign, AlertCircle, FileText } from "lucide-react";
+import { Download, CalendarIcon, TrendingUp, DollarSign, AlertCircle, FileText, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -125,6 +125,7 @@ export default function ReportsPage() {
           <TabsTrigger value="performance">Performance</TabsTrigger>
           <TabsTrigger value="distribution">Distribution</TabsTrigger>
           <TabsTrigger value="trends">Trends</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -244,6 +245,252 @@ export default function ReportsPage() {
               </ResponsiveContainer>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="reports" className="space-y-6">
+          {/* First Row of Report Categories */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Loan Transactions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Loan Transactions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Add Funding (Conventional)
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Add Funding (Government)
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Add Funding (Construction)
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Add Funding (Line Of Credit)
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Regular Payment
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Payoff Payment
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Other Cash From Borrower
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Other Cash From Lender
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Automated Payments (LOCKBOX)
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Printable Payment
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Adjustments
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Add Charges
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Payment Register
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Payment Receipts
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Payment Statements
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Payment Coupons
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Lender & Vendor Transactions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Lender & Vendor Transactions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Cash & Print Checks
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  From Remittance Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Funding Check Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Check Register
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Verification of Electronic Deposit
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Other Cash Received
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Adjustments
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Borrower Reports & Notices */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Borrower Reports & Notices</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Borrower Statement of Account
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Borrower Late Notices
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Insurance Expiration Notices
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Demand for Payoff
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Beneficiary Statement
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Reinstatement Notice
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Balloon Payment Notice
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  IDD Delinquency Notice
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Outstanding Charges Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Write Borrower Letters
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Write Funding Lenders In 1 Late Letters
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Name & Address Listing
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Mailing Labels
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Second Row of Report Categories */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Lender Reports & Notices */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Lender Reports & Notices</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Lender Statement of Account
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Lender Interest Accrual Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Outstanding Lender Notices Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Maturity Report
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Vendor Reports & Notices */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Vendor Reports & Notices</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Vendor Statement of Account
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Outstanding Charges Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Vendor Distribution Report
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Loan Management Reports */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Loan Management Reports</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Loan Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Maturity Report
+                </Button>
+                <Button variant="link" className="w-full justify-start p-0 h-auto text-blue-600 hover:text-blue-800">
+                  <ChevronRight className="h-3 w-3 mr-1" />
+                  Delinquency Report
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
         </div>
