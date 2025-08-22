@@ -562,16 +562,11 @@ export async function login(
  * Perform logout
  */
 export async function logout(sessionId: string, userId: number): Promise<void> {
-  // Revoke session
-  await db.update(sessions)
-    .set({ 
-      revokedAt: new Date(),
-      revokeReason: 'user_logout'
-    })
-    .where(and(
-      eq(sessions.id, sessionId),
-      eq(sessions.userId, userId.toString())
-    ));
+  // Delete session (standard express-session approach)
+  await db.execute(sql`
+    DELETE FROM sessions 
+    WHERE sid = ${sessionId}
+  `);
 
   // Log logout event
   await db.insert(authEvents).values({
@@ -589,39 +584,35 @@ export async function validateSession(sessionId: string): Promise<{
   valid: boolean;
   userId?: number;
 }> {
-  const [session] = await db.select({
-    userId: sessions.userId,
-    revokedAt: sessions.revokedAt
-  })
-  .from(sessions)
-  .where(eq(sessions.id, sessionId))
-  .limit(1);
+  const result = await db.execute(sql`
+    SELECT sess, expire 
+    FROM sessions 
+    WHERE sid = ${sessionId}
+    AND expire > NOW()
+    LIMIT 1
+  `);
 
-  if (!session || session.revokedAt) {
+  if (!result.rows || result.rows.length === 0) {
     return { valid: false };
   }
 
-  // Update last seen
-  await db.update(sessions)
-    .set({ lastSeenAt: new Date() })
-    .where(eq(sessions.id, sessionId));
+  const session = result.rows[0] as any;
+  const sessionData = typeof session.sess === 'string' 
+    ? JSON.parse(session.sess) 
+    : session.sess;
 
-  return { valid: true, userId: session.userId ? parseInt(session.userId) : undefined };
+  return { valid: true, userId: sessionData.userId };
 }
 
 /**
  * Revoke all sessions for a user
  */
 export async function revokeAllUserSessions(userId: number, reason: string): Promise<void> {
-  await db.update(sessions)
-    .set({ 
-      revokedAt: new Date(),
-      revokeReason: reason
-    })
-    .where(and(
-      eq(sessions.userId, userId.toString()),
-      sql`revoked_at IS NULL`
-    ));
+  // Delete all sessions containing this userId
+  await db.execute(sql`
+    DELETE FROM sessions 
+    WHERE sess::text LIKE '%"userId":${userId}%'
+  `);
 
   await db.insert(authEvents).values({
     targetUserId: userId,
