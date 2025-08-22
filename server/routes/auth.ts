@@ -163,8 +163,8 @@ router.get('/session', async (req, res) => {
       username: users.username,
       email: users.email,
       firstName: users.firstName,
-      lastName: users.lastName,
-      role: users.role
+      lastName: users.lastName
+      // role field removed - using RBAC system
     })
     .from(users)
     .where(eq(users.id, session.userId!))

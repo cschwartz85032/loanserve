@@ -20,6 +20,8 @@ The RBAC system uses a **normalized structure** with proper foreign key relation
 - **Never use denormalized structure** with `resource` and `permission` strings in `role_permissions`
 - All role operations should join `role_permissions` with `permissions` table to get resource/level info
 - Migration 0009_user_management_system_fixed.sql is the authoritative source for the schema
+- **Legacy role enum removed** (2025-08-22): The `users.role` enum column has been completely removed via migration 0010
+- **Single role system**: All roles are now managed exclusively through the `user_roles` junction table
 
 # System Architecture
 

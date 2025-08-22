@@ -219,7 +219,7 @@ export const users = pgTable("users", {
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   middleName: text("middle_name"),
-  role: userRoleEnum("role").notNull(),
+  // role field removed - using RBAC system with user_roles junction table instead
   phone: text("phone"),
   mobilePhone: text("mobile_phone"),
   fax: text("fax"),
@@ -252,7 +252,7 @@ export const users = pgTable("users", {
 }, (table) => {
   return {
     emailIdx: index("user_email_idx").on(table.email),
-    roleIdx: index("user_role_idx").on(table.role),
+    // roleIdx removed - using RBAC system with user_roles junction table instead
     activeIdx: index("user_active_idx").on(table.isActive),
   };
 });
