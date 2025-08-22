@@ -1,0 +1,49 @@
+Step‑by‑step plan to diagnose and fix the issue
+
+Inspect the production environment variables
+
+Verify that SESSION_SECRET, DATABASE_URL, NODE_ENV and PORT are set in production.
+
+Ensure that SESSION_SECRET is non‑empty and consistent across all deployed instances so session cookies can be decrypted after a redeploy.
+
+Check the session cookie in production
+
+Use the browser’s developer tools to watch the network request to /api/login and observe whether a connect.sid (or similar) cookie is returned.
+
+Confirm the cookie has the Secure attribute set when served over HTTPS and a suitable SameSite policy (typically SameSite=None) if the frontend and API are on different subdomains.
+
+Update session cookie configuration
+
+Modify server/auth.ts to set sessionSettings.cookie.secure = (app.get('env') !== 'development') and sameSite: 'none' when running behind HTTPS. Keep secure: false only in local development.
+
+Redeploy and test: if the cookie is now accepted by the browser, login should persist.
+
+Synchronise schema and migrations
+
+Run migrations in production using the same command used locally (runMigrations is called on startup
+GitHub
+). Inspect the live database (via psql or a management tool) to ensure role_permissions has the columns role_id, permission_id and scope
+GitHub
+ and that the sessions table matches the code.
+
+If the dev schema (shared/schema.ts) and production schema differ (e.g., denormalised rolePermissions
+GitHub
+ vs. normalised table), update shared/schema.ts to match the production database or vice versa, re‑run migrations, and adjust code accordingly.
+
+Check error logs around login
+
+Examine server logs in production for errors thrown during /api/login and /api/user requests. Errors like “column permission_id does not exist” indicate a schema mismatch, while “Failed to deserialize user” suggests invalid session secrets or ID type mismatches.
+
+Validate passport serialization
+
+passport.deserializeUser expects a numeric user ID
+GitHub
+. Confirm that the users.id column is of type integer in both dev and production. If you migrated to UUIDs in production, update the code to accept a string ID.
+
+Test after changes
+
+After correcting the cookie settings and synchronising the schema, redeploy to a staging environment and run through the registration and login flows.
+
+Use the developer tools to confirm that a session cookie is set, persists across requests, and that subsequent API calls include the cookie.
+
+If login still fails, repeat step 5 to inspect new error logs and adjust.

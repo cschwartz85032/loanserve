@@ -37,16 +37,29 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
+  // Check if we're in production
+  const isProduction = process.env.NODE_ENV === 'production' || app.get('env') === 'production';
+  
+  // Validate SESSION_SECRET in production
+  if (isProduction && (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === 'dev-session-secret-change-in-production')) {
+    console.error('WARNING: SESSION_SECRET must be set in production!');
+    throw new Error('SESSION_SECRET must be set in production');
+  }
+  
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || 'dev-session-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
     cookie: {
-      secure: false, // Allow non-HTTPS in development
+      secure: isProduction, // Require HTTPS in production
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: isProduction ? 'lax' : 'strict', // 'lax' for production to work with redirects
+      domain: process.env.COOKIE_DOMAIN || undefined, // Allow setting custom domain
     },
+    name: 'connect.sid', // Explicit session name
+    proxy: isProduction, // Trust proxy headers in production
   };
 
   app.set("trust proxy", 1);
@@ -65,10 +78,27 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
-  passport.deserializeUser(async (id: number, done) => {
-    const user = await storage.getUser(id);
-    done(null, user);
+  passport.serializeUser((user, done) => {
+    // Ensure we're serializing a valid user ID
+    if (!user || !user.id) {
+      return done(new Error('Invalid user object'));
+    }
+    done(null, user.id);
+  });
+  
+  passport.deserializeUser(async (id: number | string, done) => {
+    try {
+      // Handle both number and string IDs in case of UUID migration
+      const userId = typeof id === 'string' ? parseInt(id, 10) : id;
+      if (isNaN(userId)) {
+        return done(new Error('Invalid user ID'));
+      }
+      const user = await storage.getUser(userId);
+      done(null, user);
+    } catch (error) {
+      console.error('Failed to deserialize user:', error);
+      done(error, null);
+    }
   });
 
   app.post("/api/register", async (req, res, next) => {
@@ -91,6 +121,7 @@ export function setupAuth(app: Express) {
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
+        console.error('Login authentication error:', err);
         return res.status(500).json({ error: "Internal server error" });
       }
       if (!user) {
@@ -98,17 +129,32 @@ export function setupAuth(app: Express) {
       }
       req.login(user, (err) => {
         if (err) {
+          console.error('Login session error:', err);
           return res.status(500).json({ error: "Login failed" });
         }
+        // Log successful login
+        console.log(`User ${user.username} logged in successfully`);
         return res.status(200).json(user);
       });
     })(req, res, next);
   });
 
   app.post("/api/logout", (req, res, next) => {
+    const username = req.user?.username || 'unknown';
     req.logout((err) => {
-      if (err) return next(err);
-      res.sendStatus(200);
+      if (err) {
+        console.error('Logout error:', err);
+        return next(err);
+      }
+      // Destroy session completely
+      req.session.destroy((err) => {
+        if (err) {
+          console.error('Session destroy error:', err);
+        }
+        console.log(`User ${username} logged out successfully`);
+        res.clearCookie('connect.sid'); // Clear the session cookie
+        res.sendStatus(200);
+      });
     });
   });
 

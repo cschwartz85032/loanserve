@@ -13,6 +13,15 @@ When encountering database or field-related errors:
 4. **Use diagnostic scripts** - run `node debug-db-schema.cjs [table] [search]` to quickly check columns
 5. **Avoid overcomplicating** - check simple causes (duplicate columns, mismatched schemas) before complex theories (build issues, caching)
 
+## Production Deployment Configuration (2025-08-22)
+Session handling has been updated to support production deployment:
+- **Session cookies** are automatically set to `secure: true` in production (HTTPS required)
+- **SESSION_SECRET** must be set in production environment variables
+- **Cookie configuration** uses `sameSite: 'lax'` for production to work with redirects
+- **Passport serialization** handles both numeric and string user IDs for future UUID migration
+- **Session destruction** properly clears cookies on logout
+- See `DEPLOYMENT.md` for complete deployment guide
+
 ## RBAC Architecture Notes (2025-08-22)
 The RBAC system uses a **normalized structure** with proper foreign key relationships:
 - `permissions` table: Contains resources and permission levels (UUID IDs)
