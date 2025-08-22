@@ -63,7 +63,9 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
       loanId,
       escrowAccountId: escrowAccount.id,
       nextDueDate: req.body.nextDueDate && req.body.nextDueDate !== '' ? req.body.nextDueDate : null,
-      lastPaymentDate: req.body.lastPaymentDate && req.body.lastPaymentDate !== '' ? req.body.lastPaymentDate : null
+      firstDueDate: req.body.firstDueDate && req.body.firstDueDate !== '' ? req.body.firstDueDate : null,
+      lastPaidDate: req.body.lastPaidDate && req.body.lastPaidDate !== '' ? req.body.lastPaidDate : null,
+      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null
     };
     
     const validatedData = insertEscrowDisbursementSchema.parse(cleanedData);
@@ -93,7 +95,9 @@ router.patch("/api/escrow-disbursements/:id", async (req, res) => {
     const cleanedData = {
       ...req.body,
       nextDueDate: req.body.nextDueDate && req.body.nextDueDate !== '' ? req.body.nextDueDate : null,
-      lastPaymentDate: req.body.lastPaymentDate && req.body.lastPaymentDate !== '' ? req.body.lastPaymentDate : null
+      firstDueDate: req.body.firstDueDate && req.body.firstDueDate !== '' ? req.body.firstDueDate : null,
+      lastPaidDate: req.body.lastPaidDate && req.body.lastPaidDate !== '' ? req.body.lastPaidDate : null,
+      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null
     };
     
     const updatedDisbursement = await storage.updateEscrowDisbursement(id, cleanedData);
