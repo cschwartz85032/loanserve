@@ -38,7 +38,7 @@ const NOTICE_CATEGORIES = [
   { value: "other", label: "Other" }
 ];
 
-export default function TemplatesSettings() {
+export default function AutoNoticeSettings() {
   const { toast } = useToast();
   const [activeCategory, setActiveCategory] = useState("late");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);

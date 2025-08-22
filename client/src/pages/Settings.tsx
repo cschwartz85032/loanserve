@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, FileText } from "lucide-react";
+import { Shield, Mail, Bell } from "lucide-react";
 import SecuritySettings from "@/components/settings/SecuritySettings";
-import TemplatesSettings from "@/components/settings/TemplatesSettings";
+import EmailTemplatesSettings from "@/components/settings/EmailTemplatesSettings";
+import AutoNoticeSettings from "@/components/settings/AutoNoticeSettings";
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState("security");
@@ -16,14 +16,18 @@ export default function Settings() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-lg grid-cols-3">
           <TabsTrigger value="security" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
             Security
           </TabsTrigger>
           <TabsTrigger value="templates" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
+            <Mail className="h-4 w-4" />
             Templates
+          </TabsTrigger>
+          <TabsTrigger value="auto-notice" className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Auto Notice
           </TabsTrigger>
         </TabsList>
 
@@ -32,7 +36,11 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="templates" className="space-y-4">
-          <TemplatesSettings />
+          <EmailTemplatesSettings />
+        </TabsContent>
+
+        <TabsContent value="auto-notice" className="space-y-4">
+          <AutoNoticeSettings />
         </TabsContent>
       </Tabs>
     </div>

@@ -2237,3 +2237,43 @@ export const insertMfaAuditLogSchema = createInsertSchema(mfaAuditLog).omit({
 });
 export type InsertMfaAuditLog = z.infer<typeof insertMfaAuditLogSchema>;
 export type MfaAuditLog = typeof mfaAuditLog.$inferSelect;
+
+// Email Template Folders for organizing email templates
+export const emailTemplateFolders = pgTable('email_template_folders', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  parentId: integer('parent_id').references(() => emailTemplateFolders.id),
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+export const insertEmailTemplateFolderSchema = createInsertSchema(emailTemplateFolders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertEmailTemplateFolder = z.infer<typeof insertEmailTemplateFolderSchema>;
+export type EmailTemplateFolder = typeof emailTemplateFolders.$inferSelect;
+
+// Email Templates for storing email templates
+export const emailTemplates = pgTable('email_templates', {
+  id: serial('id').primaryKey(),
+  folderId: integer('folder_id').references(() => emailTemplateFolders.id),
+  name: varchar('name', { length: 255 }).notNull(),
+  subject: text('subject'),
+  body: text('body'),
+  isShared: boolean('is_shared').default(false),
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+
