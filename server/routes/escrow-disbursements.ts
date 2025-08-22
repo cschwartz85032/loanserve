@@ -86,7 +86,12 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
       }
     });
     
+    console.log("Raw request body:", req.body);
+    console.log("Cleaned data before validation:", cleanedData);
+    
     const validatedData = insertEscrowDisbursementSchema.parse(cleanedData);
+    
+    console.log("Validated data being sent to DB:", validatedData);
     
     const disbursement = await storage.createEscrowDisbursement(validatedData);
     
