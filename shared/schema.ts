@@ -1580,13 +1580,24 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   };
 });
 
-// Sessions table (standard express-session structure)
+// Sessions table (proper audit-enabled structure matching migration 0009)
 export const sessions = pgTable("sessions", {
-  sid: varchar("sid", { length: 255 }).primaryKey(),
-  sess: json("sess").notNull(),
-  expire: timestamp("expire", { precision: 6 }).notNull(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sid: varchar("sid", { length: 255 }).unique(), // Express session ID
+  sess: json("sess").notNull(), // Session data
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  ip: text("ip"), // Using text for inet type
+  userAgent: text("user_agent"),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokeReason: text("revoke_reason"),
+  expire: timestamp("expire", { precision: 6 }).notNull(), // For express-session compatibility
 }, (table) => {
   return {
+    userIdx: index("idx_sessions_user_id").on(table.userId),
+    lastSeenIdx: index("idx_sessions_last_seen_at").on(table.lastSeenAt),
+    sidIdx: uniqueIndex("idx_sessions_sid").on(table.sid),
     expireIdx: index("idx_sessions_expire").on(table.expire),
   };
 });

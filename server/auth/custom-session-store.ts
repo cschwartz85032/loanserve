@@ -37,6 +37,7 @@ export class CustomSessionStore extends Store {
         SELECT * FROM sessions 
         WHERE sid = ${sid} 
         AND expire > NOW()
+        AND revoked_at IS NULL
         LIMIT 1
       `);
 
@@ -45,6 +46,13 @@ export class CustomSessionStore extends Store {
       if (!session) {
         return callback(null, null);
       }
+
+      // Update last_seen_at
+      await db.execute(sql`
+        UPDATE sessions 
+        SET last_seen_at = NOW()
+        WHERE sid = ${sid}
+      `);
 
       // Parse the session data
       const sessionData = typeof session.sess === 'string' 
@@ -67,19 +75,38 @@ export class CustomSessionStore extends Store {
         ? new Date(sessionData.cookie.expires)
         : new Date(Date.now() + this.ttl * 1000);
 
-      // Use UPSERT (INSERT ON CONFLICT UPDATE) for standard express-session behavior
-      await db.execute(sql`
-        INSERT INTO sessions (sid, sess, expire)
-        VALUES (
-          ${sid},
-          ${JSON.stringify(sessionData)}::json,
-          ${expire}
-        )
-        ON CONFLICT (sid) 
-        DO UPDATE SET 
-          sess = ${JSON.stringify(sessionData)}::json,
-          expire = ${expire}
-      `);
+      // Extract user ID, IP, and user agent from session data
+      const userId = (sessionData as any)?.userId || (sessionData as any)?.passport?.user;
+      const ip = (sessionData as any)?.ip || null;
+      const userAgent = (sessionData as any)?.userAgent || null;
+
+      if (userId) {
+        // Use UPSERT with proper audit fields
+        await db.execute(sql`
+          INSERT INTO sessions (sid, user_id, sess, expire, ip, user_agent, created_at, last_seen_at)
+          VALUES (
+            ${sid},
+            ${userId},
+            ${JSON.stringify(sessionData)}::json,
+            ${expire},
+            ${ip},
+            ${userAgent},
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT (sid) 
+          DO UPDATE SET 
+            sess = ${JSON.stringify(sessionData)}::json,
+            expire = ${expire},
+            last_seen_at = NOW(),
+            ip = COALESCE(sessions.ip, ${ip}),
+            user_agent = COALESCE(sessions.user_agent, ${userAgent})
+        `);
+      } else {
+        // Fallback for sessions without user ID (pre-login sessions)
+        // These won't be tracked properly but won't break the system
+        console.warn('Session without userId:', sid);
+      }
 
       if (callback) callback();
     } catch (error) {
@@ -89,13 +116,15 @@ export class CustomSessionStore extends Store {
   }
 
   /**
-   * Destroy session
+   * Destroy session (mark as revoked instead of deleting for audit trail)
    */
   async destroy(sid: string, callback?: (err?: any) => void): Promise<void> {
     try {
-      // Delete session (standard express-session behavior)
+      // Mark session as revoked instead of deleting (for audit trail)
       await db.execute(sql`
-        DELETE FROM sessions 
+        UPDATE sessions 
+        SET revoked_at = NOW(),
+            revoke_reason = 'User logout'
         WHERE sid = ${sid}
       `);
 
@@ -117,7 +146,8 @@ export class CustomSessionStore extends Store {
 
       await db.execute(sql`
         UPDATE sessions 
-        SET expire = ${expire}
+        SET expire = ${expire},
+            last_seen_at = NOW()
         WHERE sid = ${sid}
       `);
 
@@ -136,6 +166,7 @@ export class CustomSessionStore extends Store {
       const result = await db.execute<any>(sql`
         SELECT sid, sess FROM sessions 
         WHERE expire > NOW()
+        AND revoked_at IS NULL
       `);
 
       const sessionMap: { [sid: string]: SessionData } = {};
@@ -155,12 +186,15 @@ export class CustomSessionStore extends Store {
   }
 
   /**
-   * Clear all sessions
+   * Clear all sessions (mark as revoked for audit)
    */
   async clear(callback?: (err?: any) => void): Promise<void> {
     try {
       await db.execute(sql`
-        DELETE FROM sessions
+        UPDATE sessions
+        SET revoked_at = NOW(),
+            revoke_reason = 'Admin clear all sessions'
+        WHERE revoked_at IS NULL
       `);
 
       if (callback) callback();
@@ -179,6 +213,7 @@ export class CustomSessionStore extends Store {
         SELECT COUNT(*) as count 
         FROM sessions 
         WHERE expire > NOW()
+        AND revoked_at IS NULL
       `);
 
       const count = result.rows?.[0]?.count || 0;
@@ -195,10 +230,13 @@ export class CustomSessionStore extends Store {
   private startPruning(): void {
     this.pruneTimer = setInterval(async () => {
       try {
-        // Delete expired sessions (standard express-session behavior)
+        // Mark expired sessions as revoked (for audit trail)
         await db.execute(sql`
-          DELETE FROM sessions 
+          UPDATE sessions 
+          SET revoked_at = NOW(),
+              revoke_reason = 'Session expired'
           WHERE expire < NOW()
+          AND revoked_at IS NULL
         `);
       } catch (error) {
         console.error('Session pruning error:', error);
