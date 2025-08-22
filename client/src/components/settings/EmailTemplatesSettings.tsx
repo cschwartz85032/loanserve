@@ -94,18 +94,7 @@ export default function EmailTemplatesSettings() {
   });
   // Filter folders based on current navigation context
   const allFolders: EmailTemplateFolder[] = foldersResponse?.data || [];
-  
-  // Debug logging
-  console.log('All folders:', allFolders);
-  console.log('Selected folder:', selectedFolder);
-  
-  const folders = allFolders.filter(folder => {
-    const shouldShow = folder.parentId === selectedFolder;
-    console.log(`Folder ${folder.name}: parentId=${folder.parentId}, selectedFolder=${selectedFolder}, shouldShow=${shouldShow}`);
-    return shouldShow;
-  });
-  
-  console.log('Filtered folders:', folders);
+  const folders = allFolders.filter(folder => folder.parentId === selectedFolder);
 
   // Fetch templates for selected folder
   const { data: templatesResponse, isLoading: templatesLoading } = useQuery<{
@@ -455,7 +444,73 @@ export default function EmailTemplatesSettings() {
             </div>
           )}
 
-          {/* Templates List (when folder selected) - Replace the entire view */}
+          {/* Show subfolders when inside a folder */}
+          {selectedFolder && folders.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-4">Subfolders</h3>
+              <div className="border rounded-lg">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-gray-50">
+                      <th className="text-left p-3 font-medium">Name</th>
+                      <th className="text-left p-3 font-medium">Email Templates</th>
+                      <th className="text-right p-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {folders.map((folder) => (
+                      <tr 
+                        key={folder.id} 
+                        className="border-b hover:bg-gray-50 cursor-pointer"
+                        onClick={() => navigateToFolder(folder)}
+                        data-testid={`subfolder-row-${folder.name.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <Folder className="h-4 w-4 text-blue-500" />
+                            <span className="font-medium">{folder.name}</span>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <span className="text-muted-foreground">
+                            {folder.templateCount || 0}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToFolder(folder);
+                              }}
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm("Are you sure you want to delete this folder?")) {
+                                  deleteFolderMutation.mutate(folder.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Templates List (when folder selected) */}
           {selectedFolder && (
             <div>
               <div className="flex items-center justify-between mb-4">

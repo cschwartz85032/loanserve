@@ -1,0 +1,38 @@
+[INFO] Successfully loaded pdf2pic module
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+[INFO] Successfully loaded pdfjs-dist module
+[Migration] Starting database migrations...
+[Migration] Error running migrations: error: type "collection_status" already exists
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async migrate (/home/runner/workspace/node_modules/src/neon-http/migrator.ts:45:5)
+    at async runMigrations (/home/runner/workspace/server/migrations.ts:13:5)
+    at async <anonymous> (/home/runner/workspace/server/index.ts:80:3) {
+  length: 97,
+  severity: 'ERROR',
+  code: '42710',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'typecmds.c',
+  line: '1167',
+  routine: 'DefineEnum'
+}
+8:16:05 PM [express] serving on port 5000
+8:16:13 PM [express] GET /api/user 304 in 114ms :: {"id":15,"username":"admin","email":"admin@loanse…
+8:16:13 PM [express] GET /api/loans/metrics 304 in 178ms :: {"totalPortfolio":"0","activeLoans":0,"d…
+8:16:16 PM [express] GET /api/user 401 in 1ms
+8:16:38 PM [express] GET /api/admin/settings 304 in 306ms :: {"passwordPolicy":{"enabled":false,"min…
+8:16:39 PM [express] GET /api/email-template-folders 304 in 121ms :: {"success":true,"data":[{"id":3…
+8:16:41 PM [express] GET /api/email-templates 304 in 117ms :: {"success":true,"data":[{"id":2,"folde…
+8:16:54 PM [express] POST /api/email-template-folders 200 in 206ms :: {"success":true,"data":{"id":1…
+8:16:54 PM [express] GET /api/email-template-folders 200 in 112ms :: {"success":true,"data":[{"id":1…
