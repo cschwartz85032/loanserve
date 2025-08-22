@@ -506,16 +506,14 @@ export async function login(
     // Record successful login
     await recordLoginAttempt(user.email, true, ip, userAgent);
 
-    // Create session with proper structure
-    const sessionId = crypto.randomUUID();
+    // Create session with standard express-session structure
     const sessionSid = `sess:${crypto.randomUUID()}`; // Generate sid for session store
     const expireTime = new Date(Date.now() + 86400000); // 24 hours from now
     
-    // Insert session into the sessions table with all required fields
+    // Insert session into the sessions table with standard express-session columns only
     await db.execute(sql`
-      INSERT INTO sessions (id, sid, sess, expire, user_id, created_at, last_seen_at, ip, user_agent)
+      INSERT INTO sessions (sid, sess, expire)
       VALUES (
-        ${sessionId},
         ${sessionSid},
         ${JSON.stringify({
           cookie: { 
@@ -525,16 +523,9 @@ export async function login(
             path: '/'
           },
           userId: user.id,
-          passport: { user: user.id },
-          ip: ip,
-          userAgent: userAgent
+          passport: { user: user.id }
         })}::json,
-        ${expireTime},
-        ${user.id},
-        ${new Date()},
-        ${new Date()},
-        ${ip},
-        ${userAgent}
+        ${expireTime}
       )
     `);
 
