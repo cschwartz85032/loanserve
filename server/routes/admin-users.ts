@@ -211,9 +211,7 @@ router.get('/:id', async (req, res) => {
     const userRolesList = await db.select({
       roleId: roles.id,
       roleName: roles.name,
-      roleDescription: roles.description,
-      createdAt: userRoles.createdAt,
-      updatedAt: userRoles.updatedAt
+      roleDescription: roles.description
     })
     .from(userRoles)
     .innerJoin(roles, eq(userRoles.roleId, roles.id))
@@ -226,20 +224,35 @@ router.get('/:id', async (req, res) => {
       .orderBy(desc(loginAttempts.attemptedAt))
       .limit(10);
 
-    // Get active sessions
-    const activeSessions = await db.select()
-      .from(sessions)
-      .where(and(
-        eq(sessions.userId, userId),
-        isNull(sessions.revokedAt)
-      ))
-      .orderBy(desc(sessions.lastSeenAt));
+    // Get active sessions - sessions table only has sid, sess, expire columns
+    // We need to check the sess JSON column for userId
+    const allSessions = await db.select()
+      .from(sessions);
+    
+    const activeSessions = allSessions
+      .filter(session => {
+        try {
+          const sessData = typeof session.sess === 'string' ? JSON.parse(session.sess) : session.sess;
+          return sessData.userId === userId || sessData.passport?.user === userId;
+        } catch {
+          return false;
+        }
+      })
+      .map(session => ({
+        sid: session.sid,
+        expire: session.expire
+      }));
 
-    // Get IP allowlist
-    const ipAllowlist = await db.select()
-      .from(userIpAllowlist)
-      .where(eq(userIpAllowlist.userId, userId))
-      .orderBy(desc(userIpAllowlist.createdAt));
+    // Get IP allowlist - handle potential missing table/columns
+    let ipAllowlist = [];
+    try {
+      ipAllowlist = await db.select()
+        .from(userIpAllowlist)
+        .where(eq(userIpAllowlist.userId, userId));
+    } catch (error) {
+      console.error('Error fetching IP allowlist:', error);
+      // Continue without IP allowlist data
+    }
 
     res.json({
       user: user[0],
