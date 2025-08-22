@@ -57,16 +57,34 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
       });
     }
     
-    // Clean up date fields - convert empty strings to null
+    // Clean up all fields - convert empty strings to null for dates and proper defaults
     const cleanedData = {
       ...req.body,
       loanId,
       escrowAccountId: escrowAccount.id,
-      nextDueDate: req.body.nextDueDate && req.body.nextDueDate !== '' ? req.body.nextDueDate : null,
+      // Required date field
+      nextDueDate: req.body.nextDueDate || null,
+      // Optional date fields - convert empty strings to null
       firstDueDate: req.body.firstDueDate && req.body.firstDueDate !== '' ? req.body.firstDueDate : null,
       lastPaidDate: req.body.lastPaidDate && req.body.lastPaidDate !== '' ? req.body.lastPaidDate : null,
-      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null
+      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null,
+      holdDate: req.body.holdDate && req.body.holdDate !== '' ? req.body.holdDate : null,
+      // Clean up any other fields that might be empty strings
+      parcelNumber: req.body.parcelNumber || null,
+      policyNumber: req.body.policyNumber || null,
+      accountNumber: req.body.accountNumber || null,
+      referenceNumber: req.body.referenceNumber || null,
+      specificDueDates: req.body.specificDueDates || null,
+      metadata: req.body.metadata || null,
+      notes: req.body.notes || null
     };
+    
+    // Remove any undefined fields to avoid database errors
+    Object.keys(cleanedData).forEach(key => {
+      if (cleanedData[key] === undefined || cleanedData[key] === '') {
+        cleanedData[key] = null;
+      }
+    });
     
     const validatedData = insertEscrowDisbursementSchema.parse(cleanedData);
     
@@ -91,14 +109,32 @@ router.patch("/api/escrow-disbursements/:id", async (req, res) => {
       return res.status(404).json({ error: "Disbursement not found" });
     }
     
-    // Clean up date fields - convert empty strings to null
+    // Clean up all fields - convert empty strings to null for dates and proper defaults
     const cleanedData = {
       ...req.body,
-      nextDueDate: req.body.nextDueDate && req.body.nextDueDate !== '' ? req.body.nextDueDate : null,
+      // Required date field
+      nextDueDate: req.body.nextDueDate || null,
+      // Optional date fields - convert empty strings to null
       firstDueDate: req.body.firstDueDate && req.body.firstDueDate !== '' ? req.body.firstDueDate : null,
       lastPaidDate: req.body.lastPaidDate && req.body.lastPaidDate !== '' ? req.body.lastPaidDate : null,
-      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null
+      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null,
+      holdDate: req.body.holdDate && req.body.holdDate !== '' ? req.body.holdDate : null,
+      // Clean up any other fields that might be empty strings
+      parcelNumber: req.body.parcelNumber || null,
+      policyNumber: req.body.policyNumber || null,
+      accountNumber: req.body.accountNumber || null,
+      referenceNumber: req.body.referenceNumber || null,
+      specificDueDates: req.body.specificDueDates || null,
+      metadata: req.body.metadata || null,
+      notes: req.body.notes || null
     };
+    
+    // Remove any undefined fields to avoid database errors
+    Object.keys(cleanedData).forEach(key => {
+      if (cleanedData[key] === undefined || cleanedData[key] === '') {
+        cleanedData[key] = null;
+      }
+    });
     
     const updatedDisbursement = await storage.updateEscrowDisbursement(id, cleanedData);
     
