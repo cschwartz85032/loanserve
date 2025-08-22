@@ -998,4 +998,64 @@ router.post('/:id/send-password-reset', async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/admin/users/:id
+ * Delete a user (admin only)
+ */
+router.delete('/:id', requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const currentUserId = req.user.id;
+    
+    // Prevent self-deletion
+    if (userId === currentUserId) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+    
+    // Check if user exists
+    const [user] = await db.select({
+      id: users.id,
+      username: users.username,
+      email: users.email
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Don't allow deletion of the primary admin (user id 1)
+    if (userId === 1) {
+      return res.status(400).json({ error: 'Cannot delete the primary administrator account' });
+    }
+    
+    // Delete user (cascades will handle related records)
+    await db.delete(users).where(eq(users.id, userId));
+    
+    // Log the deletion
+    await db.insert(authEvents).values({
+      eventType: 'user_deleted',
+      actorUserId: currentUserId,
+      targetUserId: userId,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] || null,
+      details: { 
+        deletedUsername: user.username,
+        deletedEmail: user.email 
+      },
+      eventKey: `user-delete-${userId}-${Date.now()}`
+    });
+    
+    res.json({ 
+      success: true,
+      message: `User ${user.username} has been deleted` 
+    });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
 export { router as adminUsersRouter };

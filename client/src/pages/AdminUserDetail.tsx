@@ -951,6 +951,8 @@ function UserActions({
   onSendPasswordReset?: () => void;
 }) {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   
   const lockMutation = useMutation({
     mutationFn: (duration: number) => 
@@ -993,6 +995,27 @@ function UserActions({
       queryClient.invalidateQueries({ queryKey: [`/api/admin/users/${user.id}`] });
     }
   });
+  
+  const deleteMutation = useMutation({
+    mutationFn: () => 
+      apiRequest(`/api/admin/users/${user.id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast({ title: "User deleted successfully" });
+      navigate('/admin/users');
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error deleting user", 
+        description: error.message || "Failed to delete user",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const handleDelete = () => {
+    deleteMutation.mutate();
+    setShowDeleteDialog(false);
+  };
 
   return (
     <div className="flex gap-2">
@@ -1010,6 +1033,42 @@ function UserActions({
           <Key className="w-4 h-4 mr-2" />
           Send Password Reset
         </Button>
+      )}
+      
+      {/* Delete User - show for all users except self and primary admin */}
+      {user.id !== 1 && (
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive">
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete User
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete User Account</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete the user <strong>{user.username}</strong>? 
+                This action cannot be undone and will permanently remove:
+                <ul className="list-disc list-inside mt-2">
+                  <li>The user account and all profile information</li>
+                  <li>All assigned roles and permissions</li>
+                  <li>Session data and login history</li>
+                  <li>IP allowlist entries</li>
+                </ul>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete User
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );
