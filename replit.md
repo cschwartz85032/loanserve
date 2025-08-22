@@ -24,6 +24,19 @@ When encountering database or field-related errors:
 
 ## Recent Fixes (August 22, 2025)
 
+### Critical Production Sessions Table Fix
+Fixed production deployment error where sessions table had wrong schema:
+- **Issue**: Production sessions table was missing required express-session columns (sid, sess, expire)
+- **Solution**: Created proper express-session compatible table structure with sid as primary key
+- **Migration**: Old sessions table renamed to sessions_old, new table created with correct schema
+- **Impact**: Resolved "column sid does not exist" errors in production deployment
+
+### Payment Breakdown UI Improvements
+Enhanced payment breakdown display for better clarity:
+- **Separated Principal and Interest**: Now shown as distinct line items instead of combined
+- **Zero-Value Hiding**: Lines with zero values are automatically hidden
+- **Complete Fee Display**: Added HOA, PMI, Servicing Fee, and Other fees when present
+
 ### Critical Database Transaction Fixes
 Implemented proper database transactions for multi-table operations to ensure data integrity:
 - **Loan Creation Transaction**: Now atomically creates loan, initial escrow account (if needed), and initial ledger entry. All succeed or rollback together.

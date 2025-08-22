@@ -36,8 +36,7 @@ export class CustomSessionStore extends Store {
       const result = await db.execute<any>(sql`
         SELECT * FROM sessions 
         WHERE sid = ${sid} 
-        AND (expire > NOW() OR expire IS NULL)
-        AND revoked_at IS NULL
+        AND expire > NOW()
         LIMIT 1
       `);
 
@@ -46,13 +45,6 @@ export class CustomSessionStore extends Store {
       if (!session) {
         return callback(null, null);
       }
-
-      // Update last seen
-      await db.execute(sql`
-        UPDATE sessions 
-        SET last_seen_at = NOW() 
-        WHERE sid = ${sid}
-      `);
 
       // Parse the session data
       const sessionData = typeof session.sess === 'string' 
@@ -71,52 +63,23 @@ export class CustomSessionStore extends Store {
    */
   async set(sid: string, sessionData: SessionData, callback?: (err?: any) => void): Promise<void> {
     try {
-      const userId = sessionData.userId || sessionData.passport?.user;
       const expire = sessionData.cookie?.expires 
         ? new Date(sessionData.cookie.expires)
         : new Date(Date.now() + this.ttl * 1000);
 
-      // Check if session exists
-      const existingResult = await db.execute<any>(sql`
-        SELECT id FROM sessions WHERE sid = ${sid} LIMIT 1
+      // Use UPSERT (INSERT ON CONFLICT UPDATE) for standard express-session behavior
+      await db.execute(sql`
+        INSERT INTO sessions (sid, sess, expire)
+        VALUES (
+          ${sid},
+          ${JSON.stringify(sessionData)}::json,
+          ${expire}
+        )
+        ON CONFLICT (sid) 
+        DO UPDATE SET 
+          sess = ${JSON.stringify(sessionData)}::json,
+          expire = ${expire}
       `);
-      
-      const existing = existingResult.rows?.[0];
-
-      if (existing) {
-        // Update existing session
-        await db.execute(sql`
-          UPDATE sessions 
-          SET 
-            sess = ${JSON.stringify(sessionData)}::json,
-            expire = ${expire},
-            last_seen_at = NOW(),
-            user_id = ${userId || null}
-          WHERE sid = ${sid}
-        `);
-      } else {
-        // Create new session with UUID
-        const sessionId = crypto.randomUUID();
-        
-        // Get IP and user agent from the session data if available
-        const ip = sessionData.ip || null;
-        const userAgent = sessionData.userAgent || null;
-
-        await db.execute(sql`
-          INSERT INTO sessions (id, sid, sess, expire, user_id, created_at, last_seen_at, ip, user_agent)
-          VALUES (
-            ${sessionId},
-            ${sid},
-            ${JSON.stringify(sessionData)}::json,
-            ${expire},
-            ${userId || null},
-            NOW(),
-            NOW(),
-            ${ip},
-            ${userAgent}
-          )
-        `);
-      }
 
       if (callback) callback();
     } catch (error) {
@@ -130,12 +93,9 @@ export class CustomSessionStore extends Store {
    */
   async destroy(sid: string, callback?: (err?: any) => void): Promise<void> {
     try {
-      // Mark session as revoked instead of deleting
+      // Delete session (standard express-session behavior)
       await db.execute(sql`
-        UPDATE sessions 
-        SET 
-          revoked_at = NOW(),
-          revoke_reason = 'User logout'
+        DELETE FROM sessions 
         WHERE sid = ${sid}
       `);
 
@@ -157,9 +117,7 @@ export class CustomSessionStore extends Store {
 
       await db.execute(sql`
         UPDATE sessions 
-        SET 
-          expire = ${expire},
-          last_seen_at = NOW()
+        SET expire = ${expire}
         WHERE sid = ${sid}
       `);
 
@@ -177,8 +135,7 @@ export class CustomSessionStore extends Store {
     try {
       const result = await db.execute<any>(sql`
         SELECT sid, sess FROM sessions 
-        WHERE (expire > NOW() OR expire IS NULL)
-        AND revoked_at IS NULL
+        WHERE expire > NOW()
       `);
 
       const sessionMap: { [sid: string]: SessionData } = {};
@@ -203,11 +160,7 @@ export class CustomSessionStore extends Store {
   async clear(callback?: (err?: any) => void): Promise<void> {
     try {
       await db.execute(sql`
-        UPDATE sessions 
-        SET 
-          revoked_at = NOW(),
-          revoke_reason = 'Bulk clear'
-        WHERE revoked_at IS NULL
+        DELETE FROM sessions
       `);
 
       if (callback) callback();
@@ -225,8 +178,7 @@ export class CustomSessionStore extends Store {
       const result = await db.execute<any>(sql`
         SELECT COUNT(*) as count 
         FROM sessions 
-        WHERE (expire > NOW() OR expire IS NULL)
-        AND revoked_at IS NULL
+        WHERE expire > NOW()
       `);
 
       const count = result.rows?.[0]?.count || 0;
@@ -243,13 +195,10 @@ export class CustomSessionStore extends Store {
   private startPruning(): void {
     this.pruneTimer = setInterval(async () => {
       try {
+        // Delete expired sessions (standard express-session behavior)
         await db.execute(sql`
-          UPDATE sessions 
-          SET 
-            revoked_at = NOW(),
-            revoke_reason = 'Session expired'
-          WHERE expire < NOW() 
-          AND revoked_at IS NULL
+          DELETE FROM sessions 
+          WHERE expire < NOW()
         `);
       } catch (error) {
         console.error('Session pruning error:', error);
