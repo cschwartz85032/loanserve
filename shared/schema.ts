@@ -1543,23 +1543,13 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   };
 });
 
-// Sessions table (express-session compatible)
+// Sessions table (standard express-session structure)
 export const sessions = pgTable("sessions", {
-  id: text("id").primaryKey(),
-  sid: varchar("sid", { length: 255 }).notNull().unique(),
+  sid: varchar("sid", { length: 255 }).primaryKey(),
   sess: json("sess").notNull(),
-  expire: timestamp("expire").notNull(),
-  userId: varchar("user_id", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow(),
-  lastActivity: timestamp("last_activity"),
-  lastSeenAt: timestamp("last_seen_at"),
-  ip: text("ip"),
-  userAgent: text("user_agent"),
-  revokedAt: timestamp("revoked_at"),
-  revokeReason: text("revoke_reason"),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
 }, (table) => {
   return {
-    sidIdx: index("idx_sessions_sid").on(table.sid),
     expireIdx: index("idx_sessions_expire").on(table.expire),
   };
 });
