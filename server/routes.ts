@@ -42,6 +42,15 @@ import {
   auditLog
 } from "./auth/middleware";
 import { PermissionLevel } from "./auth/policy-engine";
+import { 
+  handleError, 
+  asyncHandler, 
+  validateInput, 
+  successResponse, 
+  paginatedResponse, 
+  AppError, 
+  ErrorCode 
+} from './utils/error-handler';
 
 function isAuthenticated(req: any, res: any, next: any) {
   if (req.isAuthenticated()) {
@@ -300,68 +309,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans", isAuthenticated, async (req, res) => {
+  app.post("/api/loans", isAuthenticated, asyncHandler(async (req, res) => {
     console.log("=== BACKEND: LOAN CREATION ENDPOINT CALLED (v2) ===");
     console.log("Request body received:", JSON.stringify(req.body, null, 2));
     
-    try {
-      console.log("Validating loan data with insertLoanSchema...");
-      const validatedData = insertLoanSchema.parse(req.body);
-      console.log("Validation successful. Validated data:", JSON.stringify(validatedData, null, 2));
-      
-      console.log("Calling storage.createLoan...");
-      const loan = await storage.createLoan(validatedData);
-      console.log("Loan created in database:", loan);
-      
-      // Temporarily skip audit log until database schema is updated
-      // await storage.createAuditLog({
-      //   userId: req.user?.id,
-      //   loanId: loan.id,
-      //   action: "CREATE_LOAN",
-      //   entityType: "loan",
-      //   entityId: loan.id,
-      //   newValues: loan
-      // });
+    // Validate input with centralized error handling
+    const validatedData = validateInput(insertLoanSchema, req.body, 'Invalid loan data');
+    console.log("Validation successful. Validated data:", JSON.stringify(validatedData, null, 2));
+    
+    // Create loan with transaction (already implemented in storage)
+    console.log("Calling storage.createLoan...");
+    const loan = await storage.createLoan(validatedData);
+    console.log("Loan created in database:", loan);
+    
+    // Temporarily skip audit log until database schema is updated
+    // await storage.createAuditLog({
+    //   userId: req.user?.id,
+    //   loanId: loan.id,
+    //   action: "CREATE_LOAN",
+    //   entityType: "loan",
+    //   entityId: loan.id,
+    //   newValues: loan
+    // });
 
-      console.log("Sending success response");
-      res.status(201).json(loan);
-    } catch (error: any) {
-      console.error("=== BACKEND ERROR IN LOAN CREATION ===");
-      console.error("Error type:", error.constructor.name);
-      console.error("Error message:", error.message);
-      console.error("Error details:", error);
-      
-      if (error.issues) {
-        console.error("Zod validation errors:", error.issues);
-        error.issues.forEach((issue: any, index: number) => {
-          console.error(`Issue ${index + 1}:`, {
-            path: issue.path.join('.'),
-            message: issue.message,
-            code: issue.code
-          });
-        });
-      }
-      
-      const errorMessage = error.issues ? error.issues[0].message : error.message || "Invalid loan data";
-      res.status(400).json({ error: errorMessage, details: error.issues || error.message });
+    console.log("Sending success response");
+    return successResponse(res, loan, 201);
+  }));
+
+  app.delete("/api/loans/:id", isAuthenticated, asyncHandler(async (req, res) => {
+    const id = parseInt(req.params.id);
+    const existingLoan = await storage.getLoan(id);
+    if (!existingLoan) {
+      throw new AppError('Loan not found', ErrorCode.NOT_FOUND, 404);
     }
-  });
 
-  app.delete("/api/loans/:id", isAuthenticated, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const existingLoan = await storage.getLoan(id);
-      if (!existingLoan) {
-        return res.status(404).json({ error: "Loan not found" });
-      }
-
-      await storage.deleteLoan(id);
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting loan:", error);
-      res.status(400).json({ error: "Failed to delete loan" });
-    }
-  });
+    // Delete loan with transaction (already implemented in storage)
+    await storage.deleteLoan(id);
+    res.status(204).send();
+  }));
 
   // Handler for updating loans
   const updateLoanHandler = async (req: any, res: any) => {
