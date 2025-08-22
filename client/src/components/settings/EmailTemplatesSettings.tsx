@@ -94,7 +94,18 @@ export default function EmailTemplatesSettings() {
   });
   // Filter folders based on current navigation context
   const allFolders: EmailTemplateFolder[] = foldersResponse?.data || [];
-  const folders = allFolders.filter(folder => folder.parentId === selectedFolder);
+  
+  // Debug logging
+  console.log('All folders:', allFolders);
+  console.log('Selected folder:', selectedFolder);
+  
+  const folders = allFolders.filter(folder => {
+    const shouldShow = folder.parentId === selectedFolder;
+    console.log(`Folder ${folder.name}: parentId=${folder.parentId}, selectedFolder=${selectedFolder}, shouldShow=${shouldShow}`);
+    return shouldShow;
+  });
+  
+  console.log('Filtered folders:', folders);
 
   // Fetch templates for selected folder
   const { data: templatesResponse, isLoading: templatesLoading } = useQuery<{
