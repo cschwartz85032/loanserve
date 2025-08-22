@@ -1043,22 +1043,49 @@ router.delete('/:id', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'Cannot delete the primary administrator account' });
     }
     
-    // Delete user (cascades will handle related records)
-    await db.delete(users).where(eq(users.id, userId));
-    
-    // Log the deletion
+    // Log the deletion BEFORE deleting (to avoid FK constraint issues)
     await db.insert(authEvents).values({
       eventType: 'user_deleted',
       actorUserId: currentUserId,
-      targetUserId: userId,
+      targetUserId: null, // Don't reference the user being deleted
       ip: req.ip,
       userAgent: req.headers['user-agent'] || null,
       details: { 
+        deletedUserId: userId,
         deletedUsername: user.username,
         deletedEmail: user.email 
       },
       eventKey: `user-delete-${userId}-${Date.now()}`
     });
+    
+    // Clean up auth_events that reference this user as target
+    await db.update(authEvents)
+      .set({ targetUserId: null })
+      .where(eq(authEvents.targetUserId, userId));
+    
+    // Delete user roles first
+    await db.delete(userRoles).where(eq(userRoles.userId, userId));
+    
+    // Delete user sessions
+    const allSessions = await db.select().from(sessions);
+    const userSessions = allSessions.filter(session => {
+      try {
+        const sessData = typeof session.sess === 'string' ? JSON.parse(session.sess) : session.sess;
+        return sessData.userId === userId || sessData.passport?.user === userId;
+      } catch {
+        return false;
+      }
+    });
+    
+    for (const session of userSessions) {
+      await db.delete(sessions).where(eq(sessions.sid, session.sid));
+    }
+    
+    // Delete login attempts
+    await db.delete(loginAttempts).where(eq(loginAttempts.userId, userId));
+    
+    // Finally delete the user
+    await db.delete(users).where(eq(users.id, userId));
     
     res.json({ 
       success: true,
