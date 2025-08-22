@@ -1,0 +1,58 @@
+1 Session handling
+
+Implemented: The code now uses a CustomSessionStore instead of the default connect‑pg‑simple store. This custom store persists session data in the sessions table defined in @shared/schema.ts, including the session ID (sid), a JSON payload (sess), the expiry timestamp, user ID, IP address and user agent
+raw.githubusercontent.com
+. During session creation or update, the store writes these fields and updates last_seen_at
+raw.githubusercontent.com
+; when retrieving a session, it refreshes last_seen_at and returns the JSON payload
+raw.githubusercontent.com
+. Old sessions can be revoked by setting revoked_at and revoke_reason. This unifies session storage and adds the missing ip and user_agent columns.
+
+Potential issues: The sessions.userId column is defined as varchar(255) in the schema
+raw.githubusercontent.com
+, but users are identified by an integer primary key (users.id). In the store, userId is written as an integer, relying on implicit casting
+raw.githubusercontent.com
+. Consider using an integer column for user_id or explicitly casting to text to avoid type confusion. Also, the /api/user endpoint still looks only at req.session.userId, so it will always return unauthorized; although the policy middleware uses req.user as a fallback, that specific endpoint needs to be updated or removed.
+
+2 Role and permission management
+
+Not implemented: The earlier review highlighted that policy-engine.ts attempted to read resource and permission columns directly from role_permissions, even though the schema defines role_permissions.permissionId as a UUID foreign key into the permissions table
+raw.githubusercontent.com
+. In the updated code, resolveUserPermissions still executes:
+
+SELECT resource, permission as level, null as scope
+FROM role_permissions
+WHERE role_id = ${roleId}::uuid
+
+
+without joining the permissions table
+raw.githubusercontent.com
+. Consequently, permission resolution will continue to fail because role_permissions contains neither a resource nor a permission column.
+
+Partial improvement: The function no longer relies on the legacy users.role enum; it loads all roles from user_roles and grants full access only if the RBAC role name is admin
+raw.githubusercontent.com
+. However, because the incorrect query remains, non‑admin users will still receive no permissions.
+
+Remaining dual systems: The schema still defines both a users.role enum and an RBAC‐based roles table, but the code now ignores the enum. While this simplifies permission checks, it means existing users with a role field but no entries in user_roles will have no effective permissions. A data migration to assign roles via user_roles and remove reliance on users.role is still required.
+
+3 Other observations and side effects
+
+Schema adjustments: The sessions table was changed from UUID id and integer user_id to a text id, string user_id and additional fields like expire and revoked_at
+raw.githubusercontent.com
+. This new structure matches the custom session store but requires a migration and may invalidate existing session data.
+
+Unused login endpoint: The /api/user route in auth.ts still reads req.session.userId without a fallback to req.user
+raw.githubusercontent.com
+. With the new session design, userId is no longer stored in the session payload by default; requests to this endpoint will always return 401. Updating the route to use req.user.id would restore functionality.
+
+Permissions merging logic: The merging logic still operates on the incorrect resource and level fields
+raw.githubusercontent.com
+. Even if the query were corrected, care must be taken to merge scopes correctly and ensure the highest permission level is retained.
+
+Summary
+
+The codebase has improved session handling by aligning the storage layer with a custom sessions table and by adding IP/user‑agent fields
+raw.githubusercontent.com
+. However, the key permission‑resolution bug identified earlier persists: resolveUserPermissions still selects nonexistent columns from role_permissions
+raw.githubusercontent.com
+. Additionally, some endpoints have not been updated to the new session model, and type mismatches remain around userId. Addressing these outstanding items and performing a data migration to unify the RBAC roles will be essential to ensure correct authorization behaviour and avoid new regressions.

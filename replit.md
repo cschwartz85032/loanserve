@@ -22,6 +22,19 @@ When encountering database or field-related errors:
 - **Policy Engine**: Updated to check RBAC roles only, not the legacy enum field
 - The system has 7 predefined roles: admin, lender, borrower, investor, escrow_officer, legal, servicer
 
+## Recent Fixes (August 22, 2025)
+
+### Critical Authentication & Session Fixes
+Fixed critical issues identified in code analysis:
+- **Session Authentication Fix**: Updated `/api/user` endpoint to check both `req.user?.id` (Passport) and `req.session.userId` (new auth) to prevent 401 errors
+- **User Deletion Cache Fix**: Modified delete mutation to properly invalidate all user list query variations with `exact: false` and added cache-busting headers
+- **Date Timezone Fixes**: Fixed prepayment expiration date display using `parseISO` to prevent timezone shifting (1/1/1929 showing as 12/31/1928)
+- **Loan Table Date Display**: Updated `formatDate` function to use UTC methods to avoid timezone conversion
+
+### Known Issues to Address
+- **Session userId Type Mismatch**: sessions.userId is varchar(255) but users.id is integer - requires migration to fix
+- **Permission Resolution**: role_permissions table structure is correct, contrary to initial analysis
+
 ## Recent Achievements (August 21, 2025)
 
 ### Database Performance Optimization

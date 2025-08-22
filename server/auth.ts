@@ -113,8 +113,8 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", async (req, res) => {
-    // Check for session userId (new auth system)
-    const userId = (req.session as any)?.userId;
+    // Check for authenticated user from Passport or session
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     if (!userId) {
       return res.sendStatus(401);
