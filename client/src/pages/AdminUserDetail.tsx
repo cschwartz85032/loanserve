@@ -284,11 +284,8 @@ interface UserDetail {
     reason?: string;
   }>;
   activeSessions: Array<{
-    id: string;
-    createdAt: string;
-    lastSeenAt: string;
-    ip?: string;
-    userAgent?: string;
+    sid: string;
+    expire: string;
   }>;
   ipAllowlist: Array<{
     id: string;
@@ -833,21 +830,21 @@ export function AdminUserDetail() {
                   </TableHeader>
                   <TableBody>
                     {activeSessions.map((session) => (
-                      <TableRow key={session.id}>
+                      <TableRow key={session.sid}>
                         <TableCell className="font-mono text-xs">
-                          {session.id.slice(0, 8)}...
+                          {session.sid?.slice(0, 8) || 'N/A'}...
                         </TableCell>
                         <TableCell>
-                          {format(new Date(session.createdAt), 'MMM d, HH:mm')}
+                          {session.expire ? format(new Date(session.expire), 'MMM d, HH:mm') : 'N/A'}
                         </TableCell>
                         <TableCell>
-                          {formatDistanceToNow(new Date(session.lastSeenAt), { addSuffix: true })}
+                          {session.expire ? formatDistanceToNow(new Date(session.expire), { addSuffix: true }) : 'N/A'}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {session.ip || 'Unknown'}
+                          Unknown
                         </TableCell>
                         <TableCell>
-                          {getDeviceIcon(session.userAgent)}
+                          <Monitor className="w-4 h-4" />
                         </TableCell>
                         <TableCell className="text-right">
                           <AlertDialog>
@@ -866,7 +863,7 @@ export function AdminUserDetail() {
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                                 <AlertDialogAction
-                                  onClick={() => revokeSessionMutation.mutate(session.id)}
+                                  onClick={() => revokeSessionMutation.mutate(session.sid)}
                                 >
                                   Revoke Session
                                 </AlertDialogAction>
