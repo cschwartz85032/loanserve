@@ -330,34 +330,23 @@ export default function EmailTemplatesSettings() {
         <CardContent>
           {/* Breadcrumb Navigation */}
           {folderBreadcrumbs.length > 1 && (
-            <div className="flex items-center gap-2 mb-4 text-sm">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={goBack}
-                className="h-8 px-2"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Back
-              </Button>
-              <div className="flex items-center gap-1 text-muted-foreground">
-                {folderBreadcrumbs.map((breadcrumb, index) => (
-                  <div key={index} className="flex items-center gap-1">
-                    {index > 0 && <ChevronRight className="h-3 w-3" />}
-                    <button
-                      onClick={() => navigateToBreadcrumb(index)}
-                      className="hover:text-foreground underline-offset-4 hover:underline"
-                      data-testid={`breadcrumb-${breadcrumb.name.toLowerCase().replace(/\s+/g, '-')}`}
-                    >
-                      {index === 0 ? (
-                        <Home className="h-4 w-4" />
-                      ) : (
-                        breadcrumb.name
-                      )}
-                    </button>
-                  </div>
-                ))}
-              </div>
+            <div className="flex items-center gap-1 mb-4 text-sm text-muted-foreground">
+              {folderBreadcrumbs.map((breadcrumb, index) => (
+                <div key={index} className="flex items-center gap-1">
+                  {index > 0 && <ChevronRight className="h-3 w-3" />}
+                  <button
+                    onClick={() => navigateToBreadcrumb(index)}
+                    className="hover:text-foreground underline-offset-4 hover:underline"
+                    data-testid={`breadcrumb-${breadcrumb.name.toLowerCase().replace(/\s+/g, '-')}`}
+                  >
+                    {index === 0 ? (
+                      <Home className="h-4 w-4" />
+                    ) : (
+                      breadcrumb.name
+                    )}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
