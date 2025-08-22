@@ -75,8 +75,16 @@ export const getQueryFn: <T>(options: {
       }
     }
     
+    // Add cache-busting headers for user management endpoints
+    const headers: HeadersInit = {};
+    if (url.includes('/api/admin/users')) {
+      headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      headers['Pragma'] = 'no-cache';
+    }
+    
     const res = await fetch(url, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

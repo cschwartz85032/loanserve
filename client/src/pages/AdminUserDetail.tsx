@@ -1001,8 +1001,17 @@ function UserActions({
       apiRequest(`/api/admin/users/${user.id}`, { method: 'DELETE' }),
     onSuccess: () => {
       toast({ title: "User deleted successfully" });
-      // Invalidate the user list cache to remove the deleted user
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      // Force refetch the user list by invalidating with exact: false to match all variations
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/admin/users'],
+        exact: false,
+        refetchType: 'all'
+      });
+      // Also remove any cached data for this specific user
+      queryClient.removeQueries({ 
+        queryKey: [`/api/admin/users/${user.id}`],
+        exact: true
+      });
       navigate('/admin/users');
     },
     onError: (error: any) => {
