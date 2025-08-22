@@ -24,12 +24,14 @@ When encountering database or field-related errors:
 
 ## Recent Fixes (August 22, 2025)
 
-### Critical Production Sessions Table Fix
-Fixed production deployment error where sessions table had wrong schema:
-- **Issue**: Production sessions table was missing required express-session columns (sid, sess, expire)
-- **Solution**: Created proper express-session compatible table structure with sid as primary key
-- **Migration**: Old sessions table renamed to sessions_old, new table created with correct schema
-- **Impact**: Resolved "column sid does not exist" errors in production deployment
+### Critical Production Sessions Table Schema Fix
+Fixed persistent production deployment error where sessions table had wrong schema even after database deletion:
+- **Root Cause**: `shared/schema.ts` was defining sessions table with 12 extra columns (id, userId, createdAt, ip, userAgent, etc.) that don't exist in standard express-session
+- **Why It Persisted**: Even when deleting database and redeploying, Drizzle would recreate the wrong structure from the schema definition
+- **Solution**: 
+  - Updated `shared/schema.ts` to define only the 3 required express-session columns (sid, sess, expire)
+  - Cleaned production database and recreated sessions table with correct structure
+- **Impact**: Resolved persistent "column sid does not exist" errors in production deployment
 
 ### Payment Breakdown UI Improvements
 Enhanced payment breakdown display for better clarity:
