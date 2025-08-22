@@ -133,52 +133,79 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
       scope: null
     }));
   } else {
-    // Get permissions by joining role_permissions with permissions table
+    // Get permissions using an optimized single query with aggregation
     if (roleIds.length > 0) {
-      // Use proper join with the normalized schema
-      const perms = await db.select({
-        resource: permissions.resource,
-        level: permissions.level,
-        scope: rolePermissions.scope
-      })
-      .from(rolePermissions)
-      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
-      .where(inArray(rolePermissions.roleId, roleIds));
+      // Use SQL aggregation to merge permissions and scopes efficiently
+      const perms = await db.execute<any>(sql`
+        WITH merged_permissions AS (
+          SELECT 
+            p.resource,
+            -- Get the highest permission level using CASE for ordering
+            MAX(CASE 
+              WHEN p.level = 'admin' THEN 3
+              WHEN p.level = 'write' THEN 2
+              WHEN p.level = 'read' THEN 1
+              ELSE 0
+            END) as level_rank,
+            -- Get the actual level name for the highest permission
+            CASE MAX(CASE 
+              WHEN p.level = 'admin' THEN 3
+              WHEN p.level = 'write' THEN 2
+              WHEN p.level = 'read' THEN 1
+              ELSE 0
+            END)
+              WHEN 3 THEN 'admin'
+              WHEN 2 THEN 'write'
+              WHEN 1 THEN 'read'
+              ELSE 'none'
+            END as level,
+            -- Aggregate all scopes into a JSON array, then merge them
+            COALESCE(
+              jsonb_agg(rp.scope) FILTER (WHERE rp.scope IS NOT NULL),
+              '[]'::jsonb
+            ) as scopes
+          FROM role_permissions rp
+          INNER JOIN permissions p ON rp.permission_id = p.id
+          WHERE rp.role_id = ANY(${roleIds}::uuid[])
+          GROUP BY p.resource
+        )
+        SELECT 
+          resource,
+          level,
+          -- Merge all scope objects into one
+          CASE 
+            WHEN scopes = '[]'::jsonb THEN NULL
+            ELSE (
+              SELECT jsonb_object_agg(key, value)
+              FROM (
+                SELECT DISTINCT ON (key) key, kv.value
+                FROM jsonb_array_elements(scopes) AS elem
+                CROSS JOIN LATERAL jsonb_each(elem) AS kv(key, value)
+                ORDER BY key, kv.value DESC
+              ) AS merged
+            )
+          END as scope
+        FROM merged_permissions
+        ORDER BY resource
+      `);
       
-      userPermissions = perms;
+      userPermissions = perms.rows || [];
     }
   }
 
-  // Merge permissions, taking the highest level for each resource
-  const mergedPermissions = new Map<string, UserPermission>();
-  
-  for (const perm of userPermissions) {
-    const existing = mergedPermissions.get(perm.resource);
-    const currentLevel = permissionHierarchy[perm.level as PermissionLevel];
-    const existingLevel = existing ? permissionHierarchy[existing.level] : -1;
-    
-    if (currentLevel > existingLevel) {
-      mergedPermissions.set(perm.resource, {
-        resource: perm.resource,
-        level: perm.level as PermissionLevel,
-        scope: perm.scope as any,
-      });
-    } else if (currentLevel === existingLevel && perm.scope) {
-      // Merge scopes if same level
-      mergedPermissions.set(perm.resource, {
-        resource: perm.resource,
-        level: perm.level as PermissionLevel,
-        scope: { ...existing?.scope, ...perm.scope as any },
-      });
-    }
-  }
+  // Convert to UserPermission array - no merging needed as SQL already did it
+  const mergedPermissions = userPermissions.map((perm: any) => ({
+    resource: perm.resource,
+    level: perm.level as PermissionLevel,
+    scope: perm.scope
+  }));
 
   return {
     userId: user[0].id,
     username: user[0].username,
     email: user[0].email,
     roles: roleNames,
-    permissions: Array.from(mergedPermissions.values()),
+    permissions: mergedPermissions,
     isAdmin: roleNames.includes('admin'),
   };
 }
