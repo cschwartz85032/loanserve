@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Shield, Mail, Bell } from "lucide-react";
 import SecuritySettings from "@/components/settings/SecuritySettings";
+import MfaSettings from "@/components/settings/MfaSettings";
 import EmailTemplatesSettings from "@/components/settings/EmailTemplatesSettings";
 import AutoNoticeSettings from "@/components/settings/AutoNoticeSettings";
 
@@ -16,10 +17,14 @@ export default function Settings() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full max-w-lg grid-cols-3">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="security" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
             Security
+          </TabsTrigger>
+          <TabsTrigger value="mfa" className="flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            MFA
           </TabsTrigger>
           <TabsTrigger value="templates" className="flex items-center gap-2">
             <Mail className="h-4 w-4" />
@@ -33,6 +38,10 @@ export default function Settings() {
 
         <TabsContent value="security" className="space-y-4">
           <SecuritySettings />
+        </TabsContent>
+
+        <TabsContent value="mfa" className="space-y-4">
+          <MfaSettings />
         </TabsContent>
 
         <TabsContent value="templates" className="space-y-4">
