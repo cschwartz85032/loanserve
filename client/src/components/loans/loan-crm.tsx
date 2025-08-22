@@ -2146,17 +2146,26 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     </div>
                   </div>
 
-                  {/* Attachments Section */}
+                  {/* Attachments and Templates Section */}
                   <div className="space-y-2">
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-2">
                       <Button
                         onClick={() => setShowAttachmentModal(true)}
                         variant="ghost"
                         size="sm"
-                        className="h-6 text-xs px-1"
+                        className="h-6 text-xs px-2"
                       >
                         <Paperclip className="h-3 w-3 mr-1" />
                         Attachments
+                      </Button>
+                      <Button
+                        onClick={() => setShowTemplatesModal(true)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs px-2"
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        Templates
                       </Button>
                     </div>
                     {emailAttachments.length > 0 && (
@@ -2186,50 +2195,52 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     )}
                   </div>
 
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          // Clear all email fields
-                          setEmailTo('');
-                          setEmailCc('');
-                          setEmailBcc('');
-                          setEmailSubject('');
-                          setEmailContent('');
-                          setEmailAttachments([]);
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button 
-                        onClick={handleSendEmail}
-                        disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
-                        size="sm"
-                        className="h-7 text-xs"
-                      >
-                        {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          // Schedule send functionality
-                          toast({
-                            title: 'Scheduled Send',
-                            description: 'Email scheduled for later delivery'
-                          });
-                        }}
-                        disabled={!emailTo || !emailSubject || !emailContent}
-                        variant="outline"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                      >
-                        <Clock className="h-3 w-3" />
-                      </Button>
-                    </div>
+                  {/* Action Buttons on same line */}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        // Clear all email fields
+                        setEmailTo('');
+                        setEmailCc('');
+                        setEmailBcc('');
+                        setEmailSubject('');
+                        setEmailContent('');
+                        setEmailAttachments([]);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Delete
+                    </Button>
+                    
+                    <div className="flex-1" />
+                    
+                    <Button 
+                      onClick={handleSendEmail}
+                      disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
+                      size="sm"
+                      className="h-7 text-xs"
+                    >
+                      {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        // Schedule send functionality
+                        toast({
+                          title: 'Scheduled Send',
+                          description: 'Email scheduled for later delivery'
+                        });
+                      }}
+                      disabled={!emailTo || !emailSubject || !emailContent}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs px-2"
+                    >
+                      <Clock className="h-3 w-3 mr-1" />
+                      Schedule
+                    </Button>
                   </div>
                 </div>
               </TabsContent>
