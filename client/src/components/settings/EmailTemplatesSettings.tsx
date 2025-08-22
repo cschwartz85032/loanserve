@@ -92,7 +92,9 @@ export default function EmailTemplatesSettings() {
   }>({
     queryKey: ["/api/email-template-folders"],
   });
-  const folders: EmailTemplateFolder[] = foldersResponse?.data || [];
+  // Filter folders based on current navigation context
+  const allFolders: EmailTemplateFolder[] = foldersResponse?.data || [];
+  const folders = allFolders.filter(folder => folder.parentId === selectedFolder);
 
   // Fetch templates for selected folder
   const { data: templatesResponse, isLoading: templatesLoading } = useQuery<{
@@ -373,7 +375,7 @@ export default function EmailTemplatesSettings() {
                   {folders.length === 0 ? (
                     <tr>
                       <td colSpan={3} className="text-center p-8 text-muted-foreground">
-                        No folders yet. Create your first folder to organize email templates.
+                        {selectedFolder ? 'No subfolders in this folder.' : 'No folders yet. Create your first folder to organize email templates.'}
                       </td>
                     </tr>
                   ) : (
@@ -449,16 +451,26 @@ export default function EmailTemplatesSettings() {
                 <h3 className="text-lg font-semibold">
                   Templates in {folders.find(f => f.id === selectedFolder)?.name}
                 </h3>
-                <Button
-                  onClick={() => {
-                    setShowCreateTemplate(true);
-                    setSelectedFolderForTemplate(selectedFolder);
-                  }}
-                  data-testid="add-template-to-folder"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Template
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowCreateFolder(true)}
+                    data-testid="add-subfolder"
+                  >
+                    <Folder className="h-4 w-4 mr-2" />
+                    Add Subfolder
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowCreateTemplate(true);
+                      setSelectedFolderForTemplate(selectedFolder);
+                    }}
+                    data-testid="add-template-to-folder"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Template
+                  </Button>
+                </div>
               </div>
               <div className="border rounded-lg">
                 {templatesLoading ? (
@@ -730,7 +742,7 @@ export default function EmailTemplatesSettings() {
                       <SelectValue placeholder="Select a folder" />
                     </SelectTrigger>
                     <SelectContent>
-                      {folders.map((folder) => (
+                      {allFolders.map((folder) => (
                         <SelectItem key={folder.id} value={folder.id.toString()}>
                           <div className="flex items-center gap-2">
                             <Folder className="h-4 w-4" />
