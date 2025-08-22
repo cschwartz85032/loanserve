@@ -36,7 +36,7 @@ export function Sidebar() {
     { name: "Daily Servicing Cycle", href: "/servicing-cycle", icon: Zap },
     { name: "Reports & Analytics", href: "/reports", icon: BarChart3 },
     { name: "Compliance", href: "/compliance", icon: Shield },
-    { name: "Security Settings", href: "/mfa-settings", icon: Shield },
+    { name: "Settings", href: "/settings", icon: Settings },
     // Only show Admin menu if user has admin role
     ...(hasAdminRole ? [{ name: "Admin", href: "/admin/documents", icon: Settings }] : []),
   ];
