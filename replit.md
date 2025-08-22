@@ -24,6 +24,16 @@ When encountering database or field-related errors:
 
 ## Recent Achievements (August 21, 2025)
 
+### Rate Limiter Memory Management Fix
+Fixed memory leak in rate limiting system:
+- **Auto-cleanup**: Rate limiter now automatically cleans up during request processing (every 30 seconds or when bucket count exceeds 10,000)
+- **Hard Limit**: Enforced maximum of 10,000 buckets to prevent unbounded memory growth
+- **Improved Cleanup**: Extended expiry to 2x window for safety, forcefully removes oldest entries when limit exceeded
+- **Process Handling**: Added proper SIGINT/SIGTERM handlers to clear cleanup intervals on exit
+- **Monitoring**: Added getBucketCount() method and periodic logging for memory monitoring
+
+## Previous Achievements (August 21, 2025)
+
 ### Data Governance & Migration System
 Implemented proper forward-only, idempotent database migration system:
 - **Migration Runner**: Replaced placeholder with actual migration executor using drizzle-orm migrate

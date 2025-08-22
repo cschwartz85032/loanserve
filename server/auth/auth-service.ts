@@ -936,6 +936,9 @@ export async function activateAccountWithToken(
  */
 export class RateLimiter {
   private buckets: Map<string, { tokens: number; lastRefill: number }> = new Map();
+  private lastCleanup: number = Date.now();
+  private cleanupInterval: number = 30000; // Run cleanup every 30 seconds
+  private maxBuckets: number = 10000; // Maximum number of buckets to prevent unbounded growth
   
   constructor(
     private maxTokens: number,
@@ -945,6 +948,12 @@ export class RateLimiter {
 
   async checkLimit(key: string): Promise<{ allowed: boolean; retryAfter?: number }> {
     const now = Date.now();
+    
+    // Auto-cleanup if needed (every 30 seconds or if too many buckets)
+    if (now - this.lastCleanup > this.cleanupInterval || this.buckets.size > this.maxBuckets) {
+      this.cleanup();
+    }
+    
     let bucket = this.buckets.get(key);
 
     if (!bucket) {
@@ -976,15 +985,40 @@ export class RateLimiter {
   // Clean up old buckets periodically
   cleanup(): void {
     const now = Date.now();
-    const expiry = this.windowMs;
+    const expiry = this.windowMs * 2; // Keep buckets for 2x the window to be safe
+    let removed = 0;
     
     // Convert to array to avoid iterator issues
     const entries = Array.from(this.buckets.entries());
     for (const [key, bucket] of entries) {
       if (now - bucket.lastRefill > expiry) {
         this.buckets.delete(key);
+        removed++;
       }
     }
+    
+    // If still too many buckets, remove oldest ones
+    if (this.buckets.size > this.maxBuckets) {
+      const sortedEntries = entries
+        .sort((a, b) => a[1].lastRefill - b[1].lastRefill)
+        .slice(0, this.buckets.size - this.maxBuckets);
+      
+      for (const [key] of sortedEntries) {
+        this.buckets.delete(key);
+        removed++;
+      }
+    }
+    
+    this.lastCleanup = now;
+    
+    if (removed > 0) {
+      console.log(`[RateLimiter] Cleaned up ${removed} old buckets, ${this.buckets.size} remaining`);
+    }
+  }
+  
+  // Get current bucket count for monitoring
+  getBucketCount(): number {
+    return this.buckets.size;
   }
 }
 
@@ -992,8 +1026,35 @@ export class RateLimiter {
 export const ipRateLimiter = new RateLimiter(10, 0.17, 60000); // 10 requests per minute
 export const emailRateLimiter = new RateLimiter(5, 0.017, 300000); // 5 requests per 5 minutes
 
-// Cleanup old buckets every minute
-setInterval(() => {
-  ipRateLimiter.cleanup();
-  emailRateLimiter.cleanup();
-}, 60000);
+// Store interval ID to allow cleanup
+let cleanupIntervalId: NodeJS.Timeout | null = null;
+
+// Only set up cleanup interval if not already running
+if (!cleanupIntervalId) {
+  cleanupIntervalId = setInterval(() => {
+    ipRateLimiter.cleanup();
+    emailRateLimiter.cleanup();
+    
+    // Log bucket counts periodically for monitoring
+    if (Math.random() < 0.1) { // Log 10% of the time to avoid spam
+      console.log(`[RateLimiter] IP buckets: ${ipRateLimiter.getBucketCount()}, Email buckets: ${emailRateLimiter.getBucketCount()}`);
+    }
+  }, 60000);
+}
+
+// Clean up on process exit
+process.on('SIGINT', () => {
+  if (cleanupIntervalId) {
+    clearInterval(cleanupIntervalId);
+    cleanupIntervalId = null;
+  }
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  if (cleanupIntervalId) {
+    clearInterval(cleanupIntervalId);
+    cleanupIntervalId = null;
+  }
+  process.exit(0);
+});
