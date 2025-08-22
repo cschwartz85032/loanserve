@@ -57,32 +57,96 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
       });
     }
     
-    // Clean up all fields - convert empty strings to null for dates and proper defaults
+    // Helper function to clean numeric values
+    const cleanNumeric = (value: any) => {
+      if (value === undefined || value === '' || value === null) {
+        return null;
+      }
+      return value;
+    };
+    
+    // Helper function to clean string values
+    const cleanString = (value: any) => {
+      if (value === undefined || value === '' || value === null) {
+        return null;
+      }
+      return value;
+    };
+    
+    // Clean up all fields - convert empty strings to null for dates, strings, and numerics
     const cleanedData = {
       ...req.body,
       loanId,
       escrowAccountId: escrowAccount.id,
       // Required date field
-      nextDueDate: req.body.nextDueDate || null,
+      nextDueDate: cleanString(req.body.nextDueDate),
       // Optional date fields - convert empty strings to null
-      firstDueDate: req.body.firstDueDate && req.body.firstDueDate !== '' ? req.body.firstDueDate : null,
-      lastPaidDate: req.body.lastPaidDate && req.body.lastPaidDate !== '' ? req.body.lastPaidDate : null,
-      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null,
-      holdDate: req.body.holdDate && req.body.holdDate !== '' ? req.body.holdDate : null,
-      // Clean up any other fields that might be empty strings
-      parcelNumber: req.body.parcelNumber || null,
-      policyNumber: req.body.policyNumber || null,
-      accountNumber: req.body.accountNumber || null,
-      referenceNumber: req.body.referenceNumber || null,
-      specificDueDates: req.body.specificDueDates || null,
-      metadata: req.body.metadata || null,
-      notes: req.body.notes || null
+      firstDueDate: cleanString(req.body.firstDueDate),
+      lastPaidDate: cleanString(req.body.lastPaidDate),
+      policyExpirationDate: cleanString(req.body.policyExpirationDate),
+      holdDate: cleanString(req.body.holdDate),
+      // Numeric fields - convert empty strings to null
+      coverageAmount: cleanNumeric(req.body.coverageAmount),
+      monthlyAmount: cleanNumeric(req.body.monthlyAmount),
+      annualAmount: cleanNumeric(req.body.annualAmount),
+      paymentAmount: cleanNumeric(req.body.paymentAmount),
+      daysBeforeDue: cleanNumeric(req.body.daysBeforeDue),
+      // Clean up string fields that might be empty
+      parcelNumber: cleanString(req.body.parcelNumber),
+      policyNumber: cleanString(req.body.policyNumber),
+      accountNumber: cleanString(req.body.accountNumber),
+      referenceNumber: cleanString(req.body.referenceNumber),
+      specificDueDates: cleanString(req.body.specificDueDates),
+      metadata: cleanString(req.body.metadata),
+      notes: cleanString(req.body.notes),
+      // Clean all address and contact fields
+      payeeStreetAddress: cleanString(req.body.payeeStreetAddress),
+      payeeCity: cleanString(req.body.payeeCity),
+      payeeState: cleanString(req.body.payeeState),
+      payeeZipCode: cleanString(req.body.payeeZipCode),
+      payeeContactName: cleanString(req.body.payeeContactName),
+      payeePhone: cleanString(req.body.payeePhone),
+      payeeEmail: cleanString(req.body.payeeEmail),
+      payeeFax: cleanString(req.body.payeeFax),
+      // Insurance fields
+      insuredName: cleanString(req.body.insuredName),
+      insuranceCompanyName: cleanString(req.body.insuranceCompanyName),
+      policyDescription: cleanString(req.body.policyDescription),
+      insurancePropertyAddress: cleanString(req.body.insurancePropertyAddress),
+      insurancePropertyCity: cleanString(req.body.insurancePropertyCity),
+      insurancePropertyState: cleanString(req.body.insurancePropertyState),
+      insurancePropertyZipCode: cleanString(req.body.insurancePropertyZipCode),
+      // Agent fields
+      agentName: cleanString(req.body.agentName),
+      agentBusinessAddress: cleanString(req.body.agentBusinessAddress),
+      agentCity: cleanString(req.body.agentCity),
+      agentState: cleanString(req.body.agentState),
+      agentZipCode: cleanString(req.body.agentZipCode),
+      agentPhone: cleanString(req.body.agentPhone),
+      agentFax: cleanString(req.body.agentFax),
+      agentEmail: cleanString(req.body.agentEmail),
+      // Banking fields
+      bankAccountNumber: cleanString(req.body.bankAccountNumber),
+      achRoutingNumber: cleanString(req.body.achRoutingNumber),
+      wireRoutingNumber: cleanString(req.body.wireRoutingNumber),
+      accountType: cleanString(req.body.accountType),
+      bankName: cleanString(req.body.bankName),
+      wireInstructions: cleanString(req.body.wireInstructions),
+      // Remittance fields
+      remittanceAddress: cleanString(req.body.remittanceAddress),
+      remittanceCity: cleanString(req.body.remittanceCity),
+      remittanceState: cleanString(req.body.remittanceState),
+      remittanceZipCode: cleanString(req.body.remittanceZipCode),
+      // Other fields
+      category: cleanString(req.body.category),
+      holdReason: cleanString(req.body.holdReason),
+      holdRequestedBy: cleanString(req.body.holdRequestedBy)
     };
     
-    // Remove any undefined fields to avoid database errors
+    // Final cleanup - remove any remaining undefined or empty string fields
     Object.keys(cleanedData).forEach(key => {
       if (cleanedData[key] === undefined || cleanedData[key] === '') {
-        cleanedData[key] = null;
+        delete cleanedData[key];
       }
     });
     
@@ -114,30 +178,53 @@ router.patch("/api/escrow-disbursements/:id", async (req, res) => {
       return res.status(404).json({ error: "Disbursement not found" });
     }
     
-    // Clean up all fields - convert empty strings to null for dates and proper defaults
-    const cleanedData = {
-      ...req.body,
-      // Required date field
-      nextDueDate: req.body.nextDueDate || null,
-      // Optional date fields - convert empty strings to null
-      firstDueDate: req.body.firstDueDate && req.body.firstDueDate !== '' ? req.body.firstDueDate : null,
-      lastPaidDate: req.body.lastPaidDate && req.body.lastPaidDate !== '' ? req.body.lastPaidDate : null,
-      policyExpirationDate: req.body.policyExpirationDate && req.body.policyExpirationDate !== '' ? req.body.policyExpirationDate : null,
-      holdDate: req.body.holdDate && req.body.holdDate !== '' ? req.body.holdDate : null,
-      // Clean up any other fields that might be empty strings
-      parcelNumber: req.body.parcelNumber || null,
-      policyNumber: req.body.policyNumber || null,
-      accountNumber: req.body.accountNumber || null,
-      referenceNumber: req.body.referenceNumber || null,
-      specificDueDates: req.body.specificDueDates || null,
-      metadata: req.body.metadata || null,
-      notes: req.body.notes || null
+    // Helper function to clean numeric values
+    const cleanNumeric = (value: any) => {
+      if (value === undefined || value === '' || value === null) {
+        return undefined; // Return undefined so it's not included in update
+      }
+      return value;
     };
     
-    // Remove any undefined fields to avoid database errors
+    // Helper function to clean string values
+    const cleanString = (value: any) => {
+      if (value === undefined || value === '' || value === null) {
+        return undefined; // Return undefined so it's not included in update
+      }
+      return value;
+    };
+    
+    // Build update data only with provided fields
+    const cleanedData: any = {};
+    
+    // Only include fields that are explicitly provided in the request
+    if ('nextDueDate' in req.body) cleanedData.nextDueDate = cleanString(req.body.nextDueDate);
+    if ('firstDueDate' in req.body) cleanedData.firstDueDate = cleanString(req.body.firstDueDate);
+    if ('lastPaidDate' in req.body) cleanedData.lastPaidDate = cleanString(req.body.lastPaidDate);
+    if ('policyExpirationDate' in req.body) cleanedData.policyExpirationDate = cleanString(req.body.policyExpirationDate);
+    if ('holdDate' in req.body) cleanedData.holdDate = cleanString(req.body.holdDate);
+    
+    // Numeric fields
+    if ('coverageAmount' in req.body) cleanedData.coverageAmount = cleanNumeric(req.body.coverageAmount);
+    if ('monthlyAmount' in req.body) cleanedData.monthlyAmount = cleanNumeric(req.body.monthlyAmount);
+    if ('annualAmount' in req.body) cleanedData.annualAmount = cleanNumeric(req.body.annualAmount);
+    if ('paymentAmount' in req.body) cleanedData.paymentAmount = cleanNumeric(req.body.paymentAmount);
+    if ('daysBeforeDue' in req.body) cleanedData.daysBeforeDue = cleanNumeric(req.body.daysBeforeDue);
+    
+    // Copy over other fields only if provided
+    Object.keys(req.body).forEach(key => {
+      if (!(key in cleanedData)) {
+        const value = req.body[key];
+        if (value !== undefined && value !== '') {
+          cleanedData[key] = value;
+        }
+      }
+    });
+    
+    // Remove undefined values
     Object.keys(cleanedData).forEach(key => {
-      if (cleanedData[key] === undefined || cleanedData[key] === '') {
-        cleanedData[key] = null;
+      if (cleanedData[key] === undefined) {
+        delete cleanedData[key];
       }
     });
     
