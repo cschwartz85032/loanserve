@@ -32,7 +32,7 @@ export default function Settings() {
           </TabsTrigger>
           <TabsTrigger value="auto-notice" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
-            Auto Notice
+            Notices
           </TabsTrigger>
         </TabsList>
 
