@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { 
   CRM_CONSTANTS,
   getPhonesFromLoan,
@@ -2372,7 +2372,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     <span className="text-muted-foreground font-normal">Penalty Expires:</span>
                     <span className="font-normal">
                       {loanData?.prepaymentExpirationDate ? 
-                        format(new Date(loanData.prepaymentExpirationDate), 'MMM dd, yyyy') : 'N/A'}
+                        format(parseISO(loanData.prepaymentExpirationDate), 'MMM dd, yyyy') : 'N/A'}
                     </span>
                   </div>
                 </>

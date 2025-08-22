@@ -105,8 +105,14 @@ export function LoanTable({ onEditLoan, onViewLoan, onDeleteLoan }: LoanTablePro
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "";
-    const date = new Date(dateString);
-    return `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}/${date.getFullYear()}`;
+    // Parse as UTC to avoid timezone shifting for date-only values
+    // Append time if not present to ensure UTC parsing
+    const dateToUse = dateString.includes('T') ? dateString : `${dateString}T00:00:00`;
+    const date = new Date(dateToUse);
+    const year = date.getUTCFullYear();
+    const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+    const day = date.getUTCDate().toString().padStart(2, '0');
+    return `${month}/${day}/${year}`;
   };
 
   const toggleACH = (loanId: number) => {
