@@ -17,6 +17,10 @@ import {
   roles
 } from '@shared/schema';
 import { eq, and, gte, sql, desc } from 'drizzle-orm';
+import { neon } from '@neondatabase/serverless';
+
+const databaseUrl = process.env.DATABASE_URL || '';
+const dbSql = neon(databaseUrl);
 
 // Argon2id configuration for memory-hard hashing
 const ARGON2_CONFIG = {
@@ -27,14 +31,6 @@ const ARGON2_CONFIG = {
   hashLength: 32,
 };
 
-// Common weak passwords to reject
-const COMMON_WEAK_PASSWORDS = [
-  'password', 'password123', '123456', '12345678', 'qwerty', 'abc123',
-  'monkey', '1234567', 'letmein', 'trustno1', 'dragon', 'baseball',
-  'iloveyou', 'master', 'sunshine', 'ashley', 'bailey', 'passw0rd',
-  'shadow', '123123', '654321', 'superman', 'qazwsx', 'michael'
-];
-
 export interface PasswordPolicy {
   minLength: number;
   requireUppercase?: boolean;
@@ -42,15 +38,20 @@ export interface PasswordPolicy {
   requireNumbers?: boolean;
   requireSpecialChars?: boolean;
   rejectCommonPasswords?: boolean;
+  preventPasswordReuse?: boolean;
+  passwordHistoryCount?: number;
 }
 
+// Development-friendly defaults
 const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
-  minLength: 12,
-  requireUppercase: true,
-  requireLowercase: true,
-  requireNumbers: true,
-  requireSpecialChars: true,
-  rejectCommonPasswords: true
+  minLength: 4,
+  requireUppercase: false,
+  requireLowercase: false,
+  requireNumbers: false,
+  requireSpecialChars: false,
+  rejectCommonPasswords: false,
+  preventPasswordReuse: false,
+  passwordHistoryCount: 5
 };
 
 /**
@@ -73,13 +74,104 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 /**
+ * Fetch password policy from database
+ */
+async function getPasswordPolicy(): Promise<PasswordPolicy> {
+  try {
+    const settings = await db
+      .select()
+      .from(systemSettings)
+      .where(eq(systemSettings.key, 'PASSWORD_POLICY'));
+    
+    if (settings.length > 0 && settings[0].value) {
+      const policy = JSON.parse(settings[0].value as string);
+      return { ...DEFAULT_PASSWORD_POLICY, ...policy };
+    }
+  } catch (error) {
+    console.error('Error fetching password policy:', error);
+  }
+  
+  return DEFAULT_PASSWORD_POLICY;
+}
+
+/**
+ * Check if password exists in user's password history
+ */
+async function checkPasswordHistory(userId: number, password: string, historyCount: number): Promise<boolean> {
+  if (historyCount <= 0) return false;
+  
+  try {
+    // Get the last N password hashes for this user
+    const history = await dbSql`
+      SELECT password_hash 
+      FROM password_history 
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT ${historyCount}
+    `;
+    
+    // Check if the new password matches any in history
+    for (const record of history) {
+      const matches = await argon2.verify(record.password_hash, password, ARGON2_CONFIG);
+      if (matches) {
+        return true; // Password found in history
+      }
+    }
+  } catch (error) {
+    console.error('Error checking password history:', error);
+  }
+  
+  return false; // Password not in history
+}
+
+/**
+ * Add password to user's history
+ */
+export async function addPasswordToHistory(userId: number, passwordHash: string): Promise<void> {
+  try {
+    await dbSql`
+      INSERT INTO password_history (user_id, password_hash)
+      VALUES (${userId}, ${passwordHash})
+      ON CONFLICT (user_id, password_hash) DO NOTHING
+    `;
+    
+    // Clean up old history entries (keep only the configured amount)
+    const policy = await getPasswordPolicy();
+    const maxHistory = policy.passwordHistoryCount || 5;
+    
+    await dbSql`
+      DELETE FROM password_history
+      WHERE user_id = ${userId}
+      AND created_at < (
+        SELECT created_at
+        FROM password_history
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+        LIMIT 1 OFFSET ${maxHistory}
+      )
+    `;
+  } catch (error) {
+    console.error('Error adding password to history:', error);
+  }
+}
+
+/**
  * Validate password against policy
  */
-export function validatePassword(password: string, policy: PasswordPolicy = DEFAULT_PASSWORD_POLICY): {
+export async function validatePassword(
+  password: string, 
+  userId?: number,
+  policy?: PasswordPolicy
+): Promise<{
   valid: boolean;
   errors: string[];
-} {
+}> {
   const errors: string[] = [];
+  
+  // Get policy from database if not provided
+  if (!policy) {
+    policy = await getPasswordPolicy();
+  }
 
   // Check minimum length
   if (password.length < policy.minLength) {
@@ -104,8 +196,31 @@ export function validatePassword(password: string, policy: PasswordPolicy = DEFA
   }
 
   // Check common passwords
-  if (policy.rejectCommonPasswords && COMMON_WEAK_PASSWORDS.includes(password.toLowerCase())) {
-    errors.push('Password is too common. Please choose a more unique password');
+  if (policy.rejectCommonPasswords) {
+    // Generate common passwords dynamically based on patterns
+    const commonPatterns = [
+      password.toLowerCase() === 'password',
+      /^password\d+$/.test(password.toLowerCase()),
+      /^\d{6,8}$/.test(password),
+      /^[a-z]{6,8}$/.test(password.toLowerCase()),
+      /^qwerty/i.test(password),
+      /^admin/i.test(password),
+      /^letmein/i.test(password),
+      /^welcome/i.test(password),
+      /^123456/i.test(password)
+    ];
+    
+    if (commonPatterns.some(pattern => pattern === true)) {
+      errors.push('Password is too common. Please choose a more unique password');
+    }
+  }
+
+  // Check password history if user ID provided
+  if (userId && policy.preventPasswordReuse && policy.passwordHistoryCount && policy.passwordHistoryCount > 0) {
+    const isInHistory = await checkPasswordHistory(userId, password, policy.passwordHistoryCount);
+    if (isInHistory) {
+      errors.push(`Password has been used recently. Please choose a different password`);
+    }
   }
 
   return {
@@ -700,8 +815,8 @@ export async function resetPasswordWithToken(
       return { success: false, error: tokenValidation.error || 'Invalid token' };
     }
 
-    // Validate new password
-    const passwordValidation = validatePassword(newPassword);
+    // Validate new password with history check
+    const passwordValidation = await validatePassword(newPassword, tokenValidation.userId);
     if (!passwordValidation.valid) {
       return { 
         success: false, 
@@ -721,6 +836,9 @@ export async function resetPasswordWithToken(
         updatedAt: new Date()
       })
       .where(eq(users.id, tokenValidation.userId));
+    
+    // Add password to history
+    await addPasswordToHistory(tokenValidation.userId, hashedPassword);
 
     // Revoke all sessions
     await revokeAllUserSessions(tokenValidation.userId, 'password_reset');

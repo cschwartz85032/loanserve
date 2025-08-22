@@ -10,6 +10,7 @@ import {
   validateSession,
   validatePassword,
   hashPassword,
+  addPasswordToHistory,
   ipRateLimiter,
   emailRateLimiter
 } from '../auth/auth-service';
@@ -208,17 +209,7 @@ router.post('/change-password', async (req, res) => {
       });
     }
 
-    // Validate new password
-    const validation = validatePassword(newPassword);
-    if (!validation.valid) {
-      return res.status(400).json({ 
-        error: 'New password does not meet requirements',
-        code: 'INVALID_PASSWORD',
-        errors: validation.errors 
-      });
-    }
-
-    // Get current user
+    // Get current user first for password verification and history check
     const [user] = await db.select({
       id: users.id,
       password: users.password
@@ -245,6 +236,16 @@ router.post('/change-password', async (req, res) => {
       });
     }
 
+    // Validate new password with history check
+    const validation = await validatePassword(newPassword, userId);
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: 'New password does not meet requirements',
+        code: 'INVALID_PASSWORD',
+        errors: validation.errors 
+      });
+    }
+
     // Hash new password
     const hashedPassword = await hashPassword(newPassword);
 
@@ -256,6 +257,9 @@ router.post('/change-password', async (req, res) => {
         updatedAt: new Date()
       })
       .where(eq(users.id, userId));
+
+    // Add password to history
+    await addPasswordToHistory(userId, hashedPassword);
 
     // Log password change
     await db.insert(authEvents).values({
@@ -286,8 +290,8 @@ router.post('/change-password', async (req, res) => {
  * POST /api/auth/validate-password
  * Check if a password meets policy requirements
  */
-router.post('/validate-password', (req, res) => {
-  const { password } = req.body;
+router.post('/validate-password', async (req, res) => {
+  const { password, userId } = req.body;
 
   if (!password) {
     return res.status(400).json({ 
@@ -296,7 +300,8 @@ router.post('/validate-password', (req, res) => {
     });
   }
 
-  const validation = validatePassword(password);
+  // Validate password with optional history check if userId provided
+  const validation = await validatePassword(password, userId);
 
   res.json({
     valid: validation.valid,
