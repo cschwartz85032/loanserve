@@ -7,7 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Lock, AlertCircle, Save } from "lucide-react";
+import { Shield, Lock, AlertCircle, Save, UserCheck, CheckCircle } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SecuritySettings() {
   const { toast } = useToast();
@@ -43,6 +45,35 @@ export default function SecuritySettings() {
     allowMultipleSessions: false
   });
 
+  const [callerVerification, setCallerVerification] = useState({
+    enabled: false,
+    requireForPIIAccess: true,
+    verificationMethods: {
+      lastFourSSN: true,
+      dateOfBirth: true,
+      accountNumber: false,
+      securityQuestions: false,
+      twoFactorAuth: false
+    },
+    maxVerificationAttempts: 3,
+    lockoutDurationMinutes: 15,
+    requireReVerificationAfterMinutes: 60,
+    applicableRoles: ['borrower', 'lender', 'investor', 'escrow_officer', 'legal', 'servicer'],
+    exemptRoles: ['admin'],
+    auditAllAccess: true,
+    notifyOnFailedVerification: true
+  });
+
+  const availableRoles = [
+    { value: 'admin', label: 'Admin' },
+    { value: 'borrower', label: 'Borrower' },
+    { value: 'lender', label: 'Lender' },
+    { value: 'investor', label: 'Investor' },
+    { value: 'escrow_officer', label: 'Escrow Officer' },
+    { value: 'legal', label: 'Legal' },
+    { value: 'servicer', label: 'Servicer' }
+  ];
+
   useEffect(() => {
     if (settings) {
       if (settings.passwordPolicy) {
@@ -53,6 +84,9 @@ export default function SecuritySettings() {
       }
       if (settings.sessionSettings) {
         setSessionSettings(settings.sessionSettings);
+      }
+      if (settings.callerVerification) {
+        setCallerVerification(settings.callerVerification);
       }
     }
   }, [settings]);
@@ -88,7 +122,8 @@ export default function SecuritySettings() {
     updateSettingsMutation.mutate({
       passwordPolicy,
       lockoutPolicy,
-      sessionSettings
+      sessionSettings,
+      callerVerification
     });
   };
 
@@ -98,6 +133,184 @@ export default function SecuritySettings() {
 
   return (
     <div className="space-y-6">
+      {/* Caller Verification */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserCheck className="h-5 w-5" />
+            Caller Verification
+          </CardTitle>
+          <CardDescription>Configure verification requirements for accessing PII data in loan files</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="caller-verification-enabled">Enable Caller Verification</Label>
+            <Switch
+              id="caller-verification-enabled"
+              checked={callerVerification.enabled}
+              onCheckedChange={(checked) => setCallerVerification({ ...callerVerification, enabled: checked })}
+            />
+          </div>
+
+          {callerVerification.enabled && (
+            <>
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-base font-semibold mb-2">Verification Methods</Label>
+                  <div className="space-y-2 mt-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-normal">Last Four SSN</Label>
+                      <Switch
+                        checked={callerVerification.verificationMethods.lastFourSSN}
+                        onCheckedChange={(checked) => 
+                          setCallerVerification({
+                            ...callerVerification,
+                            verificationMethods: { ...callerVerification.verificationMethods, lastFourSSN: checked }
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="font-normal">Date of Birth</Label>
+                      <Switch
+                        checked={callerVerification.verificationMethods.dateOfBirth}
+                        onCheckedChange={(checked) => 
+                          setCallerVerification({
+                            ...callerVerification,
+                            verificationMethods: { ...callerVerification.verificationMethods, dateOfBirth: checked }
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="font-normal">Account Number</Label>
+                      <Switch
+                        checked={callerVerification.verificationMethods.accountNumber}
+                        onCheckedChange={(checked) => 
+                          setCallerVerification({
+                            ...callerVerification,
+                            verificationMethods: { ...callerVerification.verificationMethods, accountNumber: checked }
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="font-normal">Security Questions</Label>
+                      <Switch
+                        checked={callerVerification.verificationMethods.securityQuestions}
+                        onCheckedChange={(checked) => 
+                          setCallerVerification({
+                            ...callerVerification,
+                            verificationMethods: { ...callerVerification.verificationMethods, securityQuestions: checked }
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="font-normal">Two-Factor Authentication</Label>
+                      <Switch
+                        checked={callerVerification.verificationMethods.twoFactorAuth}
+                        onCheckedChange={(checked) => 
+                          setCallerVerification({
+                            ...callerVerification,
+                            verificationMethods: { ...callerVerification.verificationMethods, twoFactorAuth: checked }
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="max-verification-attempts">Max Verification Attempts</Label>
+                    <Input
+                      id="max-verification-attempts"
+                      type="number"
+                      value={callerVerification.maxVerificationAttempts}
+                      onChange={(e) => setCallerVerification({ ...callerVerification, maxVerificationAttempts: parseInt(e.target.value) })}
+                      min="1"
+                      max="10"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="verification-lockout-duration">Lockout Duration (minutes)</Label>
+                    <Input
+                      id="verification-lockout-duration"
+                      type="number"
+                      value={callerVerification.lockoutDurationMinutes}
+                      onChange={(e) => setCallerVerification({ ...callerVerification, lockoutDurationMinutes: parseInt(e.target.value) })}
+                      min="5"
+                      max="60"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="reverification-time">Re-verification Required After (minutes)</Label>
+                  <Input
+                    id="reverification-time"
+                    type="number"
+                    value={callerVerification.requireReVerificationAfterMinutes}
+                    onChange={(e) => setCallerVerification({ ...callerVerification, requireReVerificationAfterMinutes: parseInt(e.target.value) })}
+                    min="15"
+                    max="1440"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-base font-semibold mb-2">Applicable Roles</Label>
+                  <p className="text-sm text-muted-foreground mb-2">Select which roles require caller verification for PII access</p>
+                  <div className="space-y-2">
+                    {availableRoles.map((role) => (
+                      <div key={role.value} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`role-${role.value}`}
+                          checked={callerVerification.applicableRoles.includes(role.value)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setCallerVerification({
+                                ...callerVerification,
+                                applicableRoles: [...callerVerification.applicableRoles, role.value]
+                              });
+                            } else {
+                              setCallerVerification({
+                                ...callerVerification,
+                                applicableRoles: callerVerification.applicableRoles.filter(r => r !== role.value)
+                              });
+                            }
+                          }}
+                        />
+                        <Label htmlFor={`role-${role.value}`} className="font-normal cursor-pointer">
+                          {role.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Audit All PII Access</Label>
+                    <Switch
+                      checked={callerVerification.auditAllAccess}
+                      onCheckedChange={(checked) => setCallerVerification({ ...callerVerification, auditAllAccess: checked })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label>Notify on Failed Verification</Label>
+                    <Switch
+                      checked={callerVerification.notifyOnFailedVerification}
+                      onCheckedChange={(checked) => setCallerVerification({ ...callerVerification, notifyOnFailedVerification: checked })}
+                    />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Password Policy */}
       <Card>
         <CardHeader>

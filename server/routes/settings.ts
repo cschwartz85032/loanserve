@@ -11,84 +11,172 @@ const sql = neon(databaseUrl);
 // Get system settings
 router.get('/api/admin/settings', async (req, res) => {
   try {
-    // Get password policy settings from system_settings table
+    // Get all settings from system_settings table
     const settings = await sql`
-      SELECT key, value 
+      SELECT category, key, value 
       FROM system_settings 
-      WHERE key LIKE 'password_policy.%'
+      WHERE category IN ('password_policy', 'lockout_policy', 'session_settings', 'caller_verification')
     `;
 
-    // Convert to nested object structure
+    // Initialize default settings
     const passwordPolicy: any = {
       enabled: false,
-      minLength: 4,
-      requireUppercase: false,
-      requireLowercase: false,
-      requireNumbers: false,
-      requireSpecialChars: false,
-      rejectWeakPasswords: false,
-      useOnlineWeakPasswordCheck: false,
-      enablePasswordHistory: false,
+      minLength: 8,
+      requireUppercase: true,
+      requireLowercase: true,
+      requireNumbers: true,
+      requireSpecialChars: true,
+      preventPasswordReuse: true,
       passwordHistoryCount: 5,
-      passwordExpirationDays: 90,
-      enablePasswordExpiration: false
+      passwordExpiryDays: 90
+    };
+
+    const lockoutPolicy: any = {
+      enabled: false,
+      maxFailedAttempts: 5,
+      lockoutDurationMinutes: 30,
+      lockoutStrategy: 'progressive'
+    };
+
+    const sessionSettings: any = {
+      sessionTimeoutMinutes: 30,
+      extendSessionOnActivity: true,
+      requireReauthForSensitive: true,
+      allowMultipleSessions: false
+    };
+
+    const callerVerification: any = {
+      enabled: false,
+      requireForPIIAccess: true,
+      verificationMethods: {
+        lastFourSSN: true,
+        dateOfBirth: true,
+        accountNumber: false,
+        securityQuestions: false,
+        twoFactorAuth: false
+      },
+      maxVerificationAttempts: 3,
+      lockoutDurationMinutes: 15,
+      requireReVerificationAfterMinutes: 60,
+      applicableRoles: ['borrower', 'lender', 'investor', 'escrow_officer', 'legal', 'servicer'],
+      exemptRoles: ['admin'],
+      auditAllAccess: true,
+      notifyOnFailedVerification: true
     };
 
     // Parse settings from database
-    settings.forEach(setting => {
-      const key = setting.key.replace('password_policy.', '');
+    settings.forEach((setting: any) => {
+      const category = setting.category;
+      const key = setting.key;
       const value = setting.value;
       
-      // Convert string values to appropriate types
-      if (value === 'true') {
-        passwordPolicy[key] = true;
-      } else if (value === 'false') {
-        passwordPolicy[key] = false;
-      } else if (!isNaN(Number(value))) {
-        passwordPolicy[key] = Number(value);
-      } else {
-        passwordPolicy[key] = value;
+      let targetPolicy: any = null;
+      if (category === 'password_policy') targetPolicy = passwordPolicy;
+      else if (category === 'lockout_policy') targetPolicy = lockoutPolicy;
+      else if (category === 'session_settings') targetPolicy = sessionSettings;
+      else if (category === 'caller_verification') targetPolicy = callerVerification;
+      
+      if (targetPolicy && key in targetPolicy) {
+        // Handle nested objects and arrays
+        if (typeof value === 'object' && value !== null) {
+          targetPolicy[key] = value;
+        } else if (value === 'true') {
+          targetPolicy[key] = true;
+        } else if (value === 'false') {
+          targetPolicy[key] = false;
+        } else if (!isNaN(Number(value))) {
+          targetPolicy[key] = Number(value);
+        } else {
+          targetPolicy[key] = value;
+        }
       }
     });
 
-    res.json({ passwordPolicy });
+    res.json({ 
+      passwordPolicy, 
+      lockoutPolicy, 
+      sessionSettings,
+      callerVerification 
+    });
   } catch (error: any) {
     console.error('Error fetching settings:', error);
-    return errorResponse(res, 'Failed to fetch settings', 500);
+    return sendError(res, 'Failed to fetch settings', 500);
   }
 });
 
 // Update system settings
 router.put('/api/admin/settings', async (req, res) => {
   try {
-    const { passwordPolicy } = req.body;
+    const { passwordPolicy, lockoutPolicy, sessionSettings, callerVerification } = req.body;
     
-    if (!passwordPolicy) {
-      return errorResponse(res, 'Invalid settings data', 400);
+    const promises = [];
+    
+    // Save password policy settings
+    if (passwordPolicy) {
+      Object.entries(passwordPolicy).forEach(([key, value]) => {
+        const settingValue = typeof value === 'object' ? value : String(value);
+        promises.push(sql`
+          INSERT INTO system_settings (category, key, value, updated_by, updated_at)
+          VALUES ('password_policy', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          ON CONFLICT (category, key) DO UPDATE
+          SET value = EXCLUDED.value,
+              updated_by = EXCLUDED.updated_by,
+              updated_at = EXCLUDED.updated_at
+        `);
+      });
     }
-
-    // Save each password policy setting
-    const promises = Object.entries(passwordPolicy).map(async ([key, value]) => {
-      const settingKey = `password_policy.${key}`;
-      const settingValue = String(value);
-      
-      // Upsert the setting
-      await sql`
-        INSERT INTO system_settings (key, value, updated_by, updated_at)
-        VALUES (${settingKey}, ${settingValue}, ${req.user?.id || 1}, NOW())
-        ON CONFLICT (key) DO UPDATE
-        SET value = EXCLUDED.value,
-            updated_by = EXCLUDED.updated_by,
-            updated_at = EXCLUDED.updated_at
-      `;
-    });
+    
+    // Save lockout policy settings
+    if (lockoutPolicy) {
+      Object.entries(lockoutPolicy).forEach(([key, value]) => {
+        const settingValue = typeof value === 'object' ? value : String(value);
+        promises.push(sql`
+          INSERT INTO system_settings (category, key, value, updated_by, updated_at)
+          VALUES ('lockout_policy', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          ON CONFLICT (category, key) DO UPDATE
+          SET value = EXCLUDED.value,
+              updated_by = EXCLUDED.updated_by,
+              updated_at = EXCLUDED.updated_at
+        `);
+      });
+    }
+    
+    // Save session settings
+    if (sessionSettings) {
+      Object.entries(sessionSettings).forEach(([key, value]) => {
+        const settingValue = typeof value === 'object' ? value : String(value);
+        promises.push(sql`
+          INSERT INTO system_settings (category, key, value, updated_by, updated_at)
+          VALUES ('session_settings', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          ON CONFLICT (category, key) DO UPDATE
+          SET value = EXCLUDED.value,
+              updated_by = EXCLUDED.updated_by,
+              updated_at = EXCLUDED.updated_at
+        `);
+      });
+    }
+    
+    // Save caller verification settings
+    if (callerVerification) {
+      Object.entries(callerVerification).forEach(([key, value]) => {
+        const settingValue = typeof value === 'object' ? value : String(value);
+        promises.push(sql`
+          INSERT INTO system_settings (category, key, value, updated_by, updated_at)
+          VALUES ('caller_verification', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          ON CONFLICT (category, key) DO UPDATE
+          SET value = EXCLUDED.value,
+              updated_by = EXCLUDED.updated_by,
+              updated_at = EXCLUDED.updated_at
+        `);
+      });
+    }
 
     await Promise.all(promises);
 
-    return standardResponse(res, { success: true });
+    return sendSuccess(res, { success: true });
   } catch (error: any) {
     console.error('Error updating settings:', error);
-    return errorResponse(res, 'Failed to update settings', 500);
+    return sendError(res, 'Failed to update settings', 500);
   }
 });
 
