@@ -84,15 +84,23 @@ export default function EmailTemplatesSettings() {
   });
 
   // Fetch folders with template count
-  const { data: folders = [], isLoading: foldersLoading } = useQuery<EmailTemplateFolder[]>({
+  const { data: foldersResponse, isLoading: foldersLoading } = useQuery<{
+    success: boolean;
+    data: EmailTemplateFolder[];
+  }>({
     queryKey: ["/api/email-template-folders"],
   });
+  const folders: EmailTemplateFolder[] = foldersResponse?.data || [];
 
   // Fetch templates for selected folder
-  const { data: templates = [], isLoading: templatesLoading } = useQuery<EmailTemplate[]>({
+  const { data: templatesResponse, isLoading: templatesLoading } = useQuery<{
+    success: boolean;
+    data: EmailTemplate[];
+  }>({
     queryKey: ["/api/email-templates", selectedFolder],
     enabled: selectedFolder !== null,
   });
+  const templates: EmailTemplate[] = templatesResponse?.data || [];
 
   // Create folder mutation
   const createFolderMutation = useMutation({
