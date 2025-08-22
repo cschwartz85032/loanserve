@@ -3368,7 +3368,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           <EmailTemplatesContent 
             onSelectTemplate={(template: any) => {
               setEmailSubject(template.subject);
-              setEmailContent(template.content);
+              setEmailContent(template.body);  // Changed from template.content to template.body
               setShowTemplatesModal(false);
               toast({
                 title: 'Template Loaded',
