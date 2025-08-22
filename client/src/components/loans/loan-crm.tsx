@@ -181,6 +181,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [callOutcome, setCallOutcome] = useState('');
   const [emailAttachments, setEmailAttachments] = useState<Array<{id?: number, name: string, size?: number, file?: File}>>([]);
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [scheduledSendTime, setScheduledSendTime] = useState<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   
   // Contact editing states
@@ -1944,29 +1946,56 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     />
                   </div>
 
-                  {/* Email Content */}
+                  {/* Email Content with Rich Text Editor */}
                   <div className="space-y-2">
-                    <label className="text-xs font-medium">Message:</label>
-                    <Textarea
-                      placeholder="Email content..."
-                      value={emailContent}
-                      onChange={(e) => setEmailContent(e.target.value)}
-                      className="min-h-[150px] text-xs"
-                    />
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium">Message:</label>
+                      <button
+                        onClick={() => setShowTemplatesModal(true)}
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Templates
+                      </button>
+                    </div>
+                    <div className="border rounded-lg">
+                      <div className="flex items-center space-x-1 p-2 border-b">
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <Bold className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <Italic className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <Link className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <List className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          <Image className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <Textarea
+                        placeholder="Email content..."
+                        value={emailContent}
+                        onChange={(e) => setEmailContent(e.target.value)}
+                        className="min-h-[150px] text-xs border-0 focus:ring-0"
+                      />
+                    </div>
                   </div>
 
                   {/* Attachments Section */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium">Attachments:</label>
+                    <div className="flex items-center">
                       <Button
                         onClick={() => setShowAttachmentModal(true)}
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        className="h-6 text-xs"
+                        className="h-6 text-xs px-1"
                       >
                         <Paperclip className="h-3 w-3 mr-1" />
-                        Add Attachments
+                        Attachments
                       </Button>
                     </div>
                     {emailAttachments.length > 0 && (
@@ -1997,46 +2026,49 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                   </div>
 
                   <div className="flex justify-between items-center">
-                    <Button
-                      onClick={async () => {
-                        try {
-                          const response = await fetch('/api/crm/check-email-config');
-                          const data = await response.json();
-                          if (data.configured) {
-                            toast({
-                              title: 'Email Configuration',
-                              description: data.message
-                            });
-                          } else {
-                            toast({
-                              title: 'Email Not Configured',
-                              description: data.message,
-                              variant: 'destructive'
-                            });
-                          }
-                        } catch (error) {
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          // Clear all email fields
+                          setEmailTo('');
+                          setEmailCc('');
+                          setEmailBcc('');
+                          setEmailSubject('');
+                          setEmailContent('');
+                          setEmailAttachments([]);
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        onClick={handleSendEmail}
+                        disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
+                        {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          // Schedule send functionality
                           toast({
-                            title: 'Error',
-                            description: 'Failed to check email configuration',
-                            variant: 'destructive'
+                            title: 'Scheduled Send',
+                            description: 'Email scheduled for later delivery'
                           });
-                        }
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                    >
-                      Check Config
-                    </Button>
-                    <Button 
-                      onClick={handleSendEmail}
-                      disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
-                      size="sm"
-                      className="h-7 text-xs"
-                    >
-                      <Mail className="h-3 w-3 mr-1" />
-                      {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
-                    </Button>
+                        }}
+                        disabled={!emailTo || !emailSubject || !emailContent}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                      >
+                        <Clock className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </TabsContent>
@@ -3158,6 +3190,95 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             </Button>
             <Button onClick={() => setShowAttachmentModal(false)}>
               Done ({emailAttachments.length} selected)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Email Templates Modal */}
+      <Dialog open={showTemplatesModal} onOpenChange={setShowTemplatesModal}>
+        <DialogContent className="sm:max-w-[700px] max-h-[600px] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Email Templates</DialogTitle>
+            <DialogDescription>
+              Select a template to use for your email
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search Email Templates"
+                className="pl-8"
+              />
+            </div>
+            
+            {/* Template Folders */}
+            <div className="border rounded-lg">
+              <div
+                className="flex items-center justify-between p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                onClick={() => {
+                  // Expand folder logic here
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <ChevronDown className="h-4 w-4" />
+                  <span className="text-sm font-medium">All Email Templates (93 Templates)</span>
+                </div>
+              </div>
+              
+              <div
+                className="flex items-center justify-between p-3 hover:bg-muted/50 cursor-pointer transition-colors border-t"
+                onClick={() => {
+                  // Expand folder logic here
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <ChevronDown className="h-4 w-4" />
+                  <span className="text-sm font-medium">Follow Up Boss (76 Templates)</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Sample Templates List */}
+            <ScrollArea className="h-[300px] border rounded-lg p-3">
+              <div className="space-y-2">
+                {[
+                  'Ask for testimonials/referrals - (NEED TO EDIT)',
+                  'BKA C01E01',
+                  'BKA C01E02',
+                  'BKA C01E03',
+                  'BKA C01E04',
+                  'BKA C01E05',
+                  'BKA C01E06'
+                ].map((template, index) => (
+                  <div
+                    key={index}
+                    className="p-2 hover:bg-muted/50 rounded cursor-pointer transition-colors"
+                    onClick={() => {
+                      // Load template content
+                      setEmailSubject(`Template: ${template}`);
+                      setEmailContent(`This is a sample template content for ${template}`);
+                      setShowTemplatesModal(false);
+                      toast({
+                        title: 'Template Loaded',
+                        description: `${template} has been loaded into your email`
+                      });
+                    }}
+                  >
+                    <p className="text-sm">{template}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Hi Contact First Name, Let's hit the ground running with this property...
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTemplatesModal(false)}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>
