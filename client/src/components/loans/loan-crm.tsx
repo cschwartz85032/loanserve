@@ -2201,44 +2201,95 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {calculations ? (
-              <div className="text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">Hazard Insurance:</span>
-                  <span className="font-normal">{formatCurrency(calculations.breakdown?.hazardInsurance || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">Property Taxes:</span>
-                  <span className="font-normal">{formatCurrency(calculations.breakdown?.propertyTaxes || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">Escrow Cushion:</span>
-                  <span className="font-normal">{formatCurrency(calculations.breakdown?.escrowCushion || 0)}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t">
-                  <span className="text-muted-foreground font-normal">Sub-Total Escrows:</span>
-                  <span className="font-normal">{formatCurrency(calculations?.escrow || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">+ Principal & Interest:</span>
-                  <span className="font-normal">{formatCurrency(calculations?.principalAndInterest || 0)}</span>
-                </div>
-                {calculations?.hoaFees > 0 && (
+            {calculations ? (() => {
+              // Calculate principal and interest separately
+              const monthlyRate = (parseFloat(loanData?.interestRate || '0') / 100) / 12;
+              const principalBalance = parseFloat(loanData?.principalBalance || loanData?.originalAmount || '0');
+              const monthlyInterest = principalBalance * monthlyRate;
+              const monthlyPrincipal = (calculations?.principalAndInterest || 0) - monthlyInterest;
+              
+              // Check for escrow items with values
+              const hasHazardInsurance = (calculations.breakdown?.hazardInsurance || 0) > 0;
+              const hasPropertyTaxes = (calculations.breakdown?.propertyTaxes || 0) > 0;
+              const hasEscrowCushion = (calculations.breakdown?.escrowCushion || 0) > 0;
+              const hasHOA = (calculations.breakdown?.hoa || calculations?.hoaFees || 0) > 0;
+              const hasPMI = (calculations?.pmi || 0) > 0;
+              const hasServicingFee = (calculations?.servicingFee || 0) > 0;
+              const hasOtherFees = (calculations.breakdown?.other || 0) > 0;
+              const hasAnyEscrow = (calculations?.escrow || 0) > 0;
+              
+              return (
+                <div className="text-xs space-y-1">
+                  {/* Escrow Items - only show if non-zero */}
+                  {hasHazardInsurance && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-normal">Hazard Insurance:</span>
+                      <span className="font-normal">{formatCurrency(calculations.breakdown.hazardInsurance)}</span>
+                    </div>
+                  )}
+                  {hasPropertyTaxes && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-normal">Property Taxes:</span>
+                      <span className="font-normal">{formatCurrency(calculations.breakdown.propertyTaxes)}</span>
+                    </div>
+                  )}
+                  {hasEscrowCushion && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-normal">Escrow Cushion:</span>
+                      <span className="font-normal">{formatCurrency(calculations.breakdown.escrowCushion)}</span>
+                    </div>
+                  )}
+                  {hasAnyEscrow && (
+                    <div className="flex justify-between pt-1 border-t">
+                      <span className="text-muted-foreground font-normal">Sub-Total Escrows:</span>
+                      <span className="font-normal">{formatCurrency(calculations.escrow)}</span>
+                    </div>
+                  )}
+                  
+                  {/* Principal and Interest - separated */}
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground font-normal">+ HOA:</span>
-                    <span className="font-normal">{formatCurrency(calculations.hoaFees)}</span>
+                    <span className="text-muted-foreground font-normal">+ Principal:</span>
+                    <span className="font-normal">{formatCurrency(monthlyPrincipal > 0 ? monthlyPrincipal : 0)}</span>
                   </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground font-normal">+ Servicing Fees:</span>
-                  <span className="font-normal">{formatCurrency(calculations?.servicingFee || 0)}</span>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground font-normal">+ Interest:</span>
+                    <span className="font-normal">{formatCurrency(monthlyInterest > 0 ? monthlyInterest : 0)}</span>
+                  </div>
+                  
+                  {/* Other fees - only show if non-zero */}
+                  {hasHOA && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-normal">+ HOA:</span>
+                      <span className="font-normal">{formatCurrency(calculations.breakdown?.hoa || calculations.hoaFees)}</span>
+                    </div>
+                  )}
+                  {hasPMI && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-normal">+ PMI:</span>
+                      <span className="font-normal">{formatCurrency(calculations.pmi)}</span>
+                    </div>
+                  )}
+                  {hasServicingFee && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-normal">+ Servicing Fee:</span>
+                      <span className="font-normal">{formatCurrency(calculations.servicingFee)}</span>
+                    </div>
+                  )}
+                  {hasOtherFees && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground font-normal">+ Other:</span>
+                      <span className="font-normal">{formatCurrency(calculations.breakdown.other)}</span>
+                    </div>
+                  )}
+                  
+                  {/* Total */}
+                  <div className="flex justify-between pt-1 border-t">
+                    <span className="font-medium">Total Payment:</span>
+                    <span className="font-medium">{formatCurrency(calculations?.totalMonthlyPayment || 0)}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between pt-1 border-t">
-                  <span className="font-medium">Total Payment:</span>
-                  <span className="font-medium">{formatCurrency(calculations?.totalMonthlyPayment || 0)}</span>
-                </div>
-              </div>
-            ) : (
+              );
+            })() : (
               <div className="text-xs text-muted-foreground">No payment data available</div>
             )}
           </CardContent>

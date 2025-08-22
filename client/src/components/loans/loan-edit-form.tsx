@@ -202,8 +202,23 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       }, {});
 
       console.log('Grouped disbursements:', grouped);
-      escrowBreakdown = grouped;
-      totalEscrow = Object.values(grouped).reduce((sum: number, amount: any) => sum + amount, 0);
+      
+      // Separate HOA and other fees from escrow
+      const hoaFromDisbursements = grouped['hoa'] || 0;
+      const otherFromDisbursements = grouped['other'] || 0;
+      
+      // Build escrow breakdown including all types
+      escrowBreakdown = {
+        ...grouped,
+        // Add standardized names for display
+        hazardInsurance: grouped['insurance'] || 0,
+        propertyTaxes: grouped['taxes'] || 0,
+        hoa: hoaFromDisbursements,
+        other: otherFromDisbursements
+      };
+      
+      // Calculate total escrow (insurance + taxes only, not HOA or other)
+      totalEscrow = (grouped['insurance'] || 0) + (grouped['taxes'] || 0);
     } else {
       console.log('No disbursements available, using fallback method');
       // Fallback to old method if no disbursements data
