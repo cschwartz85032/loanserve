@@ -13,6 +13,14 @@ When encountering database or field-related errors:
 4. **Use diagnostic scripts** - run `node debug-db-schema.cjs [table] [search]` to quickly check columns
 5. **Avoid overcomplicating** - check simple causes (duplicate columns, mismatched schemas) before complex theories (build issues, caching)
 
+## RBAC Architecture Notes (2025-08-22)
+The RBAC system uses a **normalized structure** with proper foreign key relationships:
+- `permissions` table: Contains resources and permission levels (UUID IDs)
+- `role_permissions` table: Junction table with `role_id`, `permission_id`, and optional `scope` (composite primary key)
+- **Never use denormalized structure** with `resource` and `permission` strings in `role_permissions`
+- All role operations should join `role_permissions` with `permissions` table to get resource/level info
+- Migration 0009_user_management_system_fixed.sql is the authoritative source for the schema
+
 # System Architecture
 
 ## UI/UX Decisions

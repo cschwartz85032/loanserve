@@ -135,16 +135,17 @@ export async function resolveUserPermissions(userId: number): Promise<UserPolicy
   } else {
     // Get permissions by joining role_permissions with permissions table
     if (roleIds.length > 0) {
-      // Query permissions one by one to avoid array issues
-      for (const roleId of roleIds) {
-        const perms = await db.execute(sql`
-          SELECT p.resource, p.level, rp.scope
-          FROM role_permissions rp
-          JOIN permissions p ON rp.permission_id = p.id
-          WHERE rp.role_id = ${roleId}::uuid
-        `);
-        userPermissions.push(...perms.rows);
-      }
+      // Use proper join with the normalized schema
+      const perms = await db.select({
+        resource: permissions.resource,
+        level: permissions.level,
+        scope: rolePermissions.scope
+      })
+      .from(rolePermissions)
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+      .where(inArray(rolePermissions.roleId, roleIds));
+      
+      userPermissions = perms;
     }
   }
 

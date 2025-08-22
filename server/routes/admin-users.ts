@@ -827,10 +827,12 @@ router.get('/roles', async (req, res) => {
     const rolesWithPermissions = await Promise.all(
       rolesList.map(async (role) => {
         const perms = await db.select({
-          resource: rolePermissions.resource,
-          level: rolePermissions.permission
+          resource: permissions.resource,
+          level: permissions.level,
+          scope: rolePermissions.scope
         })
         .from(rolePermissions)
+        .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
         .where(eq(rolePermissions.roleId, role.id));
 
         return {

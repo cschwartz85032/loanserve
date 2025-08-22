@@ -1494,17 +1494,16 @@ export const permissions = pgTable("permissions", {
   };
 });
 
-// Role permissions table (denormalized structure)
+// Role permissions table (normalized structure matching migration)
 export const rolePermissions = pgTable("role_permissions", {
-  id: serial("id").primaryKey(),
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  resource: text("resource").notNull(),
-  permission: text("permission").notNull(), // Level: none, read, write, admin
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  permissionId: uuid("permission_id").notNull().references(() => permissions.id, { onDelete: 'cascade' }),
+  scope: jsonb("scope"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => {
   return {
     roleIdx: index("idx_role_permissions_role_id").on(table.roleId),
+    pk: primaryKey({ columns: [table.roleId, table.permissionId] })
   };
 });
 

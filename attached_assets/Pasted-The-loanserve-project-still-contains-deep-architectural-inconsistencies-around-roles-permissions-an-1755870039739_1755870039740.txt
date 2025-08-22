@@ -1,0 +1,27 @@
+The loanserve project still contains deep architectural inconsistencies around roles, permissions and RBAC despite the recent refactoring. A careful re‑examination of the migrations, schema and code reveals several mismatches and hidden defects.
+
+1 Schema vs. code mismatch on roles and permissions
+
+The migration 0009_user_management_system_fixed.sql normalized RBAC by creating permissions (one row per resource/level) and role_permissions with foreign keys (role_id, permission_id) and an optional scope
+GitHub
+. However, the current TypeScript schema defines rolePermissions as a denormalized table storing resource and permission strings
+GitHub
+. No permission_id column exists in shared/schema.ts, and the table uses a serial id rather than the composite primary key defined in the migration. This inconsistency leads to several problems:
+
+Broken SQL in policy engine: The resolveUserPermissions function in policy-engine.ts still assumes the normalized schema. It joins role_permissions with permissions on permission_id and filters by role_id
+GitHub
+. Because the schema lacks a permission_id column, this query will fail at runtime.
+
+Duplicate RBAC mechanisms: The schema retains an old denormalized permission string for each role. Meanwhile, the normalized permissions table exists but is effectively unused. This duplication makes it unclear which mechanism is authoritative and complicates permission updates.
+
+Inconsistent ID types: Roles and permissions use UUIDs, whereas users and user roles use integer IDs. The original migration (0008_user_management_system.sql) stored user_id as UUID
+GitHub
+, whereas the fixed migration (0009) changes user_id to integer
+GitHub
+. The schema uses integers for userId in userRoles
+GitHub
+, but roles.id remains a UUID. This mixture of integer and UUID types increases the risk of runtime casting errors.
+
+Recommendation: adopt a single, normalized RBAC schema. Update shared/schema.ts so that rolePermissions has roleId and permissionId (both UUIDs) with a composite primary key, matching migration 0009
+GitHub
+. Remove the denormalized permission and resource columns. Update policy-engine.ts to perform a single join across all roles rather than looping over each role (which causes an N+1 query)
