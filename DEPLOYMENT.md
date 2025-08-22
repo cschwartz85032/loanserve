@@ -50,7 +50,8 @@ openssl rand -base64 64
 ### 2. Verify HTTPS Setup
 - Ensure your deployment platform provides HTTPS
 - Session cookies will only work over HTTPS in production
-- The application automatically sets `secure: true` for cookies when NODE_ENV=production
+- The application automatically sets `secure: true` and `sameSite: 'none'` for cookies when NODE_ENV=production
+- This configuration is required for cross-site cookie delivery in modern browsers
 
 ### 3. Database Schema Synchronization
 Before deployment, ensure database schema is synchronized:

@@ -1,0 +1,67 @@
+Persistent 401 responses usually mean the server isn’t seeing an authenticated session on subsequent requests. In this codebase there are two known misconfigurations that can cause that:
+
+Session cookie isn’t being sent in production. Your session cookie is always configured with secure: false
+GitHub
+. Browsers increasingly refuse to accept insecure cookies on HTTPS sites or in cross‑site contexts unless the cookie is marked as SameSite=None and Secure. In dev (HTTP) the cookie is accepted, but when deployed over HTTPS it’s silently dropped, so the server never sees connect.sid on follow‑up requests and requireAuth returns 401.
+
+RBAC schema mismatch can make loadUserPolicy fail. If the production database uses the normalised role_permissions table (role_id, permission_id, scope)
+GitHub
+ but the TypeScript schema still defines a denormalised rolePermissions with resource and permission columns
+GitHub
+, resolveUserPermissions will throw an SQL error
+GitHub
+. loadUserPolicy catches that error and leaves req.userPolicy undefined; every protected route then responds with 401.
+
+Steps to resolve the 401s
+
+Verify whether the session cookie is being set.
+
+Use your browser’s developer tools to inspect the response from /api/login. You should see a Set-Cookie header for connect.sid. If it’s missing or marked as “blocked”, the browser has rejected the cookie. On Chrome/Edge, a message like “cookie rejected because it has the ‘SameSite=None’ attribute but is missing the ‘Secure’ attribute” confirms this.
+
+Adjust the session cookie for production.
+
+In server/auth.ts, change the session configuration so that cookies are secure in production:
+
+const isProd = process.env.NODE_ENV === 'production';
+const sessionSettings: session.SessionOptions = {
+  secret: process.env.SESSION_SECRET || 'dev-session-secret',
+  resave: false,
+  saveUninitialized: false,
+  store: storage.sessionStore,
+  cookie: {
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax'
+  }
+};
+
+
+With secure: true and sameSite: 'none' in production, browsers will send the cookie on HTTPS requests, including cross‑site calls from your React frontend.
+
+Check your trust proxy setting.
+
+If your API is behind a load balancer or reverse proxy (e.g., Render, Vercel, Cloudflare), ensure Express trusts the correct number of proxies: app.set('trust proxy', 1) is typical. If the proxy chain is longer, adjust accordingly; otherwise, the secure cookie may be stripped.
+
+Ensure the RBAC schema matches the code.
+
+Run the latest database migrations in both dev and production so that the role_permissions table contains role_id, permission_id and scope
+GitHub
+.
+
+Update shared/schema.ts to match that schema, and make sure resolveUserPermissions joins on permission_id rather than the old permission column
+GitHub
+GitHub
+.
+
+Redeploy the API once the schema and code agree.
+
+Redeploy and retest.
+
+After making these changes, redeploy the backend and clear cookies in your browser.
+
+Log in again and verify that the cookie is set and persists across requests.
+
+Hit a protected route; it should return 200 instead of 401.
+
+If after these adjustments you still see 401, capture the server logs around a failing request. A message about a missing column (e.g., permission_id) points to a schema mismatch; a message about an untrusted protocol or invalid cookie indicates the secure cookie settings still aren’t correct.

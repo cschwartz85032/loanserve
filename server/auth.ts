@@ -55,7 +55,7 @@ export function setupAuth(app: Express) {
       secure: isProduction, // Require HTTPS in production
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: isProduction ? 'lax' : 'strict', // 'lax' for production to work with redirects
+      sameSite: isProduction ? 'none' : 'strict', // 'none' for production to work with HTTPS
       domain: process.env.COOKIE_DOMAIN || undefined, // Allow setting custom domain
     },
     name: 'connect.sid', // Explicit session name
