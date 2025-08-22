@@ -1,3 +1,6 @@
+-- This migration has been superseded by 0009_user_management_system_fixed.sql
+-- DO NOT RUN THIS MIGRATION
+-- It contains an older schema that conflicts with the fixed version in 0009
 -- Migration: User Management System
 -- Description: Core tables for role-based access control, authentication, and auditing
 -- Author: System
