@@ -5,11 +5,12 @@ import { queryClient } from '@/lib/queryClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Activity, Users, MessageSquare, RefreshCw, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, Minus, Trash2, Play, Square } from 'lucide-react';
+import { AlertCircle, Activity, Users, MessageSquare, RefreshCw, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, Minus, Trash2, Play, Square, Eye } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { DLQInspector } from '@/components/queue/DLQInspector';
 import {
   Table,
   TableBody,
@@ -106,6 +107,7 @@ function QueueMonitorContent() {
   const [selectedQueue, setSelectedQueue] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [testRunning, setTestRunning] = useState(false);
+  const [inspectingDLQ, setInspectingDLQ] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Fetch queue metrics
@@ -585,17 +587,29 @@ function QueueMonitorContent() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {queue.messages > 0 && (
-                          <Button 
-                            size="sm" 
-                            variant="destructive"
-                            onClick={() => purgeDLQMutation.mutate(queue.name)}
-                            disabled={purgeDLQMutation.isPending}
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Purge
-                          </Button>
-                        )}
+                        <div className="flex gap-2">
+                          {queue.messages > 0 && (
+                            <>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => setInspectingDLQ(queue.name)}
+                              >
+                                <Eye className="h-3 w-3 mr-1" />
+                                Inspect
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => purgeDLQMutation.mutate(queue.name)}
+                                disabled={purgeDLQMutation.isPending}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Purge
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -605,6 +619,15 @@ function QueueMonitorContent() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* DLQ Inspector Modal */}
+      {inspectingDLQ && (
+        <DLQInspector
+          queueName={inspectingDLQ}
+          isOpen={!!inspectingDLQ}
+          onClose={() => setInspectingDLQ(null)}
+        />
+      )}
     </div>
   );
 }

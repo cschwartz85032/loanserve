@@ -111,6 +111,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const queueMonitorRoutes = (await import('./routes/queue-monitor-routes.js')).default;
   app.use('/api/queue-monitor', queueMonitorRoutes);
 
+  // Register DLQ management routes
+  const dlqRoutes = (await import('./routes/dlq-routes.js')).default;
+  app.use('/api', dlqRoutes);
+
   // ============= BORROWER ENTITY ROUTES =============
   app.get("/api/borrowers", 
     requireAuth,
