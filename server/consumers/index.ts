@@ -16,8 +16,8 @@ export async function startPaymentConsumers(): Promise<void> {
   try {
     // Initialize RabbitMQ connection
     const rabbitmq = getEnhancedRabbitMQService();
-    await rabbitmq.connect();
-    console.log('[Consumers] RabbitMQ connected');
+    // Connection is handled automatically by the enhanced service
+    console.log('[Consumers] RabbitMQ service initialized');
 
     // Start outbox processor (commented out until implemented)
     // const outboxProcessor = new OutboxProcessor();
@@ -49,13 +49,13 @@ export async function startPaymentConsumers(): Promise<void> {
     // Graceful shutdown
     process.on('SIGINT', async () => {
       console.log('[Consumers] Shutting down payment consumers...');
-      await rabbitmq.disconnect();
+      await rabbitmq.shutdown();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
       console.log('[Consumers] Shutting down payment consumers...');
-      await rabbitmq.disconnect();
+      await rabbitmq.shutdown();
       process.exit(0);
     });
 

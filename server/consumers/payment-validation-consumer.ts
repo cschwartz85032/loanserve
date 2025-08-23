@@ -383,18 +383,22 @@ export class PaymentValidationConsumer {
       this.validatePayment.bind(this)
     );
 
-    await this.rabbitmq.consume('payments.validation', async (msg) => {
-      if (!msg) return;
-
-      try {
-        const envelope = JSON.parse(msg.content.toString()) as PaymentEnvelope<PaymentData>;
-        await handler(envelope);
-        msg.ack();
-      } catch (error) {
-        console.error('[Validation] Error processing message:', error);
-        msg.nack(false, false); // Send to DLQ
+    await this.rabbitmq.consume(
+      { 
+        queue: 'payments.validation',
+        prefetch: 10,
+        consumerTag: 'payment-validation-consumer'
+      },
+      async (envelope: PaymentEnvelope<PaymentData>, msg) => {
+        try {
+          await handler(envelope);
+          // Ack is handled automatically by enhanced service
+        } catch (error) {
+          console.error('[Validation] Error processing message:', error);
+          throw error; // Enhanced service will handle nack
+        }
       }
-    });
+    );
 
     console.log('[Validation] Payment validation consumer started');
   }

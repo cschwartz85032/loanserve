@@ -1,0 +1,451 @@
+Phase 3: Settlement, Reconciliation, Compliance, and Integrations
+
+Enterprise plan that is bank-agnostic, adapter-driven, and production-ready
+
+This version assumes no final bank selection yet. It locks strict abstractions, stable schemas, and timing rules so engineering can implement now. Bank specifics become configuration and plug-in adapters later.
+
+0. Goals and guardrails
+
+Objectives
+
+Correct settlement state for every inbound or outbound payment.
+
+Automated reconciliation with measurable accuracy.
+
+Complete compliance outputs and AML screening.
+
+Deterministic messaging and idempotent writes.
+
+Operable system with SLOs, alerts, and runbooks.
+
+Non-negotiables
+Forward-only migrations. Immutable audit chain. No secrets in code. Quorum queues for financial events. Manual acks on critical consumers. All times stored in UTC. Per-rail windows are configurable.
+
+What is decided now
+Rails in scope: ACH, Wire, Check or Lockbox, Card, optional RTP.
+Canonical schemas and message contracts below.
+Settlement windows and probes defined as config with defaults.
+Reconciliation scoring and workflows fixed.
+
+What is deferred until bank selection
+Endpoints, credentials, IP allowlists, cipher suites.
+File quirks and cutoffs.
+Escalation contacts and ticketing hooks.
+These map into the adapter layer without changing core code.
+
+1. System architecture
+1.1 Services
+
+Settlement Service
+Converts external artifacts to settlement state. Handles ACH returns, wire advice, check clears, card chargebacks.
+
+Reconciliation Engine
+Matches external transactions to internal expectations. Produces matches or exceptions with confidence scores.
+
+Integrations Gateway
+Pluggable adapters for ODFI SFTP, SWIFT or Fedwire, processors, RTP. Uniform API. Sandboxed parsers.
+
+Compliance Hub
+HMDA where applicable, RESPA evidence, TILA outputs, OFAC and AML screening, IRS 1098 records.
+
+Ops and Observability
+Metrics, logs, traces, dashboards. Quarantine of bad messages. DLQ inspector.
+
+1.2 Messaging topology
+
+Exchanges
+settlement.topic, reconciliation.topic, bank.topic, compliance.topic, aml.topic, audit.topic, dlx.main
+
+Queues
+settlement.ach.settle, settlement.ach.return, settlement.wire.advice, settlement.check.clear
+reconciliation.bank.import, reconciliation.match, reconciliation.exceptions
+compliance.hits, aml.screen, aml.review, audit.events
+dlq.settlement, dlq.reconciliation, dlq.compliance, dlq.aml
+
+RabbitMQ declaration JSON is in section 7.
+
+2. Canonical data contracts and adapters
+2.1 Canonical external transaction
+export type Rail = 'ach'|'wire'|'check'|'card'|'rtp';
+export type ExtType = 'credit'|'debit'|'return'|'fee';
+
+export interface BankTx {
+  extTxId: string;            // unique per artifact set. build from network ids when possible
+  method: Rail;
+  type: ExtType;
+  amountCents: number;
+  currency: 'USD';
+  postedAt: string;           // ISO 8601 UTC
+  bankAccountToken: string;   // tokenized identifier
+  extReference?: string;      // ACH trace, IMAD or OMAD, MT103 ref, check number
+  counterparty?: string;
+  memo?: string;
+  fileId?: string;            // bank_files.file_id if known
+  rawMeta?: Record<string, unknown>;
+}
+
+2.2 Adapter interfaces
+export interface BankConnector {
+  id(): string;                                   // 'odfi_acme', 'swift_emulator'
+  fetchArtifacts(sinceIso: string): Promise<Uint8Array[]>;  // SFTP or API pull
+  parse(artifact: Uint8Array): Promise<BankTx[]>;           // BAI2, MT940, NACHA RET, CAMT.053
+  acknowledge?(artifact: Uint8Array): Promise<void>;        // if the bank requires it
+}
+
+export interface PaymentRail {
+  submitAch?(batch: AchBatch): Promise<{batchId: string; traceNumbers: string[]}>;
+  submitWire?(wire: WireInstruction): Promise<{imad?: string; omad?: string}>;
+  // add rtp or card as needed
+}
+
+
+Adapters live behind configuration. One code path, many providers.
+
+3. Database schema and invariants
+3.1 Settlement and reconciliation
+CREATE TABLE bank_files (
+  file_id        BIGSERIAL PRIMARY KEY,
+  source_system  TEXT NOT NULL,
+  format         TEXT NOT NULL,           -- BAI2, MT940, NACHA_RET, CAMT.053
+  received_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  business_date  DATE NOT NULL,
+  sha256         BYTEA NOT NULL UNIQUE,
+  row_count      INT NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'ingested',  -- ingested, parsed, reconciled, failed
+  error_reason   TEXT
+);
+
+CREATE TABLE bank_transactions (
+  ext_tx_id      TEXT PRIMARY KEY,
+  file_id        BIGINT REFERENCES bank_files(file_id),
+  bank_account   TEXT NOT NULL,
+  posted_at      TIMESTAMPTZ NOT NULL,
+  amount_cents   BIGINT NOT NULL,
+  currency       CHAR(3) NOT NULL DEFAULT 'USD',
+  type           TEXT NOT NULL,           -- credit, debit, return, fee
+  method         TEXT NOT NULL,           -- ach, wire, check, card, rtp
+  ext_reference  TEXT,
+  counterparty   TEXT,
+  memo           TEXT
+);
+
+CREATE TABLE expected_settlements (
+  expect_id      BIGSERIAL PRIMARY KEY,
+  payment_id     VARCHAR(26) NOT NULL,
+  loan_id        VARCHAR(50) NOT NULL,
+  method         TEXT NOT NULL,
+  direction      TEXT NOT NULL,           -- inbound, outbound, refund, investor_payout
+  amount_cents   BIGINT NOT NULL,
+  currency       CHAR(3) NOT NULL DEFAULT 'USD',
+  initiated_at   TIMESTAMPTZ NOT NULL,
+  effective_date DATE NOT NULL,
+  ext_ref_hint   TEXT,
+  state          TEXT NOT NULL DEFAULT 'pending', -- pending, settled, returned, partial, failed
+  UNIQUE(payment_id, method, direction)
+);
+
+CREATE TABLE reconciliation_matches (
+  match_id       BIGSERIAL PRIMARY KEY,
+  ext_tx_id      TEXT REFERENCES bank_transactions(ext_tx_id),
+  expect_id      BIGINT REFERENCES expected_settlements(expect_id),
+  score          NUMERIC(5,2) NOT NULL,  -- 0.00 to 1.00
+  matched_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  strategy       TEXT NOT NULL,          -- deterministic_ref, amount_date, fuzzy_window, manual
+  status         TEXT NOT NULL,          -- matched, auto_confirmed, manual_pending, rejected
+  reviewer       TEXT
+);
+
+CREATE TABLE reconciliation_exceptions (
+  exc_id         BIGSERIAL PRIMARY KEY,
+  kind           TEXT NOT NULL,          -- unmatched_credit, amount_mismatch, duplicate, stale
+  ext_tx_id      TEXT REFERENCES bank_transactions(ext_tx_id),
+  expect_id      BIGINT REFERENCES expected_settlements(expect_id),
+  opened_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  state          TEXT NOT NULL DEFAULT 'open', -- open, in_review, resolved, suppressed
+  resolution     TEXT,
+  resolved_at    TIMESTAMPTZ
+);
+
+CREATE INDEX idx_bank_tx_posted ON bank_transactions(posted_at);
+CREATE INDEX idx_expect_state ON expected_settlements(state, initiated_at);
+CREATE INDEX idx_match_status ON reconciliation_matches(status, score DESC);
+CREATE INDEX idx_exc_state ON reconciliation_exceptions(state, opened_at);
+
+3.2 Compliance and AML
+CREATE TABLE aml_screenings (
+  screening_id    BIGSERIAL PRIMARY KEY,
+  subject_kind    TEXT NOT NULL,          -- borrower, payor, investor
+  subject_id      TEXT NOT NULL,
+  name            TEXT NOT NULL,
+  dob             DATE,
+  address         TEXT,
+  result          TEXT NOT NULL,          -- clear, potential_match, hit
+  score           NUMERIC(5,2) NOT NULL,
+  screened_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  details_json    JSONB
+);
+
+CREATE TABLE irs_1098_records (
+  record_id       BIGSERIAL PRIMARY KEY,
+  tax_year        INT NOT NULL,
+  borrower_id     TEXT NOT NULL,
+  loan_id         TEXT NOT NULL,
+  interest_paid_cents BIGINT NOT NULL,
+  mortgage_ins_cents BIGINT DEFAULT 0,
+  points_paid_cents BIGINT DEFAULT 0,
+  prepared_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  status          TEXT NOT NULL DEFAULT 'prepared'  -- prepared, corrected, filed
+);
+
+3.3 Immutable audit chain
+CREATE TABLE audit_log (
+  event_id     VARCHAR(26) PRIMARY KEY,     -- ULID
+  occurred_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  actor        TEXT NOT NULL,               -- service or user
+  action       TEXT NOT NULL,               -- settle.post, reconcile.match, aml.hit
+  object_kind  TEXT NOT NULL,
+  object_id    TEXT NOT NULL,
+  payload      JSONB NOT NULL,
+  prev_hash    BYTEA,
+  curr_hash    BYTEA NOT NULL
+);
+
+
+Compute curr_hash = SHA256(prev_hash || canonical_json(payload)). Store the daily tip in a separate store for tamper evidence.
+
+4. Settlement flows and timing rules
+
+All time values are UTC. Windows are configurable per adapter.
+
+ACH
+States: initiated to posted_pending_settlement to settled or returned.
+Default settlement expectation: T+1 to T+2.
+Return codes: retryable R01 or R09; permanent R02, R03, R04, R07, R08, R10, R29.
+Retry policy for retryable codes: geometric backoff with jitter and cap.
+
+Wire
+Expect advice within minutes. If missing by 60 minutes, open unmatched_credit or unmatched_debit exception.
+
+Check or Lockbox
+Post as pending. Settle only after clear signal or file. If NSF, trigger reversal saga identical to ACH.
+
+Card
+Settlement next day by processor. Chargebacks map to reversal saga with processor timeframes.
+
+RTP
+Final on receipt. No returns. Use exception workflow for credit transfer problems.
+
+5. Reconciliation algorithm
+5.1 Rule order
+
+Deterministic reference match
+ext_reference == ext_ref_hint and amounts equal gives score 1.00.
+
+Amount and date window
+Same absolute amount and postedAt within ±2 business days gives score between 0.95 and 0.99 based on proximity.
+
+Fuzzy score
+Score = w1amount_match + w2date_proximity + w3*name_similarity. Default w1 0.6, w2 0.3, w3 0.1. Promote to manual review if score between 0.80 and 0.94.
+
+Duplicate guard
+Reject if ext_tx_id already exists.
+
+5.2 Exception workflows
+
+unmatched_credit
+Hold in suspense. Notify treasury. Request research.
+
+amount_mismatch
+Propose partial settlement if policy allows, else open dispute.
+
+duplicate
+Record and suppress.
+
+stale
+Artifact older than window. Escalate to manual review.
+
+6. Security, privacy, and RBAC
+
+Transport security
+mTLS between services. TLS 1.2 minimum for external calls. Certificate pinning where offered.
+
+Secrets
+Vault with short lived dynamic secrets. No secrets in env or code.
+
+Data at rest
+Database and file store encrypted with KMS.
+
+Access
+RBAC with separation of duties. Break glass role audited.
+
+Logging
+Structured logs with PII redaction. Never log full account or routing numbers. Tokenize bank accounts.
+
+AML
+Screen payors and investors at payment receipt and before disbursement. Potential matches pause disbursements and enter aml.review.
+
+7. RabbitMQ declaration JSON
+{
+  "exchanges": [
+    {"name":"settlement.topic","type":"topic","durable":true},
+    {"name":"reconciliation.topic","type":"topic","durable":true},
+    {"name":"bank.topic","type":"topic","durable":true},
+    {"name":"compliance.topic","type":"topic","durable":true},
+    {"name":"aml.topic","type":"topic","durable":true},
+    {"name":"audit.topic","type":"topic","durable":true},
+    {"name":"dlx.main","type":"topic","durable":true}
+  ],
+  "queues": [
+    {"name":"settlement.ach.settle","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+    {"name":"settlement.ach.return","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+    {"name":"settlement.wire.advice","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+    {"name":"settlement.check.clear","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+
+    {"name":"reconciliation.bank.import","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+    {"name":"reconciliation.match","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+    {"name":"reconciliation.exceptions","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+
+    {"name":"compliance.hits","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+    {"name":"aml.screen","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+    {"name":"aml.review","durable":true,"arguments":{"x-queue-type":"quorum","x-dead-letter-exchange":"dlx.main"}},
+
+    {"name":"audit.events","durable":true,"arguments":{"x-queue-type":"quorum","x-max-length":500000}}
+  ],
+  "bindings": [
+    {"source":"bank.topic","destination":"reconciliation.bank.import","routing_key":"bank.file.*"},
+    {"source":"settlement.topic","destination":"settlement.ach.settle","routing_key":"ach.settlement.*"},
+    {"source":"settlement.topic","destination":"settlement.ach.return","routing_key":"ach.return.*"},
+    {"source":"settlement.topic","destination":"settlement.wire.advice","routing_key":"wire.advice.*"},
+    {"source":"settlement.topic","destination":"settlement.check.clear","routing_key":"check.clear.*"},
+
+    {"source":"reconciliation.topic","destination":"reconciliation.match","routing_key":"recon.candidate.*"},
+    {"source":"reconciliation.topic","destination":"reconciliation.exceptions","routing_key":"recon.exception.*"},
+
+    {"source":"compliance.topic","destination":"compliance.hits","routing_key":"compliance.hit.*"},
+    {"source":"aml.topic","destination":"aml.screen","routing_key":"aml.screen.*"},
+    {"source":"aml.topic","destination":"aml.review","routing_key":"aml.review.*"},
+    {"source":"audit.topic","destination":"audit.events","routing_key":"#"}
+  ]
+}
+
+
+Consumer prefetch: 10 for light tasks. 1 for heavy parsers and AML. Publishers use confirms. Consumers use manual ack with idempotent outbox.
+
+8. Observability and SLOs
+8.1 SLIs and SLOs
+
+Settlement confirmation latency
+ACH p95 within T+1 by 17:00 local bank time. Wires p95 within 15 minutes.
+
+Auto reconciliation rate
+At least 95 percent of credits matched without manual touch.
+
+Error budget
+No more than 0.1 percent messages to DLQ in 30 days.
+
+AML screening latency
+p95 under 1 second per subject.
+
+8.2 Metrics and dashboards
+
+Queue depth and unacked counts. Redelivery rate. Match rate by strategy. ACH returns by code. Wire advice missing count. Exceptions backlog age. 1098 prepared vs corrected. Alert rules: DLQ depth over threshold, missing wire advice beyond SLA, ACH return spikes, reconciliation backlog older than 4 hours.
+
+9. Testing and data quality
+
+Golden files
+Curated BAI2, MT940, NACHA RET, CAMT.053, wire advice samples. Edge cases included.
+
+Unit tests
+Parsers, scoring, state transitions, reversal sagas.
+
+Property tests
+Ledger double entry invariants. Rounding invariants.
+
+Integration tests
+End to end from artifact ingestion to settlement and reconciliation.
+
+Fuzz tests
+Malformed records and time skew.
+
+Load and soak
+At least 100k transactions per hour for 24 hours on the reconciliation path.
+
+Quality gates in CI: SAST, dependency scan, coverage thresholds 90 percent for parsers and matching, mutation testing on reconciliation, schema drift detector that blocks backward incompatible migrations.
+
+10. Operations and runbooks
+
+ACH return surge
+Throttle retries, extend backoff, open advisory to customer care.
+
+Wire advice missing
+Query IMAD or OMAD, open bank ticket, hold credit posting, create exception.
+
+DLQ growth
+Inspect last_error, hotfix if needed, replay with rate limit.
+
+AML potential match
+Pause subject disbursements, route to aml.review, require dual approval to clear.
+
+11. Compliance
+
+HMDA and RESPA evidence where applicable.
+
+TILA outputs with archived PDFs.
+
+OFAC or AML screening on receipt and before disbursement.
+
+IRS 1098 year end records with correction workflow.
+
+Retention: bank files 7 years, audit logs 7 years, AML 5 years minimum. Configurable by policy.
+
+12. Rollout and exit gates
+12.1 Timeline
+
+Week 1 to 2: Adapter scaffolds, parsers, golden files, DDL.
+Week 3 to 4: Matching engine and exception UI.
+Week 5 to 6: Settlement handlers and reversal sagas.
+Week 7 to 8: Compliance hub and AML screening.
+Week 9 to 10: Observability and chaos tests.
+
+12.2 Exit gates
+
+Gate A
+Golden files parse success 99.9 percent.
+
+Gate B
+Auto reconciliation at least 95 percent on staged data.
+
+Gate C
+Reversal saga correct to the cent across all tested return codes.
+
+Gate D
+AML potential match flow with dual control and audit chain validated.
+
+Gate E
+Dashboards and alerts observed firing in staging.
+
+13. Risk register
+Risk	Mitigation
+Duplicate file replay	Unique sha256 on bank_files. Unique ext_tx_id. Idempotent upserts.
+Out of order artifacts	Reconcile by amount and window. Do not rely on arrival order.
+False AML positives	Score thresholds, manual review queue, dual control.
+Ledger drift	Database transactions, idempotent outbox, scheduled reconciliation backstop.
+Adapter instability	Circuit breakers. Retries with jitter. Fallback to alternate rail.
+DLQ growth	Auto producer throttling. Sharded consumers. On call paging with playbook.
+14. What engineering builds now
+
+Schemas and migrations in section 3.
+
+Adapters that implement the interfaces in section 2, starting with a bank emulator that feeds golden files.
+
+Consumers for queues in section 7 with idempotent outbox and manual ack.
+
+Reconciliation engine with scoring math and exception workflows.
+
+Compliance hub with AML screening stub.
+
+Dashboards and alerts tied to metrics in section 8.
+
+This plan lets you complete Phase 3 without a selected bank. When the bank is chosen, you supply credentials, cutoffs, formats, and timezones to the adapter configuration and proceed directly to staging and production readiness.
+
+ChatGPT can make mistakes. Check important

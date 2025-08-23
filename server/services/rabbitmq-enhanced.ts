@@ -356,6 +356,23 @@ export class EnhancedRabbitMQService {
   }
 
   /**
+   * Wait for connection to be ready
+   */
+  async waitForConnection(maxWaitMs: number = 30000): Promise<void> {
+    const startTime = Date.now();
+    
+    while (!this.isConnected) {
+      if (Date.now() - startTime > maxWaitMs) {
+        throw new Error(`RabbitMQ connection timeout after ${maxWaitMs}ms`);
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    console.log('[RabbitMQ] Connection ready');
+  }
+
+  /**
    * Calculate shard for loan-based routing
    */
   static calculateShard(loanId: string | number, shardCount: number = 8): number {

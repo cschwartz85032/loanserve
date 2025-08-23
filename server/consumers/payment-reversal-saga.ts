@@ -491,18 +491,22 @@ export class PaymentReversalSaga {
       this.executeReversal.bind(this)
     );
 
-    await this.rabbitmq.consume('payments.reversal', async (msg) => {
-      if (!msg) return;
-
-      try {
-        const envelope = JSON.parse(msg.content.toString());
-        await reversalHandler(envelope);
-        msg.ack();
-      } catch (error) {
-        console.error('[Reversal] Error processing reversal:', error);
-        msg.nack(false, false);
+    await this.rabbitmq.consume(
+      {
+        queue: 'payments.reversal',
+        prefetch: 5,
+        consumerTag: 'payment-reversal-consumer'
+      },
+      async (envelope: PaymentEnvelope<ReversalData>, msg) => {
+        try {
+          await reversalHandler(envelope);
+          // Ack is handled automatically by enhanced service
+        } catch (error) {
+          console.error('[Reversal] Error processing reversal:', error);
+          throw error; // Enhanced service will handle nack
+        }
       }
-    });
+    );
 
     // ACH return handler
     const achReturnHandler = createIdempotentHandler(
@@ -510,18 +514,22 @@ export class PaymentReversalSaga {
       this.handleACHReturn.bind(this)
     );
 
-    await this.rabbitmq.consume('payments.returned', async (msg) => {
-      if (!msg) return;
-
-      try {
-        const envelope = JSON.parse(msg.content.toString());
-        await achReturnHandler(envelope);
-        msg.ack();
-      } catch (error) {
-        console.error('[Reversal] Error processing ACH return:', error);
-        msg.nack(false, false);
+    await this.rabbitmq.consume(
+      {
+        queue: 'payments.returned',
+        prefetch: 5,
+        consumerTag: 'ach-return-consumer'
+      },
+      async (envelope: PaymentEnvelope<{ payment_id: string; return_code: string; return_reason: string }>, msg) => {
+        try {
+          await achReturnHandler(envelope);
+          // Ack is handled automatically by enhanced service
+        } catch (error) {
+          console.error('[Reversal] Error processing ACH return:', error);
+          throw error; // Enhanced service will handle nack
+        }
       }
-    });
+    );
 
     console.log('[Reversal] Payment reversal saga started');
   }

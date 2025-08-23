@@ -306,18 +306,22 @@ export class PaymentDistributionConsumer {
       this.calculateDistributions.bind(this)
     );
 
-    await this.rabbitmq.consume('payments.distribution', async (msg) => {
-      if (!msg) return;
-
-      try {
-        const envelope = JSON.parse(msg.content.toString()) as PaymentEnvelope<PaymentData>;
-        await distributionHandler(envelope);
-        msg.ack();
-      } catch (error) {
-        console.error('[Distribution] Error processing message:', error);
-        msg.nack(false, false); // Send to DLQ
+    await this.rabbitmq.consume(
+      {
+        queue: 'payments.distribution',
+        prefetch: 10,
+        consumerTag: 'payment-distribution-consumer'
+      },
+      async (envelope: PaymentEnvelope<PaymentData>, msg) => {
+        try {
+          await distributionHandler(envelope);
+          // Ack is handled automatically by enhanced service
+        } catch (error) {
+          console.error('[Distribution] Error processing message:', error);
+          throw error; // Enhanced service will handle nack
+        }
       }
-    });
+    );
 
     // Clawback handler
     const clawbackHandler = createIdempotentHandler(
@@ -325,18 +329,22 @@ export class PaymentDistributionConsumer {
       this.processClawback.bind(this)
     );
 
-    await this.rabbitmq.consume('investor.clawback', async (msg) => {
-      if (!msg) return;
-
-      try {
-        const envelope = JSON.parse(msg.content.toString());
-        await clawbackHandler(envelope);
-        msg.ack();
-      } catch (error) {
-        console.error('[Distribution] Error processing clawback:', error);
-        msg.nack(false, false);
+    await this.rabbitmq.consume(
+      {
+        queue: 'investor.clawback',
+        prefetch: 5,
+        consumerTag: 'payment-clawback-consumer'
+      },
+      async (envelope: PaymentEnvelope<{ payment_id: string; reason: string }>, msg) => {
+        try {
+          await clawbackHandler(envelope);
+          // Ack is handled automatically by enhanced service
+        } catch (error) {
+          console.error('[Distribution] Error processing clawback:', error);
+          throw error; // Enhanced service will handle nack
+        }
       }
-    });
+    );
 
     console.log('[Distribution] Payment distribution consumer started');
   }

@@ -93,6 +93,31 @@ export class TopologyManager {
       durable: true,
     });
 
+    // Phase 3: Settlement & Reconciliation exchanges
+    this.addExchange({
+      name: 'settlement.topic',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'reconciliation.topic',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'bank.topic',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'aml.topic',
+      type: 'topic',
+      durable: true,
+    });
+
     // Dead letter exchange
     this.addExchange({
       name: 'dlx.main',
@@ -370,6 +395,139 @@ export class TopologyManager {
       ],
     });
 
+    // Phase 3: Settlement queues
+    this.addQueue({
+      name: 'settlement.ach.settle',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'settlement.dlq',
+      },
+      bindings: [
+        { exchange: 'settlement.topic', routingKey: 'ach.settlement.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'settlement.ach.return',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'settlement.dlq',
+      },
+      bindings: [
+        { exchange: 'settlement.topic', routingKey: 'ach.return.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'settlement.wire.advice',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'settlement.dlq',
+      },
+      bindings: [
+        { exchange: 'settlement.topic', routingKey: 'wire.advice.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'settlement.check.clear',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'settlement.dlq',
+      },
+      bindings: [
+        { exchange: 'settlement.topic', routingKey: 'check.clear.*' },
+      ],
+    });
+
+    // Reconciliation queues
+    this.addQueue({
+      name: 'reconciliation.bank.import',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'reconciliation.dlq',
+      },
+      bindings: [
+        { exchange: 'bank.topic', routingKey: 'bank.file.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'reconciliation.match',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'reconciliation.dlq',
+      },
+      bindings: [
+        { exchange: 'reconciliation.topic', routingKey: 'match.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'reconciliation.exceptions',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'reconciliation.dlq',
+      },
+      bindings: [
+        { exchange: 'reconciliation.topic', routingKey: 'exception.*' },
+      ],
+    });
+
+    // AML/Compliance queues
+    this.addQueue({
+      name: 'compliance.hits',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'compliance.dlq',
+      },
+      bindings: [
+        { exchange: 'compliance.topic', routingKey: 'compliance.hit.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'aml.screen',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'aml.dlq',
+      },
+      bindings: [
+        { exchange: 'aml.topic', routingKey: 'screen.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'aml.review',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'aml.dlq',
+      },
+      bindings: [
+        { exchange: 'aml.topic', routingKey: 'review.*' },
+      ],
+    });
+
     // Dead letter queues
     this.addQueue({
       name: 'dlq.payments',
@@ -392,6 +550,39 @@ export class TopologyManager {
       durable: true,
       bindings: [
         { exchange: 'dlx.main', routingKey: 'notifications.dlq' },
+      ],
+    });
+
+    // Phase 3 DLQs
+    this.addQueue({
+      name: 'dlq.settlement',
+      durable: true,
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'settlement.dlq' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'dlq.reconciliation',
+      durable: true,
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'reconciliation.dlq' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'dlq.compliance',
+      durable: true,
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'compliance.dlq' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'dlq.aml',
+      durable: true,
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'aml.dlq' },
       ],
     });
 
