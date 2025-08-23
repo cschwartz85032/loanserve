@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AdminLayout from '@/components/layout/AdminLayout';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -53,7 +54,7 @@ interface AggregatedStats {
   };
 }
 
-export default function QueueMonitor() {
+function QueueMonitorContent() {
   const [selectedQueue, setSelectedQueue] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
@@ -367,5 +368,13 @@ export default function QueueMonitor() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function QueueMonitor() {
+  return (
+    <AdminLayout>
+      <QueueMonitorContent />
+    </AdminLayout>
   );
 }
