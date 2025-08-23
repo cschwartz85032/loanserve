@@ -1,0 +1,367 @@
+1) Daily Servicing Cycle (work queue)
+
+Keep
+
+Direct exchange with a durable work queue.
+
+Competing consumers.
+
+Change or add
+
+If any task modifies the same loan, enforce per-loan serialization. Options:
+
+Shard by routing key servicing.{shard}.{task} where shard = fnv1a(loanId) % N. Bind N queues servicing.daily.tasks.{0..N-1}. One consumer group per shard.
+
+Single queue with single-active-consumer=true and per-loan in-process locks. This preserves ordering but reduces parallelism.
+
+Use quorum queues for durability. Note that quorum queues do not support priorities. If you need priority here, either:
+
+Use classic priority queues with a clear acceptance of lower HA characteristics, or
+
+Create distinct queues by priority and weight consumers per queue.
+
+Queue args
+
+x-queue-type=quorum
+
+x-message-ttl=86_400_000 for stale daily tasks
+
+x-dead-letter-exchange=dlx.main
+
+x-max-length=500_000 and x-overflow=reject-publish-dlx
+
+Prefetch: start at 32, tune by p95 task time × consumer concurrency.
+
+2) Payment Processing Pipeline (topic)
+
+Keep
+
+Topic exchange and staged progression events.
+
+Change or add
+
+Publish new events for each stage instead of moving a single message between stage queues. This yields a clean event log and easier replay.
+
+Include idempotency keys (bank rail reference + your paymentId) to make stage handlers idempotent.
+
+For fraud or AML side checks, branch to dedicated compliance queues.
+
+Queues
+
+payments.validation, payments.processing, payments.distribution
+
+All quorum, each with DLX and a bounded retry policy.
+
+Delays via delayed-message exchange if enabled, otherwise TTL+DLX per attempt.
+
+Routing keys
+
+payment.ach.received, payment.wire.received, payment.check.received
+
+On validation pass: payment.{type}.validated
+
+On processing: payment.{type}.processed
+
+3) Document Processing (RPC-style)
+
+Keep
+
+Request-reply with correlation IDs.
+
+Change or add
+
+Avoid documents.analysis.response.{userId} queues. That will create many ephemeral queues.
+
+Use one per-session exclusive, auto-delete reply queue or one shared reply queue per node with correlationId.
+
+Set a hard timeout per RPC request and cancel work when expired.
+
+For long-running AI jobs prefer async notify, not synchronous RPC. Notify via WebSocket or a reply queue event like document.analyze.completed.
+
+Queue args
+
+documents.analysis.request quorum
+
+Reply queues: exclusive, auto-delete, classic is fine
+
+4) Notification Broadcasting (fanout)
+
+Keep
+
+Fanout is fine if the same message must hit all channels.
+
+Change or add
+
+If you often target subsets, prefer topic with routing keys like notify.payment.reminder.email and bind channel-specific queues. This reduces waste.
+
+Do not auto-ack blindly. Acknowledge only after handoff to the provider or after writing to a retryable outbox for the provider.
+
+Queues
+
+notifications.email, notifications.sms, notifications.dashboard, notifications.audit
+
+Classic or quorum. Email and SMS usually benefit from retries and DLQs.
+
+5) Escrow Disbursement Workflow (saga)
+
+Keep
+
+Saga with compensation steps.
+
+Change or add
+
+Use an orchestrator service with a saga state store keyed by sagaId.
+
+Each step handler is idempotent, keyed by (sagaId, stepName).
+
+Compensation events use a separate exchange or routing namespace escrow.compensate.* and must also be idempotent.
+
+Include per-step timeouts and escalations to a “parking-lot” queue.
+
+Queues
+
+All quorum, each with DLX and retry caps.
+
+6) Compliance Monitoring (event streaming)
+
+Change
+
+Prefer topic exchange over headers. Headers exchanges are slower and harder to operate at scale.
+
+Use routing keys like compliance.regulatory.loan.modified, compliance.investor.payment.late.
+
+Queues
+
+compliance.regulatory, compliance.investor, compliance.internal
+
+Consider lazy queues for large backlogs.
+
+7) Investor Distribution Calculator (priority)
+
+Important constraint
+
+Quorum queues do not support message priorities. Options:
+
+Use classic priority queue investor.calculations with x-max-priority=10 and accept trade-offs.
+
+Use multiple queues per priority: investor.calc.p10, p5, p1. Consumers poll higher priority first.
+
+Encode priority in routing keys and consumer scheduling.
+
+Recommendation
+
+Use separate queues per priority. It is predictable and works with quorum queues.
+
+8) Audit Trail (immutable log)
+
+Critique
+
+A queue by itself is not an immutable log. It is mutable and can be purged.
+
+Upgrade
+
+If RabbitMQ Streams are available, create audit.stream with time or size retention and append every event to it.
+
+If streams are not available, keep audit.topic but run a consumer that writes to append-only storage like S3 with object lock. Enable publisher confirms and mandatory publish. Treat S3 as the immutable store of record.
+
+Cross-cutting specifications
+Message envelope (standardize for every message)
+{
+  "schema": "loanserve.v1.payment.processed",
+  "message_id": "ulid",
+  "correlation_id": "uuid",
+  "causation_id": "uuid",
+  "idempotency_key": "string",
+  "tenant_id": "string",
+  "occurred_at": "RFC3339",
+  "producer": "service-name@version",
+  "trace_id": "w3c-traceparent-id",
+  "data": { /* domain payload */ }
+}
+
+
+Rules
+
+message_id is unique for dedup.
+
+idempotency_key is the consumer’s dedupe key when business rules require exactly-once effects.
+
+schema controls validation and change management.
+
+Idempotency and exactly-once effects
+
+Implement an inbox table per consumer: (consumer, message_id, processed_at, result_hash).
+
+For state changes accompanied by publishes, use the transactional outbox pattern in your database and a background publisher.
+
+In payment handlers, the idempotency key is often the bank rail reference plus your paymentId.
+
+Retry and DLQ policy
+
+Base policy: 3 attempts with exponential backoff then DLQ.
+
+Implement delays with the delayed message exchange if allowed. Otherwise use TTL + DLX hop pattern:
+
+On failure, republish to exchange=retry.{seconds} or to the same queue with x-message-ttl via an intermediate delay queue bound back to the main queue’s routing key.
+
+Create a parking-lot queue for messages that exceeded maximum retries and require human review.
+
+Queue types and arguments
+
+Financially critical queues: quorum.
+
+High fanout, transient notifications: classic or quorum depending on SLA.
+
+Common args:
+
+x-dead-letter-exchange=dlx.main
+
+x-dead-letter-routing-key=<queue>.dlq
+
+x-max-length and x-overflow=reject-publish-dlx
+
+x-queue-type=quorum where required
+
+For classic priority queues: x-max-priority=10
+
+Naming conventions
+
+Exchange names: <domain>.<type> like payments.topic, servicing.direct.
+
+Routing keys: dot-separated subject.event.stage
+
+Example: loan.payment.processed.v1, mailroom.document.classified.v1
+
+Queues: <domain>.<purpose>[.shard|.priority]
+
+Connection and channel strategy
+
+One TCP connection per process. Multiple channels per role. Do not share a connection across unrelated processes.
+
+Publishers use confirm channels with waitForConfirms.
+
+Consumers use manual ack, prefetch tuned by task weight:
+
+Heavy CPU or IO: start with prefetch=8 then tune.
+
+Lightweight notifications: prefetch=64 or higher.
+
+Heartbeat 30 s. Automatic recovery enabled. Connection timeout 5 s. Topology recovery on.
+
+Security and tenancy
+
+Separate vhosts: /servicing, /mailroom, /compliance, /audit.
+
+Least privilege users per service.
+
+TLS on all connections. Credentials in a secret store. Rotate regularly.
+
+Observability and SLOs
+
+Metrics per queue: ready, unacked, publish rate, confirm latency, redelivery rate, DLQ depth, consumer utilization.
+
+Alarms on:
+
+DLQ depth above threshold
+
+Unacked growth over time window
+
+Confirm latency spikes
+
+Consumer down or zero consumers on critical queues
+
+Tracing: propagate trace_id through message headers and include in logs.
+
+Concrete definitions to seed (examples)
+Exchanges
+servicing.direct        type=direct, durable
+payments.topic          type=topic,  durable
+documents.direct        type=direct, durable
+notifications.fanout    type=fanout, durable
+escrow.workflow         type=topic,  durable
+compliance.topic        type=topic,  durable   // changed from headers
+audit.topic             type=topic,  durable
+dlx.main                type=topic,  durable
+
+Queues (selected)
+# Daily servicing, sharded example (N=8)
+servicing.daily.tasks.0..7
+  args: x-queue-type=quorum, x-dead-letter-exchange=dlx.main
+
+# Payments
+payments.validation
+payments.processing
+payments.distribution
+payments.failed
+  args: quorum, DLX=dlx.main
+
+# Documents
+documents.analysis.request (quorum)
+reply.<node-id> (exclusive, auto-delete, classic)
+
+# Notifications
+notifications.email  (DLX)
+notifications.sms    (DLX)
+notifications.dashboard
+notifications.audit
+
+# Escrow saga
+escrow.validate, escrow.authorize, escrow.disburse, escrow.reconcile, escrow.compensate
+  args: quorum, DLX
+
+# Compliance
+compliance.regulatory, compliance.investor, compliance.internal
+  args: lazy where large backlogs are expected
+
+# Investor distributions with priority by separate queues
+investor.calc.p10, investor.calc.p5, investor.calc.p1
+  args: quorum, DLX
+
+# Audit
+audit.events
+  args: lazy, large max-length or use RabbitMQ Streams
+
+# DLQs
+dlq.payments, dlq.documents, dlq.notifications, dlq.servicing, dlq.escrow, dlq.compliance, dlq.investor
+
+Policies
+
+Policy quorum-default: apply queue-master-locator=min-masters and queue-type=quorum to critical queues.
+
+Policy dlq-default: set DLX dlx.main on all queues matching ^((servicing|payments|escrow|investor|documents|notifications)\.).
+
+Policy lazy-compliance: set x-queue-mode=lazy for ^compliance\..*.
+
+Specific corrections to your spec
+
+Replace compliance headers exchange with a topic exchange and routing keys.
+
+Confirm the investor priority strategy. Either use classic priority queues or separate queues per priority if you stick to quorum.
+
+Change document RPC reply queues to per-session shared queues or a single per-node queue with correlation IDs.
+
+For audit, do not rely on auto-ack. Add a consumer that writes to append-only storage or adopt RabbitMQ Streams if available.
+
+Do not set global prefetch values statically. Start with recommendations and tune with metrics.
+
+Add message envelope and idempotency rules across the board.
+
+Add retry tiers with increasing TTLs and a parking-lot queue for human triage.
+
+Next steps checklist
+
+Import definitions for exchanges, queues, and policies.
+
+Implement the message envelope, idempotency, and outbox publisher.
+
+Add DLX retry tiers and parking-lot handling.
+
+Shard servicing tasks or enforce single active consumer per loan.
+
+Replace compliance headers with topic routing.
+
+Switch investor priority to classic priority or split queues by priority.
+
+Add observability dashboards and alerts tied to SLOs.
+
+Run a failure injection drill: kill consumers, force DLQ, observe retries, confirm no duplicate financial postings.
