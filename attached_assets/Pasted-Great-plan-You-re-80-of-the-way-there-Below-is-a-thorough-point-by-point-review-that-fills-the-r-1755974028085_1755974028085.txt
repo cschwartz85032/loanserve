@@ -1,0 +1,291 @@
+Great plan. You’re 80% of the way there. Below is a thorough, point-by-point review that fills the remaining 20%: payment-source coverage, reversible flows, escrow allocation rules, investor math, idempotency, ordering, data model, and runbooks. I’ve kept it crisp and implementation-ready.
+
+---
+
+## 1) Top-level payment lifecycle (state machine)
+
+Define a single canonical state machine for every incoming payment, independent of source:
+
+```
+received → accepted_for_review → validated → posted_pending_settlement
+→ settled | returned → reversed (if needed) → closed
+            ↘ rejected (non-recoverable) 
+```
+
+* **received**: accepted by API/file with idempotency key recorded.
+* **validated**: all business rules passed; source-specific checks queued.
+* **posted\_pending\_settlement**: ledgered to loan subledger as *pending*, affects borrower-facing balance if you choose, but flagged “not settled”.
+* **settled**: funds cleared; convert pending ledgers to final.
+* **returned**: source reported failure/return; triggers compensating entries.
+* **reversed**: compensating postings completed (loan, escrow, distributions) and investor clawbacks scheduled.
+* **rejected**: validation failed (e.g., closed loan, negative amount).
+
+Each transition emits a domain event with full envelope metadata (see §9).
+
+---
+
+## 2) Source-specific handling (ACH, Wire, Check, Card, Cashier’s/MO, Lockbox)
+
+**ACH**
+
+* Stages: `payment.ach.received` → validate routing/account (format + internal blacklist) → prenote/mandate check → NACHA risk checks → `payment.ach.validated` → post pending → wait settlement windows → `payment.ach.settled` or `payment.ach.returned` (R01 NSF, R02 acct closed, R29 corp N/A, etc.).
+* Keep a **return window scheduler**: queue a delayed probe per ACH with max return window per return code class. On return event, trigger reversal saga.
+* Duplicate detection: `(originatorId, companyBatchId, traceNumber)` or bank file unique ID + amount + effective date.
+
+**Wire**
+
+* Typically final on receipt (low return risk). Validate against expected credits using bank advice; mark **settled** immediately after bank confirms value.
+* Reconciliation: match bank reference against `payment_transactions.external_ref`.
+
+**Check / Lockbox**
+
+* Received via lockbox file or scanned image. Post **pending**; mark **settled** after bank clears. Handle **stale-dated**, **post-dated**, **NSF** returns.
+* Duplicate detection: `(check_number, payer_account, amount, issue_date)`.
+
+**Card**
+
+* If allowed for fees only, treat as two-step: authorization then capture. Do not place principal on cards unless policy permits. Returns are chargebacks; schedule reversal saga on dispute/chargeback event.
+
+**Cashier’s check / Money order**
+
+* Treat as near wire; shorter risk window but still reversible if counterfeit—configure a minimal “hold” before **settled** if policy dictates.
+
+---
+
+## 3) Allocation strategy (principal/interest/fees/escrow)
+
+Implement an allocation rule engine per loan program:
+
+* **Allocation order** (configurable):
+
+  1. **Late fees/charges** (if policy requires fees first)
+  2. **Accrued interest**
+  3. **Scheduled principal**
+  4. **Escrow shortage** then **current escrow** (tax/ins/MI)
+  5. **Unapplied funds** bucket (if overpayment or unresolved)
+* **Escrow-only payments**: allow payer to designate escrow; bypass P\&I, apply to escrow shortage/current escrow first.
+* **Partial payments**: configurable: hold in unapplied until full installment is available, or apply proportionally; rules must be deterministic.
+* **Back-dated payments**: effective-date drives interest accrual. Recompute interest for period, apply delta adjustments.
+* **Rounding**: represent money in minor units (integer cents). For multi-line distributions, use **largest remainder method** so line items sum exactly to the payment.
+
+All of the above run inside a single **atomic DB transaction** for the “processing → posted\_pending\_settlement” step.
+
+---
+
+## 4) Escrow accounting
+
+* Maintain **escrow sub-accounts** per category (tax, hazard, flood, MI).
+* Post **escrow contributions** from payments; schedule vendor disbursements by invoice due date.
+* Support **escrow analysis** (annual/periodic): target balance, cushion, shortage/surplus handling.
+* Support **targeted escrow payments** (when borrower pays a specific tax bill).
+* On **payment return/reversal**, automatically **reverse escrow contributions** and, if a disbursement already went out, push the deficiency to **escrow shortage** and trigger collections rules.
+
+---
+
+## 5) Investor distributions (ownership, waterfalls, fees)
+
+* **Effective-dated ownership**: `investor_positions` records with `(loan_id, investor_id, pct, effective_from, effective_to)`. Pick the correct lot at payment effective date.
+* **Servicing fee**: fixed bps on UPB or fee on collected interest—configurable per program; compute before investor splits if waterfall requires.
+* **Waterfall** examples:
+
+  * **Pro-rata** on interest and principal after servicing strip.
+  * **Sequential** (A before B) for structured deals—support tranche priority.
+* **Rounding**: allocate by high-precision rational math, then round to cents with largest remainder; post any 1-cent residual to a designated investor or reserve per policy.
+* **Clawbacks**: if payment later **returned**, create negative distribution records and schedule ACH/wire clawback from investor payable balance, not from external cash unless policy allows; notify investors.
+
+---
+
+## 6) Reversals, returns, and compensation
+
+When a posted payment **fails/returns**:
+
+* Create a **reversal saga**:
+
+  1. Reverse loan ledger entries (mirror debit/credit).
+  2. Reverse escrow contributions; adjust shortage/surplus.
+  3. Generate negative investor distributions and net against unpaid future distributions or raise an investor receivable.
+  4. Recompute interest/fees as if payment never settled; if grace period passed, apply late fee.
+  5. Notify borrower/investor; update compliance events.
+* Never delete; always **append compensating entries**. Keep original `payment_id`, create `reversal_id`, link via `causation_id`.
+* ACH return codes dictate retry/ban logic. Configure per-code business rules (e.g., R01 retry allowed vs R07 stop all retries).
+
+---
+
+## 7) Messaging topology (expand and pin down)
+
+Re-use your Phase 1 exchanges; add these routes/queues and headers:
+
+**Exchanges**
+
+* `payments.topic` (existing) — all payment events.
+* `returns.topic` — bank returns/chargebacks.
+* `distributions.topic` — investor calcs & postings.
+* `compliance.topic` — regulatory taps.
+* `audit.topic` — immutable event log sink or consumer to append-only store.
+
+**Queues (quorum unless noted)**
+
+Validation & processing
+
+* `payments.validation`  ← `payment.*.received`
+* `payments.processing`  ← `payment.*.validated`
+* `payments.posted`      ← `payment.*.processed` (posts pending ledgers)
+* `payments.settlement`  ← probes/settlement confirmations
+* `payments.returned`    ← `payment.*.returned` (from `returns.topic`)
+* `payments.reversal`    ← reversal saga steps
+* DLQs: `dlq.payments.*` with parking-lot queue
+
+Investor
+
+* `payments.distribution` ← `payment.*.settled`
+* `investor.calc.p10/p5/p1`  (as you planned)
+* `investor.posting`   ← write distribution ledger
+* `investor.clawback`  ← negative distributions when returned
+
+Escrow
+
+* `escrow.apply`       ← `payment.*.processed`
+* `escrow.reverse`     ← from reversal saga
+* `escrow.disburse`    ← invoice due events
+
+Compliance & audit
+
+* `payments.compliance` ← `payment.*.*` (filtered by routing)
+* `audit.events`        ← every stage, batch/stream to append-only storage
+
+**Headers / envelope additions**
+
+* `payment_source` ∈ {ach, wire, check, card, lockbox}
+* `effective_date`, `received_at`, `settlement_due_by`
+* `idempotency_key`, `trace_id`, `tenant_id`
+* `saga_id` when part of payment or reversal saga
+
+**Retries**
+
+* Functional errors (e.g., failed validation): do not retry; route to rejection/parking-lot.
+* Transient (DB timeout, provider 5xx): exponential backoff with capped attempts; TTL+DLX or delayed-message exchange.
+
+**Ordering/serialization**
+
+* Guarantee per-loan serialization in `payments.processing` (shard by loanId hash or use single-active-consumer with per-loan mutex). This prevents race conditions between simultaneous payments/adjustments.
+
+---
+
+## 8) Data model (additions and indexes)
+
+Tables (new or expanded):
+
+* `payment_transactions(payment_id, loan_id, source, external_ref, amount_cents, currency, received_at, effective_date, state, idempotency_key, created_by, metadata jsonb)`
+* `payment_ledger(ledger_id, loan_id, payment_id, account, debit_cents, credit_cents, pending:boolean, effective_date, created_at)`  — **double-entry** per posting
+* `escrow_accounts(loan_id, category, balance_cents, ...)`
+* `escrow_ledger(loan_id, payment_id, category, debit_cents, credit_cents, ...)`
+* `payment_distributions(payment_id, investor_id, amount_cents, fee_cents, tranche, effective_date, status)`
+* `investor_positions(loan_id, investor_id, pct_bps, effective_from, effective_to)`
+* `payment_saga_states(saga_id, payment_id, state, steps_completed jsonb, compensation_required boolean, error jsonb, updated_at)`
+* `audit_log(event_id, schema, occurred_at, message jsonb, producer, trace_id)`  — or stream to S3 and store index only
+* `idempotency_inbox(consumer, message_id, processed_at, result_hash)`
+* `outbox(id, aggregate_type, aggregate_id, payload, published_at)`  — transactional outbox pattern
+
+Indexes:
+
+* `payment_transactions(loan_id, state, received_at)`
+* `investor_positions(loan_id, effective_from, effective_to)`
+* ledger tables on `(loan_id, effective_date)` and `(payment_id)`
+
+---
+
+## 9) Envelope contract (all messages)
+
+```json
+{
+  "schema": "loanserve.payment.v1.<event>",
+  "message_id": "ulid",
+  "correlation_id": "uuid",
+  "causation_id": "uuid",
+  "idempotency_key": "string",
+  "trace_id": "w3c-traceparent",
+  "tenant_id": "string",
+  "occurred_at": "RFC3339",
+  "producer": "svc-payments@1.4.2",
+  "data": { /* event payload */ }
+}
+```
+
+Common payload fields: `payment_id`, `loan_id`, `amount_cents`, `currency`, `source`, `effective_date`, `external_ref`.
+
+---
+
+## 10) Idempotency and exactly-once effects
+
+* **Producers**: use idempotency keys per source (ACH trace, wire ref, check composite). Upsert on `payment_transactions` with that key.
+* **Consumers**: check `idempotency_inbox` per `(consumer, message_id)` before side effects; write after success.
+* **Outbox**: all events emitted within the DB transaction that created the state change; a background publisher flushes the outbox to RabbitMQ with confirms.
+
+---
+
+## 11) Validation rules (concrete)
+
+* Loan status must allow posting; barred if charged-off/paid-off unless exception flag.
+* Amount > 0; upper bound vs. **payoff quote** if marked as payoff.
+* **Cut-off time** and **business calendar** (holidays/weekends) for effective date.
+* **Duplicate** within a time window and same key → reject or mark review.
+* ACH mandate validity; card tokenization status; check stale/post-dated rules.
+
+---
+
+## 12) Performance & scaling
+
+* Target 1,000 payments/minute: size consumers to keep **ready** messages near zero. Use `prefetch=32–128` for light validations; `8–32` for processing.
+* Partition hot tables by month (`payment_ledger`, `payment_transactions`) if volume demands.
+* Keep ledger writes batched where legally permissible; otherwise single-row, but use prepared statements and connection pooling.
+
+---
+
+## 13) Monitoring & SLOs (stage-specific)
+
+* **SLOs**: Validation p95 < 200 ms, Processing p95 < 500 ms, Distribution p95 < 400 ms under nominal load.
+* **Alarms**:
+
+  * `dlq.payments.*` depth > N for 5 min.
+  * `payments.processing` unacked > threshold.
+  * Settlement probes past due.
+  * Reversal backlog > M.
+* **Reconciliation jobs**:
+
+  * Bank daily file vs. `payment_transactions` totals.
+  * Investor payables vs. booked distributions.
+
+---
+
+## 14) Testing & fixtures (must-pass set)
+
+* Deterministic unit tests for allocation engine (hundreds of table-driven cases).
+* Property-based tests for rounding invariants (sum of lines equals total).
+* Integration saga tests: ACH success, ACH return, wire success, check NSF, partial payment, escrow-only payment, back-dated payment.
+* Load tests with realistic mix of sources and sizes; soak for 24h.
+
+---
+
+## 15) Operational runbooks
+
+* **Retry/DLQ triage**: classify errors; re-publish with increased backoff or move to parking-lot; capture root cause tag.
+* **Reversal**: step-by-step, including investor clawbacks and borrower notices.
+* **Backfill**: rules for re-ingesting historical bank files safely (use idempotency keys).
+* **Cutover**: dual-write to old/new pipelines for 1–2 cycles, shadow validate, flip consumers, drain old.
+
+---
+
+### Specific improvements to your draft
+
+1. Add **pending vs. settled** ledger states and settlement probes; ACH/Check aren’t final on day 0.
+2. Add **reversal saga** with compensating entries for loan, escrow and investor legs.
+3. Replace per-user reply queues in document RPC with per-session or per-node reply queues.
+4. Ensure **per-loan serialization** in `payments.processing`.
+5. Formalize **allocation engine** (order rules, escrow logic, rounding policy).
+6. Introduce **effective-dated investor ownership** and a clawback mechanism.
+7. Standardize the **message envelope** and the **transactional outbox**.
+8. Expand **DLQ policies** and add a **parking-lot** queue with human tooling.
+9. Add **reconciliations** (bank and investor) and publish variances.
+10. Tighten **observability** with stage-specific SLOs and alarms.
+
+If you want, I can turn this into a concrete checklist (exchanges/queues/policies JSON, SQL DDL for tables and indexes, and TypeScript interfaces for message schemas) so your team can implement Phase 2 with minimal ambiguity.
