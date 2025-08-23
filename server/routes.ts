@@ -1282,18 +1282,6 @@ To implement full file serving:
   const servicingCycleRoutes = await import('./routes/servicing-cycle');
   app.use('/api/servicing-cycle', servicingCycleRoutes.default);
 
-  // Simple environment diagnostic (no auth required)
-  app.get('/api/env-check', (req, res) => {
-    const cloudamqpUrl = process.env.CLOUDAMQP_URL;
-    res.json({
-      hasCloudamqpUrl: !!cloudamqpUrl,
-      urlLength: cloudamqpUrl?.length || 0,
-      urlPrefix: cloudamqpUrl?.substring(0, 15) || 'undefined',
-      startsWithAmqp: cloudamqpUrl?.startsWith('amqp') || false,
-      allEnvCount: Object.keys(process.env).length
-    });
-  });
-
   // Register RabbitMQ test routes
   const rabbitmqTestRoutes = await import('./routes/rabbitmq-test');
   app.use('/api/rabbitmq', rabbitmqTestRoutes.default);

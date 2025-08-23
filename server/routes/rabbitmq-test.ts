@@ -3,46 +3,9 @@ import { getRabbitMQService } from '../services/rabbitmq.js';
 
 const router = Router();
 
-// Check environment configuration
-router.get('/check-config', async (req, res) => {
-  const cloudamqpUrl = process.env.CLOUDAMQP_URL;
-  
-  res.json({
-    hasCloudamqpUrl: !!cloudamqpUrl,
-    urlLength: cloudamqpUrl?.length || 0,
-    urlPrefix: cloudamqpUrl?.substring(0, 10) || 'undefined',
-    envKeys: Object.keys(process.env).filter(key => key.includes('CLOUD') || key.includes('AMQP')),
-    allEnvKeys: Object.keys(process.env).length
-  });
-});
-
 // Test RabbitMQ connection
 router.get('/test-connection', async (req, res) => {
   try {
-    const cloudamqpUrl = process.env.CLOUDAMQP_URL;
-    
-    if (!cloudamqpUrl) {
-      return res.status(500).json({
-        success: false,
-        message: 'CLOUDAMQP_URL environment variable is not set',
-        debug: {
-          hasEnvVar: false,
-          envKeys: Object.keys(process.env).filter(key => key.includes('CLOUD') || key.includes('AMQP'))
-        }
-      });
-    }
-    
-    if (!cloudamqpUrl.startsWith('amqp://') && !cloudamqpUrl.startsWith('amqps://')) {
-      return res.status(500).json({
-        success: false,
-        message: 'CLOUDAMQP_URL does not start with amqp:// or amqps://',
-        debug: {
-          urlLength: cloudamqpUrl.length,
-          urlPrefix: cloudamqpUrl.substring(0, 10)
-        }
-      });
-    }
-    
     const rabbitmq = getRabbitMQService();
     const info = await rabbitmq.getConnectionInfo();
     
