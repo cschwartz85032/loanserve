@@ -42,7 +42,7 @@ export function Sidebar() {
     { name: "Compliance", href: "/compliance", icon: Shield },
     { name: "Settings", href: "/settings", icon: Settings },
     // Only show Admin menu if user has admin role
-    ...(hasAdminRole ? [{ name: "Admin", href: "/admin/users", icon: Settings }] : []),
+    ...(hasAdminRole ? [{ name: "Admin", href: "/admin/escrow", icon: Settings }] : []),
   ];
 
   const handleLogout = () => {
