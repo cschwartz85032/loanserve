@@ -19,6 +19,7 @@ import Mailroom from "@/pages/Mailroom";
 import AdminEscrow from "@/pages/admin/AdminEscrow";
 import { AdminUsers } from "@/pages/AdminUsers";
 import { AdminUserDetail } from "@/pages/AdminUserDetail";
+import QueueMonitor from "@/pages/admin/QueueMonitor";
 import { MigrateDatabase } from "@/pages/migrate-database";
 import MfaSettings from "@/pages/MfaSettings";
 import Settings from "@/pages/Settings";
@@ -39,6 +40,7 @@ function Router() {
       <ProtectedRoute path="/admin/escrow" component={AdminEscrow} />
       <ProtectedRoute path="/admin/users" component={AdminUsers} />
       <ProtectedRoute path="/admin/users/:id" component={AdminUserDetail} />
+      <ProtectedRoute path="/admin/queue-monitor" component={QueueMonitor} />
       <ProtectedRoute path="/reports" component={Reports} />
       <ProtectedRoute path="/compliance" component={Compliance} />
       <ProtectedRoute path="/fees" component={FeeManagement} />

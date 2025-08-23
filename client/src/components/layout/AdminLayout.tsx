@@ -9,7 +9,8 @@ import {
   ChevronRight,
   Menu,
   Building2,
-  Undo2
+  Undo2,
+  Activity
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       title: 'Users',
       href: '/admin/users',
       icon: Users,
+    },
+    {
+      title: 'Queue Monitor',
+      href: '/admin/queue-monitor',
+      icon: Activity,
     },
     {
       title: 'Settings',

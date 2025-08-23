@@ -107,6 +107,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register payment processing routes
   app.use(paymentRoutes);
 
+  // Register queue monitoring routes
+  const queueMonitorRoutes = (await import('./routes/queue-monitor-routes.js')).default;
+  app.use('/api/queue-monitor', queueMonitorRoutes);
+
   // ============= BORROWER ENTITY ROUTES =============
   app.get("/api/borrowers", 
     requireAuth,

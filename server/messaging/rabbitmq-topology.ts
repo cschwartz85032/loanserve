@@ -716,6 +716,13 @@ export class TopologyManager {
   }
 
   /**
+   * Get all queue names
+   */
+  getQueueNames(): string[] {
+    return Array.from(this.queues.keys());
+  }
+
+  /**
    * Get topology statistics
    */
   getStats(): {
