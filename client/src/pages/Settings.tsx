@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Shield, Mail, Bell } from "lucide-react";
+import AdminLayout from "@/components/layout/AdminLayout";
 import SecuritySettings from "@/components/settings/SecuritySettings";
 import MfaSettings from "@/components/settings/MfaSettings";
 import EmailTemplatesSettings from "@/components/settings/EmailTemplatesSettings";
@@ -10,13 +11,14 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState("security");
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage system settings and configurations</p>
-      </div>
+    <AdminLayout>
+      <div className="space-y-6">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold">Settings</h1>
+          <p className="text-muted-foreground">Manage system settings and configurations</p>
+        </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="security" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
@@ -51,7 +53,8 @@ export default function Settings() {
         <TabsContent value="auto-notice" className="space-y-4">
           <AutoNoticeSettings />
         </TabsContent>
-      </Tabs>
-    </div>
+        </Tabs>
+      </div>
+    </AdminLayout>
   );
 }
