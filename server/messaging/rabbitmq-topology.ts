@@ -212,6 +212,32 @@ export class TopologyManager {
       ],
     });
 
+    this.addQueue({
+      name: 'payments.reversal',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'payments.dlq',
+      },
+      bindings: [
+        { exchange: 'payments.topic', routingKey: 'payment.*.reversal' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'payments.returned',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'payments.dlq',
+      },
+      bindings: [
+        { exchange: 'payments.topic', routingKey: 'payment.*.returned' },
+      ],
+    });
+
     // Document processing queues
     this.addQueue({
       name: 'documents.analysis.request',
@@ -379,6 +405,19 @@ export class TopologyManager {
       },
       bindings: [
         { exchange: 'investor.direct', routingKey: 'calc.p1' },
+      ],
+    });
+
+    // Investor clawback queue
+    this.addQueue({
+      name: 'investor.clawback',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+      },
+      bindings: [
+        { exchange: 'investor.direct', routingKey: 'clawback' },
       ],
     });
 

@@ -16,8 +16,11 @@ export async function startPaymentConsumers(): Promise<void> {
   try {
     // Initialize RabbitMQ connection
     const rabbitmq = getEnhancedRabbitMQService();
-    // Connection is handled automatically by the enhanced service
-    console.log('[Consumers] RabbitMQ service initialized');
+    
+    // Wait for connection to be ready
+    console.log('[Consumers] Waiting for RabbitMQ connection...');
+    await rabbitmq.waitForConnection();
+    console.log('[Consumers] RabbitMQ connected');
 
     // Start outbox processor (commented out until implemented)
     // const outboxProcessor = new OutboxProcessor();
