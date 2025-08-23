@@ -15,7 +15,7 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
     }
 
-    const channel = rabbitmq.getChannel();
+    const channel = await rabbitmq.getDLQChannel();
     if (!channel) {
       return res.status(503).json({ error: 'Message broker not connected' });
     }
@@ -53,6 +53,9 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req, res) => {
       }
     }
 
+    // Close the channel after we're done
+    await channel.close();
+    
     res.json({
       queue: queueName,
       messages,
@@ -74,12 +77,15 @@ router.get('/dlq/:queueName/info', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
     }
 
-    const channel = rabbitmq.getChannel();
+    const channel = await rabbitmq.getDLQChannel();
     if (!channel) {
       return res.status(503).json({ error: 'Message broker not connected' });
     }
 
     const queueInfo = await channel.checkQueue(queueName);
+    
+    // Close the channel after we're done
+    await channel.close();
     
     res.json({
       queue: queueName,
@@ -105,7 +111,7 @@ router.post('/dlq/:queueName/retry', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
     }
 
-    const channel = rabbitmq.getChannel();
+    const channel = await rabbitmq.getDLQChannel();
     if (!channel) {
       return res.status(503).json({ error: 'Message broker not connected' });
     }
@@ -158,6 +164,9 @@ router.post('/dlq/:queueName/retry', requireAuth, async (req, res) => {
       retriedCount: retriedMessages.length,
       messages: retriedMessages
     });
+    
+    // Close the channel
+    await channel.close();
 
   } catch (error) {
     console.error('Error retrying DLQ messages:', error);
@@ -174,12 +183,15 @@ router.delete('/dlq/:queueName/purge', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
     }
 
-    const channel = rabbitmq.getChannel();
+    const channel = await rabbitmq.getDLQChannel();
     if (!channel) {
       return res.status(503).json({ error: 'Message broker not connected' });
     }
 
     const result = await channel.purgeQueue(queueName);
+    
+    // Close the channel
+    await channel.close();
     
     res.json({
       success: true,
@@ -202,7 +214,7 @@ router.delete('/dlq/:queueName/message', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
     }
 
-    const channel = rabbitmq.getChannel();
+    const channel = await rabbitmq.getDLQChannel();
     if (!channel) {
       return res.status(503).json({ error: 'Message broker not connected' });
     }
@@ -215,6 +227,9 @@ router.delete('/dlq/:queueName/message', requireAuth, async (req, res) => {
 
     // Acknowledge to remove from queue
     channel.ack(message);
+    
+    // Close the channel
+    await channel.close();
     
     res.json({
       success: true,

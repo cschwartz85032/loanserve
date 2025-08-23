@@ -389,6 +389,24 @@ export class EnhancedRabbitMQService {
   }
 
   /**
+   * Get a channel for DLQ operations
+   */
+  async getDLQChannel(): Promise<amqp.Channel | null> {
+    if (!this.consumerConnection) {
+      return null;
+    }
+    
+    // Create a dedicated channel for DLQ operations
+    try {
+      const channel = await this.consumerConnection.createChannel();
+      return channel;
+    } catch (error) {
+      console.error('[RabbitMQ] Failed to create DLQ channel:', error);
+      return null;
+    }
+  }
+
+  /**
    * Graceful shutdown
    */
   async shutdown(): Promise<void> {
