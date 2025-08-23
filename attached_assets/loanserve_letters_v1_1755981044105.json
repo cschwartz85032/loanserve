@@ -1,0 +1,843 @@
+{
+  "version": "1.0",
+  "generated_at": "2025-08-23T20:16:41.054799Z",
+  "tokens": [
+    "BorrowerFirstName",
+    "BorrowerLastName",
+    "CoBorrowerFullName",
+    "LoanNumber",
+    "PropertyAddress",
+    "MailingAddress",
+    "EmailAddress",
+    "PhoneNumber",
+    "ServicerName",
+    "ServicerNMLS",
+    "ServicerPhone",
+    "ServicerEmail",
+    "ServicerHours",
+    "PortalURL",
+    "PaymentDueDate",
+    "AmountDue",
+    "PastDueAmount",
+    "LateFeeAmount",
+    "GraceEndDate",
+    "DaysDelinquent",
+    "LossMitigationDeadline",
+    "LossMitigationOptions",
+    "EscrowShortageAmount",
+    "EscrowDeficiencyAmount",
+    "EscrowSurplusAmount",
+    "TaxType",
+    "InsuranceType",
+    "PolicyExpirationDate",
+    "ARMChangeEffectiveDate",
+    "NewInterestRate",
+    "NewPaymentAmount",
+    "OldPaymentAmount",
+    "RateIndexName",
+    "MarginPercent",
+    "ServicingTransferEffectiveDate",
+    "TransfereeServicerName",
+    "TransfereePaymentAddress",
+    "TransfereePortalURL",
+    "PaymentMethod",
+    "ExternalReference",
+    "ReversalReason",
+    "BankruptcyChapter",
+    "BankruptcyFilingDate",
+    "AttorneyName",
+    "AttorneyContact",
+    "SCRAStatus",
+    "StateSpecificDisclosure",
+    "UniformBreachLanguage",
+    "MiniMirandaBlock",
+    "BankruptcyDisclaimer",
+    "ServicerStreet",
+    "ServicerCity",
+    "ServicerState",
+    "ServicerZip",
+    "TodayFull",
+    "ParcelNumber",
+    "ServicerOfficerName",
+    "ServicerOfficerTitle",
+    "GoodThroughDate",
+    "InterestBasis",
+    "PerDiem",
+    "WireBank",
+    "WireBeneficiary",
+    "WireAccount",
+    "WireRouting",
+    "WireABAType",
+    "CureAmount",
+    "CureByDate",
+    "ProgramType",
+    "ARMIndex",
+    "ARMMargin",
+    "ARMNewRate",
+    "ARMPrevPmt",
+    "ARMNewPmt",
+    "ARMEffective",
+    "ReturnCode",
+    "HUDCounselorURL",
+    "EscrowChangeEffective",
+    "OriginationDate",
+    "InitialLoanAmount",
+    "TotalPrincipalPaid",
+    "PrincipalBalance",
+    "RegularRatePercent",
+    "DefaultRatePercent",
+    "InterestFromDate",
+    "RegularInterestDue",
+    "DefaultInterestDue",
+    "ProcessingFee",
+    "ExitFee",
+    "ReconveyanceFee",
+    "WireFee",
+    "OtherFees",
+    "TotalFees",
+    "TaxAdvances",
+    "InsuranceAdvances",
+    "OtherAdvances",
+    "TotalAdvances",
+    "TotalPayoff",
+    "ReviewDate",
+    "CallBackDate"
+  ],
+  "layout": {
+    "header_md": "{{ServicerName}}\n{{ServicerStreet}}\n{{ServicerCity}}, {{ServicerState}} {{ServicerZip}}\nPhone: {{ServicerPhone}} | Email: {{ServicerEmail}} | NMLS: {{ServicerNMLS}}\n\nDate: {{TodayFull}}\n\nTo:\n{{BorrowerFirstName}} {{BorrowerLastName}}{{CoBorrowerLine}}\n{{MailingAddress}}\n\nRE: {{LetterTitle}}\nLoan Number: {{LoanNumber}}\nProperty: {{PropertyAddress}}\nAPN/Parcel: {{ParcelNumber}}\nBorrower Portal: {{PortalURL}}\n\n",
+    "footer_md": "\n\nSincerely,\n{{ServicerOfficerName}}, {{ServicerOfficerTitle}}\nFor {{ServicerName}} | Hours: {{ServicerHours}}\n\nDisclosures:\n{{StateSpecificDisclosure}}\n{{MiniMirandaBlock}}\n{{BankruptcyDisclaimer}}\n",
+    "remittance_md": "### Remittance by Wire\n- Bank: {{WireBank}}\n- Beneficiary: {{WireBeneficiary}}\n- Account: {{WireAccount}}\n- Routing ({{WireABAType}}): {{WireRouting}}\n- Reference: Loan {{LoanNumber}} \u2013 {{BorrowerLastName}}\n"
+  },
+  "sequences": [
+    {
+      "key": "pay.pre.10",
+      "folder": "Late",
+      "trigger": {
+        "due_offset_days": -10
+      }
+    },
+    {
+      "key": "pay.pre.3",
+      "folder": "Late",
+      "trigger": {
+        "due_offset_days": -3
+      }
+    },
+    {
+      "key": "pay.due.today",
+      "folder": "Late",
+      "trigger": {
+        "due_offset_days": 0
+      }
+    },
+    {
+      "key": "pay.grace.lastday",
+      "folder": "Late",
+      "trigger": {
+        "relative": "grace_last_day"
+      }
+    },
+    {
+      "key": "late.15.courtesy",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_min": 15,
+        "days_delinquent_max": 29
+      }
+    },
+    {
+      "key": "late.30.formal",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_min": 30,
+        "days_delinquent_max": 35
+      }
+    },
+    {
+      "key": "late.36.livecompanion",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_exact": 36
+      }
+    },
+    {
+      "key": "late.45.regx",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_exact": 45
+      }
+    },
+    {
+      "key": "late.60.formal",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_min": 60,
+        "days_delinquent_max": 74
+      }
+    },
+    {
+      "key": "late.75.escalation",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_min": 75,
+        "days_delinquent_max": 89
+      }
+    },
+    {
+      "key": "late.90.preNOI",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_min": 90,
+        "days_delinquent_max": 104
+      }
+    },
+    {
+      "key": "late.105.finalwarn",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_min": 105,
+        "days_delinquent_max": 119
+      }
+    },
+    {
+      "key": "late.120.noi",
+      "folder": "Late",
+      "trigger": {
+        "days_delinquent_min": 120
+      }
+    },
+    {
+      "key": "late.referral.notice",
+      "folder": "Late",
+      "trigger": {
+        "event": "foreclosure_referral"
+      }
+    },
+    {
+      "key": "payoff.statement.good_through",
+      "folder": "Payoff",
+      "trigger": {
+        "event": "payoff_quote_requested"
+      }
+    },
+    {
+      "key": "payoff.quote.expires",
+      "folder": "Payoff",
+      "trigger": {
+        "event": "payoff_quote_expiring"
+      }
+    },
+    {
+      "key": "payoff.received.pending",
+      "folder": "Payoff",
+      "trigger": {
+        "event": "payoff_funds_received"
+      }
+    },
+    {
+      "key": "payoff.finalized.release",
+      "folder": "Payoff",
+      "trigger": {
+        "event": "payoff_finalized"
+      }
+    },
+    {
+      "key": "payoff.shortfall",
+      "folder": "Payoff",
+      "trigger": {
+        "event": "payoff_short_funds"
+      }
+    },
+    {
+      "key": "payoff.overpay.refund",
+      "folder": "Payoff",
+      "trigger": {
+        "event": "payoff_overpayment"
+      }
+    },
+    {
+      "key": "nsf.return.first",
+      "folder": "NSF",
+      "trigger": {
+        "event": "payment_returned"
+      }
+    },
+    {
+      "key": "nsf.retry",
+      "folder": "NSF",
+      "trigger": {
+        "event": "retry_scheduled"
+      }
+    },
+    {
+      "key": "nsf.method.disabled",
+      "folder": "NSF",
+      "trigger": {
+        "event": "method_disabled"
+      }
+    },
+    {
+      "key": "nsf.reversal.complete",
+      "folder": "NSF",
+      "trigger": {
+        "event": "reversal_complete"
+      }
+    },
+    {
+      "key": "ins.fp.first",
+      "folder": "Insurance",
+      "trigger": {
+        "event": "force_place_first"
+      }
+    },
+    {
+      "key": "ins.fp.final",
+      "folder": "Insurance",
+      "trigger": {
+        "event": "force_place_final"
+      }
+    },
+    {
+      "key": "ins.fp.inforce",
+      "folder": "Insurance",
+      "trigger": {
+        "event": "force_place_inforce"
+      }
+    },
+    {
+      "key": "ins.disburse.confirm",
+      "folder": "Insurance",
+      "trigger": {
+        "event": "escrow_disbursement_insurance"
+      }
+    },
+    {
+      "key": "arm.initial.notice",
+      "folder": "ARM",
+      "trigger": {
+        "event": "arm_initial_adjustment"
+      }
+    },
+    {
+      "key": "arm.subsequent.notice",
+      "folder": "ARM",
+      "trigger": {
+        "event": "arm_subsequent_adjustment"
+      }
+    },
+    {
+      "key": "arm.implemented",
+      "folder": "ARM",
+      "trigger": {
+        "event": "arm_change_effective"
+      }
+    },
+    {
+      "key": "hud.counseling",
+      "folder": "HUD",
+      "trigger": {
+        "event": "hud_counseling_required"
+      }
+    },
+    {
+      "key": "hud.fha.options",
+      "folder": "HUD",
+      "trigger": {
+        "event": "fha_options_offer"
+      }
+    },
+    {
+      "key": "hud.fha.partial.approved",
+      "folder": "HUD",
+      "trigger": {
+        "event": "fha_partial_claim_approved"
+      }
+    },
+    {
+      "key": "hud.fha.decision.ineligible",
+      "folder": "HUD",
+      "trigger": {
+        "event": "fha_ineligible_decision"
+      }
+    },
+    {
+      "key": "other.statement.ready",
+      "folder": "Other",
+      "trigger": {
+        "event": "monthly_statement_ready"
+      }
+    },
+    {
+      "key": "other.unapplied.hold",
+      "folder": "Other",
+      "trigger": {
+        "event": "partial_payment_unapplied"
+      }
+    },
+    {
+      "key": "other.profile.changed",
+      "folder": "Other",
+      "trigger": {
+        "event": "contact_changed"
+      }
+    }
+  ],
+  "templates": [
+    {
+      "id": "pay.pre.10",
+      "key": "pay.pre.10",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Upcoming Mortgage Payment Due {{PaymentDueDate}}",
+      "body_md": "This is a courtesy reminder that your mortgage payment for loan {{LoanNumber}} will be due on {{PaymentDueDate}} for the property at {{PropertyAddress}}. The amount due is {{AmountDue}}.\n\n**What to do now**\n- Schedule payment in the portal: {{PortalURL}}\n- Enable automatic payments\n- Call {{ServicerPhone}} for assistance\n\nIf you anticipate difficulty paying by {{PaymentDueDate}}, contact us immediately.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "pay.pre.3",
+      "key": "pay.pre.3",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Action Requested before {{PaymentDueDate}} for Loan {{LoanNumber}}",
+      "body_md": "Our records indicate no scheduled payment for {{PaymentDueDate}}. Paying by the due date prevents late charges.\n\n**Payment options**\n- Pay online: {{PortalURL}}\n- Wire certified funds using the instructions below\n- Pay by phone: {{ServicerPhone}}\n\n{{layout.remittance_md}}",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "pay.due.today",
+      "key": "pay.due.today",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Your Payment Is Due Today for Loan {{LoanNumber}}",
+      "body_md": "Your periodic payment is due today. Amount due: {{AmountDue}}. The grace period ends on {{GraceEndDate}}. Payments received after the grace period may be assessed a late charge of {{LateFeeAmount}} according to your note.\n\nSame-day options are available in the portal or by wire using the instructions below.\n\n{{layout.remittance_md}}",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "pay.grace.lastday",
+      "key": "pay.grace.lastday",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Last Day to Pay without a Late Charge",
+      "body_md": "As of today your payment due {{PaymentDueDate}} has not posted. The grace period ends on {{GraceEndDate}}. To avoid a late charge of {{LateFeeAmount}}, pay today at {{PortalURL}} or send certified funds by wire.\n\nIf you have already paid, thank you. If you are unable to pay by today, contact us now so we can discuss assistance.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.15.courtesy",
+      "key": "late.15.courtesy",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Account Past Due and Help Available",
+      "body_md": "Your loan is now {{DaysDelinquent}} days past due. Past-due amount is {{PastDueAmount}} as of {{TodayFull}}.\n\n**Next steps**\n- Pay today at {{PortalURL}}\n- If hardship exists, we can evaluate repayment arrangements, deferral, or modification\n- Start in the portal or call {{ServicerPhone}}\nIf you have already made payment, please disregard this notice.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.30.formal",
+      "key": "late.30.formal",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "30-Day Delinquency Notice and Next Steps",
+      "body_md": "Your loan for {{PropertyAddress}} is 30 days delinquent. Total past-due amount is {{PastDueAmount}}.\n\n**To restore good standing**\n- Remit {{CureAmount}} by {{CureByDate}}\n- OR submit a complete assistance application by {{LossMitigationDeadline}} at {{PortalURL}}\n\nA complete application includes signed forms, income documentation, and a hardship explanation. Call {{ServicerPhone}} for help.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.36.livecompanion",
+      "key": "late.36.livecompanion",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "We Need to Speak with You about Assistance",
+      "body_md": "We are attempting to reach you to discuss your delinquency and available assistance. Please call {{ServicerPhone}} or begin your application at {{PortalURL}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.45.regx",
+      "key": "late.45.regx",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Important Written Notice about Your Delinquent Mortgage",
+      "body_md": "Your mortgage is {{DaysDelinquent}} days delinquent. Past-due amount is {{PastDueAmount}}.\n\n**What you must do**\n- Submit a complete assistance application by {{LossMitigationDeadline}} at {{PortalURL}}, **or**\n- Pay {{CureAmount}} by {{CureByDate}} to bring the loan current.\n\nIf you need help, call {{ServicerPhone}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.60.formal",
+      "key": "late.60.formal",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "60-Day Delinquency and Required Documents",
+      "body_md": "Your account is 60 days delinquent. Past-due amount is {{PastDueAmount}}.\n\nIf you started an assistance application, we still require the following to complete your file: income verification, bank statements, hardship explanation, and any requested authorizations. Upload at {{PortalURL}} by {{LossMitigationDeadline}}. Paying {{CureAmount}} by {{CureByDate}} will also restore the account to current.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.75.escalation",
+      "key": "late.75.escalation",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Escalation Review Scheduled for Your Delinquent Loan",
+      "body_md": "Your loan remains delinquent and is scheduled for internal escalation on {{ReviewDate}}.\n\n**To avoid additional collection activity**\n- Pay {{CureAmount}} by {{CureByDate}}, or\n- Contact us by {{CallBackDate}} to complete your assistance application.\n\nIf we do not hear from you, we will proceed with the escalation review.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.90.preNOI",
+      "key": "late.90.preNOI",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "90-Day Delinquency and Warning of Further Action",
+      "body_md": "At 90 days past due, your account is at risk of acceleration and referral to foreclosure processes if not cured.\n\n**Total due to cure today**: {{CureAmount}}\nTo avoid referral, pay {{CureAmount}} by {{CureByDate}} or submit a complete application by {{LossMitigationDeadline}}.\nIf you already submitted an application, we will advise you of any missing items.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.105.finalwarn",
+      "key": "late.105.finalwarn",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Final Warning before Intent to Accelerate",
+      "body_md": "Unless we receive {{CureAmount}} by {{CureByDate}} or a complete application by {{LossMitigationDeadline}}, we intend to issue a formal Notice of Intent to Accelerate. This may lead to foreclosure if the default is not cured.\n\nCall {{ServicerPhone}} immediately if you wish to discuss options.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.120.noi",
+      "key": "late.120.noi",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Notice of Intent to Accelerate and Foreclose",
+      "body_md": "You are more than 120 days delinquent. As of {{TodayFull}}, the total required to cure is {{CureAmount}}. If we do not receive this amount by {{CureByDate}}, we may accelerate all sums due under your note and may commence foreclosure as permitted by your mortgage and applicable law.\n\n**Required mortgage language**\n{{UniformBreachLanguage}}\n\n**How to cure**\n- Remit certified funds using the wire instructions below, or\n- Pay in the portal if available for your account.\n\nIf you seek alternatives to foreclosure, contact us now. {{StateSpecificDisclosure}}\n\n{{layout.remittance_md}}",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "late.referral.notice",
+      "key": "late.referral.notice",
+      "folder": "Late",
+      "format": "markdown",
+      "subject": "Notice of Referral to Foreclosure Counsel",
+      "body_md": "Because we did not receive the cure amount or a complete application by the stated deadlines, your account has been referred to foreclosure counsel for your county of record. You may still contact us to discuss options that could stop further action if you qualify. This notice does not waive any rights.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "payoff.statement.good_through",
+      "key": "payoff.statement.good_through",
+      "folder": "Payoff",
+      "format": "markdown",
+      "subject": "Payoff Demand Through {{GoodThroughDate}}",
+      "body_md": "This letter provides a formal payoff demand for loan {{LoanNumber}} through **{{GoodThroughDate}}** for the property at {{PropertyAddress}}.\n\n**Account snapshot**\n- Origination: {{OriginationDate}}\n- Initial Loan Amount: {{InitialLoanAmount}}\n- Total Principal Paid: {{TotalPrincipalPaid}}\n- Current Principal Balance: {{PrincipalBalance}}\n- Regular APR: {{RegularRatePercent}} | Default APR (if any): {{DefaultRatePercent}}\n\n**Interest window**\n- Basis: {{InterestBasis}} days\n- Per-diem: {{PerDiem}}\n- Interest from: {{InterestFromDate}} to {{GoodThroughDate}}\n- Regular Interest Due: {{RegularInterestDue}}\n- Default Interest Due: {{DefaultInterestDue}}\n\n**Fees and charges**\n- Late Charges: {{LateFeesDue}}\n- Processing/Statement: {{ProcessingFee}}\n- Exit/Close-Out: {{ExitFee}}\n- Reconveyance/Recording: {{ReconveyanceFee}}\n- Courier/Wire: {{WireFee}}\n- Other Authorized: {{OtherFees}}\n- Total Fees: {{TotalFees}}\n\n**Escrow and advances**\n- Taxes Advanced: {{TaxAdvances}}\n- Insurance Advanced: {{InsuranceAdvances}}\n- Other Advances: {{OtherAdvances}}\n- Total Advances: {{TotalAdvances}}\n\n**Total to pay on/before {{GoodThroughDate}}**: {{TotalPayoff}}\n**Add daily interest after {{GoodThroughDate}}**: {{PerDiem}} per day\n\n{{layout.remittance_md}}\n\nNotes: Returned items will reverse payoff and additional interest may accrue. Lien release will be initiated after funds clear.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "payoff.quote.expires",
+      "key": "payoff.quote.expires",
+      "folder": "Payoff",
+      "format": "markdown",
+      "subject": "Your Payoff Quote Expires on {{GoodThroughDate}}",
+      "body_md": "Your payoff demand expires on **{{GoodThroughDate}}**. If funds will arrive after that date, request an updated payoff so per-diem and any fee changes are captured. For closings, settlement agents should obtain a day-of-funding demand.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "payoff.received.pending",
+      "key": "payoff.received.pending",
+      "folder": "Payoff",
+      "format": "markdown",
+      "subject": "Payoff Funds Received and Pending Finalization",
+      "body_md": "We received funds toward your payoff for loan {{LoanNumber}}. Once funds clear, we will finalize the payoff and begin lien release. Returned items will reverse the payoff and additional interest will accrue until cleared.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "payoff.finalized.release",
+      "key": "payoff.finalized.release",
+      "folder": "Payoff",
+      "format": "markdown",
+      "subject": "Paid in Full and Lien Release Scheduled",
+      "body_md": "Your loan has been **paid in full**. We have initiated lien release with the recording jurisdiction. You will receive confirmation when recorded. Save this letter with your records.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "payoff.shortfall",
+      "key": "payoff.shortfall",
+      "folder": "Payoff",
+      "format": "markdown",
+      "subject": "Additional Funds Required to Complete Payoff",
+      "body_md": "The funds received are insufficient to satisfy the payoff by {{GoodThroughDate}}. **Shortfall**: {{PastDueAmount}}. Please remit the difference immediately or request an updated payoff.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "payoff.overpay.refund",
+      "key": "payoff.overpay.refund",
+      "folder": "Payoff",
+      "format": "markdown",
+      "subject": "Overpayment Refund After Payoff",
+      "body_md": "An overpayment of {{AmountDue}} remains after payoff. We will mail a refund to {{MailingAddress}} unless you select an electronic refund in the portal.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "nsf.return.first",
+      "key": "nsf.return.first",
+      "folder": "NSF",
+      "format": "markdown",
+      "subject": "Returned Payment and Account Update",
+      "body_md": "Your {{PaymentMethod}} payment dated {{PaymentDueDate}} for {{AmountDue}} was returned for reason: {{ReturnCode}}. The payment has been reversed. Your new past-due amount is {{PastDueAmount}}. Make a replacement payment by certified funds or wire. Multiple returns may disable this method.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "nsf.retry",
+      "key": "nsf.retry",
+      "folder": "NSF",
+      "format": "markdown",
+      "subject": "Scheduled Retry of Your Returned Payment",
+      "body_md": "We plan to retry the payment on the next business day permitted by your bank. Ensure sufficient funds are available. To cancel the retry or use a different method, call {{ServicerPhone}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "nsf.method.disabled",
+      "key": "nsf.method.disabled",
+      "folder": "NSF",
+      "format": "markdown",
+      "subject": "Payment Method Disabled After Returned Items",
+      "body_md": "Due to multiple returned items within our policy window, we have disabled this payment method. Certified funds or wire are required for future payments. Contact us to review reinstatement conditions.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "nsf.reversal.complete",
+      "key": "nsf.reversal.complete",
+      "folder": "NSF",
+      "format": "markdown",
+      "subject": "Reversal Complete and Updated Account Balance",
+      "body_md": "We completed the reversal of the returned payment and adjusted your ledger. Your current past-due amount is {{PastDueAmount}} as of {{TodayFull}}. If you believe the return was in error, contact your bank and call us.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "ins.fp.first",
+      "key": "ins.fp.first",
+      "folder": "Insurance",
+      "format": "markdown",
+      "subject": "Action Required \u2013 Proof of Hazard Insurance for {{PropertyAddress}}",
+      "body_md": "Our records do not show acceptable evidence of hazard insurance. Provide a declarations page including named insured, property address, policy number, effective dates, carrier, and the mortgagee clause listing {{ServicerName}}. Upload at {{PortalURL}} by {{CureByDate}} to avoid lender-placed insurance which can be more costly and provide less coverage.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "ins.fp.final",
+      "key": "ins.fp.final",
+      "folder": "Insurance",
+      "format": "markdown",
+      "subject": "Final Notice \u2013 Insurance Will Be Purchased if Proof Is Not Received",
+      "body_md": "If we do not receive acceptable proof by {{CureByDate}}, we will obtain lender-placed insurance and charge the cost to your escrow or account. If you later provide proof of overlapping coverage, we will cancel and refund overlapping premiums as required.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "ins.fp.inforce",
+      "key": "ins.fp.inforce",
+      "folder": "Insurance",
+      "format": "markdown",
+      "subject": "Lender-Placed Insurance Put in Force",
+      "body_md": "We purchased insurance because acceptable proof was not received. The premium will be charged to your account. This coverage may offer limited protection. Provide proof of your own coverage to cancel and obtain any eligible refund.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "ins.disburse.confirm",
+      "key": "ins.disburse.confirm",
+      "folder": "Insurance",
+      "format": "markdown",
+      "subject": "Insurance Premium Paid From Escrow",
+      "body_md": "We paid your {{InsuranceType}} premium from escrow on {{PaymentDueDate}} in the amount of {{AmountDue}}. Keep your insurance records updated in the portal.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "arm.initial.notice",
+      "key": "arm.initial.notice",
+      "folder": "ARM",
+      "format": "markdown",
+      "subject": "Your Interest Rate Will Adjust on {{ARMEffective}}",
+      "body_md": "Your rate will adjust based on index {{ARMIndex}} plus margin {{ARMMargin}}, subject to caps. New annual rate: {{ARMNewRate}}. New payment: {{ARMNewPmt}} effective with the payment due {{ARMEffective}}. Prior payment: {{ARMPrevPmt}}. If escrow changes apply, you will receive a separate escrow letter. If this creates hardship, call {{ServicerPhone}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "arm.subsequent.notice",
+      "key": "arm.subsequent.notice",
+      "folder": "ARM",
+      "format": "markdown",
+      "subject": "Upcoming Payment Change Effective {{ARMEffective}}",
+      "body_md": "Your adjustable payment will change to {{ARMNewPmt}} based on a new rate of {{ARMNewRate}}. Details are available in the portal.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "arm.implemented",
+      "key": "arm.implemented",
+      "folder": "ARM",
+      "format": "markdown",
+      "subject": "New Rate and Payment Now in Effect",
+      "body_md": "Your new rate and payment are now effective. Autopay can help prevent missed payments. Activate in the portal.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "hud.counseling",
+      "key": "hud.counseling",
+      "folder": "HUD",
+      "format": "markdown",
+      "subject": "Free HUD-Approved Housing Counseling Resources",
+      "body_md": "You can contact a HUD-approved housing counselor for free assistance. A directory is available at {{HUDCounselorURL}}. We are available at {{ServicerPhone}} to discuss options that may help you keep your home.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "hud.fha.options",
+      "key": "hud.fha.options",
+      "folder": "HUD",
+      "format": "markdown",
+      "subject": "FHA Loss Mitigation Options and Application Requirements",
+      "body_md": "Because your FHA-insured loan is past due, you may be eligible for programs such as special forbearance, partial claim, or modification. Submit a complete application by {{LossMitigationDeadline}} with income proof, bank statements, hardship explanation, and third-party authorizations. Apply at {{PortalURL}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "hud.fha.partial.approved",
+      "key": "hud.fha.partial.approved",
+      "folder": "HUD",
+      "format": "markdown",
+      "subject": "FHA Partial Claim Approval and Next Steps",
+      "body_md": "Your FHA partial claim is approved. This places past-due amounts into a subordinate, non-interest-bearing lien payable at payoff or maturity. Review and sign the enclosed documents by {{CureByDate}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "hud.fha.decision.ineligible",
+      "key": "hud.fha.decision.ineligible",
+      "folder": "HUD",
+      "format": "markdown",
+      "subject": "Assistance Application Decision and Appeal Rights",
+      "body_md": "After reviewing your application, you are not eligible for the requested option for the reasons listed in the enclosed decision. If you wish to appeal, submit additional information by {{LossMitigationDeadline}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "other.statement.ready",
+      "key": "other.statement.ready",
+      "folder": "Other",
+      "format": "markdown",
+      "subject": "Your Monthly Mortgage Statement Is Ready",
+      "body_md": "Your statement for the period including {{PaymentDueDate}} is available in the portal. Review your payment amount, escrow details, and recent transactions.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "other.unapplied.hold",
+      "key": "other.unapplied.hold",
+      "folder": "Other",
+      "format": "markdown",
+      "subject": "Partial Payment Held in Unapplied Funds",
+      "body_md": "We received a partial payment that is less than a full periodic payment under your note. Funds are held unapplied. You may send the remaining amount, instruct us to apply to principal if permitted, or request a return. Contact {{ServicerPhone}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    },
+    {
+      "id": "other.profile.changed",
+      "key": "other.profile.changed",
+      "folder": "Other",
+      "format": "markdown",
+      "subject": "Contact Information Updated",
+      "body_md": "We updated your contact information as requested. If you did not authorize this change, call {{ServicerPhone}} immediately.",
+      "flags": {
+        "include_fdCPA_if_applicable": true,
+        "suppress_demands_if_bankruptcy": true
+      }
+    }
+  ]
+}

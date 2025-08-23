@@ -2271,9 +2271,15 @@ export const emailTemplates = pgTable('email_templates', {
   id: serial('id').primaryKey(),
   folderId: integer('folder_id').references(() => emailTemplateFolders.id),
   name: varchar('name', { length: 255 }).notNull(),
+  templateKey: varchar('template_key', { length: 100 }).unique(), // Unique key for template identification
   subject: text('subject'),
   body: text('body'),
+  format: varchar('format', { length: 20 }).default('markdown'), // 'markdown', 'html', 'text'
+  flags: jsonb('flags'), // Store template flags like include_fdCPA_if_applicable
+  trigger: jsonb('trigger'), // Store trigger conditions
+  tokens: jsonb('tokens'), // Available merge fields for this template
   isShared: boolean('is_shared').default(false),
+  isActive: boolean('is_active').default(true),
   createdBy: integer('created_by').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow()
