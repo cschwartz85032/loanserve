@@ -1,0 +1,838 @@
+Awesome — here’s a clean, self-contained “starter kit” you can drop into your repos. It includes:
+
+* SQL DDL with triggers that enforce investor ownership sums = 100% (exactly 10,000 bps) per effective version.
+* A tiny TypeScript SDK for the message envelope, outbox/inbox idempotency, and RabbitMQ publish/consume with confirms.
+* RabbitMQ “definitions” JSON (exchanges, queues, bindings, policies, DLQs, and retry tiers).
+* Sample handler skeletons (validation, processing, settlement, reversal, distribution) wired for idempotency and the outbox pattern.
+
+---
+
+# 1) SQL DDL (PostgreSQL 13+)
+
+Create as a single migration. Comments indicate where to integrate with your existing `loans`, `investors`, etc.
+
+```sql
+-- =====================================================================
+-- Currencies (reference) and sample chart of accounts (ref)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS currency_codes(code CHAR(3) PRIMARY KEY);
+INSERT INTO currency_codes(code) VALUES ('USD') ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS accounts_chart (
+  account       VARCHAR(50) PRIMARY KEY,        -- e.g. principal, interest_income, escrow_tax
+  account_type  VARCHAR(20) NOT NULL            -- asset|liability|income|expense|equity
+);
+
+-- =====================================================================
+-- Core domain tables (assumes loans, investors exist)
+-- =====================================================================
+-- CREATE TABLE loans(loan_id VARCHAR(50) PRIMARY KEY, ...);
+-- CREATE TABLE investors(investor_id VARCHAR(50) PRIMARY KEY, ...);
+
+CREATE TABLE IF NOT EXISTS payment_transactions (
+  payment_id        VARCHAR(26) PRIMARY KEY, -- ULID
+  loan_id           VARCHAR(50) NOT NULL,
+  source            VARCHAR(20) NOT NULL, -- ach|wire|check|card|lockbox|cashier
+  external_ref      VARCHAR(100),         -- bank trace, wire id, check composite key, etc
+  amount_cents      BIGINT NOT NULL,
+  currency          CHAR(3) NOT NULL DEFAULT 'USD',
+  received_at       TIMESTAMPTZ NOT NULL,
+  effective_date    DATE NOT NULL,
+  state             VARCHAR(30) NOT NULL, -- received|accepted_for_review|validated|posted_pending_settlement|processing|settled|returned|reversed|rejected|closed
+  idempotency_key   VARCHAR(200) UNIQUE NOT NULL,
+  created_by        VARCHAR(100),
+  metadata          JSONB,
+  CONSTRAINT chk_positive_amount CHECK (amount_cents > 0),
+  CONSTRAINT fk_payment_tx_loan      FOREIGN KEY (loan_id)  REFERENCES loans(loan_id),
+  CONSTRAINT fk_payment_tx_currency  FOREIGN KEY (currency) REFERENCES currency_codes(code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_tx_loan_state ON payment_transactions(loan_id, state, received_at);
+CREATE INDEX IF NOT EXISTS idx_payment_tx_source_ref  ON payment_transactions(source, external_ref);
+
+-- Double-entry ledger (one-sided check ensures either debit or credit)
+CREATE TABLE IF NOT EXISTS payment_ledger (
+  ledger_id       BIGSERIAL PRIMARY KEY,
+  loan_id         VARCHAR(50) NOT NULL,
+  payment_id      VARCHAR(26) NOT NULL,
+  account         VARCHAR(50) NOT NULL,
+  debit_cents     BIGINT NOT NULL DEFAULT 0,
+  credit_cents    BIGINT NOT NULL DEFAULT 0,
+  pending         BOOLEAN NOT NULL DEFAULT true,
+  effective_date  DATE NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_one_sided CHECK (
+    (debit_cents > 0 AND credit_cents = 0) OR
+    (credit_cents > 0 AND debit_cents = 0)
+  ),
+  CONSTRAINT fk_ledger_loan     FOREIGN KEY (loan_id)    REFERENCES loans(loan_id),
+  CONSTRAINT fk_ledger_payment  FOREIGN KEY (payment_id) REFERENCES payment_transactions(payment_id),
+  CONSTRAINT fk_ledger_account  FOREIGN KEY (account)    REFERENCES accounts_chart(account)
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_ledger_loan     ON payment_ledger(loan_id, effective_date);
+CREATE INDEX IF NOT EXISTS idx_payment_ledger_payment  ON payment_ledger(payment_id);
+
+-- Escrow sub-accounts
+CREATE TABLE IF NOT EXISTS escrow_accounts (
+  loan_id                  VARCHAR(50) NOT NULL,
+  category                 VARCHAR(20) NOT NULL, -- tax|hazard|flood|MI
+  balance_cents            BIGINT NOT NULL DEFAULT 0,
+  target_balance_cents     BIGINT,
+  cushion_cents            BIGINT,
+  shortage_cents           BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (loan_id, category),
+  CONSTRAINT chk_escrow_cat CHECK (category IN ('tax','hazard','flood','MI')),
+  CONSTRAINT fk_escrow_loan FOREIGN KEY (loan_id) REFERENCES loans(loan_id)
+);
+
+-- Investor ownership with effective FROM versions (normalized to enforce 100% easily)
+CREATE TABLE IF NOT EXISTS investor_position_versions (
+  version_id     VARCHAR(26) PRIMARY KEY, -- ULID
+  loan_id        VARCHAR(50) NOT NULL,
+  effective_from DATE NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (loan_id, effective_from),
+  CONSTRAINT fk_ipv_loan FOREIGN KEY (loan_id) REFERENCES loans(loan_id)
+);
+
+CREATE TABLE IF NOT EXISTS investor_positions (
+  version_id   VARCHAR(26) NOT NULL,
+  investor_id  VARCHAR(50) NOT NULL,
+  pct_bps      INTEGER NOT NULL,          -- basis points (0..10000)
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (version_id, investor_id),
+  CONSTRAINT fk_ip_version   FOREIGN KEY (version_id)  REFERENCES investor_position_versions(version_id) ON DELETE CASCADE,
+  CONSTRAINT fk_ip_investor  FOREIGN KEY (investor_id) REFERENCES investors(investor_id),
+  CONSTRAINT chk_pct_bps     CHECK (pct_bps BETWEEN 0 AND 10000)
+);
+
+-- Resolved "effective_to" view using window function
+CREATE OR REPLACE VIEW investor_position_versions_resolved AS
+SELECT
+  ipv.loan_id,
+  ipv.version_id,
+  ipv.effective_from,
+  LEAD(ipv.effective_from) OVER (PARTITION BY ipv.loan_id ORDER BY ipv.effective_from) AS effective_to
+FROM investor_position_versions ipv;
+
+-- Distribution records
+CREATE TABLE IF NOT EXISTS payment_distributions (
+  distribution_id  BIGSERIAL PRIMARY KEY,
+  payment_id       VARCHAR(26) NOT NULL,
+  investor_id      VARCHAR(50) NOT NULL,
+  amount_cents     BIGINT NOT NULL,
+  fee_cents        BIGINT NOT NULL DEFAULT 0,
+  tranche          VARCHAR(20),
+  effective_date   DATE NOT NULL,
+  status           VARCHAR(20) NOT NULL,  -- calculated|posted|clawback|netted|receivable
+  clawback_id      VARCHAR(26),           -- linkage to reversal
+  CONSTRAINT fk_distrib_payment  FOREIGN KEY (payment_id)  REFERENCES payment_transactions(payment_id),
+  CONSTRAINT fk_distrib_investor FOREIGN KEY (investor_id) REFERENCES investors(investor_id)
+);
+
+-- Idempotent consumer inbox (exactly-once per consumer)
+CREATE TABLE IF NOT EXISTS inbox (
+  consumer     VARCHAR(100) NOT NULL,
+  message_id   VARCHAR(26)  NOT NULL,
+  processed_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  result_hash  TEXT,
+  PRIMARY KEY (consumer, message_id)
+);
+
+-- Transactional outbox (to publish after commit)
+CREATE TABLE IF NOT EXISTS outbox (
+  id            BIGSERIAL PRIMARY KEY,
+  aggregate_type VARCHAR(50) NOT NULL, -- e.g. 'payment'
+  aggregate_id   VARCHAR(50) NOT NULL,
+  schema         TEXT NOT NULL,        -- event schema name e.g. 'loanserve.payment.v1.validated'
+  payload        JSONB NOT NULL,
+  headers        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  published_at   TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_unpublished ON outbox(published_at) WHERE published_at IS NULL;
+
+-- =====================================================================
+-- TRIGGERS: enforce investor ownership sum = 100% (10,000 bps) per version
+-- =====================================================================
+
+-- Statement-level trigger using transition tables to validate all affected versions at once
+CREATE OR REPLACE FUNCTION trg_check_investor_positions_sum()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v RECORD;
+  bad RECORD;
+BEGIN
+  -- Collect affected version_ids from NEW TABLE and OLD TABLE
+  FOR v IN
+    SELECT DISTINCT version_id FROM (
+      SELECT version_id FROM new_table
+      UNION
+      SELECT version_id FROM old_table
+    ) x
+  LOOP
+    SELECT
+      version_id,
+      COALESCE(SUM(pct_bps),0) AS sum_bps,
+      COUNT(*) AS cnt
+    INTO bad
+    FROM investor_positions
+    WHERE version_id = v.version_id
+    GROUP BY version_id;
+
+    -- Require at least one row and exact 10000 bps
+    IF bad.cnt IS NULL OR bad.sum_bps <> 10000 THEN
+      RAISE EXCEPTION 'Investor positions for version % must sum to 10000 bps; got % (rows=%)',
+        v.version_id, COALESCE(bad.sum_bps,0), COALESCE(bad.cnt,0)
+        USING ERRCODE = '23514'; -- check_violation
+    END IF;
+  END LOOP;
+
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_positions_sum ON investor_positions;
+CREATE TRIGGER trg_positions_sum
+AFTER INSERT OR UPDATE OR DELETE ON investor_positions
+REFERENCING NEW TABLE AS new_table OLD TABLE AS old_table
+FOR EACH STATEMENT
+EXECUTE FUNCTION trg_check_investor_positions_sum();
+
+-- Note: This fires at end-of-statement. If you perform batched multi-statement changes,
+-- wrap them in a transaction and call a validation function (or perform a dummy UPDATE)
+-- to ensure the trigger runs before commit.
+
+-- =====================================================================
+-- Optional: payment state transition log for auditability (append-only)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS payment_state_transitions (
+  id            BIGSERIAL PRIMARY KEY,
+  payment_id    VARCHAR(26) NOT NULL REFERENCES payment_transactions(payment_id),
+  previous_state VARCHAR(30),
+  new_state      VARCHAR(30) NOT NULL,
+  occurred_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  actor          TEXT,
+  metadata       JSONB
+);
+```
+
+---
+
+# 2) TypeScript SDK (envelope + outbox/inbox + RabbitMQ utils)
+
+Directory suggestion: `libs/mq-kit/`
+
+```ts
+// libs/mq-kit/envelope.ts
+export interface EnhancedMessageEnvelope<T = any> {
+  schema: string;                  // e.g. "loanserve.payment.v1.validated"
+  message_id: string;              // ULID
+  correlation_id: string;          // UUID
+  causation_id?: string;
+
+  idempotency_key?: string;
+  trace_id?: string;               // W3C traceparent id
+  tenant_id?: string;
+
+  occurred_at: string;             // ISO 8601
+  expires_at?: string;
+
+  producer: string;                // "svc-payments@1.4.2"
+  payment_source?: 'ach'|'wire'|'check'|'card'|'lockbox';
+
+  effective_date?: string;
+  received_at?: string;
+  settlement_due_by?: string;
+
+  saga_id?: string;
+  saga_step?: string;
+
+  data: T;
+}
+```
+
+```ts
+// libs/mq-kit/pg.ts
+import { Pool, PoolClient } from 'pg';
+
+export const pg = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: Number(process.env.PG_POOL_MAX ?? 50)
+});
+
+export async function tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pg.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+```
+
+```ts
+// libs/mq-kit/outbox.ts
+import { PoolClient } from 'pg';
+import { ConfirmChannel, Connection } from 'amqplib';
+import { EnhancedMessageEnvelope } from './envelope';
+
+export async function addToOutbox(
+  c: PoolClient,
+  aggregate: { type: string; id: string },
+  envelope: EnhancedMessageEnvelope<any>,
+  headers: Record<string, any> = {}
+) {
+  await c.query(
+    `INSERT INTO outbox(aggregate_type, aggregate_id, schema, payload, headers)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [aggregate.type, aggregate.id, envelope.schema, envelope as any, headers]
+  );
+}
+
+export async function publishOutbox(conn: Connection, batchSize = 500) {
+  const ch: ConfirmChannel = await conn.createConfirmChannel();
+  try {
+    while (true) {
+      const { rows } = await (await import('./pg')).pg.query(
+        `SELECT id, schema, payload, headers
+           FROM outbox
+          WHERE published_at IS NULL
+          ORDER BY id
+          LIMIT $1`,
+        [batchSize]
+      );
+      if (rows.length === 0) break;
+
+      for (const r of rows) {
+        const env = r.payload as EnhancedMessageEnvelope<any>;
+        // Convention: exchange from schema prefix, routing key = schema
+        const [domain] = env.schema.split('.');
+        const exchange = `${domain}.topic`;
+        const routingKey = env.schema.replace(/^[^.]+\./, ''); // e.g. "payment.v1.validated"
+
+        ch.publish(
+          exchange,
+          routingKey,
+          Buffer.from(JSON.stringify(env)),
+          { persistent: true, messageId: env.message_id, headers: r.headers || {} }
+        );
+      }
+
+      await new Promise<void>((res, rej) => ch.waitForConfirms(err => err ? rej(err) : res()));
+
+      // Mark published
+      const ids = rows.map((r: any) => r.id);
+      await (await import('./pg')).pg.query(
+        `UPDATE outbox SET published_at = NOW() WHERE id = ANY($1::bigint[])`,
+        [ids]
+      );
+    }
+  } finally {
+    await ch.close().catch(()=>{});
+  }
+}
+```
+
+```ts
+// libs/mq-kit/inbox.ts
+import { PoolClient } from 'pg';
+
+export async function alreadyProcessed(c: PoolClient, consumer: string, messageId: string) {
+  const r = await c.query(`SELECT 1 FROM inbox WHERE consumer=$1 AND message_id=$2`, [consumer, messageId]);
+  return r.rowCount > 0;
+}
+
+export async function markProcessed(c: PoolClient, consumer: string, messageId: string, resultHash?: string) {
+  await c.query(
+    `INSERT INTO inbox(consumer, message_id, result_hash) VALUES ($1,$2,$3)
+     ON CONFLICT DO NOTHING`,
+    [consumer, messageId, resultHash ?? null]
+  );
+}
+```
+
+```ts
+// libs/mq-kit/rmq.ts
+import amqp, { ConfirmChannel, ConsumeMessage } from 'amqplib';
+
+export async function createConnection() {
+  const url = process.env.AMQP_URL!;
+  const conn = await amqp.connect(url, { heartbeat: 30 });
+  return conn;
+}
+
+export async function withConfirmChannel<T>(conn: amqp.Connection, fn: (ch: ConfirmChannel)=>Promise<T>) {
+  const ch = await conn.createConfirmChannel();
+  try { return await fn(ch); }
+  finally { await ch.close().catch(()=>{}); }
+}
+
+export function consumeWithAck(opts: {
+  conn: amqp.Connection,
+  queue: string,
+  prefetch?: number,
+  handler: (msg: ConsumeMessage, ch: ConfirmChannel) => Promise<void>
+}) {
+  return (async () => {
+    const ch = await opts.conn.createConfirmChannel();
+    await ch.prefetch(opts.prefetch ?? 16);
+    await ch.consume(opts.queue, async msg => {
+      if (!msg) return;
+      try {
+        await opts.handler(msg, ch);
+        ch.ack(msg);
+      } catch (e) {
+        // Basic strategy: reject and DLX; smarter retry uses TTL+DLX tiers
+        ch.reject(msg, false);
+      }
+    }, { noAck: false });
+    return ch;
+  })();
+}
+```
+
+---
+
+# 3) RabbitMQ definitions (importable JSON)
+
+Save as `rabbitmq-definitions.json` and import via the management UI or `rabbitmqadmin import`.
+
+```json
+{
+  "exchanges": [
+    { "name": "payments.topic",     "vhost": "/", "type": "topic",  "durable": true, "internal": false, "auto_delete": false, "arguments": {} },
+    { "name": "returns.topic",      "vhost": "/", "type": "topic",  "durable": true, "internal": false, "auto_delete": false, "arguments": {} },
+    { "name": "distributions.topic","vhost": "/", "type": "topic",  "durable": true, "internal": false, "auto_delete": false, "arguments": {} },
+    { "name": "compliance.topic",   "vhost": "/", "type": "topic",  "durable": true, "internal": false, "auto_delete": false, "arguments": {} },
+    { "name": "audit.topic",        "vhost": "/", "type": "topic",  "durable": true, "internal": false, "auto_delete": false, "arguments": {} },
+    { "name": "dlx.main",           "vhost": "/", "type": "topic",  "durable": true, "internal": false, "auto_delete": false, "arguments": {} }
+  ],
+  "queues": [
+    { "name": "payments.validation",   "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.validation.dlq" } },
+    { "name": "payments.processing",   "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.processing.dlq" } },
+    { "name": "payments.posted",       "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.posted.dlq" } },
+    { "name": "payments.settlement",   "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.settlement.dlq" } },
+    { "name": "payments.returned",     "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.returned.dlq" } },
+    { "name": "payments.reversal",     "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.reversal.dlq" } },
+    { "name": "payments.distribution", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.distribution.dlq" } },
+    { "name": "investor.posting",      "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "investor.posting.dlq" } },
+    { "name": "investor.clawback",     "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "investor.clawback.dlq" } },
+    { "name": "escrow.apply",          "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "escrow.apply.dlq" } },
+    { "name": "escrow.reverse",        "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "escrow.reverse.dlq" } },
+    { "name": "payments.compliance",   "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-dead-letter-exchange": "dlx.main", "x-dead-letter-routing-key": "payments.compliance.dlq" } },
+    { "name": "audit.events",          "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-mode": "lazy" } },
+
+    -- DLQs
+    { "name": "dlq.payments.validation",   "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.payments.processing",   "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.payments.posted",       "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.payments.settlement",   "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.payments.returned",     "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.payments.reversal",     "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.payments.distribution", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.investor.posting",      "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.investor.clawback",     "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.escrow.apply",          "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.escrow.reverse",        "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "dlq.payments.compliance",   "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } }
+  ],
+  "bindings": [
+    { "source": "payments.topic", "vhost": "/", "destination": "payments.validation",   "destination_type": "queue", "routing_key": "payment.*.received",   "arguments": {} },
+    { "source": "payments.topic", "vhost": "/", "destination": "payments.processing",   "destination_type": "queue", "routing_key": "payment.*.validated",  "arguments": {} },
+    { "source": "payments.topic", "vhost": "/", "destination": "payments.posted",       "destination_type": "queue", "routing_key": "payment.*.processed",  "arguments": {} },
+    { "source": "payments.topic", "vhost": "/", "destination": "payments.settlement",   "destination_type": "queue", "routing_key": "payment.*.settlement.*", "arguments": {} },
+    { "source": "returns.topic",  "vhost": "/", "destination": "payments.returned",     "destination_type": "queue", "routing_key": "payment.*.returned",   "arguments": {} },
+    { "source": "payments.topic", "vhost": "/", "destination": "payments.reversal",     "destination_type": "queue", "routing_key": "payment.*.reversal.*", "arguments": {} },
+
+    { "source": "payments.topic", "vhost": "/", "destination": "payments.distribution", "destination_type": "queue", "routing_key": "payment.*.settled",   "arguments": {} },
+    { "source": "distributions.topic","vhost": "/", "destination": "investor.posting",  "destination_type": "queue", "routing_key": "distribution.calculated", "arguments": {} },
+    { "source": "distributions.topic","vhost": "/", "destination": "investor.clawback", "destination_type": "queue", "routing_key": "distribution.clawback",   "arguments": {} },
+
+    { "source": "payments.topic", "vhost": "/", "destination": "escrow.apply",          "destination_type": "queue", "routing_key": "payment.*.processed",  "arguments": {} },
+    { "source": "payments.topic", "vhost": "/", "destination": "escrow.reverse",        "destination_type": "queue", "routing_key": "payment.*.reversed",   "arguments": {} },
+
+    { "source": "payments.topic", "vhost": "/", "destination": "payments.compliance",   "destination_type": "queue", "routing_key": "payment.#",            "arguments": {} },
+    { "source": "audit.topic",    "vhost": "/", "destination": "audit.events",          "destination_type": "queue", "routing_key": "#",                    "arguments": {} }
+  ],
+  "policies": [
+    { "vhost": "/", "name": "quorum-default", "pattern": "^(payments|investor|escrow)\\.", "apply-to": "queues",
+      "definition": { "queue-type": "quorum" }, "priority": 0 }
+  ]
+}
+```
+
+> If you use TTL-based retries, add “delay” queues per tier and bind them back to the primary routing keys with `x-message-ttl` and DLX rules.
+
+---
+
+# 4) Sample handler skeletons (wired for inbox/outbox)
+
+## 4.1 Validation consumer
+
+```ts
+// services/payments/validation-consumer.ts
+import { EnhancedMessageEnvelope } from '../../libs/mq-kit/envelope';
+import { consumeWithAck } from '../../libs/mq-kit/rmq';
+import { tx } from '../../libs/mq-kit/pg';
+import { alreadyProcessed, markProcessed } from '../../libs/mq-kit/inbox';
+import { addToOutbox } from '../../libs/mq-kit/outbox';
+import { ulid } from 'ulid';
+import amqp from 'amqplib';
+
+type PaymentReceived = {
+  payment_id: string;
+  loan_id: string;
+  source: 'ach'|'wire'|'check'|'card'|'lockbox'|'cashier';
+  amount_cents: number;
+  currency: 'USD';
+  effective_date: string;
+  external_ref?: string;
+};
+
+const CONSUMER = 'payments.validation.v1';
+
+export async function start(conn: amqp.Connection) {
+  await consumeWithAck({
+    conn,
+    queue: 'payments.validation',
+    prefetch: 64,
+    handler: async (msg, ch) => {
+      const env = JSON.parse(msg.content.toString()) as EnhancedMessageEnvelope<PaymentReceived>;
+
+      await tx(async c => {
+        if (await alreadyProcessed(c, CONSUMER, env.message_id)) return;
+
+        // 1) Validate loan, amount, status, duplication by idempotency_key or (source, external_ref)
+        // throw or mark rejected with outbox event if hard fail
+
+        // 2) Persist state change
+        await c.query(
+          `UPDATE payment_transactions
+             SET state='validated'
+           WHERE payment_id=$1`,
+          [env.data.payment_id]
+        );
+
+        // 3) Emit next event to outbox
+        const validated: EnhancedMessageEnvelope = {
+          schema: 'loanserve.payment.v1.validated',
+          message_id: ulid(),
+          correlation_id: env.correlation_id || ulid(),
+          causation_id: env.message_id,
+          idempotency_key: env.idempotency_key,
+          occurred_at: new Date().toISOString(),
+          producer: 'svc-payments@1.0.0',
+          data: env.data
+        };
+        await addToOutbox(c, { type: 'payment', id: env.data.payment_id }, validated);
+
+        await markProcessed(c, CONSUMER, env.message_id);
+      });
+    }
+  });
+}
+```
+
+## 4.2 Processing consumer (allocation + pending ledger post)
+
+```ts
+// services/payments/processing-consumer.ts
+import { EnhancedMessageEnvelope } from '../../libs/mq-kit/envelope';
+import { consumeWithAck } from '../../libs/mq-kit/rmq';
+import { tx } from '../../libs/mq-kit/pg';
+import { alreadyProcessed, markProcessed } from '../../libs/mq-kit/inbox';
+import { addToOutbox } from '../../libs/mq-kit/outbox';
+import { ulid } from 'ulid';
+import amqp from 'amqplib';
+
+const CONSUMER = 'payments.processing.v1';
+
+export async function start(conn: amqp.Connection) {
+  await consumeWithAck({
+    conn,
+    queue: 'payments.processing',
+    prefetch: 16,
+    handler: async (msg) => {
+      const env = JSON.parse(msg.content.toString()) as EnhancedMessageEnvelope<any>;
+
+      await tx(async c => {
+        if (await alreadyProcessed(c, CONSUMER, env.message_id)) return;
+
+        // Lock per-loan to serialize allocation/posting
+        await c.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [env.data.loan_id]);
+
+        // Allocation rules & pending ledger postings (principal, interest, fees, escrow, unapplied)
+        // ... compute allocations
+        // Example ledger post (pending)
+        await c.query(
+          `INSERT INTO payment_ledger(loan_id, payment_id, account, debit_cents, credit_cents, pending, effective_date)
+           VALUES ($1,$2,$3,$4,$5,true,$6)`,
+          [env.data.loan_id, env.data.payment_id, 'principal', 0, /*credit*/ 12345, env.data.effective_date]
+        );
+
+        await c.query(
+          `UPDATE payment_transactions SET state='posted_pending_settlement' WHERE payment_id=$1`,
+          [env.data.payment_id]
+        );
+
+        const processed: EnhancedMessageEnvelope = {
+          schema: 'loanserve.payment.v1.processed',
+          message_id: ulid(),
+          correlation_id: env.correlation_id,
+          causation_id: env.message_id,
+          occurred_at: new Date().toISOString(),
+          producer: 'svc-payments@1.0.0',
+          data: env.data
+        };
+        await addToOutbox(c, { type: 'payment', id: env.data.payment_id }, processed);
+
+        await markProcessed(c, CONSUMER, env.message_id);
+      });
+    }
+  });
+}
+```
+
+## 4.3 Settlement consumer (source-specific finalization)
+
+```ts
+// services/payments/settlement-consumer.ts
+import { EnhancedMessageEnvelope } from '../../libs/mq-kit/envelope';
+import { consumeWithAck } from '../../libs/mq-kit/rmq';
+import { tx } from '../../libs/mq-kit/pg';
+import { alreadyProcessed, markProcessed } from '../../libs/mq-kit/inbox';
+import { addToOutbox } from '../../libs/mq-kit/outbox';
+import { ulid } from 'ulid';
+import amqp from 'amqplib';
+
+const CONSUMER = 'payments.settlement.v1';
+
+export async function start(conn: amqp.Connection) {
+  await consumeWithAck({
+    conn,
+    queue: 'payments.settlement',
+    prefetch: 32,
+    handler: async (msg) => {
+      const env = JSON.parse(msg.content.toString()) as EnhancedMessageEnvelope<any>;
+
+      await tx(async c => {
+        if (await alreadyProcessed(c, CONSUMER, env.message_id)) return;
+
+        // Flip pending=false for all lines of this payment
+        await c.query(
+          `UPDATE payment_ledger SET pending=false WHERE payment_id=$1`,
+          [env.data.payment_id]
+        );
+        await c.query(
+          `UPDATE payment_transactions SET state='settled' WHERE payment_id=$1`,
+          [env.data.payment_id]
+        );
+
+        const settled: EnhancedMessageEnvelope = {
+          schema: 'loanserve.payment.v1.settled',
+          message_id: ulid(),
+          correlation_id: env.correlation_id,
+          causation_id: env.message_id,
+          occurred_at: new Date().toISOString(),
+          producer: 'svc-payments@1.0.0',
+          data: env.data
+        };
+        await addToOutbox(c, { type: 'payment', id: env.data.payment_id }, settled);
+
+        await markProcessed(c, CONSUMER, env.message_id);
+      });
+    }
+  });
+}
+```
+
+## 4.4 Reversal consumer (compensation saga)
+
+```ts
+// services/payments/reversal-consumer.ts
+import { EnhancedMessageEnvelope } from '../../libs/mq-kit/envelope';
+import { consumeWithAck } from '../../libs/mq-kit/rmq';
+import { tx } from '../../libs/mq-kit/pg';
+import { alreadyProcessed, markProcessed } from '../../libs/mq-kit/inbox';
+import { addToOutbox } from '../../libs/mq-kit/outbox';
+import { ulid } from 'ulid';
+import amqp from 'amqplib';
+
+const CONSUMER = 'payments.reversal.v1';
+
+export async function start(conn: amqp.Connection) {
+  await consumeWithAck({
+    conn,
+    queue: 'payments.reversal',
+    prefetch: 8,
+    handler: async (msg) => {
+      const env = JSON.parse(msg.content.toString()) as EnhancedMessageEnvelope<{ payment_id:string; return_code:string; loan_id:string }>;
+
+      await tx(async c => {
+        if (await alreadyProcessed(c, CONSUMER, env.message_id)) return;
+
+        // Mirror ledger entries (reverse)
+        const { rows } = await c.query(`SELECT * FROM payment_ledger WHERE payment_id=$1`, [env.data.payment_id]);
+        for (const row of rows) {
+          await c.query(
+            `INSERT INTO payment_ledger(loan_id, payment_id, account, debit_cents, credit_cents, pending, effective_date)
+             VALUES ($1,$2,$3,$4,$5,false,$6)`,
+            [row.loan_id, env.data.payment_id, row.account, row.credit_cents, row.debit_cents, row.effective_date]
+          );
+        }
+
+        // Escrow reverse & investor clawback events emitted (handled by dedicated services)
+        await addToOutbox(c, { type: 'payment', id: env.data.payment_id }, {
+          schema: 'loanserve.escrow.v1.reversed',
+          message_id: ulid(),
+          correlation_id: env.correlation_id,
+          causation_id: env.message_id,
+          occurred_at: new Date().toISOString(),
+          producer: 'svc-reversal@1.0.0',
+          data: { payment_id: env.data.payment_id, loan_id: env.data.loan_id }
+        });
+
+        await addToOutbox(c, { type: 'payment', id: env.data.payment_id }, {
+          schema: 'loanserve.distribution.v1.clawback',
+          message_id: ulid(),
+          correlation_id: env.correlation_id,
+          causation_id: env.message_id,
+          occurred_at: new Date().toISOString(),
+          producer: 'svc-reversal@1.0.0',
+          data: { payment_id: env.data.payment_id, reason: env.data.return_code }
+        });
+
+        await c.query(`UPDATE payment_transactions SET state='reversed' WHERE payment_id=$1`, [env.data.payment_id]);
+
+        await markProcessed(c, CONSUMER, env.message_id);
+      });
+    }
+  });
+}
+```
+
+## 4.5 Distribution consumer (investor math)
+
+```ts
+// services/distributions/distribution-consumer.ts
+import { EnhancedMessageEnvelope } from '../../libs/mq-kit/envelope';
+import { consumeWithAck } from '../../libs/mq-kit/rmq';
+import { tx } from '../../libs/mq-kit/pg';
+import { alreadyProcessed, markProcessed } from '../../libs/mq-kit/inbox';
+import { addToOutbox } from '../../libs/mq-kit/outbox';
+import { ulid } from 'ulid';
+import amqp from 'amqplib';
+
+const CONSUMER = 'payments.distribution.v1';
+
+export async function start(conn: amqp.Connection) {
+  await consumeWithAck({
+    conn,
+    queue: 'payments.distribution',
+    prefetch: 32,
+    handler: async (msg) => {
+      const env = JSON.parse(msg.content.toString()) as EnhancedMessageEnvelope<{ payment_id:string; loan_id:string; amount_cents:number; effective_date:string }>;
+
+      await tx(async c => {
+        if (await alreadyProcessed(c, CONSUMER, env.message_id)) return;
+
+        // 1) Load effective positions for date
+        const { rows: versions } = await c.query(
+          `SELECT version_id FROM investor_position_versions
+            WHERE loan_id=$1 AND effective_from <= $2
+            ORDER BY effective_from DESC LIMIT 1`,
+          [env.data.loan_id, env.data.effective_date]
+        );
+        if (versions.length === 0) return; // no investors
+
+        const { rows: positions } = await c.query(
+          `SELECT investor_id, pct_bps FROM investor_positions WHERE version_id=$1`,
+          [versions[0].version_id]
+        );
+
+        // 2) Servicing fee & distributable
+        const servicingFee = 0; // compute by program/policy
+        const distributable = env.data.amount_cents - servicingFee;
+
+        // 3) Pro-rata distribution with largest remainder
+        const raw = positions.map(p => ({
+          investor_id: p.investor_id,
+          amount_cents: Math.floor(distributable * p.pct_bps / 10000)
+        }));
+        const distributed = raw.reduce((s, r) => s + r.amount_cents, 0);
+        let rem = distributable - distributed;
+        raw.sort((a,b) => b.amount_cents - a.amount_cents);
+        for (let i=0; rem>0 && i<raw.length; i++, rem--) raw[i].amount_cents++;
+
+        // 4) Persist lines
+        for (const d of raw) {
+          await c.query(
+            `INSERT INTO payment_distributions(payment_id, investor_id, amount_cents, fee_cents, effective_date, status)
+             VALUES ($1,$2,$3,$4,$5,'calculated')`,
+            [env.data.payment_id, d.investor_id, d.amount_cents, 0, env.data.effective_date]
+          );
+        }
+
+        // 5) Emit calculated event
+        await addToOutbox(c, { type: 'payment', id: env.data.payment_id }, {
+          schema: 'loanserve.distribution.v1.calculated',
+          message_id: ulid(),
+          correlation_id: env.correlation_id,
+          causation_id: env.message_id,
+          occurred_at: new Date().toISOString(),
+          producer: 'svc-distribution@1.0.0',
+          data: { payment_id: env.data.payment_id, loan_id: env.data.loan_id }
+        });
+
+        await markProcessed(c, CONSUMER, env.message_id);
+      });
+    }
+  });
+}
+```
+
+---
+
+## How to wire it up quickly
+
+1. Apply the SQL migration.
+2. Import the `rabbitmq-definitions.json`.
+3. Add `libs/mq-kit` to your repo, install deps `amqplib pg ulid`.
+4. Run a small “publisher” that pulls from `outbox` on an interval:
+
+   ```ts
+   // services/outbox-publisher/index.ts
+   import { createConnection } from '../libs/mq-kit/rmq';
+   import { publishOutbox } from '../libs/mq-kit/outbox';
+   (async () => {
+     const conn = await createConnection();
+     setInterval(()=> publishOutbox(conn).catch(console.error), 500);
+   })();
+   ```
+5. Start the consumers above; each uses manual ack + inbox + outbox.
+
+If you want these split into files with ready-to-run npm scripts and a seed `values.yaml` for deploying the consumers, say the word and I’ll cut them into a minimal repository layout you can drop into `loanserve`.

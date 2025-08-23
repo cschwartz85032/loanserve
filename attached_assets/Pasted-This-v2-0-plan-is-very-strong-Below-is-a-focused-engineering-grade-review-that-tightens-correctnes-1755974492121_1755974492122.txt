@@ -1,0 +1,301 @@
+This v2.0 plan is very strong. Below is a focused, engineering-grade review that tightens correctness, closes edge cases, and turns it into a spec your team can implement without guesswork.
+
+I’ve kept it point-by-point. Where useful, I include exact DDL, invariants, and handler rules.
+
+A. Lifecycle and settlement: tighten semantics
+
+Pending vs settled
+Keep “posted_pending_settlement” strictly for ledger entries that are not final. Create a companion settlement workflow per source:
+
+ACH: probe windows by return code class, daily bank file reconciliation, settle only after window elapses or bank confirms.
+
+Wires: settle on bank advice.
+
+Checks/lockbox: settle on bank clear; handle NSF/stop payment returns.
+
+Cards: two-step auth→capture; settle on capture success; chargebacks map to returned.
+
+State transitions are monotonic and append-only
+Never mutate past rows to “hide” history. Every reversal uses compensating entries and emits a distinct event. Store previous_state in the transition log to verify legitimate paths.
+
+Per-loan serialization
+Even with queue sharding, enforce a per-loan mutex in the processing step:
+
+Option A: advisory lock on hashtext(loan_id) during allocation and ledger post.
+
+Option B: optimistic SERIALIZABLE transaction with retry on serialization failures.
+Choose one and document it.
+
+B. Schema: add referential integrity, invariants, and performance structure
+
+Your DDL is a good base. Extend it to enforce accounting and data-quality guarantees.
+
+-- Domain tables (examples)
+CREATE TABLE currency_codes(code CHAR(3) PRIMARY KEY);
+INSERT INTO currency_codes(code) VALUES ('USD');
+
+CREATE TABLE accounts_chart (
+  account VARCHAR(50) PRIMARY KEY,      -- e.g. interest_income, principal, escrow_tax
+  account_type VARCHAR(20) NOT NULL     -- asset/liability/income/expense/equity
+);
+
+-- Loans & Investors (assume they already exist)
+-- CREATE TABLE loans(loan_id VARCHAR(50) PRIMARY KEY, ...);
+-- CREATE TABLE investors(investor_id VARCHAR(50) PRIMARY KEY, ...);
+
+ALTER TABLE payment_transactions
+  ADD CONSTRAINT fk_payment_tx_loan
+    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),
+  ADD CONSTRAINT fk_payment_tx_currency
+    FOREIGN KEY (currency) REFERENCES currency_codes(code),
+  ADD CONSTRAINT chk_state_valid
+    CHECK (state IN (
+      'received','accepted_for_review','validated','posted_pending_settlement',
+      'processing','settled','returned','reversed','rejected','closed'
+    ));
+
+-- Exactly one side of a ledger line must be > 0
+ALTER TABLE payment_ledger
+  ADD CONSTRAINT chk_one_sided
+    CHECK (
+      (debit_cents > 0 AND credit_cents = 0) OR
+      (credit_cents > 0 AND debit_cents = 0)
+    ),
+  ADD CONSTRAINT fk_ledger_loan FOREIGN KEY (loan_id) REFERENCES loans(loan_id),
+  ADD CONSTRAINT fk_ledger_payment FOREIGN KEY (payment_id) REFERENCES payment_transactions(payment_id),
+  ADD CONSTRAINT fk_ledger_account FOREIGN KEY (account) REFERENCES accounts_chart(account);
+
+-- Prevent “pending=false” without a prior pending row for the same payment
+CREATE UNIQUE INDEX uq_ledger_payment_pending_final
+  ON payment_ledger(payment_id, pending);
+
+-- Escrow accounts
+ALTER TABLE escrow_accounts
+  ADD CONSTRAINT chk_escrow_cat
+    CHECK (category IN ('tax','hazard','flood','MI')),
+  ADD CONSTRAINT fk_escrow_loan FOREIGN KEY (loan_id) REFERENCES loans(loan_id);
+
+-- Effective-dated investor ownership
+ALTER TABLE investor_positions
+  ADD CONSTRAINT fk_invpos_loan FOREIGN KEY (loan_id) REFERENCES loans(loan_id),
+  ADD CONSTRAINT fk_invpos_investor FOREIGN KEY (investor_id) REFERENCES investors(investor_id),
+  ADD CONSTRAINT chk_pct_bps CHECK (pct_bps BETWEEN 0 AND 10000);
+
+-- Sum of pct_bps must equal 10000 for an effective date set
+-- Enforce by trigger or nightly verification view; at write time use a deferred constraint via trigger.
+
+-- Distributions
+ALTER TABLE payment_distributions
+  ADD CONSTRAINT fk_distrib_payment FOREIGN KEY (payment_id) REFERENCES payment_transactions(payment_id),
+  ADD CONSTRAINT fk_distrib_investor FOREIGN KEY (investor_id) REFERENCES investors(investor_id);
+
+-- Idempotency and dedupe per source
+CREATE UNIQUE INDEX uq_tx_idemp ON payment_transactions(idempotency_key);
+CREATE UNIQUE INDEX uq_tx_external_ref_per_source
+  ON payment_transactions(source, external_ref)
+  WHERE external_ref IS NOT NULL;
+
+-- Partition heavy tables (optional when volume dictates)
+-- Example: monthly partitions on payment_ledger and payment_transactions
+
+
+Rationale
+
+chk_one_sided prevents accidental double-sided lines.
+
+FKs make distributed handlers safe; if a loan/investor is missing the transaction fails fast and DLQs.
+
+Ownership sums must equal 100% at any effective date; enforce via a deferred trigger to allow batch updates.
+
+C. Allocation engine: unambiguous rules, rounding, back-dating
+
+Allocation order is configurable but deterministic
+Keep your priority list. Add explicit flags to allow:
+
+Escrow-only payments.
+
+Hold partial payments in unapplied until a full installment is available.
+
+Proportional application when policy requires.
+
+Interest math
+Use exact day count convention configured per product (e.g., Actual/365, 30/360). Back-dated payments recompute accrued interest to effective date; produce a delta entry that adjusts interest and principal precisely.
+
+Rounding
+Represent amounts in integer cents; for multi-line splits use largest remainder so sum(lines) == total. Document tie-break rule (e.g., prefer highest principal or highest investor position).
+
+Payoff protection
+If a payment is marked as payoff, validate against a payoff quote snapshot (good-through date, per-diem) and reject if short; excess routes to refund/unapplied.
+
+D. Investor math and clawbacks: precision and transparency
+
+Effective-dated ownership
+Pick positions where effective_from ≤ payment.effective_date < coalesce(effective_to,'infinity').
+
+Servicing fee
+Calculate per program:
+
+Strip as bps of UPB or fraction of collected interest first.
+
+Post servicing fee lines to income; reduce distributable.
+
+Waterfalls
+Implement pro_rata and sequential now; leave hooks for hurdle structures. Keep calculations in integer cents end-to-end.
+
+Clawbacks
+On return, create negative distributions. Net against the investor’s payables first; if not possible, book an investor receivable and notify. Never silently re-debit external investor accounts without authorization.
+
+E. Returns and reversals: full compensation playbook
+
+Map ACH return codes to retryable vs permanent lists.
+
+Reversal saga steps (all idempotent):
+
+Reverse loan ledger (mirror lines).
+
+Reverse escrow contributions; move any paid invoices to shortage.
+
+Post negative distributions; schedule clawback netting.
+
+Recompute late fees if grace now exceeded.
+
+Notifications to borrower/investors; compliance event.
+
+Everything wrapped with an outbox so events publish atomically with state.
+
+F. Messaging topology: concrete bindings and DLQ policies
+
+Use the topic namespace consistently. Examples (extend as needed):
+
+Produced events:
+payment.ach.received, payment.ach.validated, payment.ach.processed, payment.ach.settled, payment.ach.returned, payment.ach.reversed
+distribution.calculated, distribution.posted, distribution.clawback
+escrow.applied, escrow.reversed
+
+Queues (quorum) and bindings:
+payments.validation ← payment.*.received
+payments.processing ← payment.*.validated
+payments.posted ← payment.*.processed
+payments.settlement ← payment.*.settlement.*
+payments.returned ← payment.*.returned
+payments.reversal ← payment.*.reversed.requested
+payments.distribution← payment.*.settled
+investor.posting ← distribution.calculated
+investor.clawback ← distribution.clawback
+escrow.apply ← payment.*.processed
+escrow.reverse ← payment.*.reversed
+payments.compliance ← payment.*.*
+audit.events ← # (or stream sink)
+
+DLQ policy
+Every queue sets x-dead-letter-exchange = dlx.main, routing key ${queue}.dlq.
+Add 3 retry tiers with increasing TTL (e.g., 30s, 5m, 30m) before parking-lot.
+Functional validation failures do not retry; go straight to parking-lot with a human-readable error.
+
+Ack discipline
+Consumers ack after the DB commit and outbox write succeeds. Never ack on receipt.
+
+G. Envelope and idempotency: lock it down
+
+Your envelope is solid. Add these enforcement points:
+
+message_id (ULID) unique per event.
+
+idempotency_key per business operation (e.g., ACH trace) to prevent duplicates at the command boundary.
+
+Per-consumer inbox table guarding handler re-entry:
+
+CREATE TABLE inbox (
+  consumer VARCHAR(100),
+  message_id VARCHAR(26),
+  processed_at TIMESTAMPTZ,
+  PRIMARY KEY (consumer, message_id)
+);
+
+
+Outbox table to atomically publish events produced by the transaction. Publisher uses RabbitMQ confirms.
+
+H. Security & compliance guardrails
+
+PAN/PCI: do not store card PANs. Use tokens only; keep you out of SAQ-D where possible.
+
+PII at rest: encrypt sensitive borrower data in DB (field-level or tablespace encryption).
+
+Secrets: broker credentials in a secret manager; TLS everywhere.
+
+Audit immutability: replicate audit.events into object storage with Object Lock (WORM). Keep index in DB for fast search.
+
+I. Monitoring, SLOs, reconciliation
+
+Metrics
+Publish per stage: throughput, p95/p99 latency, ready/unacked, redelivery, DLQ depth, settlement overdue count, reversal backlog, idempotency drop count.
+
+Dashboards
+
+“Payment Flow” chord chart: counts by state.
+
+“Settlement” panel: probes due vs overdue.
+
+“Distribution” accuracy: sum(distributions) == distributable delta alerts.
+
+Alarms
+
+DLQ depth sustained.
+
+Confirm latency spikes (publisher pressure).
+
+Processing lag per queue.
+
+Reconciliation variances > $0.01.
+
+Daily reconciliations
+
+Bank files vs payment_transactions totals.
+
+Investor payables vs posted distributions.
+
+Escrow balances vs escrow ledger.
+
+J. Testing: add golden sets and invariants
+
+Golden datasets for each source: real-world ACH/lockbox edge cases, large month-end batches.
+
+Property tests: allocation and distribution always conserve value.
+
+Idempotency tests: duplicate received events never double-post.
+
+Chaos: kill consumers mid-transaction, ensure exactly-once effects hold (outbox/inbox patterns catch duplicates).
+
+Soak: ≥24h at target throughput with synthetic bank files.
+
+K. Performance guidance (initial dials)
+
+Validation prefetch 64; processing 8–16; distribution 16–32. Tune via queue utilization and DB CPU.
+
+DB pool per service 30–60; use prepared statements.
+
+Partition ledger and transactions monthly when rows > 50M.
+
+Use quorum queues for financial work; classic only where you need priority and accept trade-offs.
+
+L. Operational runbooks (checklist excerpts)
+
+Retry/DLQ: classify error, re-publish with next delay tier or park with reason code.
+
+Reversal: one-pager with steps and who is paged.
+
+Backfill: ingest old bank files with idempotency keys; run in a maintenance window with serialization enabled per loan.
+
+Cutover: dual-write and shadow-consume for at least one full cycle; compare reconciliations before flipping.
+
+M. Small but important fixes to v2.0 text
+
+Add explicit time-zone policy. Use TIMESTAMPTZ everywhere and domain calendars for banking holidays; never rely on server local time.
+
+Add payoff path and bankruptcy/charge-off guards at validation.
+
+Document escrow-only and unapplied behaviors clearly so borrower statements match ledger.
+
+Document exact day count conventions per loan program.
+
+For “audit.events”, record both envelope and payload hash to detect tampering.
