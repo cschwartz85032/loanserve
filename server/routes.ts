@@ -1286,6 +1286,10 @@ To implement full file serving:
   const rabbitmqTestRoutes = await import('./routes/rabbitmq-test');
   app.use('/api/rabbitmq', rabbitmqTestRoutes.default);
 
+  // Register messaging infrastructure test routes
+  const messagingTestRoutes = await import('./routes/messaging-test');
+  app.use('/api/messaging', messagingTestRoutes.default);
+
   const httpServer = createServer(app);
   return httpServer;
 }
