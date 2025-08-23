@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import { queueMonitor } from '../services/queue-monitor.js';
+import { queueMetricsHistory } from '../services/queue-metrics-history.js';
 
 const router = Router();
 
@@ -131,6 +132,47 @@ router.post('/queues/:queueName/purge', requireRole(['admin']), async (req, res)
   } catch (error) {
     console.error('[QueueMonitor] Error purging queue:', error);
     res.status(500).json({ error: 'Failed to purge queue' });
+  }
+});
+
+/**
+ * Get historical metrics for charting
+ */
+router.get('/history', async (req, res) => {
+  try {
+    const minutes = parseInt(req.query.minutes as string) || 5;
+    const history = queueMetricsHistory.getHistory(minutes);
+    res.json(history);
+  } catch (error) {
+    console.error('[QueueMonitor] Error fetching history:', error);
+    res.status(500).json({ error: 'Failed to fetch metrics history' });
+  }
+});
+
+/**
+ * Get top queues by message count
+ */
+router.get('/top-queues', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    const topQueues = queueMetricsHistory.getTopQueues(limit);
+    res.json(topQueues);
+  } catch (error) {
+    console.error('[QueueMonitor] Error fetching top queues:', error);
+    res.status(500).json({ error: 'Failed to fetch top queues' });
+  }
+});
+
+/**
+ * Get processing rate statistics
+ */
+router.get('/processing-rates', async (req, res) => {
+  try {
+    const rates = queueMetricsHistory.getProcessingRates();
+    res.json(rates);
+  } catch (error) {
+    console.error('[QueueMonitor] Error fetching processing rates:', error);
+    res.status(500).json({ error: 'Failed to fetch processing rates' });
   }
 });
 
