@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { queryClient, apiRequest } from '@/lib/queryClient';
+import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -330,17 +331,18 @@ export function AdminUsers() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">User Management</h1>
-          <p className="text-muted-foreground">Manage user accounts, roles, and permissions</p>
+    <AdminLayout>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">User Management</h1>
+            <p className="text-muted-foreground">Manage user accounts, roles, and permissions</p>
+          </div>
+          <div className="flex gap-2">
+            <BulkInviteDialog roles={roles} />
+            <InviteUserDialog roles={roles} />
+          </div>
         </div>
-        <div className="flex gap-2">
-          <BulkInviteDialog roles={roles} />
-          <InviteUserDialog roles={roles} />
-        </div>
-      </div>
 
       <Card>
         <CardHeader>
@@ -477,7 +479,8 @@ export function AdminUsers() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </AdminLayout>
   );
 }
 
