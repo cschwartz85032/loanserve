@@ -26,11 +26,6 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
   const navItems = [
     {
-      title: 'Documents',
-      href: '/mailroom',
-      icon: FileText,
-    },
-    {
       title: 'Escrow Management',
       href: '/admin/escrow',
       icon: Wallet,
