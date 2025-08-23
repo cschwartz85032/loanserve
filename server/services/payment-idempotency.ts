@@ -4,8 +4,8 @@
  */
 
 import { PoolClient } from 'pg';
-import { db } from '../db/index.js';
-import { PaymentEnvelope } from '../messaging/payment-envelope.js';
+import { db } from '../db';
+import { PaymentEnvelope } from '../messaging/payment-envelope';
 import { ulid } from 'ulid';
 import * as crypto from 'crypto';
 

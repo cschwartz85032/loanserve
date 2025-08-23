@@ -18,6 +18,7 @@ import crmRoutes from "./routes/crm";
 import { settingsRouter } from "./routes/settings";
 import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { emailTemplatesRouter } from "./routes/email-templates";
+import paymentRoutes from "./routes/payment-routes";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -102,6 +103,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register CRM routes
   app.use('/api', crmRoutes);
+
+  // Register payment processing routes
+  app.use(paymentRoutes);
 
   // ============= BORROWER ENTITY ROUTES =============
   app.get("/api/borrowers", 

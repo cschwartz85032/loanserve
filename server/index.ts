@@ -79,6 +79,16 @@ app.use((req, res, next) => {
   const { runMigrations } = await import('./migrations');
   await runMigrations();
   
+  // Start payment processing consumers
+  try {
+    const { startPaymentConsumers } = await import('./consumers/index');
+    await startPaymentConsumers();
+    console.log('[Server] Payment consumers started successfully');
+  } catch (error) {
+    console.error('[Server] Failed to start payment consumers:', error);
+    // Continue server startup even if consumers fail
+  }
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
