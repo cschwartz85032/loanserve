@@ -6,8 +6,15 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../auth/middleware.js';
 import { queueMonitor } from '../services/queue-monitor.js';
 import { queueMetricsHistory } from '../services/queue-metrics-history.js';
+import { spawn, ChildProcess } from 'child_process';
+import amqp from 'amqplib';
 
 const router = Router();
+
+// Test runner state
+let testProcess: ChildProcess | null = null;
+let testStartTime: number | null = null;
+const TEST_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 // All queue monitoring routes require admin role
 router.use(requireAuth);
@@ -113,7 +120,7 @@ router.get('/flow-rates', async (req, res) => {
 /**
  * Purge a queue (dangerous operation - admin only)
  */
-router.post('/queues/:queueName/purge', requireRole(['admin']), async (req, res) => {
+router.post('/queues/:queueName/purge', requireRole('admin'), async (req, res) => {
   try {
     const { queueName } = req.params;
     
@@ -173,6 +180,133 @@ router.get('/processing-rates', async (req, res) => {
   } catch (error) {
     console.error('[QueueMonitor] Error fetching processing rates:', error);
     res.status(500).json({ error: 'Failed to fetch processing rates' });
+  }
+});
+
+/**
+ * Purge DLQ (dead letter queue)
+ */
+router.post('/purge-dlq', requireRole('admin'), async (req, res) => {
+  try {
+    const { queueName } = req.body;
+    
+    // Only allow purging DLQ queues
+    if (!queueName || !queueName.startsWith('dlq.')) {
+      return res.status(400).json({ error: 'Can only purge dead letter queues' });
+    }
+    
+    // Connect directly to RabbitMQ to purge
+    const url = process.env.CLOUDAMQP_URL;
+    if (!url) {
+      return res.status(500).json({ error: 'RabbitMQ URL not configured' });
+    }
+    
+    const connection = await amqp.connect(url);
+    const channel = await connection.createChannel();
+    
+    // Get queue stats before purging
+    const stats = await channel.checkQueue(queueName);
+    const messageCount = stats.messageCount;
+    
+    // Purge the queue
+    await channel.purgeQueue(queueName);
+    
+    await channel.close();
+    await connection.close();
+    
+    console.log(`[QueueMonitor] Purged ${messageCount} messages from ${queueName}`);
+    
+    res.json({
+      success: true,
+      queueName,
+      purgedCount: messageCount,
+      message: `Successfully purged ${messageCount} messages from ${queueName}`
+    });
+  } catch (error) {
+    console.error('[QueueMonitor] Error purging DLQ:', error);
+    res.status(500).json({ error: 'Failed to purge dead letter queue' });
+  }
+});
+
+/**
+ * Control test runner
+ */
+router.post('/test-runner', requireRole('admin'), async (req, res) => {
+  try {
+    const { action } = req.body;
+    
+    if (action === 'start') {
+      // Stop existing test if running
+      if (testProcess) {
+        testProcess.kill();
+        testProcess = null;
+      }
+      
+      // Start new test process
+      testProcess = spawn('tsx', ['scripts/test-queue-infrastructure.ts'], {
+        stdio: 'inherit'
+      });
+      
+      testStartTime = Date.now();
+      
+      // Set up auto-stop after 30 minutes
+      setTimeout(() => {
+        if (testProcess) {
+          console.log('[QueueMonitor] Test runner reached 30 minute timeout, stopping...');
+          testProcess.kill();
+          testProcess = null;
+          testStartTime = null;
+        }
+      }, TEST_TIMEOUT);
+      
+      testProcess.on('exit', (code, signal) => {
+        console.log(`[QueueMonitor] Test runner exited with code ${code} and signal ${signal}`);
+        testProcess = null;
+        testStartTime = null;
+      });
+      
+      res.json({
+        success: true,
+        running: true,
+        message: 'Test runner started successfully'
+      });
+      
+    } else if (action === 'stop') {
+      if (testProcess) {
+        testProcess.kill();
+        testProcess = null;
+        testStartTime = null;
+        
+        res.json({
+          success: true,
+          running: false,
+          message: 'Test runner stopped successfully'
+        });
+      } else {
+        res.json({
+          success: false,
+          running: false,
+          message: 'No test runner is currently running'
+        });
+      }
+      
+    } else if (action === 'status') {
+      const isRunning = testProcess !== null;
+      const runtime = isRunning && testStartTime ? Date.now() - testStartTime : 0;
+      
+      res.json({
+        running: isRunning,
+        runtime,
+        timeRemaining: isRunning ? Math.max(0, TEST_TIMEOUT - runtime) : 0
+      });
+      
+    } else {
+      res.status(400).json({ error: 'Invalid action. Use "start", "stop", or "status"' });
+    }
+    
+  } catch (error) {
+    console.error('[QueueMonitor] Error controlling test runner:', error);
+    res.status(500).json({ error: 'Failed to control test runner' });
   }
 });
 

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Activity, Users, MessageSquare, RefreshCw, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { AlertCircle, Activity, Users, MessageSquare, RefreshCw, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, Minus, Trash2, Play, Square } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
@@ -103,6 +105,8 @@ interface ProcessingRates {
 function QueueMonitorContent() {
   const [selectedQueue, setSelectedQueue] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [testRunning, setTestRunning] = useState(false);
+  const { toast } = useToast();
 
   // Fetch queue metrics
   const { data: queues, refetch: refetchQueues } = useQuery<QueueMetrics[]>({
@@ -110,22 +114,10 @@ function QueueMonitorContent() {
     refetchInterval: autoRefresh ? 5000 : false
   });
 
-  // Fetch connection metrics
-  const { data: connection } = useQuery<ConnectionMetrics>({
-    queryKey: ['/api/queue-monitor/connections'],
-    refetchInterval: autoRefresh ? 5000 : false
-  });
-
   // Fetch health status
   const { data: health } = useQuery<QueueHealth[]>({
     queryKey: ['/api/queue-monitor/health'],
     refetchInterval: autoRefresh ? 10000 : false
-  });
-
-  // Fetch aggregated stats
-  const { data: stats } = useQuery<AggregatedStats>({
-    queryKey: ['/api/queue-monitor/stats'],
-    refetchInterval: autoRefresh ? 5000 : false
   });
 
   // Fetch historical metrics
@@ -175,12 +167,59 @@ function QueueMonitorContent() {
     return <Badge className={colors[type] || 'bg-gray-500'}>{type}</Badge>;
   };
 
-  const formatUptime = (ms?: number) => {
-    if (!ms) return 'N/A';
-    const hours = Math.floor(ms / 3600000);
-    const minutes = Math.floor((ms % 3600000) / 60000);
-    return `${hours}h ${minutes}m`;
-  };
+  // Purge DLQ mutation
+  const purgeDLQMutation = useMutation({
+    mutationFn: async (queueName: string) => {
+      const response = await fetch(`/api/queue-monitor/purge-dlq`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queueName })
+      });
+      if (!response.ok) throw new Error('Failed to purge DLQ');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: 'DLQ Purged',
+        description: `Successfully purged ${data.purgedCount} messages from ${data.queueName}`
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/queue-monitor/queues'] });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: 'Failed to purge DLQ',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  // Test runner mutation
+  const testRunnerMutation = useMutation({
+    mutationFn: async (action: 'start' | 'stop') => {
+      const response = await fetch(`/api/queue-monitor/test-runner`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      if (!response.ok) throw new Error(`Failed to ${action} test runner`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setTestRunning(data.running);
+      toast({
+        title: data.running ? 'Tests Started' : 'Tests Stopped',
+        description: data.running ? 'Continuous tests will run for up to 30 minutes' : 'Test execution stopped'
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: 'Failed to control test runner',
+        variant: 'destructive'
+      });
+    }
+  });
 
   // Prepare chart data
   const prepareChartData = () => {
@@ -200,9 +239,15 @@ function QueueMonitorContent() {
   };
 
   const preparePieData = () => {
-    if (!stats?.queuesByType) return [];
+    if (!queues) return [];
     
-    return Object.entries(stats.queuesByType).map(([type, count]) => ({
+    const typeCount: Record<string, number> = {};
+    queues.forEach(q => {
+      const type = q.type || 'other';
+      typeCount[type] = (typeCount[type] || 0) + 1;
+    });
+    
+    return Object.entries(typeCount).map(([type, count]) => ({
       name: type.charAt(0).toUpperCase() + type.slice(1),
       value: count
     }));
@@ -231,6 +276,14 @@ function QueueMonitorContent() {
         </div>
         <div className="flex gap-2">
           <Button
+            variant={testRunning ? "destructive" : "outline"}
+            onClick={() => testRunnerMutation.mutate(testRunning ? 'stop' : 'start')}
+            disabled={testRunnerMutation.isPending}
+          >
+            {testRunning ? <Square className="h-4 w-4 mr-2" /> : <Play className="h-4 w-4 mr-2" />}
+            {testRunning ? 'Stop Tests' : 'Run Tests'}
+          </Button>
+          <Button
             variant={autoRefresh ? "default" : "outline"}
             onClick={() => setAutoRefresh(!autoRefresh)}
           >
@@ -243,83 +296,6 @@ function QueueMonitorContent() {
         </div>
       </div>
 
-      {/* Connection Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" />
-            Connection Status
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Status</p>
-              <p className="text-lg font-semibold">
-                {connection?.connected ? (
-                  <span className="text-green-500">Connected</span>
-                ) : (
-                  <span className="text-red-500">Disconnected</span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Uptime</p>
-              <p className="text-lg font-semibold">{formatUptime(connection?.uptime)}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Active Consumers</p>
-              <p className="text-lg font-semibold">{connection?.activeConsumers || 0}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Reconnect Attempts</p>
-              <p className="text-lg font-semibold">{connection?.reconnectAttempts || 0}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Summary Stats */}
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total Queues</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stats.totalQueues}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total Messages</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stats.totalMessages.toLocaleString()}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Total Consumers</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold">{stats.totalConsumers}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Health Overview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <span className="text-green-500">{stats.healthSummary.healthy}</span> /
-                <span className="text-yellow-500">{stats.healthSummary.warning}</span> /
-                <span className="text-red-500">{stats.healthSummary.critical}</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -610,8 +586,14 @@ function QueueMonitorContent() {
                       </TableCell>
                       <TableCell>
                         {queue.messages > 0 && (
-                          <Button size="sm" variant="outline">
-                            Investigate
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            onClick={() => purgeDLQMutation.mutate(queue.name)}
+                            disabled={purgeDLQMutation.isPending}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Purge
                           </Button>
                         )}
                       </TableCell>
