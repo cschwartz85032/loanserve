@@ -10,7 +10,7 @@ const router = Router();
 
 // All queue monitoring routes require admin role
 router.use(requireAuth);
-router.use(requireRole(['admin', 'servicer']));
+router.use(requireRole('admin', 'servicer'));
 
 /**
  * Get all queue metrics
