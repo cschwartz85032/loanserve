@@ -1,0 +1,451 @@
+{
+  "version": "1.0",
+  "package": "letters_investor_insurer_tax",
+  "generated_at": "2025-08-23T21:12:49.596667Z",
+  "tokens": [
+    "AssignmentDocId",
+    "BinderNumber",
+    "BorrowerFirstName",
+    "BorrowerLastName",
+    "CarrierAddress",
+    "CarrierName",
+    "CheckNumber",
+    "ClaimNumber",
+    "ClawbackAmount",
+    "ClawbackPlan",
+    "ClawbackReason",
+    "CounterpartyInvestorName",
+    "CoverageAmount",
+    "DistributionDate",
+    "DistributionFees",
+    "DistributionGross",
+    "DistributionMethod",
+    "DistributionNet",
+    "DistributionReference",
+    "EscrowAccountNumber",
+    "InstallmentNumber",
+    "InvestorBankAccountLast4",
+    "InvestorBankName",
+    "InvestorBankRoutingLast4",
+    "InvestorId",
+    "InvestorMailingAddress",
+    "InvestorName",
+    "Jurisdiction",
+    "LifetimeDist",
+    "LoanNumber",
+    "LossDate",
+    "MortgageeClause",
+    "MortgageeLoanId",
+    "OwnershipPercentAfterBps",
+    "OwnershipPercentBeforeBps",
+    "OwnershipPercentBps",
+    "ParcelNumber",
+    "PolicyEffectiveDate",
+    "PolicyNumber",
+    "PolicyType",
+    "PortalURL",
+    "PremiumAmount",
+    "PremiumDueDate",
+    "PropertyAddress",
+    "RecipientAddress",
+    "RecipientName",
+    "RemittanceReference",
+    "ServicerCity",
+    "ServicerEmail",
+    "ServicerHours",
+    "ServicerNMLS",
+    "ServicerName",
+    "ServicerOfficerName",
+    "ServicerOfficerTitle",
+    "ServicerPhone",
+    "ServicerState",
+    "ServicerStreet",
+    "ServicerZip",
+    "ServicingTransferEffectiveDate",
+    "StatementPeriodEnd",
+    "StatementPeriodStart",
+    "TaxAmountDue",
+    "TaxAuthorityAddress",
+    "TaxAuthorityName",
+    "TaxBillNumber",
+    "TaxDueDate",
+    "TaxYear",
+    "TodayFull",
+    "TradeEffectiveDate",
+    "TradeType",
+    "TransfereeServicerName",
+    "YTDDist",
+    "YTDFees",
+    "YTDInterest",
+    "YTDPrincipal"
+  ],
+  "layout": {
+    "header_third_party_md": "{{ServicerName}}\n{{ServicerStreet}}\n{{ServicerCity}}, {{ServicerState}} {{ServicerZip}}\nPhone: {{ServicerPhone}} | Email: {{ServicerEmail}} | NMLS: {{ServicerNMLS}}\n\nDate: {{TodayFull}}\n\nTo:\n{{RecipientName}}\n{{RecipientAddress}}\n\nRE: {{LetterTitle}}\nLoan Number: {{LoanNumber}}\nProperty: {{PropertyAddress}}\nAPN or Parcel: {{ParcelNumber}}\nPortal: {{PortalURL}}\n\n",
+    "footer_md": "\n\nSincerely,\n{{ServicerOfficerName}}, {{ServicerOfficerTitle}}\nFor {{ServicerName}} | Hours: {{ServicerHours}}\n",
+    "remittance_md": "### Remittance Reference\n- Check or Reference: {{CheckNumber}} or {{RemittanceReference}}\n- Include Loan {{LoanNumber}} and APN {{ParcelNumber}} on all payments\n"
+  },
+  "sequences": [
+    {
+      "key": "inv.dist.advice",
+      "folder": "Investor",
+      "trigger": {
+        "event": "distribution_posted"
+      }
+    },
+    {
+      "key": "inv.dist.clawback",
+      "folder": "Investor",
+      "trigger": {
+        "event": "distribution_clawback"
+      }
+    },
+    {
+      "key": "inv.trade.sale.partial",
+      "folder": "Investor",
+      "trigger": {
+        "event": "ownership_sale_partial"
+      }
+    },
+    {
+      "key": "inv.trade.sale.full",
+      "folder": "Investor",
+      "trigger": {
+        "event": "ownership_sale_full"
+      }
+    },
+    {
+      "key": "inv.trade.purchase.partial",
+      "folder": "Investor",
+      "trigger": {
+        "event": "ownership_purchase_partial"
+      }
+    },
+    {
+      "key": "inv.trade.purchase.full",
+      "folder": "Investor",
+      "trigger": {
+        "event": "ownership_purchase_full"
+      }
+    },
+    {
+      "key": "inv.statement.monthly",
+      "folder": "Investor",
+      "trigger": {
+        "event": "investor_statement_ready"
+      }
+    },
+    {
+      "key": "inv.bank.update.req",
+      "folder": "Investor",
+      "trigger": {
+        "event": "investor_bank_update_required"
+      }
+    },
+    {
+      "key": "inv.annual.tax.notice",
+      "folder": "Investor",
+      "trigger": {
+        "event": "investor_annual_tax_statement_ready"
+      }
+    },
+    {
+      "key": "inv.loan.pif.notice",
+      "folder": "Investor",
+      "trigger": {
+        "event": "loan_paid_in_full"
+      }
+    },
+    {
+      "key": "ins.mortgagee.update.req",
+      "folder": "Insurer",
+      "trigger": {
+        "event": "mortgagee_clause_update_request"
+      }
+    },
+    {
+      "key": "ins.evidence.request",
+      "folder": "Insurer",
+      "trigger": {
+        "event": "evidence_of_insurance_request"
+      }
+    },
+    {
+      "key": "ins.mortgagee.update.confirm",
+      "folder": "Insurer",
+      "trigger": {
+        "event": "mortgagee_clause_update_confirmed"
+      }
+    },
+    {
+      "key": "ins.premium.remit.cover",
+      "folder": "Insurer",
+      "trigger": {
+        "event": "escrow_insurance_remittance"
+      }
+    },
+    {
+      "key": "ins.claim.notice",
+      "folder": "Insurer",
+      "trigger": {
+        "event": "insurance_claim_notice"
+      }
+    },
+    {
+      "key": "tax.remit.cover",
+      "folder": "Tax",
+      "trigger": {
+        "event": "escrow_tax_remittance"
+      }
+    },
+    {
+      "key": "tax.bill.request",
+      "folder": "Tax",
+      "trigger": {
+        "event": "tax_bill_request"
+      }
+    },
+    {
+      "key": "tax.mortgagee.change",
+      "folder": "Tax",
+      "trigger": {
+        "event": "mortgagee_change_notice"
+      }
+    },
+    {
+      "key": "tax.installment.req",
+      "folder": "Tax",
+      "trigger": {
+        "event": "tax_installment_schedule_request"
+      }
+    },
+    {
+      "key": "tax.refund.request",
+      "folder": "Tax",
+      "trigger": {
+        "event": "tax_refund_request"
+      }
+    }
+  ],
+  "templates": [
+    {
+      "id": "inv.dist.advice",
+      "key": "inv.dist.advice",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Distribution Advice for Loan {{LoanNumber}} on {{DistributionDate}}",
+      "body_md": "**Investor:** {{InvestorName}}  \n**Loan:** {{LoanNumber}} at {{PropertyAddress}}  \n**Ownership:** {{OwnershipPercentBps}} bps  \n**Distribution date:** {{DistributionDate}}  \n**Method:** {{DistributionMethod}}  \n**Reference:** {{DistributionReference}}\n\n**Distribution breakdown**  \n- Gross: {{DistributionGross}}  \n- Servicing and fees: {{DistributionFees}}  \n- Net remitted: {{DistributionNet}}\n\n**Year to date**  \n- Interest: {{YTDInterest}}  \n- Principal: {{YTDPrincipal}}  \n- Fees: {{YTDFees}}  \n- Net distributions: {{YTDDist}}  \n- Lifetime distributions: {{LifetimeDist}}\n\nBank on file: {{InvestorBankName}} account ending {{InvestorBankAccountLast4}}. If this is incorrect, contact us immediately.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.dist.clawback",
+      "key": "inv.dist.clawback",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Notice of Clawback for Distribution on Loan {{LoanNumber}}",
+      "body_md": "We are reversing a prior distribution related to Loan {{LoanNumber}} at {{PropertyAddress}}.  \n**Amount:** {{ClawbackAmount}}  \n**Reason:** {{ClawbackReason}}  \n**Plan:** {{ClawbackPlan}}  \nReference: {{DistributionReference}}.\n\nCall {{ServicerPhone}} if you have questions.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.trade.sale.partial",
+      "key": "inv.trade.sale.partial",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Notice of Partial Sale of Ownership Interest - Loan {{LoanNumber}}",
+      "body_md": "This confirms the sale of a portion of your ownership interest in Loan {{LoanNumber}} effective {{TradeEffectiveDate}}.  \n**Seller:** {{InvestorName}}  \n**Buyer:** {{CounterpartyInvestorName}}  \n**Ownership before:** {{OwnershipPercentBeforeBps}} bps  \n**Ownership after:** {{OwnershipPercentAfterBps}} bps  \nAssignment: {{AssignmentDocId}}. Servicing terms remain unchanged.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.trade.sale.full",
+      "key": "inv.trade.sale.full",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Notice of Full Sale of Ownership Interest - Loan {{LoanNumber}}",
+      "body_md": "This confirms the sale of your entire ownership interest in Loan {{LoanNumber}} effective {{TradeEffectiveDate}}.  \n**Seller:** {{InvestorName}}  \n**Buyer:** {{CounterpartyInvestorName}}  \nAssignment: {{AssignmentDocId}}. You will no longer receive distributions for this loan as of the effective date.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.trade.purchase.partial",
+      "key": "inv.trade.purchase.partial",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Confirmation of Purchase of Ownership Interest - Loan {{LoanNumber}}",
+      "body_md": "This confirms your purchase of an ownership interest in Loan {{LoanNumber}} effective {{TradeEffectiveDate}}.  \n**Investor:** {{InvestorName}}  \n**Seller:** {{CounterpartyInvestorName}}  \n**Ownership acquired:** {{OwnershipPercentAfterBps}} bps  \nAssignment: {{AssignmentDocId}}. Distributions will accrue to you as of the effective date.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.trade.purchase.full",
+      "key": "inv.trade.purchase.full",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Confirmation of Full Purchase of Ownership Interest - Loan {{LoanNumber}}",
+      "body_md": "This confirms your purchase of the entire ownership interest in Loan {{LoanNumber}} effective {{TradeEffectiveDate}}.  \n**Investor:** {{InvestorName}}  \n**Seller:** {{CounterpartyInvestorName}}  \nAssignment: {{AssignmentDocId}}. You will receive all future distributions on this loan.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.statement.monthly",
+      "key": "inv.statement.monthly",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Investor Statement for {{StatementPeriodStart}} to {{StatementPeriodEnd}}",
+      "body_md": "**Investor:** {{InvestorName}}  \n**Loan:** {{LoanNumber}} at {{PropertyAddress}}  \n**Ownership:** {{OwnershipPercentBps}} bps\n\n**Period totals**  \n- Interest: {{YTDInterest}}  \n- Principal: {{YTDPrincipal}}  \n- Fees: {{YTDFees}}  \n- Net distributions: {{YTDDist}}\n\nFor detailed ledger and tax reporting, visit the portal at {{PortalURL}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.bank.update.req",
+      "key": "inv.bank.update.req",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Action Required - Update Bank Details to Receive Distributions",
+      "body_md": "We need updated bank information to remit distributions for your investments.  \nUpdate routing and account details in the portal at {{PortalURL}} or call {{ServicerPhone}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.annual.tax.notice",
+      "key": "inv.annual.tax.notice",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Annual Tax Statement Available",
+      "body_md": "Your annual investor tax statement is ready.  \nDownload it from the portal at {{PortalURL}}. If you see errors, contact {{ServicerPhone}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "inv.loan.pif.notice",
+      "key": "inv.loan.pif.notice",
+      "folder": "Investor",
+      "format": "markdown",
+      "subject": "Loan Paid In Full - Final Distribution Notice",
+      "body_md": "Loan {{LoanNumber}} for {{PropertyAddress}} has been paid in full.  \nA final distribution will be calculated and remitted. You will receive a separate advice with details.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "ins.mortgagee.update.req",
+      "key": "ins.mortgagee.update.req",
+      "folder": "Insurer",
+      "format": "markdown",
+      "subject": "Request to Update Mortgagee Clause - Policy {{PolicyNumber}}",
+      "body_md": "Please update the mortgagee clause for the policy below and confirm by return mail or email.  \n**Carrier:** {{CarrierName}}  \n**Policy:** {{PolicyType}} {{PolicyNumber}}  \n**Named Insured:** {{BorrowerFirstName}} {{BorrowerLastName}}  \n**Property:** {{PropertyAddress}}  \n**Requested mortgagee clause:** {{MortgageeClause}}  \n**Servicer loan reference:** {{MortgageeLoanId}}\n\nSend the updated declarations page listing the mortgagee clause to {{ServicerEmail}} or upload to {{PortalURL}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "ins.evidence.request",
+      "key": "ins.evidence.request",
+      "folder": "Insurer",
+      "format": "markdown",
+      "subject": "Request for Evidence of Insurance - {{PropertyAddress}}",
+      "body_md": "Provide evidence of insurance for the property referenced below.  \n**Carrier:** {{CarrierName}}  \n**Policy:** {{PolicyType}} {{PolicyNumber}}  \n**Named Insured:** {{BorrowerFirstName}} {{BorrowerLastName}}  \n**Property:** {{PropertyAddress}}  \n**Coverage amount:** {{CoverageAmount}}  \n**Policy effective dates:** {{PolicyEffectiveDate}} to {{PolicyExpirationDate}}\n\nSend the declarations page and endorsements listing the mortgagee clause to {{ServicerEmail}} or upload to {{PortalURL}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "ins.mortgagee.update.confirm",
+      "key": "ins.mortgagee.update.confirm",
+      "folder": "Insurer",
+      "format": "markdown",
+      "subject": "Confirmation of Mortgagee Clause Update - Policy {{PolicyNumber}}",
+      "body_md": "Thank you for confirming the mortgagee clause update.  \nEnsure future renewals and endorsements continue to reflect: {{MortgageeClause}}.  \nQuestions - contact {{ServicerPhone}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "ins.premium.remit.cover",
+      "key": "ins.premium.remit.cover",
+      "folder": "Insurer",
+      "format": "markdown",
+      "subject": "Escrow Remittance - Insurance Premium",
+      "body_md": "Enclosed is payment for the insurance premium due for the policy listed.  \n**Carrier:** {{CarrierName}}  \n**Policy:** {{PolicyType}} {{PolicyNumber}}  \n**Named Insured:** {{BorrowerFirstName}} {{BorrowerLastName}}  \n**Property:** {{PropertyAddress}}  \n**Amount remitted:** {{PremiumAmount}}  \n**Due date:** {{PremiumDueDate}}  \n**Check number or reference:** {{CheckNumber}}\n\nApply this payment and send the updated declarations page to {{ServicerEmail}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "ins.claim.notice",
+      "key": "ins.claim.notice",
+      "folder": "Insurer",
+      "format": "markdown",
+      "subject": "Notice of Loss and Claim Initiation",
+      "body_md": "We are notifying the carrier of a reported loss.  \n**Insured:** {{BorrowerFirstName}} {{BorrowerLastName}}  \n**Property:** {{PropertyAddress}}  \n**Policy:** {{PolicyType}} {{PolicyNumber}}  \n**Date of loss:** {{LossDate}}  \n**Claim number:** {{ClaimNumber}}\n\nAcknowledge receipt and provide next steps. Include the mortgagee on claim proceeds per policy terms.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "tax.remit.cover",
+      "key": "tax.remit.cover",
+      "folder": "Tax",
+      "format": "markdown",
+      "subject": "Property Tax Remittance - {{TaxYear}}",
+      "body_md": "Enclosed is remittance for property taxes.  \n**Tax authority:** {{TaxAuthorityName}}  \n**Parcel or APN:** {{ParcelNumber}}  \n**Jurisdiction:** {{Jurisdiction}}  \n**Tax bill or reference:** {{TaxBillNumber}}  \n**Installment:** {{InstallmentNumber}} of {{TaxYear}}  \n**Amount remitted:** {{TaxAmountDue}}  \n**Due date:** {{TaxDueDate}}  \n**Check number or reference:** {{CheckNumber}}\n\nApply funds to the tax bill indicated and send paid confirmation to {{ServicerEmail}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "tax.bill.request",
+      "key": "tax.bill.request",
+      "folder": "Tax",
+      "format": "markdown",
+      "subject": "Request for Duplicate or Corrected Tax Bill",
+      "body_md": "Provide a duplicate or corrected tax bill for the parcel listed.  \n**Tax authority:** {{TaxAuthorityName}}  \n**Parcel or APN:** {{ParcelNumber}}  \n**Jurisdiction:** {{Jurisdiction}}  \n**Tax year:** {{TaxYear}}  \n**Loan:** {{LoanNumber}} for {{BorrowerFirstName}} {{BorrowerLastName}} at {{PropertyAddress}}\n\nSend to {{ServicerEmail}}. Advise if additional documentation is required.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "tax.mortgagee.change",
+      "key": "tax.mortgagee.change",
+      "folder": "Tax",
+      "format": "markdown",
+      "subject": "Notice of Mortgagee or Servicer Change - Parcel {{ParcelNumber}}",
+      "body_md": "Update your records for the parcel below.  \n**Prior mortgagee or servicer:** {{TransfereeServicerName}}  \n**New mortgagee or servicer:** {{ServicerName}}  \n**Effective date:** {{ServicingTransferEffectiveDate}}  \n**Parcel or APN:** {{ParcelNumber}}  \n**Property:** {{PropertyAddress}}  \n**Borrower:** {{BorrowerFirstName}} {{BorrowerLastName}}  \n**Escrow account:** {{EscrowAccountNumber}}\n\nDirect future tax bills and correspondence to {{ServicerName}} at {{ServicerStreet}}, {{ServicerCity}}, {{ServicerState}} {{ServicerZip}}.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "tax.installment.req",
+      "key": "tax.installment.req",
+      "folder": "Tax",
+      "format": "markdown",
+      "subject": "Request for Installment Schedule or Payment Plan",
+      "body_md": "Provide the installment schedule or payment plan options for the parcel below.  \n**Tax authority:** {{TaxAuthorityName}}  \n**Parcel or APN:** {{ParcelNumber}}  \n**Jurisdiction:** {{Jurisdiction}}  \n**Tax year:** {{TaxYear}}\n\nSend details to {{ServicerEmail}}. Include any required enrollment forms.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    },
+    {
+      "id": "tax.refund.request",
+      "key": "tax.refund.request",
+      "folder": "Tax",
+      "format": "markdown",
+      "subject": "Request for Refund of Overpayment",
+      "body_md": "We request a refund of an overpayment applied to the parcel below.  \n**Tax authority:** {{TaxAuthorityName}}  \n**Parcel or APN:** {{ParcelNumber}}  \n**Jurisdiction:** {{Jurisdiction}}  \n**Tax bill or reference:** {{TaxBillNumber}}  \n**Amount requested:** {{TaxAmountDue}}  \n**Payment reference:** {{RemittanceReference}}\n\nIssue the refund to {{ServicerName}} and mail to {{ServicerStreet}}, {{ServicerCity}}, {{ServicerState}} {{ServicerZip}} or contact {{ServicerPhone}} for ACH instructions.",
+      "flags": {
+        "include_fdCPA_if_applicable": false
+      }
+    }
+  ]
+}
