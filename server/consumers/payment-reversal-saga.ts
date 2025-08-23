@@ -169,7 +169,7 @@ export class PaymentReversalSaga {
     
     if (principalReversal) {
       await client.query(
-        'UPDATE loans SET principal_balance = principal_balance + $1 WHERE loan_id = $2',
+        'UPDATE loans SET principal_balance = principal_balance + $1 WHERE id = $2',
         [principalReversal.credit_cents / 100, loanId]
       );
     }
@@ -180,7 +180,7 @@ export class PaymentReversalSaga {
     
     if (interestReversal) {
       await client.query(
-        'UPDATE loans SET accrued_interest = COALESCE(accrued_interest, 0) + $1 WHERE loan_id = $2',
+        'UPDATE loans SET accrued_interest = COALESCE(accrued_interest, 0) + $1 WHERE id = $2',
         [interestReversal.credit_cents / 100, loanId]
       );
     }
@@ -270,7 +270,7 @@ export class PaymentReversalSaga {
 
     // Get loan details
     const loanResult = await client.query(
-      'SELECT * FROM loans WHERE loan_id = $1',
+      'SELECT * FROM loans WHERE id = $1',
       [loanId]
     );
 
@@ -290,7 +290,7 @@ export class PaymentReversalSaga {
       if (daysLate > 15) {
         const lateFee = 50.00; // Example fixed late fee
         await client.query(
-          'UPDATE loans SET late_fee_balance = COALESCE(late_fee_balance, 0) + $1 WHERE loan_id = $2',
+          'UPDATE loans SET late_fee_balance = COALESCE(late_fee_balance, 0) + $1 WHERE id = $2',
           [lateFee, loanId]
         );
       }
@@ -306,7 +306,7 @@ export class PaymentReversalSaga {
            WHEN payment_frequency = 'biweekly' THEN last_payment_date + INTERVAL '2 weeks'
            ELSE next_payment_date
          END
-       WHERE loan_id = $1`,
+       WHERE id = $1`,
       [loanId]
     );
   }
@@ -330,14 +330,14 @@ export class PaymentReversalSaga {
           ELSE 'current'
         END as payment_status
       FROM loans
-      WHERE loan_id = $1
+      WHERE id = $1
     `, [loanId]);
 
     if (statusResult.rows.length > 0) {
       const status = statusResult.rows[0].payment_status;
       
       await client.query(
-        'UPDATE loans SET payment_status = $1 WHERE loan_id = $2',
+        'UPDATE loans SET payment_status = $1 WHERE id = $2',
         [status, loanId]
       );
     }
@@ -358,9 +358,9 @@ export class PaymentReversalSaga {
     const loanResult = await client.query(`
       SELECT l.loan_number, b.email, b.first_name, b.last_name
       FROM loans l
-      JOIN loan_borrowers lb ON l.loan_id = lb.loan_id
+      JOIN loan_borrowers lb ON l.id = lb.loan_id
       JOIN borrowers b ON lb.borrower_id = b.borrower_id
-      WHERE l.loan_id = $1 AND lb.is_primary = true
+      WHERE l.id = $1 AND lb.is_primary = true
     `, [loanId]);
 
     if (loanResult.rows.length === 0) return;

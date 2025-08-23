@@ -191,7 +191,7 @@ export class PaymentProcessingConsumer {
       switch (alloc.target) {
         case 'scheduled_principal':
           await client.query(
-            'UPDATE loans SET principal_balance = principal_balance - $1 WHERE loan_id = $2',
+            'UPDATE loans SET principal_balance = principal_balance - $1 WHERE id = $2',
             [alloc.amount_cents / 100, loanId]
           );
           break;
@@ -199,7 +199,7 @@ export class PaymentProcessingConsumer {
         case 'late_fees':
           // Update late fee balance
           await client.query(
-            'UPDATE loans SET late_fee_balance = GREATEST(0, COALESCE(late_fee_balance, 0) - $1) WHERE loan_id = $2',
+            'UPDATE loans SET late_fee_balance = GREATEST(0, COALESCE(late_fee_balance, 0) - $1) WHERE id = $2',
             [alloc.amount_cents / 100, loanId]
           );
           break;
@@ -207,7 +207,7 @@ export class PaymentProcessingConsumer {
         case 'accrued_interest':
           // Update accrued interest
           await client.query(
-            'UPDATE loans SET accrued_interest = GREATEST(0, COALESCE(accrued_interest, 0) - $1) WHERE loan_id = $2',
+            'UPDATE loans SET accrued_interest = GREATEST(0, COALESCE(accrued_interest, 0) - $1) WHERE id = $2',
             [alloc.amount_cents / 100, loanId]
           );
           break;
@@ -223,7 +223,7 @@ export class PaymentProcessingConsumer {
              WHEN payment_frequency = 'biweekly' THEN CURRENT_DATE + INTERVAL '2 weeks'
              ELSE next_payment_date
            END
-       WHERE loan_id = $1`,
+       WHERE id = $1`,
       [loanId]
     );
   }

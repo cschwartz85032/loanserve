@@ -51,6 +51,8 @@ export class PaymentValidationConsumer {
       }
 
       // Insert payment record with 'received' state
+      console.log(`[Validation] Inserting payment with loan_id: ${data.loan_id} (type: ${typeof data.loan_id})`);
+      
       await client.query(`
         INSERT INTO payment_transactions (
           payment_id, loan_id, source, external_ref, amount_cents,
@@ -59,7 +61,7 @@ export class PaymentValidationConsumer {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       `, [
         data.payment_id,
-        data.loan_id,
+        String(data.loan_id),  // Convert to string for varchar field
         data.source,
         data.external_ref,
         data.amount_cents,
@@ -139,7 +141,7 @@ export class PaymentValidationConsumer {
 
     // Check loan exists and is active
     const loanResult = await client.query(
-      'SELECT loan_id, loan_status FROM loans WHERE loan_id = $1',
+      'SELECT id, status FROM loans WHERE id = $1',
       [data.loan_id]
     );
 
@@ -149,8 +151,8 @@ export class PaymentValidationConsumer {
     }
 
     const loan = loanResult.rows[0];
-    if (loan.loan_status === 'paid_off' || loan.loan_status === 'charged_off') {
-      console.log(`[Validation] Loan ${data.loan_id} is ${loan.loan_status}`);
+    if (loan.status === 'paid_off' || loan.status === 'charged_off') {
+      console.log(`[Validation] Loan ${data.loan_id} is ${loan.status}`);
       return false;
     }
 

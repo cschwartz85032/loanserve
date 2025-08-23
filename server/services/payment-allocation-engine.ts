@@ -86,7 +86,7 @@ export class PaymentAllocationEngine {
         COALESCE(accrued_interest, 0) as accrued_interest,
         COALESCE(principal_balance, 0) as scheduled_principal
       FROM loans
-      WHERE loan_id = $1
+      WHERE id = $1
     `, [loanId]);
 
     // Get escrow balances

@@ -49,24 +49,54 @@ class PaymentTester {
     setInterval(() => {
       if (!this.isRunning) return;
 
-      // Create a realistic payment
-      const payment = {
-        id: `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        loanId: Math.floor(Math.random() * 50) + 1, // 50 test loans
-        amount: parseFloat((Math.random() * 5000 + 100).toFixed(2)),
-        type: ['principal', 'interest', 'escrow', 'extra'][Math.floor(Math.random() * 4)],
-        paymentDate: new Date().toISOString(),
-        source: ['ach', 'wire', 'check'][Math.floor(Math.random() * 3)],
-        accountNumber: `****${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
-        routingNumber: '121000248',
-        borrowerName: `Test Borrower ${Math.floor(Math.random() * 50) + 1}`,
-        status: 'pending_validation'
+      // Generate IDs that fit database constraints (payment_id max 26 chars, loan_id is integer)
+      const paymentId = `PAY${Date.now().toString().substr(-10)}${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+      // Use actual loan IDs from the database (17, 18, 22, 23)
+      const loanIds = [17, 18, 22, 23];
+      const loanId = loanIds[Math.floor(Math.random() * loanIds.length)];
+      const amountCents = Math.floor((Math.random() * 5000 + 100) * 100); // Convert to cents
+      const source = ['ach', 'wire', 'check'][Math.floor(Math.random() * 3)] as 'ach' | 'wire' | 'check';
+
+      // Create payment data matching expected structure
+      let paymentData: any = {
+        payment_id: paymentId,
+        loan_id: loanId,
+        amount_cents: amountCents,
+        currency: 'USD',
+        source: source,
+        external_ref: `EXT-${Math.random().toString(36).substr(2, 9)}`
+      };
+
+      // Add source-specific fields
+      if (source === 'ach') {
+        paymentData.routing_number = '121000248';
+        paymentData.account_number_masked = `****${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
+        paymentData.trace_number = `TRACE-${Date.now()}`;
+        paymentData.sec_code = 'PPD';
+      } else if (source === 'wire') {
+        paymentData.wire_ref = `WIRE-${Date.now()}`;
+        paymentData.sender_ref = `SEND-${Math.random().toString(36).substr(2, 9)}`;
+      } else if (source === 'check') {
+        paymentData.check_number = `${Math.floor(Math.random() * 100000)}`;
+        paymentData.payer_account = `ACC-${Math.floor(Math.random() * 10000)}`;
+        paymentData.issue_date = new Date().toISOString().split('T')[0];
+      }
+
+      // Create proper envelope
+      const envelope = {
+        schema: 'loanserve.payment.v1.received',
+        message_id: `MSG${Date.now().toString().substr(-10)}${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+        correlation_id: `CORR${Date.now().toString().substr(-10)}`,
+        occurred_at: new Date().toISOString(),
+        producer: 'payment-test-script@1.0.0',
+        effective_date: new Date().toISOString().split('T')[0],
+        data: paymentData
       };
 
       // Send to validation queue (consumers will process it through the pipeline)
       this.channel?.sendToQueue(
         'payments.validation',
-        Buffer.from(JSON.stringify(payment)),
+        Buffer.from(JSON.stringify(envelope)),
         { persistent: true }
       );
 
@@ -77,19 +107,30 @@ class PaymentTester {
     setInterval(() => {
       if (!this.isRunning) return;
 
-      const reversal = {
-        id: `REV-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        originalPaymentId: `PAY-${Date.now() - 86400000}-xxxxx`, // Yesterday's payment
-        loanId: Math.floor(Math.random() * 50) + 1,
-        amount: parseFloat((Math.random() * 2000 + 100).toFixed(2)),
-        reason: ['nsf', 'duplicate', 'error', 'customer_request'][Math.floor(Math.random() * 4)],
-        requestedBy: 'system',
-        requestedAt: new Date().toISOString()
+      const loanIds = [17, 18, 22, 23];
+      const reversalData = {
+        payment_id: `PAY-${Date.now() - 86400000}-xxxxx`, // Yesterday's payment
+        loan_id: loanIds[Math.floor(Math.random() * loanIds.length)],
+        amount_cents: Math.floor((Math.random() * 2000 + 100) * 100),
+        currency: 'USD',
+        source: 'ach' as const,
+        reversal_reason: ['nsf', 'duplicate', 'error', 'customer_request'][Math.floor(Math.random() * 4)],
+        requested_by: 'system',
+        requested_at: new Date().toISOString()
+      };
+
+      const reversalEnvelope = {
+        schema: 'loanserve.payment.v1.reversal',
+        message_id: `MSG${Date.now().toString().substr(-10)}${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+        correlation_id: `CORR${Date.now().toString().substr(-10)}`,
+        occurred_at: new Date().toISOString(),
+        producer: 'payment-test-script@1.0.0',
+        data: reversalData
       };
 
       this.channel?.sendToQueue(
         'payments.reversal',
-        Buffer.from(JSON.stringify(reversal)),
+        Buffer.from(JSON.stringify(reversalEnvelope)),
         { persistent: true }
       );
 

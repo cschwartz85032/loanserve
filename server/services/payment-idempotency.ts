@@ -4,7 +4,7 @@
  */
 
 import { PoolClient } from 'pg';
-import { db } from '../db';
+import { db, pool } from '../db';
 import { PaymentEnvelope } from '../messaging/payment-envelope';
 import { ulid } from 'ulid';
 import * as crypto from 'crypto';
@@ -26,7 +26,7 @@ export class IdempotencyService {
     
     const result = client 
       ? await client.query(query, [consumer, messageId])
-      : await db.execute(query, [consumer, messageId]);
+      : await pool.query(query, [consumer, messageId]);
     
     if (result.rows.length > 0) {
       return { 
@@ -141,7 +141,7 @@ export function createIdempotentHandler<T, R>(
     }
 
     // Process in transaction
-    const client = await (db as any).pool.connect();
+    const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
