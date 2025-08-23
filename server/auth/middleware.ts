@@ -311,7 +311,6 @@ export function requireAdmin(
 export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.userPolicy) {
-      console.log('[RequireRole] No userPolicy found on request');
       res.status(401).json({ 
         error: 'Authentication required',
         code: 'AUTH_REQUIRED' 
@@ -319,17 +318,9 @@ export function requireRole(...roles: string[]) {
       return;
     }
 
-    console.log('[RequireRole] Checking roles:', {
-      required: roles,
-      userRoles: req.userPolicy.roles,
-      userId: req.userPolicy.userId,
-      username: req.userPolicy.username
-    });
-
     const hasRole = roles.some(role => req.userPolicy!.roles.includes(role));
     
     if (!hasRole) {
-      console.log('[RequireRole] Role check failed');
       res.status(403).json({ 
         error: 'Required role not found',
         code: 'ROLE_REQUIRED',
@@ -338,7 +329,6 @@ export function requireRole(...roles: string[]) {
       return;
     }
 
-    console.log('[RequireRole] Role check passed');
     next();
   };
 }
