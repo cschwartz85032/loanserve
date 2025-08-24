@@ -19,7 +19,6 @@ import { settingsRouter } from "./routes/settings";
 import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { emailTemplatesRouter } from "./routes/email-templates";
 import paymentRoutes from "./routes/payment-routes";
-import paymentManagementRoutes from "./routes/payment-management";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -88,9 +87,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register auth routes first (before policy middleware)
   app.use('/api/auth', authRoutes);
 
-  // Apply global middleware for policy engine (only for API routes)
-  app.use('/api', loadUserPolicy); // Load user policy for API requests only
-  app.use('/api', applyPIIMasking()); // Apply PII masking for regulators
+  // Apply global middleware for policy engine
+  app.use(loadUserPolicy); // Load user policy for all requests
+  app.use(applyPIIMasking()); // Apply PII masking for regulators
 
   // Register admin routes (requires authentication)
   app.use('/api/admin/users', adminUsersRouter);
@@ -106,9 +105,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api', crmRoutes);
 
   // Register payment processing routes
-  // Register payment management routes first (more specific routes)
-  app.use('/api/payments', paymentManagementRoutes);
-  // Then register general payment routes
   app.use(paymentRoutes);
 
   // Register queue monitoring routes

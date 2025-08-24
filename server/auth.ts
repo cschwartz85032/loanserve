@@ -64,10 +64,8 @@ export function setupAuth(app: Express) {
 
   app.set("trust proxy", 1);
   app.use(session(sessionSettings));
-  
-  // Only apply passport middleware to API routes to avoid interfering with Vite
-  app.use('/api', passport.initialize());
-  app.use('/api', passport.session());
+  app.use(passport.initialize());
+  app.use(passport.session());
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {

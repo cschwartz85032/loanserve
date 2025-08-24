@@ -1,0 +1,971 @@
+Below is a fully specified, end-to-end, 25-step implementation plan that merges LoanServe’s RabbitMQ payment platform with Column’s banking infrastructure. Each step contains objective, inputs and outputs, exact data definitions, concrete code scaffolding, error conditions with fallbacks, and acceptance tests. All examples assume Node.js 20+, TypeScript, PostgreSQL 15+, Drizzle ORM, amqplib, and Express. Replace names as needed to fit your codebase.
+
+I never use em dashes per your instruction.
+
+---
+
+# 1) Project setup and secure configuration
+
+**Objective**
+Stand up isolated environments, secrets, and feature flags so payments work can be developed and deployed safely.
+
+**Inputs**
+Existing repo and CI. Access to Column API keys and a CloudAMQP instance.
+
+**Outputs**
+New branch, environment files, secret storage, RabbitMQ vhost and user.
+
+**Implementation**
+
+1. Create branch:
+
+```bash
+git checkout -b feature/payments-column-rmq
+```
+
+2. Add `.env.example` keys and load from secret store in prod:
+
+```
+NODE_ENV=development
+DATABASE_URL=postgres://...
+CLOUDAMQP_URL=amqps://...
+COLUMN_API_BASE=https://api.column.com   # do not hardcode real host if different
+COLUMN_API_KEY=placeholder               # stored in secret manager in prod
+COLUMN_WEBHOOK_SECRET=placeholder        # per endpoint secret, stored securely
+ARTIFACT_STORE_BUCKET=s3://loanserve-artifacts
+PAYMENTS_FEATURE_FLAG=true
+PAYMENTS_RECONCILE_CRON=0 */15 * * * *   # every 15 minutes in staging
+```
+
+3. Create RabbitMQ vhost and user with minimum permissions:
+
+```bash
+rabbitmqctl add_vhost loanserve
+rabbitmqctl add_user loanserve_svc 'strong-password'
+rabbitmqctl set_permissions -p loanserve loanserve_svc "^(payments|amq).*" "^(payments|amq).*" "^(payments|amq).*"
+```
+
+4. Ensure TLS on broker URL and rotate credentials in secret manager.
+
+**Error conditions and fallbacks**
+
+* Missing or invalid `CLOUDAMQP_URL`: start fails fast with clear log and non-zero exit.
+* Cannot reach broker: exponential backoff connect loop with jitter.
+* Secrets not present in prod: block deployment through CI policy.
+
+**Acceptance tests**
+
+* Application boot logs confirm secrets loaded.
+* RabbitMQ management shows vhost loanserve and user.
+* Health endpoint `/healthz` returns OK and can connect to DB and broker.
+
+---
+
+# 2) DB migration 1: `payment_ingestions`
+
+**Objective**
+Persist idempotent ingress for all external payment signals before any processing.
+
+**DDL (SQL)**
+
+```sql
+create table if not exists payment_ingestions (
+  id uuid primary key default gen_random_uuid(),
+  idempotency_key text not null unique,
+  channel text not null,                               -- ach|wire|realtime|check|card|paypal|venmo|book
+  source_reference text,                               -- provider transfer id or file id
+  raw_payload_hash text not null,                      -- sha256 hex of raw body
+  artifact_uri text[] not null default '{}',
+  artifact_hash text[] not null default '{}',
+  received_at timestamptz not null default now(),
+  normalized_envelope jsonb not null,
+  status text not null check (status in ('received','normalized','published'))
+);
+create index on payment_ingestions (channel, received_at desc);
+```
+
+**Idempotency key rule**
+`sha256(lower(method) || '|' || normalized_reference || '|' || value_date || '|' || amount_cents || '|' || loan_id)`
+
+**Drizzle snippet**
+
+```ts
+export const paymentIngestions = pgTable("payment_ingestions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  channel: text("channel").notNull(),
+  sourceReference: text("source_reference"),
+  rawPayloadHash: text("raw_payload_hash").notNull(),
+  artifactUri: text("artifact_uri").array().notNull().default(sql`'{}'`),
+  artifactHash: text("artifact_hash").array().notNull().default(sql`'{}'`),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  normalizedEnvelope: jsonb("normalized_envelope").notNull(),
+  status: text("status", { enum: ["received","normalized","published"] as const }).notNull()
+});
+```
+
+**Error conditions and fallbacks**
+
+* Duplicate idempotency key: swallow insert and return existing row.
+* Invalid normalized JSON: reject with schema error and create exception case.
+
+**Acceptance tests**
+
+* Unique constraint blocks duplicates.
+* Inserting a second time with same idempotency does not create a new row.
+
+---
+
+# 3) DB migration 2: `payment_artifacts`
+
+**Objective**
+Store immutable URIs and hashes for all source documents.
+
+**DDL**
+
+```sql
+create table if not exists payment_artifacts (
+  id uuid primary key default gen_random_uuid(),
+  ingestion_id uuid not null references payment_ingestions(id) on delete cascade,
+  type text not null,                                  -- check_image_front|check_image_back|ach_return_pdf|wire_receipt|psp_receipt
+  uri text not null,
+  sha256 text not null,
+  size_bytes bigint,
+  mime text,
+  source_metadata jsonb
+);
+create index on payment_artifacts (ingestion_id, type);
+```
+
+**Error conditions**
+
+* Artifact missing hash: compute before insert, or reject.
+* URI not reachable: log warning, still store metadata for audit.
+
+**Acceptance tests**
+
+* Deleting ingestion cascades artifacts.
+* Hash mismatch during later verification flags an exception.
+
+---
+
+# 4) DB migration 3: `payment_events` with hash chain
+
+**Objective**
+Immutable audit ledger for everything we do to or learn about a payment.
+
+**DDL**
+
+```sql
+create table if not exists payment_events (
+  id uuid primary key default gen_random_uuid(),
+  payment_id uuid,                          -- nullable until posting
+  ingestion_id uuid,                        -- nullable for internal-only events
+  type text not null,                       -- payment.ingested|payment.validated|payment.posted|payment.reversed.nsf|...
+  event_time timestamptz not null default now(),
+  actor_type text not null check (actor_type in ('system','human','ai')),
+  actor_id text,
+  correlation_id uuid not null,
+  data jsonb not null,
+  prev_event_hash text,
+  event_hash text not null
+);
+create index on payment_events (payment_id, event_time);
+create index on payment_events (correlation_id);
+```
+
+**Hash computation**
+
+```ts
+function computeEventHash(prev: string | null, data: object, correlationId: string) {
+  const payload = JSON.stringify({ prev, data, correlationId });
+  return createHash("sha256").update(payload).digest("hex");
+}
+```
+
+**Acceptance tests**
+
+* Inserting event with incorrect `prev_event_hash` does not fail DB, but verification job flags discontinuity.
+* Rebuilding chain over a correlation\_id returns consistent terminal hash.
+
+---
+
+# 5) DB migration 4: `outbox_messages`
+
+**Objective**
+Guarantee external publication after DB commit.
+
+**DDL**
+
+```sql
+create table if not exists outbox_messages (
+  id uuid primary key default gen_random_uuid(),
+  aggregate_type text not null,               -- payments
+  aggregate_id uuid not null,                 -- payment_id
+  event_type text not null,                   -- payment.posted
+  payload jsonb not null,
+  created_at timestamptz not null default now(),
+  published_at timestamptz,
+  attempt_count int not null default 0,
+  last_error text
+);
+create index on outbox_messages (published_at nulls first, created_at);
+```
+
+**Acceptance tests**
+
+* Within a transaction, insert payment and outbox row, commit, then dispatcher sees it.
+
+---
+
+# 6) DB migration 5: `reconciliations`
+
+**Objective**
+Persist per channel period reconciliation outcomes.
+
+**DDL**
+
+```sql
+create table if not exists reconciliations (
+  id uuid primary key default gen_random_uuid(),
+  channel text not null,
+  period_start date not null,
+  period_end date not null,
+  bank_total numeric(18,2) not null default 0,
+  sor_total numeric(18,2) not null default 0,
+  variance numeric(18,2) not null default 0,
+  status text not null check (status in ('open','balanced','variance')),
+  details jsonb
+);
+create unique index on reconciliations (channel, period_start, period_end);
+```
+
+**Acceptance tests**
+
+* Balanced example sets variance 0 and status balanced.
+* Variance example sets status variance and creates exception case.
+
+---
+
+# 7) DB migration 6: `exception_cases`
+
+**Objective**
+Track exception workflow with AI recommendations and human approvals when needed.
+
+**DDL**
+
+```sql
+create table if not exists exception_cases (
+  id uuid primary key default gen_random_uuid(),
+  ingestion_id uuid references payment_ingestions(id),
+  payment_id uuid references payments(id),
+  category text not null,            -- ach_return|nsf|wire_recall|duplicate|dispute|reconcile_variance
+  subcategory text,
+  severity text not null check (severity in ('low','medium','high','critical')),
+  state text not null check (state in ('open','pending','resolved','cancelled')),
+  assigned_to text,
+  ai_recommendation jsonb,
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+create index on exception_cases (state, severity);
+```
+
+---
+
+# 8) DB migration 7: extend `payments`
+
+**Objective**
+Add fields necessary for Column and idempotent posting.
+
+**DDL**
+
+```sql
+alter table payments
+  add column if not exists source_channel text,
+  add column if not exists idempotency_key text unique,
+  add column if not exists suspense_amount numeric(18,2) not null default 0,
+  add column if not exists column_transfer_id text,
+  add column if not exists column_account_id text,
+  add column if not exists column_event_last_seen text;
+
+create index if not exists payments_column_transfer_idx on payments (column_transfer_id);
+```
+
+**Backfill**
+Set `source_channel='manual'` for existing rows, `idempotency_key` remains null.
+
+**Acceptance tests**
+
+* Insert with duplicate idempotency\_key raises unique violation.
+* Query by column\_transfer\_id returns expected row.
+
+---
+
+# 9) Common envelope module
+
+**Objective**
+One normalized message schema.
+
+**TypeScript type and schema**
+
+```ts
+export type PaymentMethod = "ach"|"wire"|"realtime"|"check"|"card"|"paypal"|"venmo"|"book";
+export interface PaymentEnvelope {
+  schema: "loanserve.payments.v1";
+  message_id: string;
+  correlation_id: string;
+  idempotency_key: string;
+  occurred_at: string; // ISO
+  source: { channel: PaymentMethod; provider: string; batch_id?: string; };
+  borrower: { loan_id: string; name?: string; external_ids?: Record<string,string>; };
+  payment: {
+    amount_cents: number;
+    currency: "USD";
+    method: PaymentMethod;
+    value_date: string;        // yyyy-mm-dd
+    reference: string;         // check number, transfer id, etc.
+    details?: Record<string, unknown>;
+  };
+  artifacts: { type: string; uri: string; hash: string; }[];
+  risk?: { flags?: string[]; score?: number };
+  external?: { column_transfer_id?: string; column_event_id?: string; psp_id?: string };
+}
+```
+
+**Key computation**
+
+```ts
+export function computeIdemKey(
+  method: string, reference: string, valueDate: string, amountCents: number, loanId: string
+) {
+  const s = `${method.toLowerCase()}|${reference.trim().toLowerCase()}|${valueDate}|${amountCents}|${loanId}`;
+  return createHash("sha256").update(s).digest("hex");
+}
+```
+
+**Acceptance tests**
+
+* Same tuple always yields the same key.
+* Changing any component yields a different key.
+
+---
+
+# 10) RabbitMQ topology and bootstrap
+
+**Objective**
+Declare exchanges, queues, bindings, and enable confirm channels.
+
+**Code**
+
+```ts
+import amqplib, { ConfirmChannel } from "amqplib";
+
+export async function bootstrapRMQ(url: string) {
+  const conn = await amqplib.connect(url);
+  const ch = await conn.createConfirmChannel() as ConfirmChannel;
+
+  const quorum = { arguments: { "x-queue-type": "quorum" } };
+
+  await ch.assertExchange("payments.inbound", "direct", { durable: true });
+  await ch.assertExchange("payments.validation", "topic", { durable: true });
+  await ch.assertExchange("payments.events", "topic", { durable: true });
+  await ch.assertExchange("payments.saga", "topic", { durable: true });
+  await ch.assertExchange("payments.audit", "fanout", { durable: true });
+  await ch.assertExchange("payments.dlq", "direct", { durable: true });
+
+  await ch.assertQueue("q.validate", { durable: true, ...quorum });
+  await ch.assertQueue("q.classify", { durable: true, ...quorum });
+  await ch.assertQueue("q.rules.post", { durable: true, ...quorum });
+  await ch.assertQueue("q.poster.outbox", { durable: true, ...quorum });
+  await ch.assertQueue("q.outbox.dispatch", { durable: true, ...quorum });
+  await ch.assertQueue("q.reconcile.daily", { durable: true, ...quorum });
+  await ch.assertQueue("q.exceptions", { durable: true, ...quorum });
+  await ch.assertQueue("q.notifications", { durable: true, ...quorum });
+  await ch.assertQueue("q.audit", { durable: true, ...quorum });
+
+  await ch.bindQueue("q.validate", "payments.inbound", "ach");
+  await ch.bindQueue("q.validate", "payments.inbound", "wire");
+  await ch.bindQueue("q.validate", "payments.inbound", "realtime");
+  await ch.bindQueue("q.validate", "payments.inbound", "check");
+  await ch.bindQueue("q.validate", "payments.inbound", "card");
+  await ch.bindQueue("q.validate", "payments.inbound", "paypal");
+  await ch.bindQueue("q.validate", "payments.inbound", "venmo");
+  await ch.bindQueue("q.validate", "payments.inbound", "book");
+
+  await ch.bindQueue("q.classify", "payments.validation", "payment.validated");
+  await ch.bindQueue("q.rules.post", "payments.saga", "saga.payment.start");
+  await ch.bindQueue("q.notifications", "payments.events", "payment.*");
+  await ch.bindQueue("q.audit", "payments.audit", "");
+
+  return { conn, ch };
+}
+```
+
+**Error handling**
+
+* Channel closed: reconnect and redeclare.
+* Publish confirm timeout: retry with exponential backoff.
+
+**Acceptance tests**
+
+* Management UI shows all resources.
+* Publish to `payments.inbound` with routing key `ach` shows message on `q.validate`.
+
+---
+
+# 11) Column webhook adapter
+
+**Objective**
+Receive and authenticate Column webhooks, persist artifacts, publish normalized envelope.
+
+**Express route**
+
+```ts
+app.post("/api/column/webhook", express.raw({ type: "*/*" }), async (req, res) => {
+  const signature = req.header("Column-Signature");
+  if (!verifyHmac(signature, req.body, process.env.COLUMN_WEBHOOK_SECRET!)) {
+    return res.status(401).send("bad signature");
+  }
+  res.status(200).end(); // 2xx immediately
+
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
+  const rawHash = sha256(rawBody);
+
+  // parse event generically
+  const event = JSON.parse(rawBody.toString("utf8"));
+
+  // derive channel, reference, loan_id, artifacts
+  const channel: PaymentMethod = deriveChannel(event); // implement mapping
+  const reference = deriveReference(event);
+  const loanId = deriveLoanId(event);
+  const amountCents = deriveAmountCents(event);
+  const valueDate = deriveValueDate(event);
+
+  const idemKey = computeIdemKey(channel, reference, valueDate, amountCents, loanId);
+
+  await db.transaction(async tx => {
+    await tx.insert(paymentIngestions).values({
+      idempotencyKey: idemKey,
+      channel,
+      sourceReference: reference,
+      rawPayloadHash: rawHash,
+      artifactUri: [], artifactHash: [],
+      normalizedEnvelope: sql.placeholder("env"),
+      status: "received"
+    }).onConflictDoNothing();
+
+    const env: PaymentEnvelope = {
+      schema: "loanserve.payments.v1",
+      message_id: crypto.randomUUID(),
+      correlation_id: crypto.randomUUID(),
+      idempotency_key: idemKey,
+      occurred_at: new Date().toISOString(),
+      source: { channel, provider: "column", batch_id: event?.batch_id },
+      borrower: { loan_id: loanId },
+      payment: { amount_cents: amountCents, currency: "USD", method: channel, value_date: valueDate, reference },
+      artifacts: [],
+      external: { column_transfer_id: event?.data?.id, column_event_id: event?.id }
+    };
+
+    await publishInbound(env, channel); // see step 10 publisher
+    await tx.update(paymentIngestions)
+      .set({ normalizedEnvelope: env as any, status: "published" })
+      .where(eq(paymentIngestions.idempotencyKey, idemKey));
+  });
+});
+```
+
+**HMAC verification helper**
+
+```ts
+function verifyHmac(signatureHeader: string | undefined, rawBody: Buffer, secret: string): boolean {
+  if (!signatureHeader) return false;
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  // recommend using a timing safe compare
+  return timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected));
+}
+```
+
+**Error conditions and fallbacks**
+
+* Signature invalid: 401 and drop.
+* Parsing error: 200 to Column, but create exception case with raw payload for manual review.
+* Duplicate idem key: safe no-op.
+
+**Acceptance tests**
+
+* Valid webhook produces one ingestion and one message in `q.validate`.
+* Replayed webhook does not duplicate.
+
+---
+
+# 12) Column Events API backfill worker
+
+**Objective**
+Close gaps and reorder out-of-order deliveries.
+
+**Worker outline**
+
+```ts
+async function backfillSinceCursor() {
+  const cursor = await getCursor("column_events");
+  let page;
+  do {
+    page = await columnClient.listEvents({ after: cursor, limit: 200 });
+    for (const evt of page.events) {
+      const env = normalizeColumnEvent(evt);
+      const ok = await insertIfNewIngestion(env);
+      if (ok) await publishInbound(env, env.source.channel);
+      cursor = evt.id; // or timestamp
+    }
+    await setCursor("column_events", cursor);
+  } while (page.hasMore);
+}
+```
+
+**Error handling**
+
+* API throttling: back off and resume.
+* Network errors: resume from last cursor without loss.
+
+**Acceptance tests**
+
+* Disable webhooks in staging, generate events, verify backfill picks all up.
+* Duplicate protection verified by idempotency.
+
+---
+
+# 13) Validator consumer
+
+**Objective**
+Validate envelopes and reject bad or unauthorized flows.
+
+**Consumer**
+
+```ts
+consume("q.validate", async (msg) => {
+  const env = parseEnvelope(msg);
+  const loan = await loansRepo.getById(env.borrower.loan_id);
+  if (!loan) return rejectWith("loan_not_found");
+  if (loan.status === "bankruptcy") return rejectWith("legal_hold");
+  // more checks: KYC, stop pay flag, closed loan, etc.
+
+  await publish("payments.validation", "payment.validated", { env });
+  await addEvent({ type: "payment.validated", ingestion_id: findIngestionId(env), data: { reason: "ok" } });
+  ack(msg);
+}, { prefetch: 50 });
+```
+
+**Errors and fallbacks**
+
+* Schema invalid: publish `payment.rejected` with reasons and open exception case.
+* Temporary DB outage: do not ack, let broker redeliver.
+
+**Acceptance tests**
+
+* Invalid envelopes routed to reject with detailed reasons.
+* Valid go to classifier.
+
+---
+
+# 14) Classifier consumer
+
+**Objective**
+Annotate context for rules engine.
+
+**Consumer**
+
+```ts
+consume("q.classify", async (msg) => {
+  const { env } = JSON.parse(msg.content.toString());
+  const loan = await loansRepo.getById(env.borrower.loan_id);
+  const policy = getPolicyForLoan(loan); // current|delinquent|default|charged-off
+  await publish("payments.saga", "saga.payment.start", { env, policy });
+  ack(msg);
+});
+```
+
+**Errors**
+
+* Missing loan state: default to conservative path that routes to suspense and create exception for review.
+
+**Acceptance**
+
+* Unit tests covering all loan states produce expected policy flags.
+
+---
+
+# 15) Rules engine
+
+**Objective**
+Deterministic allocation and posting conditions.
+
+**Waterfall logic**
+
+```ts
+interface WaterfallInput {
+  amountCents: number;
+  due: { fees: number; interest: number; principal: number; escrowShortage: number; };
+  policy: { allowPrincipal: boolean; allowInterest: boolean; allowFees: boolean; allowEscrow: boolean; defaultLoan: boolean; };
+}
+function applyWaterfall(w: WaterfallInput) {
+  let A = w.amountCents;
+  const xF = w.policy.allowFees ? Math.min(A, w.due.fees) : 0; A -= xF;
+  const xI = w.policy.allowInterest ? Math.min(A, w.due.interest) : 0; A -= xI;
+  const xP = w.policy.allowPrincipal ? Math.min(A, w.due.principal) : 0; A -= xP;
+  const xE = w.policy.allowEscrow ? Math.min(A, w.due.escrowShortage) : 0; A -= xE;
+  const suspense = A;
+  return { xF, xI, xP, xE, suspense };
+}
+```
+
+**Posting trigger by rail**
+
+* ACH and check: post on settled or cleared events.
+* Wire and realtime: post when completed.
+* Card, PayPal, Venmo: post on capture or settlement as per PSP webhooks.
+
+**Acceptance**
+
+* Property tests ensure conserved cents and no negative components.
+
+---
+
+# 16) Poster with transactional outbox
+
+**Objective**
+Single source of truth writes and reliable publish.
+
+**Code**
+
+```ts
+await db.transaction(async tx => {
+  // find or create payment by idempotency
+  const existing = await tx.select().from(payments).where(eq(payments.idempotencyKey, env.idempotency_key));
+  let paymentId: string;
+  if (existing.length) {
+    paymentId = existing[0].id;
+  } else {
+    const inserted = await tx.insert(payments).values({
+      loanId: env.borrower.loan_id,
+      sourceChannel: env.source.channel,
+      idempotencyKey: env.idempotency_key,
+      columnTransferId: env.external?.column_transfer_id,
+      effectiveDate: env.payment.value_date,
+      totalReceived: env.payment.amount_cents / 100.0,
+      status: postingReady ? "completed" : "pending",
+      suspenseAmount: waterfall.suspense / 100.0,
+      principalAmount: waterfall.xP / 100.0,
+      interestAmount: waterfall.xI / 100.0,
+      feeAmount: waterfall.xF / 100.0,
+      escrowAmount: waterfall.xE / 100.0
+    }).returning({ id: payments.id });
+    paymentId = inserted[0].id;
+  }
+
+  await tx.insert(ledger).values(makeLedgerEntries(paymentId, waterfall, env));
+
+  const eventPayload = { payment_id: paymentId, env, allocations: waterfall, status: postingReady ? "completed" : "pending" };
+  await tx.insert(outboxMessages).values({
+    aggregateType: "payments",
+    aggregateId: paymentId,
+    eventType: "payment.posted",
+    payload: eventPayload
+  });
+
+  await tx.insert(paymentEvents).values({
+    paymentId, ingestionId: findIngestionId(env),
+    type: "payment.posted", actorType: "system", correlationId: env.correlation_id,
+    data: eventPayload, prevEventHash: getPrevHash(paymentId), eventHash: computeEventHash(getPrevHash(paymentId), eventPayload, env.correlation_id)
+  });
+});
+```
+
+**Errors and fallbacks**
+
+* Unique violation on idempotency: read and return existing payment id.
+* Partial failure after payment write but before outbox write: transaction aborts, nothing committed.
+
+**Acceptance**
+
+* Replaying the same envelope results in unchanged payment row and no duplicate ledger entries.
+* Outbox has one message per payment event.
+
+---
+
+# 17) Outbox dispatcher
+
+**Objective**
+Publish outbox rows to RabbitMQ with confirms and backoff.
+
+**Code**
+
+```ts
+async function dispatchOutbox(ch: ConfirmChannel) {
+  const rows = await getUnpublishedRows(500);
+  for (const row of rows) {
+    const key = row.event_type.startsWith("payment.") ? row.event_type : "generic";
+    const ok = ch.publish("payments.events", key, Buffer.from(JSON.stringify(row.payload)), { persistent: true, timestamp: Date.now() });
+    await new Promise<void>((resolve, reject) => ch.waitForConfirms().then(resolve).catch(reject));
+    await markPublished(row.id);
+  }
+}
+```
+
+**Errors**
+
+* Confirm failure: increment attempt\_count.
+* Attempts exceed threshold: publish to `payments.dlq` and mark last\_error, open exception case.
+
+**Acceptance**
+
+* Outbox drains under load and publisher confirms are honored.
+
+---
+
+# 18) Exception handler for returns and recalls
+
+**Objective**
+Automate compensations for NSF, ACH returns, wire recalls, disputes.
+
+**Mapping example**
+
+```ts
+const ACH_RETURN_MAP: Record<string, { reason: string; severity: "medium"|"high"; action: "reverse"|"hold"|"dispute" }> = {
+  R01: { reason: "Insufficient funds", severity: "medium", action: "reverse" },
+  R10: { reason: "Customer advises not authorized", severity: "high", action: "dispute" },
+  R29: { reason: "Corporate not authorized", severity: "high", action: "dispute" },
+  R02: { reason: "Account closed", severity: "high", action: "reverse" }
+};
+```
+
+**Compensation**
+
+```ts
+async function compensate(paymentId: string, reason: string, code?: string) {
+  await db.transaction(async tx => {
+    await tx.insert(ledger).values(reverseLedgerEntries(paymentId, reason));
+    await tx.update(payments).set({ status: "reversed", reversalReason: code ?? reason }).where(eq(payments.id, paymentId));
+    await tx.insert(outboxMessages).values({ aggregateType:"payments", aggregateId: paymentId, eventType:"payment.reversed", payload:{ payment_id: paymentId, reason, code }});
+    await tx.insert(paymentEvents).values({ paymentId, type: "payment.reversed", actorType: "system", correlationId: crypto.randomUUID(), data: { reason, code }, prevEventHash: getPrevHash(paymentId), eventHash: computeEventHash(getPrevHash(paymentId), { reason, code }, crypto.randomUUID()) });
+  });
+}
+```
+
+**Errors and fallbacks**
+
+* Payment not found: open exception case `orphan_return`.
+* Double reversal: idempotency by storing reversal marker in events or by unique index on `(payment_id, type='payment.reversed')`.
+
+**Acceptance**
+
+* Simulated R01 reverses correctly and creates events.
+* Unauthorized returns open dispute cases with severity high.
+
+---
+
+# 19) Daily reconciler
+
+**Objective**
+Guarantee that SOR equals bank truth and heal gaps.
+
+**Algorithm**
+
+* For each channel, for period \[T00:00, T23:59]:
+
+  1. Query Column events or settlement summary.
+  2. Sum credits and debits for the Column account.
+  3. Query SOR payments recorded as completed in that window.
+  4. Compute variance.
+  5. If non zero, list missing identifiers and publish backfill requests.
+
+**Code skeleton**
+
+```ts
+const bank = await columnClient.settlementSummary({ date: today });
+const sor = await db.select({...}).from(payments).where(between(payments.effectiveDate, start, end)).and(eq(payments.status, "completed"));
+const variance = bank.total - sor.total;
+await upsertReconciliation({ channel: "ach", period_start: start, period_end: end, bank_total: bank.total, sor_total: sor.total, variance, status: variance === 0 ? "balanced" : "variance" });
+if (variance !== 0) await publish("payments.events", "payment.reconciled.discrepancy", { details });
+```
+
+**Acceptance**
+
+* Balanced days produce zero variance and events `payment.reconciled.ok`.
+* Variance days create exception cases and backfills fix them.
+
+---
+
+# 20) Notifications integration
+
+**Objective**
+Notify borrowers and internal teams on posting and reversals.
+
+**Server changes**
+
+* Subscribe to `payment.posted`, `payment.reversed`, `payment.partial` on `q.notifications`.
+* Create `notifications` rows with titles and messages.
+* Call email service if configured. Toggle `emailSent` on success.
+
+**Errors**
+
+* Email provider down: retry with exponential backoff, cap to 3, leave unread notification regardless.
+
+**Acceptance**
+
+* Making a payment generates a notification visible via existing endpoints.
+
+---
+
+# 21) UI enhancements
+
+**Objective**
+Expose live payment state, artifacts, and audit trail.
+
+**Client tasks**
+
+* Replace placeholder page with a table of payments, status badges, and a detail drawer showing:
+
+  * Allocations breakdown
+  * Suspense amount
+  * Artifacts with secure links
+  * Event timeline from `payment_events`
+
+**Example API**
+`GET /api/payments/:loanId` returns list with allocations and links.
+`GET /api/payments/:paymentId/events` returns ordered events.
+
+**Acceptance**
+
+* Webhooks in staging flip UI from pending to completed without reload.
+
+---
+
+# 22) Observability
+
+**Objective**
+Make the system measurable and diagnosable.
+
+**OpenTelemetry**
+
+* Add middleware to attach `correlation_id` to traces.
+* Instrument consumers and producers.
+
+**Prometheus metrics**
+
+* Queue depth, process latency, DLQ rate, outbox lag, reconcile variance.
+* Grafana dashboards and alerts for thresholds.
+
+**Acceptance**
+
+* Dashboards show traffic under load test.
+* Alert triggers when DLQ rate exceeds threshold.
+
+---
+
+# 23) Security and compliance
+
+**Objective**
+Protect data and access.
+
+**Actions**
+
+* TLS everywhere.
+* RBAC in RabbitMQ per service.
+* Column webhook IP allowlist if available.
+* Encrypt PII fields in DB.
+* Sign artifact URLs and set short expirations.
+
+**Acceptance**
+
+* Pen test or internal scan passes.
+* Secret rotation procedure documented and tested.
+
+---
+
+# 24) Testing, replay, and chaos
+
+**Objective**
+Prove correctness and resilience.
+
+**Tests**
+
+* Unit: envelope validation, waterfall math, idempotency key generator.
+* Integration: webhook to posting end-to-end in staging.
+* Replay: feed historical files to `q.validate`, verify exact same posting results.
+* Chaos: kill broker node, pause outbox dispatcher, ensure no data loss after recovery.
+
+**Acceptance**
+
+* Green pipeline, deterministic replays, chaos passes without manual intervention.
+
+---
+
+# 25) Rollout and cutover
+
+**Objective**
+Deploy safely and progressively.
+
+**Phases**
+
+* Shadow mode: run full pipeline, but poster sets status pending only. Compare reconciles with bank.
+* Limited go live: enable posting for wires and checks.
+* Full go live: ACH, realtime, card, PayPal, Venmo adapters.
+* Keep four eyes approval on high severity exceptions.
+
+**Acceptance**
+
+* No duplicate postings, zero reconciliation variance at T+1 for pilot cohort, operations sign off.
+
+---
+
+## Appendix A. Error taxonomy and retry policy
+
+* Retryable: transient DB failure, broker not available, object store timeout, Column API 5xx. Use exponential backoff with jitter and cap.
+* Non retryable: schema invalid, duplicate idempotency, legal hold, closed loan. Route to exception cases.
+* DLQ policy: when a consumer nacks without requeue, the message is routed to `payments.dlq`. A parking lot process can later requeue after manual fix.
+
+## Appendix B. Minimal publisher and consumer wrappers
+
+```ts
+export async function publish(exchange: string, key: string, body: any) {
+  const payload = Buffer.from(JSON.stringify(body));
+  ch.publish(exchange, key, payload, { persistent: true, timestamp: Date.now() });
+  await ch.waitForConfirms();
+}
+
+export function consume(queue: string, handler: (msg: amqplib.ConsumeMessage) => Promise<void>, opts?: { prefetch?: number }) {
+  if (opts?.prefetch) ch.prefetch(opts.prefetch);
+  ch.consume(queue, async (msg) => {
+    if (!msg) return;
+    try { await handler(msg); ch.ack(msg); }
+    catch (err) { console.error(err); ch.nack(msg, false, isRetryable(err)); }
+  }, { noAck: false });
+}
+```
+
+## Appendix C. Sample unit tests to prevent regressions
+
+* Idempotency uniqueness:
+
+```ts
+it("computes stable idempotency key", () => {
+  const k1 = computeIdemKey("ach","abc","2025-08-20",135000,"loan-1");
+  const k2 = computeIdemKey("ACH","Abc","2025-08-20",135000,"loan-1");
+  expect(k1).toEqual(k2);
+});
+```
+
+* Waterfall conservation:
+
+```ts
+it("allocations conserve amount", () => {
+  const res = applyWaterfall({ amountCents: 10000, due:{fees:1000,interest:2000,principal:5000,escrowShortage:1000}, policy:{allowFees:true,allowInterest:true,allowPrincipal:true,allowEscrow:true,defaultLoan:false} });
+  expect(res.xF + res.xI + res.xP + res.xE + res.suspense).toEqual(10000);
+});
+```
+
+---
+
+This plan is intentionally prescriptive. If you paste these migrations and scaffolds into your repo, you will have a working pipeline that ingests Column webhooks, normalizes them, validates and classifies, posts with a transactional outbox, compensates exceptions, reconciles with the bank, and exposes auditable history with artifacts.

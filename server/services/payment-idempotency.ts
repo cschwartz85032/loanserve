@@ -129,13 +129,6 @@ export function createIdempotentHandler<T, R>(
   handler: (envelope: PaymentEnvelope<T>, client: PoolClient) => Promise<R>
 ) {
   return async (envelope: PaymentEnvelope<T>): Promise<R | null> => {
-    console.log(`[Idempotency] Processing message for consumer ${consumer}, envelope:`, JSON.stringify(envelope, null, 2));
-    
-    if (!envelope.message_id) {
-      console.error(`[Idempotency] ERROR: No message_id in envelope`);
-      throw new Error('Invalid envelope: missing message_id');
-    }
-    
     // Check if already processed
     const { processed, resultHash } = await IdempotencyService.checkProcessed(
       consumer,
@@ -150,7 +143,6 @@ export function createIdempotentHandler<T, R>(
     // Process in transaction
     const client = await pool.connect();
     try {
-      console.log(`[Idempotency] Starting transaction for message ${envelope.message_id}`);
       await client.query('BEGIN');
 
       // Double-check in transaction (handles race conditions)
@@ -166,18 +158,10 @@ export function createIdempotentHandler<T, R>(
       }
 
       // Execute handler
-      console.log(`[Idempotency] Executing handler for message ${envelope.message_id}`);
-      let result;
-      try {
-        result = await handler(envelope, client);
-        console.log(`[Idempotency] Handler executed successfully for message ${envelope.message_id}`);
-      } catch (handlerError) {
-        console.error(`[Idempotency] Handler failed for message ${envelope.message_id}:`, handlerError);
-        throw handlerError;
-      }
+      const result = await handler(envelope, client);
 
       // Record as processed
-      const hash = result ? IdempotencyService.createResultHash(result) : 'no-result';
+      const hash = IdempotencyService.createResultHash(result);
       await IdempotencyService.recordProcessed(
         consumer,
         envelope.message_id,
@@ -189,7 +173,6 @@ export function createIdempotentHandler<T, R>(
       return result;
 
     } catch (error) {
-      console.error(`[Idempotency] Error processing message ${envelope.message_id}:`, error);
       await client.query('ROLLBACK');
       throw error;
     } finally {

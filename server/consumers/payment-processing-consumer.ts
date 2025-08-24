@@ -4,28 +4,21 @@
  */
 
 import { PoolClient } from 'pg';
-import { pool } from '../db';
 import {
   PaymentEnvelope,
   PaymentData,
   PaymentState
 } from '../messaging/payment-envelope';
 import { IdempotencyService, createIdempotentHandler } from '../services/payment-idempotency';
-import { ConsumerContext } from '../../shared/messaging/envelope';
 import { PaymentAllocationEngine } from '../services/payment-allocation-engine';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { getMessageFactory } from '../messaging/message-factory';
 import { db } from '../db';
-import { v4 as uuidv4 } from 'uuid';
 
 export class PaymentProcessingConsumer {
   private rabbitmq = getEnhancedRabbitMQService();
-  private messageFactory: any;
+  private messageFactory = getMessageFactory();
   private allocationEngine = new PaymentAllocationEngine();
-  
-  constructor() {
-    this.messageFactory = getMessageFactory();
-  }
 
   /**
    * Main processing handler
@@ -33,54 +26,18 @@ export class PaymentProcessingConsumer {
   async processPayment(
     envelope: PaymentEnvelope<PaymentData>,
     client: PoolClient
-  ): Promise<any> {
-    console.log(`[processPayment] Method called with envelope:`, JSON.stringify(envelope, null, 2));
-    console.log(`[processPayment] Envelope has data?`, envelope?.data ? 'yes' : 'no');
-    console.log(`[processPayment] Client is PoolClient?`, client ? 'yes' : 'no');
-    
-    if (!envelope?.data) {
-      throw new Error(`processPayment called with no data in envelope`);
-    }
-    
-    const data = envelope.data;
+  ): Promise<void> {
+    const { data } = envelope;
     console.log(`[Processing] Processing payment ${data.payment_id}`);
-    console.log(`[Processing] Payment data:`, JSON.stringify(data, null, 2));
-    
-    try {
-      // Log audit trail - Payment processing started
-      console.log(`[Processing] About to log audit event for payment ${data.payment_id}`);
-      try {
-        await this.logAuditEvent(
-          client,
-          'processed',
-          {
-            payment_id: data.payment_id,
-            loan_id: data.loan_id,
-            amount_cents: data.amount_cents,
-            source: data.source,
-            state: 'validated'
-          }
-        );
-        console.log(`[Processing] Audit event logged successfully`);
-      } catch (auditError) {
-        console.error(`[Processing] Failed to log audit event:`, auditError);
-        throw auditError;
-      }
 
+    try {
       // Update state to processing
-      console.log(`[Processing] About to update payment state to processing for payment_id: ${data.payment_id}`);
-      try {
-        await this.updatePaymentState(
-          client,
-          data.payment_id,
-          'validated',
-          'processing'
-        );
-        console.log(`[Processing] Payment state updated successfully`);
-      } catch (stateError) {
-        console.error(`[Processing] Failed to update payment state:`, stateError);
-        throw stateError;
-      }
+      await this.updatePaymentState(
+        client,
+        data.payment_id,
+        'validated',
+        'processing'
+      );
 
       // Get payment details
       const paymentResult = await client.query(
@@ -95,18 +52,6 @@ export class PaymentProcessingConsumer {
       const payment = paymentResult.rows[0];
       const effectiveDate = new Date(payment.effective_date);
 
-      // Log audit trail - Starting allocation
-      await this.logAuditEvent(
-        client,
-        'processed',
-        {
-          payment_id: data.payment_id,
-          loan_id: payment.loan_id,
-          amount_cents: payment.amount_cents,
-          effective_date: effectiveDate.toISOString()
-        }
-      );
-
       // Allocate payment
       const allocation = await this.allocationEngine.allocate(
         client,
@@ -118,44 +63,14 @@ export class PaymentProcessingConsumer {
 
       console.log(`[Processing] Allocated payment to ${allocation.allocations.length} targets`);
 
-      // Log audit trail - Allocation completed
-      await this.logAuditEvent(
-        client,
-        'processed',
-        {
-          payment_id: data.payment_id,
-          loan_id: payment.loan_id,
-          allocations: allocation.allocations.map(a => ({
-            target: a.target,
-            amount_cents: a.amount_cents,
-            account: a.account
-          })),
-          total_allocated: allocation.total_allocated,
-          unapplied: allocation.unapplied
-        }
-      );
-
-      // Post to general ledger
-      await this.postToGeneralLedger(
+      // Post to ledger (as pending)
+      await this.postToLedger(
         client,
         data.payment_id,
         payment.loan_id,
-        payment.amount_cents,
         allocation,
         effectiveDate,
-        payment.external_ref || data.payment_id
-      );
-
-      // Log audit trail - Posted to general ledger
-      await this.logAuditEvent(
-        client,
-        'processed',
-        {
-          payment_id: data.payment_id,
-          loan_id: payment.loan_id,
-          amount_cents: payment.amount_cents,
-          ledger_entries: allocation.allocations.length + 1 // +1 for cash debit
-        }
+        true // pending
       );
 
       // Update loan balances
@@ -163,20 +78,6 @@ export class PaymentProcessingConsumer {
         client,
         payment.loan_id,
         allocation
-      );
-
-      // Log audit trail - Loan balances updated
-      await this.logAuditEvent(
-        client,
-        'processed',
-        {
-          payment_id: data.payment_id,
-          loan_id: payment.loan_id,
-          updates: allocation.allocations.map(a => ({
-            target: a.target,
-            amount_cents: a.amount_cents
-          }))
-        }
       );
 
       // Update escrow if applicable
@@ -202,29 +103,15 @@ export class PaymentProcessingConsumer {
         'posted_pending_settlement'
       );
 
-      // Log audit trail - Payment processing completed
-      await this.logAuditEvent(
-        client,
-        'processed',
-        {
-          payment_id: data.payment_id,
-          loan_id: payment.loan_id,
-          final_state: 'posted_pending_settlement',
-          total_allocated: allocation.total_allocated,
-          processing_timestamp: new Date().toISOString()
-        }
-      );
-
       // Emit processed event
-      const processedEnvelope = this.messageFactory.createMessage(
-        `loanserve.payment.v1.processed`,
-        {
+      const processedEnvelope = this.messageFactory.createReply(envelope, {
+        schema: `loanserve.payment.v1.processed`,
+        data: {
           ...data,
           allocation,
           processing_timestamp: new Date().toISOString()
-        },
-        { correlation_id: data.payment_id }
-      );
+        }
+      });
 
       await IdempotencyService.addToOutbox(
         client,
@@ -240,14 +127,6 @@ export class PaymentProcessingConsumer {
         await this.immediateSettle(client, data.payment_id);
       }
 
-      // Return result for idempotency tracking
-      return {
-        payment_id: data.payment_id,
-        processed: true,
-        allocation,
-        timestamp: new Date().toISOString()
-      };
-
     } catch (error) {
       console.error(`[Processing] Error processing payment ${data.payment_id}:`, error);
       throw error;
@@ -255,114 +134,48 @@ export class PaymentProcessingConsumer {
   }
 
   /**
-   * Post payment to general ledger (loan_ledger table)
+   * Post allocations to ledger
    */
-  private async postToGeneralLedger(
+  private async postToLedger(
     client: PoolClient,
     paymentId: string,
     loanId: string,
-    totalAmountCents: number,
     allocation: any,
     effectiveDate: Date,
-    externalRef: string
+    pending: boolean
   ): Promise<void> {
-    // Get current loan balances for running balance calculation
-    const loanResult = await client.query(
-      'SELECT principal_balance FROM loans WHERE id = $1',
-      [loanId]
-    );
-    const loan = loanResult.rows[0];
-    
-    // Get total accrued interest from interest_accruals table
-    const interestResult = await client.query(
-      'SELECT COALESCE(SUM(accrued_amount), 0) as total_accrued FROM interest_accruals WHERE loan_id = $1',
-      [loanId]
-    );
-    const totalAccruedInterest = parseFloat(interestResult.rows[0]?.total_accrued || '0');
-    loan.accrued_interest = totalAccruedInterest.toString();
-    
-    // Post each allocation to the general ledger
+    // Credit cash account
+    await client.query(`
+      INSERT INTO payment_ledger (
+        loan_id, payment_id, account, debit_cents, credit_cents,
+        pending, effective_date, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+    `, [
+      loanId,
+      paymentId,
+      'cash',
+      allocation.total_allocated,
+      0,
+      pending,
+      effectiveDate
+    ]);
+
+    // Debit allocation accounts
     for (const alloc of allocation.allocations) {
-      let transactionType: string;
-      let category: string | null = null;
-      let description: string;
-      
-      // Map allocation target to transaction type and description
-      switch (alloc.target) {
-        case 'late_fees':
-          transactionType = 'fee';
-          category = 'late_fee';
-          description = `Late fee payment received - ${alloc.target}`;
-          break;
-        case 'accrued_interest':
-          transactionType = 'interest';
-          category = 'servicing';
-          description = `Interest payment received`;
-          break;
-        case 'scheduled_principal':
-          transactionType = 'principal';
-          category = 'servicing';
-          description = `Principal payment received`;
-          break;
-        case 'escrow_shortage':
-        case 'current_escrow':
-          transactionType = 'escrow';
-          category = 'servicing';
-          description = `Escrow payment received - ${alloc.target}`;
-          break;
-        case 'unapplied_funds':
-          transactionType = 'payment';
-          category = 'unapplied';
-          description = `Unapplied funds from payment`;
-          break;
-        default:
-          transactionType = 'payment';
-          description = `Payment allocation - ${alloc.target}`;
-      }
-      
-      // Calculate new balances after this allocation
-      const newPrincipalBalance = alloc.target === 'scheduled_principal' 
-        ? parseFloat(loan.principal_balance) - (alloc.amount_cents / 100)
-        : parseFloat(loan.principal_balance);
-      
-      const newInterestBalance = alloc.target === 'accrued_interest'
-        ? Math.max(0, parseFloat(loan.accrued_interest || '0') - (alloc.amount_cents / 100))
-        : parseFloat(loan.accrued_interest || '0');
-      
-      // Insert ledger entry
       await client.query(`
-        INSERT INTO loan_ledger (
-          loan_id, transaction_date, transaction_id, description,
-          transaction_type, category, credit_amount, debit_amount,
-          running_balance, principal_balance, interest_balance,
-          status, created_by, notes, metadata, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+        INSERT INTO payment_ledger (
+          loan_id, payment_id, account, debit_cents, credit_cents,
+          pending, effective_date, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
       `, [
         loanId,
-        effectiveDate,
-        `PAYMENT-${paymentId}-${alloc.target}`,
-        description,
-        transactionType,
-        category,
-        (alloc.amount_cents / 100).toFixed(2), // Credit (payment received)
-        null, // No debit
-        newPrincipalBalance.toFixed(2), // Running balance = principal balance
-        newPrincipalBalance.toFixed(2),
-        newInterestBalance.toFixed(2),
-        'posted',
-        null, // System user
-        `Payment ${externalRef} - Allocated ${(alloc.amount_cents / 100).toFixed(2)} to ${alloc.target}`,
-        JSON.stringify({
-          payment_id: paymentId,
-          allocation_target: alloc.target,
-          amount_cents: alloc.amount_cents,
-          external_ref: externalRef
-        })
+        paymentId,
+        alloc.account,
+        0,
+        alloc.amount_cents,
+        pending,
+        effectiveDate
       ]);
-      
-      // Update loan balances for next iteration
-      loan.principal_balance = newPrincipalBalance.toString();
-      loan.accrued_interest = newInterestBalance.toString();
     }
   }
 
@@ -384,13 +197,19 @@ export class PaymentProcessingConsumer {
           break;
 
         case 'late_fees':
-          // Late fee reduction is tracked in payment_ledger, no need to update loans table
-          // Actual fees are tracked in loan_fees table
+          // Update late fee balance
+          await client.query(
+            'UPDATE loans SET late_fee_balance = GREATEST(0, COALESCE(late_fee_balance, 0) - $1) WHERE id = $2',
+            [alloc.amount_cents / 100, loanId]
+          );
           break;
 
         case 'accrued_interest':
-          // Interest reduction is tracked in payment_ledger, no need to update loans table
-          // Actual interest accrual happens in interest_accruals table
+          // Update accrued interest
+          await client.query(
+            'UPDATE loans SET accrued_interest = GREATEST(0, COALESCE(accrued_interest, 0) - $1) WHERE id = $2',
+            [alloc.amount_cents / 100, loanId]
+          );
           break;
       }
     }
@@ -401,7 +220,7 @@ export class PaymentProcessingConsumer {
        SET last_payment_date = CURRENT_DATE,
            next_payment_date = CASE 
              WHEN payment_frequency = 'monthly' THEN CURRENT_DATE + INTERVAL '1 month'
-             WHEN payment_frequency = 'bi_weekly' THEN CURRENT_DATE + INTERVAL '2 weeks'
+             WHEN payment_frequency = 'biweekly' THEN CURRENT_DATE + INTERVAL '2 weeks'
              ELSE next_payment_date
            END
        WHERE id = $1`,
@@ -472,13 +291,13 @@ export class PaymentProcessingConsumer {
     );
 
     // Emit settled event
-    const settledEnvelope = this.messageFactory.createMessage(
-      'loanserve.payment.v1.settled',
-      {
+    const settledEnvelope = this.messageFactory.create({
+      schema: 'loanserve.payment.v1.settled',
+      data: {
         payment_id: paymentId,
         settlement_timestamp: new Date().toISOString()
       }
-    );
+    });
 
     await IdempotencyService.addToOutbox(
       client,
@@ -497,46 +316,16 @@ export class PaymentProcessingConsumer {
     fromState: PaymentState,
     toState: PaymentState
   ): Promise<void> {
-    console.log(`[updatePaymentState] Called with paymentId: ${paymentId}, fromState: ${fromState}, toState: ${toState}`);
-    console.log(`[updatePaymentState] Type of paymentId: ${typeof paymentId}, value: '${paymentId}'`);
-    
-    if (!paymentId) {
-      throw new Error(`updatePaymentState called with null/undefined paymentId`);
-    }
-    
     await client.query(
       'UPDATE payment_transactions SET state = $1 WHERE payment_id = $2 AND state = $3',
       [toState, paymentId, fromState]
     );
 
-    const params = [paymentId, fromState, toState, 'system', `State changed from ${fromState} to ${toState}`];
-    console.log(`[updatePaymentState] Inserting transition with params:`, params);
-    
     await client.query(`
       INSERT INTO payment_state_transitions (
         payment_id, previous_state, new_state, occurred_at, actor, reason
       ) VALUES ($1, $2, $3, NOW(), $4, $5)
-    `, params);
-  }
-
-  /**
-   * Log audit event for payment processing decisions
-   */
-  private async logAuditEvent(
-    client: PoolClient,
-    eventType: string,
-    details: any
-  ): Promise<void> {
-    await client.query(`
-      INSERT INTO auth_events (
-        id, occurred_at, event_type, details, event_key
-      ) VALUES ($1, NOW(), $2, $3, $4)
-    `, [
-      uuidv4(),
-      `payment.${eventType}`,
-      JSON.stringify(details),
-      `payment_${details.payment_id}_${eventType}_${Date.now()}`
-    ]);
+    `, [paymentId, fromState, toState, 'system', `State changed from ${fromState} to ${toState}`]);
   }
 
   /**
@@ -545,9 +334,7 @@ export class PaymentProcessingConsumer {
   async start(): Promise<void> {
     const handler = createIdempotentHandler(
       'payment-processing',
-      async (envelope: PaymentEnvelope<PaymentData>, client: PoolClient) => {
-        return await this.processPayment(envelope, client);
-      }
+      this.processPayment.bind(this)
     );
 
     await this.rabbitmq.consume(
@@ -557,20 +344,11 @@ export class PaymentProcessingConsumer {
         consumerTag: 'payment-processing-consumer'
       },
       async (envelope: PaymentEnvelope<PaymentData>, msg) => {
-        console.log('[Processing Consumer] Received message from RabbitMQ');
-        console.log('[Processing Consumer] Envelope schema:', envelope.schema);
-        console.log('[Processing Consumer] Payment ID:', envelope.data?.payment_id);
-        console.log('[Processing Consumer] Loan ID:', envelope.data?.loan_id);
-        console.log('[Processing Consumer] Amount cents:', envelope.data?.amount_cents);
-        
         try {
-          const result = await handler(envelope);
-          console.log('[Processing Consumer] Handler result:', result);
+          await handler(envelope);
           // Ack is handled automatically by enhanced service
         } catch (error) {
-          console.error('[Processing Consumer] Error processing message:', error);
-          console.error('[Processing Consumer] Error stack:', error instanceof Error ? error.stack : 'No stack');
-          console.error('[Processing Consumer] Payment ID that failed:', envelope.data?.payment_id);
+          console.error('[Processing] Error processing message:', error);
           throw error; // Enhanced service will handle nack
         }
       }

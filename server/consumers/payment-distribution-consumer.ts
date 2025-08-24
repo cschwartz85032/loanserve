@@ -30,7 +30,7 @@ export class PaymentDistributionConsumer {
   async calculateDistributions(
     envelope: PaymentEnvelope<PaymentData>,
     client: PoolClient
-  ): Promise<any> {
+  ): Promise<void> {
     const { data } = envelope;
     console.log(`[Distribution] Calculating distributions for payment ${data.payment_id}`);
 
@@ -73,12 +73,7 @@ export class PaymentDistributionConsumer {
 
       if (totalDistributable === 0) {
         console.log(`[Distribution] No distributable amount for payment ${data.payment_id}`);
-        return {
-          payment_id: data.payment_id,
-          distributed: false,
-          reason: 'no_distributable_amount',
-          timestamp: new Date().toISOString()
-        };
+        return;
       }
 
       // Get effective investor positions
@@ -90,13 +85,7 @@ export class PaymentDistributionConsumer {
 
       if (positions.length === 0) {
         console.log(`[Distribution] No investor positions found for loan ${payment.loan_id}`);
-        return {
-          payment_id: data.payment_id,
-          distributed: false,
-          reason: 'no_investor_positions',
-          loan_id: payment.loan_id,
-          timestamp: new Date().toISOString()
-        };
+        return;
       }
 
       // Calculate servicing fee (example: 0.25% annually = ~25 bps monthly)
@@ -156,16 +145,6 @@ export class PaymentDistributionConsumer {
       );
 
       console.log(`[Distribution] Calculated ${distributions.length} distributions for payment ${data.payment_id}`);
-
-      // Return result for idempotency tracking
-      return {
-        payment_id: data.payment_id,
-        distributed: true,
-        distribution_count: distributions.length,
-        total_distributed: distributableAfterFees,
-        servicing_fee_total: servicingFeeAmount,
-        timestamp: new Date().toISOString()
-      };
 
     } catch (error) {
       console.error(`[Distribution] Error calculating distributions:`, error);

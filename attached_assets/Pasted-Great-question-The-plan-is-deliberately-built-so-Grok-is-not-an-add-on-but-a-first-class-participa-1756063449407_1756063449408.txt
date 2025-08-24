@@ -1,0 +1,277 @@
+Great question. The plan is deliberately built so Grok is not an add-on, but a first-class participant at every point where judgment is required. Below is a precise map of where Grok is invoked, the data it receives, what it returns, how its outputs trigger actions, how we control risk with confidence thresholds and idempotency, and how we measure and improve it over time. I reference the data structures and workers from the 25-step plan so you can see the exact integration points.
+
+## 1) Where Grok participates end-to-end
+
+| Lifecycle stage         | Worker or API                        | What Grok does                                                       | Input from SOR                                                             | Output contract                                                                                      | Action on output                                                                                                                |
+| ----------------------- | ------------------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Artifact intake         | Column webhook adapter, PSP adapters | OCR and entity extraction for checks, wire receipts, ACH return PDFs | `payment_artifacts`, raw payload, `payment_ingestions.normalized_envelope` | `ai_extraction` JSON with fields and per-field confidence                                            | Populate missing envelope fields, attach normalized metadata, create `payment_events` with actor\_type=AI                       |
+| Validation triage       | `validator`                          | Risk and policy flags beyond deterministic checks                    | Envelope, borrower snapshot                                                | `risk_score` \[0..1], `flags`: fraud\_suspected, stop\_pay\_hint, stale\_date\_hint, duplicate\_hint | If score ≥ threshold\_auto, short-circuit to classifier with stricter policy; else add flags, continue                          |
+| Duplicate detection     | `validator`                          | Probabilistic near-duplicate detection                               | Envelope, last N ingestions by loan and amount                             | `duplicate_probability` \[0..1], nearest neighbors                                                   | If high, hold in `exception_cases` with AI rationale; otherwise proceed                                                         |
+| Classification          | `classifier`                         | Loan state nuance and product rule selection                         | Loan details, history of delinquencies, legal holds                        | `policy_hint` structure with reasons                                                                 | Parameterize rules engine with stronger or weaker application rights                                                            |
+| Rules engine assist     | `rules-engine`                       | Recommend allocation overrides and suspense usage in edge cases      | Due buckets, payment components, historical borrower behavior              | Proposed allocation deltas with explanation and confidence                                           | Apply automatically if confidence ≥ threshold\_auto and financial invariants satisfied; else attach as recommendation for human |
+| Exception handling      | `exceptions`                         | Map ACH R-codes to actions, detect patterns, propose remediation     | Return event, envelope, historical returns                                 | `next_action` with confidence and playbook steps                                                     | Auto-compensate if safe, otherwise open `exception_cases` populated with suggested steps                                        |
+| Reconciliation          | `reconciler`                         | Variance root-cause explanation and backfill suggestions             | Bank totals vs SOR, unmatched IDs                                          | Ranked hypotheses and backfill queries                                                               | Publish backfill requests or create cases with prefilled queries                                                                |
+| Borrower communications | `notifications`                      | Draft highly specific borrower messages and internal notes           | Envelope, allocations, exception context                                   | Rendered templates with placeholders filled and tone constraints                                     | Send automatically above threshold\_auto, else queue for approval                                                               |
+| Ops summarization       | UI backend                           | Summarize case history and suggest next best action                  | `payment_events` chain, artifacts                                          | Short explanation with links to artifacts and audit entries                                          | Display in the case UI for one-click apply                                                                                      |
+
+Every AI call is recorded in `payment_events` with `actor_type='ai'`, the model version, input hash, output hash, confidence, and rationale. This makes decisions reproducible and auditable.
+
+## 2) Exact data contracts Grok receives and returns
+
+### 2.1 AI extraction input for artifacts
+
+```json
+{
+  "task": "artifact_extraction.v1",
+  "artifact": {
+    "type": "check_image_front",
+    "uri": "s3://.../chk_123_front.png",
+    "hash": "sha256:...",
+    "mime": "image/png"
+  },
+  "envelope": {
+    "borrower": { "loan_id": "uuid-123" },
+    "payment": { "method": "check", "value_date": "2025-08-20" }
+  },
+  "context": {
+    "loan": { "last_due_amount_cents": 135000, "last_check_number": "123456" }
+  }
+}
+```
+
+### 2.2 AI extraction output
+
+```json
+{
+  "extracted": {
+    "check_number": { "value": "123456", "confidence": 0.98 },
+    "amount_cents": { "value": 135000, "confidence": 0.99 },
+    "payer_name": { "value": "John Q Borrower", "confidence": 0.92 },
+    "micr": { "routing": "021000021", "account": "****4321", "confidence": 0.95 }
+  },
+  "rationale": "Amount printed and numeric match; name matches borrower; MICR parsed.",
+  "model_version": "grok-2025-08",
+  "confidence_overall": 0.97
+}
+```
+
+### 2.3 Risk triage input and output
+
+**Input**
+
+```json
+{
+  "task": "risk_triage.v1",
+  "envelope": { "...": "..." },
+  "features": {
+    "loan_days_past_due": 14,
+    "prior_returns_30d": 0,
+    "amount_vs_median_ratio": 2.4,
+    "channel": "ach"
+  }
+}
+```
+
+**Output**
+
+```json
+{
+  "risk_score": 0.23,
+  "flags": ["none"],
+  "rationale": "No adverse history; amount large but within twice median."
+}
+```
+
+### 2.4 Exception mapping input and output
+
+**Input**
+
+```json
+{
+  "task": "exception_mapping.v1",
+  "event": { "type": "ach.return", "code": "R10", "details": "Not authorized" },
+  "history": { "prior_returns_180d": 1, "last_auth_update_days": 390 }
+}
+```
+
+**Output**
+
+```json
+{
+  "next_action": "dispute_lock_and_notify",
+  "confidence": 0.94,
+  "steps": [
+    "Set debit hold on loan payments for 30 days",
+    "Send re-authorization request to borrower",
+    "Reverse last posting"
+  ],
+  "rationale": "R10 and stale authorization indicates dispute. Follow NACHA guidance."
+}
+```
+
+All AI outputs are validated against JSON Schemas before use. Invalid or out-of-contract responses are discarded and logged.
+
+## 3) Confidence thresholds and action policy
+
+| Confidence bucket | Examples of actions                                                                                                                     | Safeguards                                                                                                                                       |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ≥ 0.90            | Apply allocation override within financial invariants. Auto-compensate for R01 with ledger reversal. Auto-send simple borrower receipt. | Post-action invariant checks. Must pass conservation of cents and allowed component boundaries. Create `payment_events` record with output hash. |
+| 0.60 to 0.89      | Create `exception_cases` with prefilled steps. Draft email for human approval. Recommend allocation override, do not apply.             | Require single approver, capture human decision in `payment_events`.                                                                             |
+| < 0.60            | No automation. Log and present as informational in UI.                                                                                  | None beyond logging.                                                                                                                             |
+
+Financial invariants are enforced by code, not by AI. If Grok suggests an allocation that would over-apply a bucket or produce negative amounts, the suggestion is rejected and recorded.
+
+## 4) How the plan wires Grok into each step
+
+### 4.1 Column and PSP webhook adapters
+
+* After persisting the raw event and artifacts, call Grok extraction if required to fill missing envelope fields for checks and wires.
+* If Grok fails or times out after 1 second budget, proceed with the raw fields and mark `risk.flags += ["ai_extraction_timeout"]`.
+* Record an AI event in `payment_events` with input and output hashes.
+
+### 4.2 Validator
+
+* Deterministic checks run first. If passed, call Grok risk\_triage with a 150 ms budget.
+* If `risk_score ≥ 0.8` or `duplicate_probability ≥ 0.8`, create an `exception_cases` entry and do not send to classifier until human release, unless the loan is at risk of cascading fees where automated hold is preferred.
+
+### 4.3 Classifier
+
+* Deterministic loan state comes from the database. Grok is used to add nuance, like suggesting a stricter fee-first policy for habitual underpayers or a lenient policy for borrowers in forbearance.
+* Output is tagged `policy_hint`. We do not allow AI to widen privileges. AI can only tighten allocation rights vs default policy.
+
+### 4.4 Rules engine
+
+* Compute allocations deterministically. Give Grok the computed allocations plus due buckets to suggest improvements. Accept only if result is closer to policy goals and does not break invariants.
+* Example acceptance test: if Grok suggests moving 10 dollars from principal to fees on a defaulted loan, verify policy allows fee priority and totals remain equal.
+
+### 4.5 Poster
+
+* Poster never asks Grok. Poster enforces math and idempotency. This keeps the write path deterministic and auditable.
+
+### 4.6 Exceptions
+
+* On ACH returns, Grok maps code to actions with rationale and confidence. If confidence ≥ 0.9 and the action is reversible, we auto-execute.
+* On wire recalls, Grok drafts the compliance note and proposed steps. We require human approval due to higher risk.
+
+### 4.7 Reconciliation
+
+* For variances, Grok generates a ranked hypothesis list and SQL filters to locate likely missing events. The reconciler executes read-only queries and prepares backfill. Execution of backfill remains deterministic and code driven.
+
+### 4.8 Notifications
+
+* Grok drafts borrower messages with placeholders replaced from the envelope. Each template is constrained by allowed variables and tone. We block any hallucinated amounts by rendering only amounts from SOR.
+
+## 5) Idempotency and audit for AI involvement
+
+* Every AI action creates a `payment_events` row with:
+
+  * `actor_type='ai'`
+  * `data`: input hash, output hash, model\_version, confidence, rationale, and any suggested steps
+  * The event is chained by `prev_event_hash` and `event_hash` so tampering is evident.
+* For automated actions, we also record a synthetic “policy proof” object that enumerates invariants checked. Example:
+
+```json
+{
+  "invariants": {
+    "sum_allocations_equals_amount": true,
+    "no_negative_components": true,
+    "policy_boundary_respected": true
+  }
+}
+```
+
+## 6) Defensive engineering, timeouts, and fallbacks
+
+* Timeouts are short and tiered per stage to protect latency budgets. For example, extraction 1 second, risk triage 150 ms, exception mapping 300 ms, drafting 500 ms.
+* If Grok is unavailable or errors, the system continues with deterministic behavior and marks the event with a flag. This prevents blocking the pipeline.
+* We never execute an AI action that cannot be fully compensated by a deterministic compensation path.
+
+## 7) Data retention, privacy, and prompts
+
+* We store only hashes of prompts and responses in `payment_events` by default. Full prompts and responses are written to object storage with encryption and short retention when necessary for regulated audit.
+* PII redaction occurs before prompts where feasible. For example, mask account numbers to last 4, mask PAN tokens, and avoid free text that could leak secrets.
+
+## 8) Model governance and continuous learning
+
+* Feature store: derived features used by Grok are computed deterministically and versioned.
+* Model registry: track `model_version`, training data cut, and approval status.
+* Feedback loop: when humans override an AI suggestion, we log the override reason. A nightly job aggregates mispredictions and prepares fine-tuning sets or retrieval snippets.
+* Shadow evaluation: before raising thresholds, we run Grok in shadow mode and measure precision and recall against human outcomes.
+
+## 9) Observability and KPIs for AI
+
+* Metrics per decision point:
+
+  * AI call rate, p50 and p95 latency
+  * Confidence distribution
+  * Auto-apply rate vs human review rate
+  * Override rate and override in favor vs against AI
+  * Incident rate where AI action required compensation
+* SLOs:
+
+  * AI timeouts under 1 percent at p95
+  * Automated actions with post-hoc compensation under 0.1 percent
+  * Override rate below 15 percent after three months
+
+## 10) Concrete examples
+
+### Example A: Check payment with unreadable MICR
+
+1. Adapter stores artifact, calls Grok extraction.
+2. Grok returns amount and check number with confidence 0.97, MICR with 0.55.
+3. System uses amount and check number, flags MICR for manual review, creates a case with Grok’s suggested account derived from prior checks. No blocking.
+
+### Example B: ACH R01 return
+
+1. Return event ingested. Exceptions worker calls Grok for next step.
+2. Grok returns next\_action reverse with confidence 0.98.
+3. Worker executes deterministic reversal and posts `payment.reversed`. Grok drafts borrower email. Email is sent automatically because the template is constrained and low risk.
+
+### Example C: Reconciliation variance
+
+1. Bank total exceeds SOR by 2 payments. Grok proposes that two RTP events were processed without webhooks and suggests Event IDs to fetch via backfill.
+2. Reconciler runs backfill queries. The new events pass through the same pipeline and post.
+
+## 11) Implementation snippets
+
+### AI client wrapper with strict contracts
+
+```ts
+type AIResponse<T> = { ok: true; data: T } | { ok: false; error: string };
+async function callGrok<TInput, TOutput>(task: string, input: TInput, schema: JSONSchema): Promise<AIResponse<TOutput>> {
+  try {
+    const res = await fetch(process.env.GROK_ENDPOINT!, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${process.env.GROK_KEY}` },
+      body: JSON.stringify({ task, input })
+    });
+    const json = await res.json();
+    if (!validateAgainstSchema(json, schema)) return { ok: false, error: "schema_validation_failed" };
+    return { ok: true, data: json as TOutput };
+  } catch (e:any) {
+    return { ok: false, error: e.message || "ai_call_failed" };
+  }
+}
+```
+
+### Recording AI events
+
+```ts
+async function recordAIEvent(paymentId: string | null, ingestionId: string | null, type: string, inputHash: string, outputHash: string, modelVersion: string, confidence: number, rationale: string) {
+  const prev = await getPrevHash(paymentId);
+  const data = { input_hash: inputHash, output_hash: outputHash, model_version: modelVersion, confidence, rationale };
+  const eventHash = computeEventHash(prev, data, crypto.randomUUID());
+  await db.insert(paymentEvents).values({
+    paymentId, ingestionId, type, actorType: "ai", correlationId: crypto.randomUUID(), data, prevEventHash: prev, eventHash
+  });
+}
+```
+
+## 12) Why this meets your goal
+
+* Grok participates at every ambiguous decision point but cannot violate financial invariants because the poster and rules are deterministic and enforce constraints.
+* Automation increases as confidence proves out. Thresholds are adjustable per task so you can start conservative and expand without rewrites.
+* Every AI action is traceable, reproducible, and reversible. The audit chain plus outbox guarantees that what Grok influenced is visible and can be compensated without guesswork.
+* Human oversight is minimized because low risk, high frequency tasks are automated, while high risk tasks are prepared by Grok and require one-click approval with complete context.
+
+If you want, I can deliver the concrete JSON Schemas for each AI task, plus ready-to-drop Express endpoints and worker stubs that include the AI calls and event recording exactly as shown above.

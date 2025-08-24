@@ -405,41 +405,7 @@ export class ServicingCycleService {
 
       const principalBalance = parseFloat(loan.currentBalance || loan.originalAmount);
       const interestRate = parseFloat(loan.interestRate) / 100;
-      
-      // Determine interest calculation method from loan documents
-      let dailyRate: number;
-      let dayCountConvention: string;
-      
-      switch (loan.interestCalculationMethod) {
-        case '360/360':
-          // 360-day year of twelve 30-day months
-          dailyRate = interestRate / 360;
-          dayCountConvention = '360/360';
-          break;
-        case '365/360':
-          // 365-day year with 360-day accrual
-          dailyRate = interestRate / 360;
-          dayCountConvention = '365/360';
-          break;
-        case 'actual/360':
-          // Actual days with 360-day year
-          dailyRate = interestRate / 360;
-          dayCountConvention = 'ACT/360';
-          break;
-        case 'actual/actual':
-          // Actual days with actual year (365 or 366)
-          const year = parseISO(String(valuationDate)).getFullYear();
-          const daysInYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0) ? 366 : 365;
-          dailyRate = interestRate / daysInYear;
-          dayCountConvention = 'ACT/ACT';
-          break;
-        default:
-          // Default to actual/365
-          dailyRate = interestRate / 365;
-          dayCountConvention = 'ACT/365';
-          break;
-      }
-      
+      const dailyRate = interestRate / 365;
       const accruedAmount = principalBalance * dailyRate * dayCount;
 
       await this.createDetailedEventLog(runId, loan.id, valuationDate, 'INTEREST_ACCRUAL_CALCULATION', {
@@ -478,7 +444,7 @@ export class ServicingCycleService {
           fromDate: fromDate.toISOString().split('T')[0],
           toDate: toDate.toISOString().split('T')[0],
           dayCount,
-          dayCountConvention: dayCountConvention,
+          dayCountConvention: 'ACT/365',
           interestRate: (interestRate * 100).toFixed(4),
           principalBalance: principalBalance.toFixed(2),
           dailyRate: dailyRate.toFixed(10),

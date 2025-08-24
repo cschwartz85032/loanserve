@@ -51,57 +51,6 @@ export class PaymentAllocationEngine {
     client: PoolClient,
     loanId: string
   ): Promise<AllocationRule[]> {
-    // First check if loan has custom payment allocation order from loan documents
-    const loanResult = await client.query(
-      'SELECT payment_allocation_order FROM loans WHERE id = $1',
-      [loanId]
-    );
-    
-    if (loanResult.rows.length > 0 && loanResult.rows[0].payment_allocation_order) {
-      // Use loan document-specified allocation order
-      const customOrder = loanResult.rows[0].payment_allocation_order as string[];
-      const rules: AllocationRule[] = [];
-      
-      // Map loan document terms to allocation targets
-      const targetMap: Record<string, AllocationTarget> = {
-        'fees': 'late_fees',
-        'late_charges': 'late_fees',
-        'late_fees': 'late_fees',
-        'interest': 'accrued_interest',
-        'accrued_interest': 'accrued_interest',
-        'principal': 'scheduled_principal',
-        'scheduled_principal': 'scheduled_principal',
-        'escrow_shortage': 'escrow_shortage',
-        'escrow': 'current_escrow',
-        'current_escrow': 'current_escrow',
-        'unapplied': 'unapplied_funds',
-        'unapplied_funds': 'unapplied_funds'
-      };
-      
-      customOrder.forEach((item, index) => {
-        const target = targetMap[item.toLowerCase()];
-        if (target) {
-          rules.push({ 
-            target, 
-            priority: index + 1,
-            enabled: true 
-          });
-        }
-      });
-      
-      // Ensure unapplied_funds is always last if not explicitly included
-      if (!rules.find(r => r.target === 'unapplied_funds')) {
-        rules.push({ 
-          target: 'unapplied_funds', 
-          priority: rules.length + 1,
-          enabled: true 
-        });
-      }
-      
-      return rules;
-    }
-    
-    // Check allocation_rules table
     const result = await client.query(`
       SELECT priority, target, enabled
       FROM allocation_rules
@@ -111,28 +60,16 @@ export class PaymentAllocationEngine {
         priority
     `, [loanId]);
 
-    if (result.rows.length > 0) {
-      // Use loan-specific rules if exist, otherwise DEFAULT
-      const useLoanId = result.rows.some(r => r.loan_id === loanId) ? loanId : 'DEFAULT';
-      
-      return result.rows
-        .filter(r => r.loan_id === useLoanId && r.enabled)
-        .map(r => ({
-          priority: r.priority,
-          target: r.target as AllocationTarget,
-          enabled: r.enabled
-        }));
-    }
+    // Use loan-specific rules if exist, otherwise DEFAULT
+    const useLoanId = result.rows.some(r => r.loan_id === loanId) ? loanId : 'DEFAULT';
     
-    // Fallback to default allocation order per loan document requirements
-    return [
-      { target: 'late_fees', priority: 1, enabled: true },  // Fees and costs owed to Lender
-      { target: 'accrued_interest', priority: 2, enabled: true },  // Accrued interest
-      { target: 'scheduled_principal', priority: 3, enabled: true },  // Scheduled principal
-      { target: 'escrow_shortage', priority: 4, enabled: true },  // Escrow shortage
-      { target: 'current_escrow', priority: 5, enabled: true },  // Current escrow
-      { target: 'unapplied_funds', priority: 6, enabled: true }  // Unapplied funds
-    ];
+    return result.rows
+      .filter(r => r.loan_id === useLoanId && r.enabled)
+      .map(r => ({
+        priority: r.priority,
+        target: r.target as AllocationTarget,
+        enabled: r.enabled
+      }));
   }
 
   /**
@@ -145,49 +82,36 @@ export class PaymentAllocationEngine {
     // Get loan balances
     const loanResult = await client.query(`
       SELECT 
+        COALESCE(late_fee_balance, 0) as late_fees,
+        COALESCE(accrued_interest, 0) as accrued_interest,
         COALESCE(principal_balance, 0) as scheduled_principal
       FROM loans
       WHERE id = $1
-    `, [loanId]);
-    
-    // Get total accrued interest from interest_accruals table
-    const interestResult = await client.query(`
-      SELECT COALESCE(SUM(accrued_amount), 0) as accrued_interest
-      FROM interest_accruals
-      WHERE loan_id = $1
-    `, [loanId]);
-    
-    // Get total late fees from loan_fees table
-    const feeResult = await client.query(`
-      SELECT COALESCE(SUM(fee_amount), 0) as late_fees
-      FROM loan_fees
-      WHERE loan_id = $1 AND fee_type = 'late_fee'
     `, [loanId]);
 
     // Get escrow balances
     const escrowResult = await client.query(`
       SELECT 
-        COALESCE(shortage_amount, 0) as shortage,
-        COALESCE(target_balance - current_balance, 0) as current_due
+        category,
+        COALESCE(shortage_cents, 0) as shortage,
+        COALESCE(target_balance_cents - balance_cents, 0) as current_due
       FROM escrow_accounts
       WHERE loan_id = $1
     `, [loanId]);
 
-    // Since there's no category column, we'll treat all escrow as combined
-    const totalShortage = escrowResult.rows.reduce((sum, r) => sum + parseFloat(r.shortage || '0'), 0);
-    const totalCurrentDue = escrowResult.rows.reduce((sum, r) => sum + parseFloat(r.current_due || '0'), 0);
+    const escrowMap = new Map(escrowResult.rows.map(r => [r.category, r]));
 
     return {
       loan_id: loanId,
-      late_fees: parseFloat(feeResult.rows[0]?.late_fees || '0'),
-      accrued_interest: parseFloat(interestResult.rows[0]?.accrued_interest || '0'),
-      scheduled_principal: parseFloat(loanResult.rows[0]?.scheduled_principal || '0'),
-      escrow_shortage: totalShortage,
+      late_fees: loanResult.rows[0]?.late_fees || 0,
+      accrued_interest: loanResult.rows[0]?.accrued_interest || 0,
+      scheduled_principal: loanResult.rows[0]?.scheduled_principal || 0,
+      escrow_shortage: escrowResult.rows.reduce((sum, r) => sum + r.shortage, 0),
       escrow_current: {
-        tax: totalCurrentDue,  // Combined escrow amount
-        hazard: 0,
-        flood: 0,
-        mi: 0
+        tax: escrowMap.get('tax')?.current_due || 0,
+        hazard: escrowMap.get('hazard')?.current_due || 0,
+        flood: escrowMap.get('flood')?.current_due || 0,
+        mi: escrowMap.get('MI')?.current_due || 0
       }
     };
   }

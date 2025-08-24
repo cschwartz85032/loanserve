@@ -355,10 +355,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [emailAddresses, setEmailAddresses] = useState<Array<{email: string, label: string}>>([]);
   const [editLoanTermsModal, setEditLoanTermsModal] = useState(false);
   const [editServicingModal, setEditServicingModal] = useState(false);
-  const [editPaymentSettingsModal, setEditPaymentSettingsModal] = useState(false);
   const [loanTermsForm, setLoanTermsForm] = useState<any>({});
   const [servicingForm, setServicingForm] = useState<any>({});
-  const [paymentSettingsForm, setPaymentSettingsForm] = useState<any>({});
   const [editPropertyModal, setEditPropertyModal] = useState(false);
   const [propertyForm, setPropertyForm] = useState<any>({});
   const [editingBorrowerName, setEditingBorrowerName] = useState(false);
@@ -489,19 +487,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     }
   }, [editServicingModal, loanData]);
 
-  useEffect(() => {
-    if (editPaymentSettingsModal && loanData) {
-      setPaymentSettingsForm({
-        acceptPartialPayments: loanData.acceptPartialPayments !== undefined ? loanData.acceptPartialPayments : true,
-        paymentAllocationOrder: loanData.paymentAllocationOrder || ['fees', 'interest', 'principal', 'escrow'],
-        interestCalculationMethod: loanData.interestCalculationMethod || 'actual/365',
-        paymentDueDay: loanData.paymentDueDay || (loanData.firstPaymentDate ? new Date(loanData.firstPaymentDate).getDate() : 1),
-        autopayEnabled: loanData.autopayEnabled || false,
-        preferredPaymentMethod: loanData.preferredPaymentMethod || 'ACH'
-      });
-    }
-  }, [editPaymentSettingsModal, loanData]);
-
   // Initialize borrower name
   useEffect(() => {
     if (loanData?.borrowerName) {
@@ -570,28 +555,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({
         title: 'Error',
         description: 'Failed to update servicing settings',
-        variant: 'destructive'
-      });
-    }
-  };
-
-  // Save payment settings
-  const savePaymentSettings = async () => {
-    try {
-      await apiRequest(`/api/loans/${loanId}`, {
-        method: 'PATCH',
-        body: paymentSettingsForm
-      });
-      toast({
-        title: 'Success',
-        description: 'Payment settings updated successfully'
-      });
-      setEditPaymentSettingsModal(false);
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to update payment settings',
         variant: 'destructive'
       });
     }
@@ -912,11 +875,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       const data = await response.json();
       console.log('Activity data fetched:', data);
       console.log('Email activities:', data.filter((a: any) => a.activityType === 'email'));
-      console.log('Payment activities:', data.filter((a: any) => a.activityType === 'payment'));
       return data;
-    },
-    refetchOnMount: true,  // Always refetch when component mounts
-    refetchOnWindowFocus: true  // Refetch when user focuses the window
+    }
   });
 
   const { data: collaborators = [], isLoading: collaboratorsLoading } = useQuery<any[]>({
@@ -2584,71 +2544,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           </CardContent>
         </Card>
 
-        {/* Payment Settings Card */}
-        <Card>
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-1.5 text-xs font-medium">
-                <DollarSign className="h-3 w-3" />
-                Payment Settings
-              </CardTitle>
-              <Button 
-                size="sm" 
-                variant="ghost" 
-                className="h-5 w-5 p-0"
-                onClick={() => setEditPaymentSettingsModal(true)}
-              >
-                <Edit className="h-3 w-3" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Accept Partial Payments:</span>
-                <span className="font-normal">
-                  {loanData?.acceptPartialPayments !== undefined ? 
-                    (loanData.acceptPartialPayments ? 'Yes' : 'No') : 
-                    'Yes (Default)'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Payment Allocation:</span>
-                <span className="font-normal">
-                  {loanData?.paymentAllocationOrder && Array.isArray(loanData.paymentAllocationOrder) ?
-                    loanData.paymentAllocationOrder[0] : 'Standard'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Interest Calculation:</span>
-                <span className="font-normal">
-                  {loanData?.interestCalculationMethod || 'Actual/365'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Payment Due Day:</span>
-                <span className="font-normal">
-                  {loanData?.paymentDueDay || 
-                   (loanData?.firstPaymentDate ? 
-                    new Date(loanData.firstPaymentDate).getDate() : '1st')}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Auto-pay Enabled:</span>
-                <span className="font-normal">
-                  {loanData?.autopayEnabled ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground font-normal">Payment Method:</span>
-                <span className="font-normal">
-                  {loanData?.preferredPaymentMethod || 'ACH'}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Servicing Settings Card */}
         <Card>
           <CardHeader className="pb-2 pt-4">
@@ -2876,17 +2771,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     description = item.activityData?.description || 
                       item.description || 
                       'Note added';
-                  } else if (item.activityType === 'payment') {
-                    const status = item.activityData?.status || 'unknown';
-                    const amount = item.activityData?.amount || '0';
-                    const source = item.activityData?.source || 'unknown';
-                    description = `Payment ${status}: $${amount} via ${source.toUpperCase()}`;
-                    if (item.activityData?.check_number) {
-                      description += ` (Check #${item.activityData.check_number})`;
-                    }
-                    if (item.activityData?.wire_ref) {
-                      description += ` (Wire Ref: ${item.activityData.wire_ref})`;
-                    }
                   } else {
                     description = item.activityData?.description || 
                       item.description || 
@@ -2903,13 +2787,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                       <div className="text-xs text-black">
                         Description: {description}
                       </div>
-                      {item.activityType === 'payment' && item.activityData?.evidence_url && (
-                        <div className="text-xs text-blue-600 mt-1">
-                          <a href={item.activityData.evidence_url} target="_blank" rel="noopener noreferrer" className="underline">
-                            View Payment Evidence
-                          </a>
-                        </div>
-                      )}
                       <div className="text-xs text-gray-600">
                         Time: {formatTimeAgo(item.createdAt)}
                       </div>
@@ -3357,132 +3234,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               Cancel
             </Button>
             <Button onClick={saveServicingSettings}>
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Payment Settings Modal */}
-      <Dialog open={editPaymentSettingsModal} onOpenChange={setEditPaymentSettingsModal}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Payment Settings</DialogTitle>
-            <p className="text-sm text-muted-foreground">Configure payment processing and allocation rules</p>
-          </DialogHeader>
-          <div className="space-y-4 mt-4">
-            {/* Accept Partial Payments */}
-            <div className="flex items-center space-x-2">
-              <input 
-                type="checkbox"
-                id="acceptPartialPayments"
-                checked={paymentSettingsForm.acceptPartialPayments || false}
-                onChange={(e) => setPaymentSettingsForm({...paymentSettingsForm, acceptPartialPayments: e.target.checked})}
-                className="h-4 w-4"
-              />
-              <label htmlFor="acceptPartialPayments" className="text-sm font-medium">
-                Accept Partial Payments
-              </label>
-            </div>
-
-            {/* Payment Allocation Order */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Payment Allocation Order</label>
-              <Select 
-                value={paymentSettingsForm.paymentAllocationOrder?.[0] || 'fees'}
-                onValueChange={(value) => {
-                  // Simple implementation - just show the first item
-                  // In a full implementation, this would be a sortable list
-                  const order = value === 'fees' ? ['fees', 'interest', 'principal', 'escrow'] :
-                               value === 'interest' ? ['interest', 'fees', 'principal', 'escrow'] :
-                               value === 'principal' ? ['principal', 'interest', 'fees', 'escrow'] :
-                               ['fees', 'interest', 'principal', 'escrow'];
-                  setPaymentSettingsForm({...paymentSettingsForm, paymentAllocationOrder: order});
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select primary allocation" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fees">Fees First</SelectItem>
-                  <SelectItem value="interest">Interest First</SelectItem>
-                  <SelectItem value="principal">Principal First</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Standard order: Fees → Interest → Principal → Escrow</p>
-            </div>
-
-            {/* Interest Calculation Method */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Interest Calculation Method</label>
-              <Select 
-                value={paymentSettingsForm.interestCalculationMethod || 'actual/365'}
-                onValueChange={(value) => setPaymentSettingsForm({...paymentSettingsForm, interestCalculationMethod: value})}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select calculation method" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="actual/365">Actual/365</SelectItem>
-                  <SelectItem value="360/360">360/360 (30/360)</SelectItem>
-                  <SelectItem value="365/360">365/360</SelectItem>
-                  <SelectItem value="actual/360">Actual/360</SelectItem>
-                  <SelectItem value="actual/actual">Actual/Actual</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Payment Due Day */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Payment Due Day</label>
-                <Input 
-                  type="number"
-                  min="1"
-                  max="31"
-                  value={paymentSettingsForm.paymentDueDay || ''}
-                  onChange={(e) => setPaymentSettingsForm({...paymentSettingsForm, paymentDueDay: parseInt(e.target.value)})}
-                  placeholder="1-31"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Preferred Payment Method</label>
-                <Select 
-                  value={paymentSettingsForm.preferredPaymentMethod || 'ACH'}
-                  onValueChange={(value) => setPaymentSettingsForm({...paymentSettingsForm, preferredPaymentMethod: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ACH">ACH</SelectItem>
-                    <SelectItem value="Wire">Wire Transfer</SelectItem>
-                    <SelectItem value="Check">Check</SelectItem>
-                    <SelectItem value="Card">Credit/Debit Card</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Auto-pay */}
-            <div className="flex items-center space-x-2">
-              <input 
-                type="checkbox"
-                id="autopayEnabled"
-                checked={paymentSettingsForm.autopayEnabled || false}
-                onChange={(e) => setPaymentSettingsForm({...paymentSettingsForm, autopayEnabled: e.target.checked})}
-                className="h-4 w-4"
-              />
-              <label htmlFor="autopayEnabled" className="text-sm font-medium">
-                Enable Auto-pay
-              </label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditPaymentSettingsModal(false)}>
-              Cancel
-            </Button>
-            <Button onClick={savePaymentSettings}>
               Save Changes
             </Button>
           </DialogFooter>

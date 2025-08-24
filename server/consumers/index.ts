@@ -8,8 +8,7 @@ import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
 import { PaymentReversalSaga } from './payment-reversal-saga';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
-import { OutboxProcessor } from '../services/outbox-processor';
-import { ConsumerHealthMonitor } from '../services/consumer-health-monitor';
+// import { OutboxProcessor } from '../services/outbox-processor';
 
 export async function startPaymentConsumers(): Promise<void> {
   console.log('[Consumers] Starting payment processing consumers...');
@@ -23,19 +22,10 @@ export async function startPaymentConsumers(): Promise<void> {
     await rabbitmq.waitForConnection();
     console.log('[Consumers] RabbitMQ connected');
 
-    // Initialize health monitoring
-    const healthMonitor = ConsumerHealthMonitor.getInstance();
-    healthMonitor.registerConsumer('payment-validation');
-    healthMonitor.registerConsumer('payment-processing');
-    healthMonitor.registerConsumer('payment-distribution');
-    healthMonitor.registerConsumer('payment-reversal');
-    healthMonitor.startMonitoring();
-    console.log('[Consumers] Health monitoring started');
-
-    // Start outbox processor
-    const outboxProcessor = new OutboxProcessor();
-    await outboxProcessor.start();
-    console.log('[Consumers] Outbox processor started');
+    // Start outbox processor (commented out until implemented)
+    // const outboxProcessor = new OutboxProcessor();
+    // await outboxProcessor.start();
+    // console.log('[Consumers] Outbox processor started');
 
     // Start validation consumer
     const validationConsumer = new PaymentValidationConsumer();
@@ -62,14 +52,12 @@ export async function startPaymentConsumers(): Promise<void> {
     // Graceful shutdown
     process.on('SIGINT', async () => {
       console.log('[Consumers] Shutting down payment consumers...');
-      healthMonitor.stopMonitoring();
       await rabbitmq.shutdown();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
       console.log('[Consumers] Shutting down payment consumers...');
-      healthMonitor.stopMonitoring();
       await rabbitmq.shutdown();
       process.exit(0);
     });
