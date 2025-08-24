@@ -1,0 +1,52 @@
+2) DB migration 1: payment_ingestions
+
+Objective
+Persist idempotent ingress for all external payment signals before any processing.
+
+DDL (SQL)
+
+create table if not exists payment_ingestions (
+  id uuid primary key default gen_random_uuid(),
+  idempotency_key text not null unique,
+  channel text not null,                               -- ach|wire|realtime|check|card|paypal|venmo|book
+  source_reference text,                               -- provider transfer id or file id
+  raw_payload_hash text not null,                      -- sha256 hex of raw body
+  artifact_uri text[] not null default '{}',
+  artifact_hash text[] not null default '{}',
+  received_at timestamptz not null default now(),
+  normalized_envelope jsonb not null,
+  status text not null check (status in ('received','normalized','published'))
+);
+create index on payment_ingestions (channel, received_at desc);
+
+
+Idempotency key rule
+sha256(lower(method) || '|' || normalized_reference || '|' || value_date || '|' || amount_cents || '|' || loan_id)
+
+Drizzle snippet
+
+export const paymentIngestions = pgTable("payment_ingestions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  channel: text("channel").notNull(),
+  sourceReference: text("source_reference"),
+  rawPayloadHash: text("raw_payload_hash").notNull(),
+  artifactUri: text("artifact_uri").array().notNull().default(sql`'{}'`),
+  artifactHash: text("artifact_hash").array().notNull().default(sql`'{}'`),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  normalizedEnvelope: jsonb("normalized_envelope").notNull(),
+  status: text("status", { enum: ["received","normalized","published"] as const }).notNull()
+});
+
+
+Error conditions and fallbacks
+
+Duplicate idempotency key: swallow insert and return existing row.
+
+Invalid normalized JSON: reject with schema error and create exception case.
+
+Acceptance tests
+
+Unique constraint blocks duplicates.
+
+Inserting a second time with same idempotency does not create a new row.

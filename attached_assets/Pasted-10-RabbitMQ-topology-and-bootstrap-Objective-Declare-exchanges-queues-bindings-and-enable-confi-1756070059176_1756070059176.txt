@@ -1,0 +1,61 @@
+10) RabbitMQ topology and bootstrap
+
+Objective
+Declare exchanges, queues, bindings, and enable confirm channels.
+
+Code
+
+import amqplib, { ConfirmChannel } from "amqplib";
+
+export async function bootstrapRMQ(url: string) {
+  const conn = await amqplib.connect(url);
+  const ch = await conn.createConfirmChannel() as ConfirmChannel;
+
+  const quorum = { arguments: { "x-queue-type": "quorum" } };
+
+  await ch.assertExchange("payments.inbound", "direct", { durable: true });
+  await ch.assertExchange("payments.validation", "topic", { durable: true });
+  await ch.assertExchange("payments.events", "topic", { durable: true });
+  await ch.assertExchange("payments.saga", "topic", { durable: true });
+  await ch.assertExchange("payments.audit", "fanout", { durable: true });
+  await ch.assertExchange("payments.dlq", "direct", { durable: true });
+
+  await ch.assertQueue("q.validate", { durable: true, ...quorum });
+  await ch.assertQueue("q.classify", { durable: true, ...quorum });
+  await ch.assertQueue("q.rules.post", { durable: true, ...quorum });
+  await ch.assertQueue("q.poster.outbox", { durable: true, ...quorum });
+  await ch.assertQueue("q.outbox.dispatch", { durable: true, ...quorum });
+  await ch.assertQueue("q.reconcile.daily", { durable: true, ...quorum });
+  await ch.assertQueue("q.exceptions", { durable: true, ...quorum });
+  await ch.assertQueue("q.notifications", { durable: true, ...quorum });
+  await ch.assertQueue("q.audit", { durable: true, ...quorum });
+
+  await ch.bindQueue("q.validate", "payments.inbound", "ach");
+  await ch.bindQueue("q.validate", "payments.inbound", "wire");
+  await ch.bindQueue("q.validate", "payments.inbound", "realtime");
+  await ch.bindQueue("q.validate", "payments.inbound", "check");
+  await ch.bindQueue("q.validate", "payments.inbound", "card");
+  await ch.bindQueue("q.validate", "payments.inbound", "paypal");
+  await ch.bindQueue("q.validate", "payments.inbound", "venmo");
+  await ch.bindQueue("q.validate", "payments.inbound", "book");
+
+  await ch.bindQueue("q.classify", "payments.validation", "payment.validated");
+  await ch.bindQueue("q.rules.post", "payments.saga", "saga.payment.start");
+  await ch.bindQueue("q.notifications", "payments.events", "payment.*");
+  await ch.bindQueue("q.audit", "payments.audit", "");
+
+  return { conn, ch };
+}
+
+
+Error handling
+
+Channel closed: reconnect and redeclare.
+
+Publish confirm timeout: retry with exponential backoff.
+
+Acceptance tests
+
+Management UI shows all resources.
+
+Publish to payments.inbound with routing key ach shows message on q.validate.

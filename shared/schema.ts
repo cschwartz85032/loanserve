@@ -2322,29 +2322,20 @@ export const idMappings = pgTable("id_mappings", {
   serialIdx: index().on(t.serialId)
 }));
 
-// Payment Ingestions - Idempotent ingress tracking
+// Payment Ingestions - Idempotent ingress tracking (Step 2)
 export const paymentIngestions = pgTable("payment_ingestions", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  idempotencyKey: varchar("idempotency_key", { length: 256 }).notNull().unique(),
-  channel: varchar("channel", { length: 50 }).notNull(), // 'ach', 'wire', 'check', 'column_webhook'
-  rawPayload: jsonb("raw_payload").notNull(),
-  normalizedEnvelope: jsonb("normalized_envelope"),
-  columnTransferId: varchar("column_transfer_id", { length: 100 }),
-  status: varchar("status", { length: 50 }).notNull().default('pending'),
-  loanId: integer("loan_id").references(() => loans.id), // Bridge to legacy
-  amountCents: integer("amount_cents").notNull(),
-  valueDate: date("value_date").notNull(),
-  receivedAt: timestamp("received_at").defaultNow().notNull(),
-  processedAt: timestamp("processed_at"),
-  errorMessage: text("error_message"),
-  retryCount: integer("retry_count").default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  channel: text("channel").notNull(), // ach|wire|realtime|check|card|paypal|venmo|book
+  sourceReference: text("source_reference"), // provider transfer id or file id
+  rawPayloadHash: text("raw_payload_hash").notNull(), // sha256 hex of raw body
+  artifactUri: text("artifact_uri").array().notNull().default(sql`'{}'`),
+  artifactHash: text("artifact_hash").array().notNull().default(sql`'{}'`),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  normalizedEnvelope: jsonb("normalized_envelope").notNull(),
+  status: text("status", { enum: ["received", "normalized", "published"] as const }).notNull()
 }, (t) => ({
-  idempotencyIdx: index().on(t.idempotencyKey),
-  statusIdx: index().on(t.status),
-  loanIdx: index().on(t.loanId),
-  columnTransferIdx: index().on(t.columnTransferId)
+  channelReceivedIdx: index().on(t.channel, t.receivedAt)
 }));
 
 // Payment Artifacts - Document storage with hashes
