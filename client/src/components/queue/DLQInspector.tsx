@@ -21,7 +21,10 @@ import {
   Database,
   CreditCard,
   FileText,
-  Users
+  Users,
+  DollarSign,
+  TrendingUp,
+  BanknoteIcon
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
@@ -75,9 +78,10 @@ function getMessageContext(queueName: string, message: DLQMessage) {
   const content = message.content;
   const routingKey = message.routingKey;
   
-  // Payment queue messages
+  // Payment queue messages with loan context
   if (queueName.includes('payment')) {
     if (content?.paymentId) {
+      const hasContext = content._context;
       return {
         type: 'Payment Processing',
         icon: CreditCard,
@@ -85,10 +89,18 @@ function getMessageContext(queueName: string, message: DLQMessage) {
         details: {
           'Payment ID': content.paymentId,
           'Loan ID': content.loanId,
-          'Amount': content.amount ? `$${content.amount}` : 'Unknown',
-          'Type': content.type || 'Unknown',
-          'Status': content.status || 'Failed'
-        }
+          'Payment Amount': content.amount ? `$${parseFloat(content.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Unknown',
+          'Payment Type': content.type || 'Unknown',
+          'Payment Status': content.status || 'Failed',
+          ...(hasContext ? {
+            'Current Loan Balance': content._context.loanBalance ? 
+              `$${parseFloat(content._context.loanBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 
+              'Unknown',
+            'Loan Status': content._context.loanStatus || 'Unknown',
+            'Borrower': content._context.borrowerName || 'Unknown'
+          } : {})
+        },
+        hasLoanContext: hasContext
       };
     }
   }
@@ -102,10 +114,11 @@ function getMessageContext(queueName: string, message: DLQMessage) {
       details: {
         'Transaction ID': content.transactionId || 'Unknown',
         'Settlement Type': content.type || 'Unknown',
-        'Amount': content.amount ? `$${content.amount}` : 'Unknown',
+        'Amount': content.amount ? `$${parseFloat(content.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'Unknown',
         'Bank': content.bankId || 'Unknown'
-      }
-    };
+      },
+      hasLoanContext: false
+      };
   }
   
   // Reconciliation queue messages
@@ -119,7 +132,8 @@ function getMessageContext(queueName: string, message: DLQMessage) {
         'Date': content.date || 'Unknown',
         'Records': content.recordCount || 'Unknown',
         'Status': 'Failed to reconcile'
-      }
+      },
+      hasLoanContext: false
     };
   }
   
@@ -132,24 +146,55 @@ function getMessageContext(queueName: string, message: DLQMessage) {
       'Exchange': message.exchange,
       'Routing Key': message.routingKey,
       'Size': `${message.contentSize} bytes`
-    }
+    },
+    hasLoanContext: false
   };
 }
 
 // Helper to analyze failure and provide recommendations
-function analyzeFailure(failureReason: any) {
+function analyzeFailure(failureReason: any, message: DLQMessage) {
   if (!failureReason) {
     return {
       category: 'Unknown',
       severity: 'low',
       description: 'No failure reason provided',
-      recommendations: ['Check consumer logs for more details']
+      recommendations: ['Check consumer logs for more details'],
+      resolutions: []
     };
   }
   
   const reasonStr = typeof failureReason === 'string' 
     ? failureReason 
     : failureReason.reason || JSON.stringify(failureReason);
+  
+  // Payment exceeds balance error
+  if (reasonStr.toLowerCase().includes('exceeds') && 
+      reasonStr.toLowerCase().includes('balance')) {
+    const content = message.content;
+    const paymentAmount = parseFloat(content.amount || 0);
+    const loanBalance = parseFloat(content._context?.loanBalance || 0);
+    const overpayment = paymentAmount - loanBalance;
+    
+    return {
+      category: 'Overpayment',
+      severity: 'medium',
+      description: `Payment amount ($${paymentAmount.toFixed(2)}) exceeds loan balance ($${loanBalance.toFixed(2)})`,
+      recommendations: [
+        `Overpayment amount: $${overpayment.toFixed(2)}`,
+        'You can accept the payment and issue a refund for the excess',
+        'Or reject the payment and request the correct amount',
+        'Or apply the excess to the next payment period'
+      ],
+      resolutions: [
+        {
+          action: 'accept_overpayment',
+          label: 'Accept & Refund Overpayment',
+          description: `Accept full payment and refund $${overpayment.toFixed(2)}`,
+          overpaymentAmount: overpayment
+        }
+      ]
+    };
+  }
   
   // Database errors
   if (reasonStr.toLowerCase().includes('database') || 
@@ -163,7 +208,8 @@ function analyzeFailure(failureReason: any) {
         'Check if the database schema is up to date',
         'Verify the data types match expected format',
         'Ensure referenced records exist'
-      ]
+      ],
+      resolutions: []
     };
   }
   
@@ -179,7 +225,8 @@ function analyzeFailure(failureReason: any) {
         'Review and correct the message content',
         'Ensure all required fields are present',
         'Check data formats (dates, amounts, IDs)'
-      ]
+      ],
+      resolutions: []
     };
   }
   
@@ -195,7 +242,8 @@ function analyzeFailure(failureReason: any) {
         'This may be a temporary issue - retry might work',
         'Check if external services are available',
         'Verify network connectivity'
-      ]
+      ],
+      resolutions: []
     };
   }
   
@@ -211,7 +259,8 @@ function analyzeFailure(failureReason: any) {
         'Check API keys and credentials',
         'Verify user permissions',
         'Ensure service accounts have proper access'
-      ]
+      ],
+      resolutions: []
     };
   }
   
@@ -224,7 +273,8 @@ function analyzeFailure(failureReason: any) {
       'Review the error details carefully',
       'Check if the message format is correct',
       'Consider if the target system is ready to process this message'
-    ]
+    ],
+    resolutions: []
   };
 }
 
@@ -234,6 +284,7 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
   const [editMode, setEditMode] = useState(false);
   const [editedContent, setEditedContent] = useState('');
   const [showRetryDialog, setShowRetryDialog] = useState(false);
+  const [selectedResolution, setSelectedResolution] = useState<any>(null);
   const queryClient = useQueryClient();
 
   // Fetch DLQ info
@@ -255,8 +306,17 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
 
   // Retry message mutation
   const retryMutation = useMutation({
-    mutationFn: (data: { messageCount?: number; editedMessage?: any }) => {
-      if (data.editedMessage) {
+    mutationFn: (data: { messageCount?: number; editedMessage?: any; resolution?: any }) => {
+      if (data.resolution) {
+        // Send with resolution action
+        return apiRequest(`/api/dlq/${queueName}/retry`, {
+          method: 'POST',
+          body: JSON.stringify({ 
+            messageCount: 1,
+            resolution: data.resolution
+          })
+        });
+      } else if (data.editedMessage) {
         // If we have edited content, send it with the retry
         return apiRequest(`/api/dlq/${queueName}/retry`, {
           method: 'POST',
@@ -273,14 +333,17 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
     },
     onSuccess: () => {
       toast({
-        title: 'Message Retried',
-        description: 'Message has been moved back to the original queue for reprocessing'
+        title: 'Message Processed',
+        description: selectedResolution ? 
+          'Message has been processed with the selected resolution' :
+          'Message has been moved back to the original queue for reprocessing'
       });
       refetchMessages();
       queryClient.invalidateQueries({ queryKey: [`/api/dlq/${queueName}/info`] });
       setShowRetryDialog(false);
       setEditMode(false);
       setSelectedMessage(null);
+      setSelectedResolution(null);
     },
     onError: (error: any) => {
       toast({
@@ -345,7 +408,10 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
 
   const handleEditMessage = () => {
     if (selectedMessage) {
-      setEditedContent(JSON.stringify(selectedMessage.content, null, 2));
+      // Remove context data before editing
+      const contentToEdit = { ...selectedMessage.content };
+      delete contentToEdit._context;
+      setEditedContent(JSON.stringify(contentToEdit, null, 2));
       setEditMode(true);
     }
   };
@@ -363,8 +429,15 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
     }
   };
 
+  const handleResolutionAction = (resolution: any) => {
+    setSelectedResolution(resolution);
+    setShowRetryDialog(true);
+  };
+
   const confirmRetry = () => {
-    if (editMode && editedContent) {
+    if (selectedResolution) {
+      retryMutation.mutate({ resolution: selectedResolution });
+    } else if (editMode && editedContent) {
       try {
         const parsed = JSON.parse(editedContent);
         retryMutation.mutate({ editedMessage: parsed });
@@ -438,6 +511,7 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
                     onClick={() => {
                       setSelectedMessage(null);
                       setEditMode(false);
+                      setSelectedResolution(null);
                     }}
                   >
                     ← Back to Messages
@@ -511,42 +585,92 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
                           <CardContent>
                             <div className="grid grid-cols-2 gap-4">
                               {Object.entries(context.details).map(([key, value]) => (
-                                <div key={key}>
+                                <div key={key} className={
+                                  key === 'Current Loan Balance' || key === 'Payment Amount' ? 
+                                  'font-semibold' : ''
+                                }>
                                   <Label className="text-muted-foreground">{key}</Label>
-                                  <div className="font-mono text-sm">{value}</div>
+                                  <div className={`font-mono text-sm ${
+                                    key === 'Current Loan Balance' ? 'text-blue-600 dark:text-blue-400' :
+                                    key === 'Payment Amount' ? 'text-green-600 dark:text-green-400' :
+                                    ''
+                                  }`}>{value}</div>
                                 </div>
                               ))}
                             </div>
+                            {!context.hasLoanContext && queueName.includes('payment') && (
+                              <Alert className="mt-4">
+                                <Info className="h-4 w-4" />
+                                <AlertDescription>
+                                  Loan context data not available. The loan may have been deleted or the ID may be invalid.
+                                </AlertDescription>
+                              </Alert>
+                            )}
                           </CardContent>
                         </Card>
                       );
                     })()}
 
-                    {/* Failure Analysis */}
+                    {/* Failure Analysis with Resolution Actions */}
                     {selectedMessage.failureReason && (() => {
-                      const analysis = analyzeFailure(selectedMessage.failureReason);
+                      const analysis = analyzeFailure(selectedMessage.failureReason, selectedMessage);
                       return (
-                        <Alert className={
-                          analysis.severity === 'high' ? 'border-red-500' :
-                          analysis.severity === 'medium' ? 'border-yellow-500' :
-                          'border-blue-500'
-                        }>
-                          <AlertTriangle className="h-4 w-4" />
-                          <AlertTitle>
-                            {analysis.category} - {analysis.severity.toUpperCase()} Priority
-                          </AlertTitle>
-                          <AlertDescription className="mt-2 space-y-2">
-                            <p>{analysis.description}</p>
-                            <div className="mt-3">
-                              <p className="font-semibold mb-1">Recommended Actions:</p>
-                              <ul className="list-disc list-inside space-y-1">
-                                {analysis.recommendations.map((rec, idx) => (
-                                  <li key={idx} className="text-sm">{rec}</li>
+                        <>
+                          <Alert className={
+                            analysis.severity === 'high' ? 'border-red-500' :
+                            analysis.severity === 'medium' ? 'border-yellow-500' :
+                            'border-blue-500'
+                          }>
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>
+                              {analysis.category} - {analysis.severity.toUpperCase()} Priority
+                            </AlertTitle>
+                            <AlertDescription className="mt-2 space-y-2">
+                              <p className="font-semibold">{analysis.description}</p>
+                              <div className="mt-3">
+                                <p className="font-semibold mb-1">Analysis & Recommendations:</p>
+                                <ul className="list-disc list-inside space-y-1">
+                                  {analysis.recommendations.map((rec, idx) => (
+                                    <li key={idx} className="text-sm">{rec}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </AlertDescription>
+                          </Alert>
+                          
+                          {/* Resolution Actions */}
+                          {analysis.resolutions && analysis.resolutions.length > 0 && (
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                  Resolution Actions
+                                </CardTitle>
+                                <CardDescription>
+                                  Choose how to resolve this failed message
+                                </CardDescription>
+                              </CardHeader>
+                              <CardContent className="space-y-3">
+                                {analysis.resolutions.map((resolution: any, idx: number) => (
+                                  <div key={idx} className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent">
+                                    <div>
+                                      <p className="font-semibold">{resolution.label}</p>
+                                      <p className="text-sm text-muted-foreground">{resolution.description}</p>
+                                    </div>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => handleResolutionAction(resolution)}
+                                    >
+                                      <CheckCircle2 className="h-4 w-4 mr-1" />
+                                      Apply
+                                    </Button>
+                                  </div>
                                 ))}
-                              </ul>
-                            </div>
-                          </AlertDescription>
-                        </Alert>
+                              </CardContent>
+                            </Card>
+                          )}
+                        </>
                       );
                     })()}
 
@@ -601,7 +725,11 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
                           />
                         ) : (
                           <pre className="text-sm bg-muted p-4 rounded overflow-x-auto max-h-[400px]">
-                            {JSON.stringify(selectedMessage.content, null, 2)}
+                            {JSON.stringify((() => {
+                              const content = { ...selectedMessage.content };
+                              delete content._context;
+                              return content;
+                            })(), null, 2)}
                           </pre>
                         )}
                       </CardContent>
@@ -645,7 +773,7 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
                   <div className="p-4 space-y-3">
                     {messagesData?.messages.map((message) => {
                       const context = getMessageContext(queueName, message);
-                      const analysis = analyzeFailure(message.failureReason);
+                      const analysis = analyzeFailure(message.failureReason, message);
                       const Icon = context.icon;
                       
                       return (
@@ -681,6 +809,18 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
                                   {context.description}
                                 </p>
                                 
+                                {/* Show key financial data inline for payments */}
+                                {context.hasLoanContext && (
+                                  <div className="flex gap-4 text-sm">
+                                    <span className="text-green-600 dark:text-green-400">
+                                      Payment: {context.details['Payment Amount']}
+                                    </span>
+                                    <span className="text-blue-600 dark:text-blue-400">
+                                      Balance: {context.details['Current Loan Balance']}
+                                    </span>
+                                  </div>
+                                )}
+                                
                                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                   <span className="flex items-center gap-1">
                                     <Clock className="h-3 w-3" />
@@ -695,8 +835,7 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
                                   <div className="flex items-start gap-2 mt-2">
                                     <XCircle className="h-4 w-4 text-red-500 mt-0.5" />
                                     <p className="text-sm text-red-600 dark:text-red-400">
-                                      {analysis.description.substring(0, 150)}
-                                      {analysis.description.length > 150 && '...'}
+                                      {analysis.description}
                                     </p>
                                   </div>
                                 )}
@@ -733,26 +872,42 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
       </Dialog>
 
       {/* Retry Confirmation Dialog */}
-      <Dialog open={showRetryDialog} onOpenChange={setShowRetryDialog}>
+      <Dialog open={showRetryDialog} onOpenChange={(open) => {
+        setShowRetryDialog(open);
+        if (!open) setSelectedResolution(null);
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Retry</DialogTitle>
+            <DialogTitle>Confirm Action</DialogTitle>
             <DialogDescription>
-              {editMode ? 
-                'Are you sure you want to retry this message with your changes?' :
-                'Are you sure you want to retry this message?'
+              {selectedResolution ? 
+                `Apply resolution: ${selectedResolution.label}?` :
+                editMode ? 
+                  'Are you sure you want to retry this message with your changes?' :
+                  'Are you sure you want to retry this message?'
               }
             </DialogDescription>
           </DialogHeader>
           
           {selectedMessage && (() => {
-            const analysis = analyzeFailure(selectedMessage.failureReason);
+            const analysis = analyzeFailure(selectedMessage.failureReason, selectedMessage);
             return (
               <Alert>
                 <Info className="h-4 w-4" />
-                <AlertTitle>Before Retrying</AlertTitle>
+                <AlertTitle>
+                  {selectedResolution ? 'Resolution Details' : 'Before Retrying'}
+                </AlertTitle>
                 <AlertDescription>
-                  {analysis.severity === 'high' ? (
+                  {selectedResolution ? (
+                    <div className="space-y-2">
+                      <p>{selectedResolution.description}</p>
+                      {selectedResolution.overpaymentAmount && (
+                        <p className="font-semibold">
+                          Refund amount: ${selectedResolution.overpaymentAmount.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  ) : analysis.severity === 'high' ? (
                     <p className="text-red-600 dark:text-red-400">
                       This message has a high-severity error. Make sure the underlying issue has been resolved before retrying.
                     </p>
@@ -769,7 +924,10 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
           })()}
           
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRetryDialog(false)}>
+            <Button variant="outline" onClick={() => {
+              setShowRetryDialog(false);
+              setSelectedResolution(null);
+            }}>
               Cancel
             </Button>
             <Button 
@@ -777,7 +935,8 @@ export function DLQInspector({ queueName, isOpen, onClose }: DLQInspectorProps) 
               onClick={confirmRetry}
               disabled={retryMutation.isPending}
             >
-              {retryMutation.isPending ? 'Retrying...' : 'Retry Message'}
+              {retryMutation.isPending ? 'Processing...' : 
+                selectedResolution ? 'Apply Resolution' : 'Retry Message'}
             </Button>
           </DialogFooter>
         </DialogContent>

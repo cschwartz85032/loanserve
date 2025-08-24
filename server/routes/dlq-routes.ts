@@ -1,15 +1,18 @@
-import { Router } from 'express';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
-import { requireAuth } from '../auth/middleware';
+import { Router, Request, Response } from 'express';
+import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced.js';
+import { requireAuth } from '../auth/middleware.js';
+import { db } from '../db.js';
+import { loans, payments } from '@shared/schema';
+import { eq } from 'drizzle-orm';
 
 const router = Router();
 const rabbitmq = getEnhancedRabbitMQService();
 
-// Get messages from a DLQ without consuming them
-router.get('/dlq/:queueName/messages', requireAuth, async (req, res) => {
+// Browse messages in a DLQ
+router.get('/dlq/:queueName/messages', requireAuth, async (req: Request, res: Response) => {
   try {
     const { queueName } = req.params;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const { limit = 10 } = req.query;
     
     if (!queueName.startsWith('dlq.')) {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
@@ -24,32 +27,75 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req, res) => {
     const messages = [];
     let message;
     let count = 0;
-    
-    while (count < limit && (message = await channel.get(queueName, { noAck: false }))) {
+    const maxMessages = Math.min(parseInt(limit as string, 10), 100);
+
+    while (count < maxMessages) {
+      message = await channel.get(queueName, { noAck: false });
+      
+      if (!message) {
+        break;
+      }
+
       try {
         const content = JSON.parse(message.content.toString());
+        
+        // Enrich payment messages with loan data
+        let enrichedContent = content;
+        if (queueName.includes('payment') && content.loanId) {
+          try {
+            const loan = await db.select().from(loans).where(eq(loans.id, content.loanId)).limit(1);
+            if (loan.length > 0) {
+              enrichedContent = {
+                ...content,
+                _context: {
+                  loanBalance: loan[0].currentBalance,
+                  loanStatus: loan[0].status,
+                  borrowerName: loan[0].borrowerName,
+                  originalAmount: loan[0].originalAmount
+                }
+              };
+            }
+          } catch (error) {
+            console.error('Error fetching loan context:', error);
+          }
+        }
+        
         messages.push({
-          messageId: message.properties.messageId,
+          messageId: message.properties.messageId || `msg-${count}`,
           correlationId: message.properties.correlationId,
-          timestamp: message.properties.timestamp,
-          headers: message.properties.headers,
+          timestamp: message.properties.timestamp || Date.now(),
+          headers: message.properties.headers || {},
           exchange: message.fields.exchange,
           routingKey: message.fields.routingKey,
           redelivered: message.fields.redelivered,
           deliveryTag: message.fields.deliveryTag.toString(),
-          content,
+          content: enrichedContent,
           contentSize: message.content.length,
           failureReason: message.properties.headers?.['x-death'] ? 
             message.properties.headers['x-death'][0] : null
         });
         
-        // Reject the message to put it back in the queue (since we're just browsing)
+        // Reject to put message back
         channel.reject(message, true);
         count++;
       } catch (error) {
-        console.error('Error parsing DLQ message:', error);
-        // Still reject to put back in queue
+        // If we can't parse, still include the message but with raw content
+        messages.push({
+          messageId: `msg-${count}`,
+          correlationId: null,
+          timestamp: Date.now(),
+          headers: message.properties.headers || {},
+          exchange: message.fields.exchange,
+          routingKey: message.fields.routingKey,
+          redelivered: message.fields.redelivered,
+          deliveryTag: message.fields.deliveryTag.toString(),
+          content: message.content.toString(),
+          contentSize: message.content.length,
+          failureReason: { error: 'Failed to parse message content' }
+        });
+        
         channel.reject(message, true);
+        count++;
       }
     }
 
@@ -68,8 +114,8 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req, res) => {
   }
 });
 
-// Get detailed information about a specific DLQ
-router.get('/dlq/:queueName/info', requireAuth, async (req, res) => {
+// Get DLQ queue info
+router.get('/dlq/:queueName/info', requireAuth, async (req: Request, res: Response) => {
   try {
     const { queueName } = req.params;
     
@@ -105,7 +151,7 @@ router.get('/dlq/:queueName/info', requireAuth, async (req, res) => {
 router.post('/dlq/:queueName/retry', requireAuth, async (req, res) => {
   try {
     const { queueName } = req.params;
-    const { messageCount = 1, editedMessage } = req.body;
+    const { messageCount = 1, editedMessage, resolution } = req.body;
     
     if (!queueName.startsWith('dlq.')) {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
@@ -119,8 +165,62 @@ router.post('/dlq/:queueName/retry', requireAuth, async (req, res) => {
     const originalQueue = queueName.replace('dlq.', '');
     const retriedMessages = [];
     
-    // If we have an edited message, use that instead of the original
-    if (editedMessage) {
+    // If we have a resolution action, handle it specially
+    if (resolution && resolution.action === 'accept_overpayment') {
+      const message = await channel.get(queueName, { noAck: false });
+      
+      if (message) {
+        try {
+          const content = JSON.parse(message.content.toString());
+          
+          // Modify the message to indicate overpayment handling
+          const modifiedContent = {
+            ...content,
+            acceptOverpayment: true,
+            overpaymentAmount: resolution.overpaymentAmount,
+            refundRequired: true,
+            _resolution: {
+              action: 'accept_overpayment',
+              timestamp: new Date().toISOString(),
+              approvedBy: req.user?.id || 'system'
+            }
+          };
+          
+          // Publish the modified content to original queue
+          await channel.sendToQueue(
+            originalQueue,
+            Buffer.from(JSON.stringify(modifiedContent)),
+            {
+              persistent: true,
+              headers: {
+                ...message.properties.headers,
+                'x-retried-from-dlq': true,
+                'x-retry-timestamp': new Date().toISOString(),
+                'x-resolution-action': 'accept_overpayment',
+                'x-original-error': message.properties.headers?.['x-death'] ? 
+                  JSON.stringify(message.properties.headers['x-death'][0]) : null
+              }
+            }
+          );
+
+          // Acknowledge the message from DLQ (removes it)
+          channel.ack(message);
+          
+          retriedMessages.push({
+            messageId: message.properties.messageId,
+            movedTo: originalQueue,
+            timestamp: new Date().toISOString(),
+            resolution: 'accept_overpayment'
+          });
+          
+        } catch (error) {
+          // Reject back to DLQ if retry fails
+          channel.reject(message, true);
+          throw error;
+        }
+      }
+    } else if (editedMessage) {
+      // If we have an edited message, use that instead of the original
       const message = await channel.get(queueName, { noAck: false });
       
       if (message) {
@@ -247,7 +347,7 @@ router.delete('/dlq/:queueName/purge', requireAuth, async (req, res) => {
   }
 });
 
-// Remove a single message from DLQ
+// Remove single message from DLQ
 router.delete('/dlq/:queueName/message', requireAuth, async (req, res) => {
   try {
     const { queueName } = req.params;
@@ -266,7 +366,7 @@ router.delete('/dlq/:queueName/message', requireAuth, async (req, res) => {
     if (!message) {
       return res.status(404).json({ error: 'No messages in queue' });
     }
-
+    
     // Acknowledge to remove from queue
     channel.ack(message);
     
@@ -275,15 +375,13 @@ router.delete('/dlq/:queueName/message', requireAuth, async (req, res) => {
     
     res.json({
       success: true,
-      removed: {
-        messageId: message.properties.messageId,
-        timestamp: new Date().toISOString()
-      }
+      removed: true,
+      messageId: message.properties.messageId
     });
 
   } catch (error) {
-    console.error('Error removing DLQ message:', error);
-    res.status(500).json({ error: 'Failed to remove DLQ message' });
+    console.error('Error removing message from DLQ:', error);
+    res.status(500).json({ error: 'Failed to remove message' });
   }
 });
 
