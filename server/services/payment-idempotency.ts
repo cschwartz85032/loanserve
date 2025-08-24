@@ -177,7 +177,7 @@ export function createIdempotentHandler<T, R>(
       }
 
       // Record as processed
-      const hash = IdempotencyService.createResultHash(result);
+      const hash = result ? IdempotencyService.createResultHash(result) : 'no-result';
       await IdempotencyService.recordProcessed(
         consumer,
         envelope.message_id,
