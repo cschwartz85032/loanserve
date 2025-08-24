@@ -94,11 +94,11 @@ export default function Payments() {
   });
 
   // Fetch recent payments
-  const { data: payments, isLoading: paymentsLoading } = useQuery({
+  const { data: payments = [], isLoading: paymentsLoading } = useQuery({
     queryKey: ['/api/payments/transactions'],
     queryFn: async () => {
       const response = await apiRequest('/api/payments/transactions');
-      return response as PaymentTransaction[];
+      return Array.isArray(response) ? response : [];
     },
     refetchInterval: 5000 // Refresh every 5 seconds to show status updates
   });
