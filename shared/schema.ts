@@ -2352,22 +2352,22 @@ export const paymentArtifacts = pgTable("payment_artifacts", {
   ingestionTypeIdx: index().on(t.ingestionId, t.type)
 }));
 
-// Payment Events - Hash-chained audit ledger
+// Payment Events - Hash-chained audit ledger (Step 4)
 export const paymentEvents = pgTable("payment_events", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  paymentIngestionId: varchar("payment_ingestion_id", { length: 36 }).references(() => paymentIngestions.id),
-  eventType: varchar("event_type", { length: 100 }).notNull(),
-  eventData: jsonb("event_data").notNull(),
-  actorId: varchar("actor_id", { length: 100 }), // User ID or system component
-  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // AI confidence
-  prevEventHash: varchar("prev_event_hash", { length: 64 }),
-  eventHash: varchar("event_hash", { length: 64 }).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull()
+  paymentId: varchar("payment_id", { length: 36 }), // nullable until posting
+  ingestionId: varchar("ingestion_id", { length: 36 }), // nullable for internal-only events  
+  type: text("type").notNull(), // payment.ingested|payment.validated|payment.posted|payment.reversed.nsf|...
+  eventTime: timestamp("event_time", { withTimezone: true }).notNull().defaultNow(),
+  actorType: text("actor_type").notNull(), // Check constraint in SQL: 'system'|'human'|'ai'
+  actorId: text("actor_id"),
+  correlationId: varchar("correlation_id", { length: 36 }).notNull(),
+  data: jsonb("data").notNull(),
+  prevEventHash: text("prev_event_hash"),
+  eventHash: text("event_hash").notNull()
 }, (t) => ({
-  ingestionIdx: index().on(t.paymentIngestionId),
-  eventTypeIdx: index().on(t.eventType),
-  hashIdx: index().on(t.eventHash),
-  prevHashIdx: index().on(t.prevEventHash)
+  paymentEventTimeIdx: index().on(t.paymentId, t.eventTime),
+  correlationIdx: index().on(t.correlationId)
 }));
 
 // Outbox Messages - Transactional outbox pattern

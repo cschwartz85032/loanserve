@@ -119,6 +119,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const paymentArtifactRoutes = (await import('./routes/payment-artifact')).default;
   app.use('/api/payment-artifacts', paymentArtifactRoutes);
 
+  // Register payment event routes (Step 4)
+  const paymentEventRoutes = (await import('./routes/payment-event')).default;
+  app.use('/api/payment-events', paymentEventRoutes);
+
   // Register queue monitoring routes
   const queueMonitorRoutes = (await import('./routes/queue-monitor-routes.js')).default;
   app.use('/api/queue-monitor', queueMonitorRoutes);

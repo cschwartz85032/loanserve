@@ -1,0 +1,84 @@
+11) Column webhook adapter
+
+Objective
+Receive and authenticate Column webhooks, persist artifacts, publish normalized envelope.
+
+Express route
+
+app.post("/api/column/webhook", express.raw({ type: "*/*" }), async (req, res) => {
+  const signature = req.header("Column-Signature");
+  if (!verifyHmac(signature, req.body, process.env.COLUMN_WEBHOOK_SECRET!)) {
+    return res.status(401).send("bad signature");
+  }
+  res.status(200).end(); // 2xx immediately
+
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
+  const rawHash = sha256(rawBody);
+
+  // parse event generically
+  const event = JSON.parse(rawBody.toString("utf8"));
+
+  // derive channel, reference, loan_id, artifacts
+  const channel: PaymentMethod = deriveChannel(event); // implement mapping
+  const reference = deriveReference(event);
+  const loanId = deriveLoanId(event);
+  const amountCents = deriveAmountCents(event);
+  const valueDate = deriveValueDate(event);
+
+  const idemKey = computeIdemKey(channel, reference, valueDate, amountCents, loanId);
+
+  await db.transaction(async tx => {
+    await tx.insert(paymentIngestions).values({
+      idempotencyKey: idemKey,
+      channel,
+      sourceReference: reference,
+      rawPayloadHash: rawHash,
+      artifactUri: [], artifactHash: [],
+      normalizedEnvelope: sql.placeholder("env"),
+      status: "received"
+    }).onConflictDoNothing();
+
+    const env: PaymentEnvelope = {
+      schema: "loanserve.payments.v1",
+      message_id: crypto.randomUUID(),
+      correlation_id: crypto.randomUUID(),
+      idempotency_key: idemKey,
+      occurred_at: new Date().toISOString(),
+      source: { channel, provider: "column", batch_id: event?.batch_id },
+      borrower: { loan_id: loanId },
+      payment: { amount_cents: amountCents, currency: "USD", method: channel, value_date: valueDate, reference },
+      artifacts: [],
+      external: { column_transfer_id: event?.data?.id, column_event_id: event?.id }
+    };
+
+    await publishInbound(env, channel); // see step 10 publisher
+    await tx.update(paymentIngestions)
+      .set({ normalizedEnvelope: env as any, status: "published" })
+      .where(eq(paymentIngestions.idempotencyKey, idemKey));
+  });
+});
+
+
+HMAC verification helper
+
+function verifyHmac(signatureHeader: string | undefined, rawBody: Buffer, secret: string): boolean {
+  if (!signatureHeader) return false;
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  // recommend using a timing safe compare
+  return timingSafeEqual(Buffer.from(signatureHeader), Buffer.from(expected));
+}
+
+
+Error conditions and fallbacks
+
+Signature invalid: 401 and drop.
+
+Parsing error: 200 to Column, but create exception case with raw payload for manual review.
+
+Duplicate idem key: safe no-op.
+
+Acceptance tests
+
+Valid webhook produces one ingestion and one message in q.validate.
+
+Replayed webhook does not duplicate.
