@@ -14,7 +14,7 @@ const CLOUDAMQP_URL = process.env.CLOUDAMQP_URL || '';
 // Submit manual payment
 router.post('/manual',
   requireAuth,
-  requirePermission('payments', PermissionLevel.WRITE),
+  requirePermission('payments', PermissionLevel.Write),
   asyncHandler(async (req: Request, res: Response) => {
     const paymentData = req.body;
     console.log('[Manual Payment] Received submission:', JSON.stringify(paymentData, null, 2));
@@ -263,7 +263,7 @@ router.post('/manual',
 // Get payment transactions
 router.get('/transactions',
   requireAuth,
-  requirePermission('payments', PermissionLevel.READ),
+  requirePermission('payments', PermissionLevel.Read),
   asyncHandler(async (req: Request, res: Response) => {
     try {
       // First check if table exists and is accessible
@@ -347,7 +347,7 @@ router.get('/transactions',
 // Get payment details
 router.get('/:paymentId',
   requireAuth,
-  requirePermission('payments', PermissionLevel.READ),
+  requirePermission('payments', PermissionLevel.Read),
   asyncHandler(async (req: Request, res: Response) => {
     const { paymentId } = req.params;
     
@@ -402,7 +402,7 @@ router.get('/:paymentId',
 // Get payment stats
 router.get('/stats',
   requireAuth,
-  requirePermission('payments', PermissionLevel.READ),
+  requirePermission('payments', PermissionLevel.Read),
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const statsResult = await db.execute(sql`

@@ -21,6 +21,7 @@ import {
 declare global {
   namespace Express {
     interface Request {
+      user?: any;
       userPolicy?: UserPolicy;
       rowLevelFilter?: any;
     }
