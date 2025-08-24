@@ -194,7 +194,7 @@ router.post('/manual',
         // Update state to show it's in validation
         await db.execute(sql`
           UPDATE payment_transactions 
-          SET state = 'validating'
+          SET state = 'validated'
           WHERE payment_id = ${paymentId}
         `);
         
@@ -203,7 +203,7 @@ router.post('/manual',
         // Mark as failed in database
         await db.execute(sql`
           UPDATE payment_transactions 
-          SET state = 'submission_failed',
+          SET state = 'rejected',
               metadata = ${JSON.stringify({ error: queueErr?.message || 'Unknown error' })}::jsonb
           WHERE payment_id = ${paymentId}
         `);
@@ -226,7 +226,7 @@ router.post('/manual',
           amount: paymentData.amount,
           source: paymentData.source,
           reference: externalRef,
-          status: queueSubmitted ? 'validating' : 'submission_failed'
+          status: queueSubmitted ? 'validated' : 'rejected'
         }
       });
       
