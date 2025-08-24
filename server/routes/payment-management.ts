@@ -307,7 +307,7 @@ router.get('/transactions',
               l.loan_number,
               COALESCE(be.full_name, 'Unknown') as borrower_name
             FROM loans l
-            LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.is_primary = true
+            LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.borrower_type = 'primary'
             LEFT JOIN borrower_entities be ON be.id = lb.borrower_id
             WHERE l.id = ${parseInt(row.loan_id)}
             LIMIT 1
@@ -354,7 +354,7 @@ router.get('/:paymentId',
           be.full_name as borrower_name
         FROM payment_transactions pt
         LEFT JOIN loans l ON l.id::text = pt.loan_id
-        LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.is_primary = true
+        LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.borrower_type = 'primary'
         LEFT JOIN borrower_entities be ON be.id = lb.borrower_id
         WHERE pt.payment_id = ${paymentId}
       `);
