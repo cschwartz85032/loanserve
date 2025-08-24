@@ -40,11 +40,21 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
     feeId: '',
   });
 
-  // Fetch ledger entries
-  const { data: ledgerEntries = [], isLoading, refetch } = useQuery({
+  // Fetch ledger entries - sorted by date DESC on backend
+  const { data: rawLedgerEntries = [], isLoading, refetch } = useQuery({
     queryKey: [`/api/loans/${loanId}/ledger`],
     enabled: !!loanId,
   });
+
+  // Ensure ledger entries are properly sorted (most recent first)
+  const ledgerEntries = Array.isArray(rawLedgerEntries) 
+    ? [...rawLedgerEntries].sort((a: any, b: any) => {
+        // Sort by transaction date DESC, then by ID DESC for same dates
+        const dateCompare = new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime();
+        if (dateCompare !== 0) return dateCompare;
+        return b.id - a.id;
+      })
+    : [];
 
   // Fetch fee templates for dropdown (contains 33 configured fees)
   const { data: feeTemplates = [] } = useQuery({
@@ -169,7 +179,8 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
       };
     }
 
-    const lastEntry = entries[entries.length - 1];
+    // Get the first entry (most recent) for current balance
+    const lastEntry = entries[0];
     
     const totalDebits = entries.reduce((sum: number, entry: any) => 
       sum + parseFloat(entry.debitAmount || 0), 0);
@@ -289,7 +300,7 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                   ledgerEntries.map((entry: any) => (
                     <TableRow key={entry.id} className={entry.status === 'pending_approval' ? 'bg-yellow-50' : ''}>
                       <TableCell className="font-mono text-sm">
-                        {new Date(entry.transactionDate).toLocaleDateString()}
+                        {entry.transactionDate ? new Date(entry.transactionDate + 'T00:00:00').toLocaleDateString() : 'N/A'}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{entry.transactionId}</TableCell>
                       <TableCell>{entry.description}</TableCell>
