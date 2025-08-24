@@ -21,7 +21,7 @@ export async function getLoanLedger(req: Request, res: Response) {
       .select()
       .from(loanLedger)
       .where(eq(loanLedger.loanId, parseInt(loanId)))
-      .orderBy(loanLedger.transactionDate, loanLedger.id);
+      .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
     
     res.json(entries);
   } catch (error) {
