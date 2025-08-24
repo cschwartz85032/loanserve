@@ -91,12 +91,6 @@ export function requireAuth(
   res: Response,
   next: NextFunction
 ): void {
-  // Skip authentication for Vite development routes
-  const path = req.originalUrl || req.url;
-  if (path && (path.startsWith('/@') || path.startsWith('/__'))) {
-    return next();
-  }
-  
   if (!req.userPolicy) {
     res.status(401).json({ 
       error: 'Authentication required',
