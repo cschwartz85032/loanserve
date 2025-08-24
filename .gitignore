@@ -9,3 +9,4 @@ vite.config.ts.*
 *.tar.gzc
 cookies2.txt
 cookies-new.txt
+*.zip
