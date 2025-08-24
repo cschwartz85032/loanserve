@@ -60,7 +60,13 @@ export class OutboxProcessor {
    * Process pending outbox messages
    */
   private async processOutbox(): Promise<void> {
-    const client = await pool.connect();
+    let client;
+    try {
+      client = await pool.connect();
+    } catch (error) {
+      console.error('[OutboxProcessor] Failed to get database connection:', error);
+      return;
+    }
     
     try {
       // Begin transaction
@@ -148,11 +154,21 @@ export class OutboxProcessor {
       `);
 
     } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('[OutboxProcessor] Transaction failed:', error);
-      throw error;
+      console.error('[OutboxProcessor] Transaction failed, rolling back:', error);
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackError) {
+        console.error('[OutboxProcessor] Rollback failed:', rollbackError);
+      }
+      // Don't throw - just log and continue
     } finally {
-      client.release();
+      if (client) {
+        try {
+          client.release();
+        } catch (releaseError) {
+          console.error('[OutboxProcessor] Failed to release connection:', releaseError);
+        }
+      }
     }
   }
 }

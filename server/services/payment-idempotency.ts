@@ -129,6 +129,13 @@ export function createIdempotentHandler<T, R>(
   handler: (envelope: PaymentEnvelope<T>, client: PoolClient) => Promise<R>
 ) {
   return async (envelope: PaymentEnvelope<T>): Promise<R | null> => {
+    console.log(`[Idempotency] Processing message for consumer ${consumer}, envelope:`, JSON.stringify(envelope, null, 2));
+    
+    if (!envelope.message_id) {
+      console.error(`[Idempotency] ERROR: No message_id in envelope`);
+      throw new Error('Invalid envelope: missing message_id');
+    }
+    
     // Check if already processed
     const { processed, resultHash } = await IdempotencyService.checkProcessed(
       consumer,
@@ -143,6 +150,7 @@ export function createIdempotentHandler<T, R>(
     // Process in transaction
     const client = await pool.connect();
     try {
+      console.log(`[Idempotency] Starting transaction for message ${envelope.message_id}`);
       await client.query('BEGIN');
 
       // Double-check in transaction (handles race conditions)
@@ -158,6 +166,7 @@ export function createIdempotentHandler<T, R>(
       }
 
       // Execute handler
+      console.log(`[Idempotency] Executing handler for message ${envelope.message_id}`);
       const result = await handler(envelope, client);
 
       // Record as processed
@@ -173,6 +182,7 @@ export function createIdempotentHandler<T, R>(
       return result;
 
     } catch (error) {
+      console.error(`[Idempotency] Error processing message ${envelope.message_id}:`, error);
       await client.query('ROLLBACK');
       throw error;
     } finally {

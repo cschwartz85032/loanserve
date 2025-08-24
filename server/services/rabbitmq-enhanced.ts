@@ -262,10 +262,18 @@ export class EnhancedRabbitMQService {
     const { consumerTag } = await channel.consume(
       options.queue,
       async (msg) => {
-        if (!msg) return;
+        console.log(`[RabbitMQ] Message received on queue ${options.queue}`);
+        if (!msg) {
+          console.log('[RabbitMQ] Null message received');
+          return;
+        }
 
+        console.log('[RabbitMQ] Message fields:', msg.fields);
+        
         try {
+          console.log('[RabbitMQ] Raw message content:', msg.content.toString());
           const envelope = JSON.parse(msg.content.toString()) as MessageEnvelope<T>;
+          console.log('[RabbitMQ] Parsed envelope:', JSON.stringify(envelope, null, 2));
           await handler(envelope, msg);
           
           if (!options.noAck) {

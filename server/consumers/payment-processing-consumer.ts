@@ -4,12 +4,14 @@
  */
 
 import { PoolClient } from 'pg';
+import { pool } from '../db';
 import {
   PaymentEnvelope,
   PaymentData,
   PaymentState
 } from '../messaging/payment-envelope';
 import { IdempotencyService, createIdempotentHandler } from '../services/payment-idempotency';
+import { ConsumerContext } from '../../shared/messaging/envelope';
 import { PaymentAllocationEngine } from '../services/payment-allocation-engine';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { getMessageFactory } from '../messaging/message-factory';
@@ -25,13 +27,17 @@ export class PaymentProcessingConsumer {
    * Main processing handler
    */
   async processPayment(
-    envelope: PaymentEnvelope<PaymentData>,
-    client: PoolClient
+    data: PaymentData,
+    context: ConsumerContext
   ): Promise<void> {
-    const { data } = envelope;
     console.log(`[Processing] Processing payment ${data.payment_id}`);
-
+    
+    // Get database connection from pool
+    const client = await pool.connect();
+    
     try {
+      // Start transaction
+      await client.query('BEGIN');
       // Log audit trail - Payment processing started
       console.log(`[Processing] Logging audit event for payment ${data.payment_id}`);
       await this.logAuditEvent(
@@ -189,13 +195,14 @@ export class PaymentProcessingConsumer {
       );
 
       // Emit processed event
-      const processedEnvelope = this.messageFactory.createReply(envelope, {
+      const processedEnvelope = this.messageFactory.create({
         schema: `loanserve.payment.v1.processed`,
         data: {
           ...data,
           allocation,
           processing_timestamp: new Date().toISOString()
-        }
+        },
+        correlation_id: data.payment_id
       });
 
       await IdempotencyService.addToOutbox(
@@ -211,10 +218,21 @@ export class PaymentProcessingConsumer {
       if (data.source === 'wire') {
         await this.immediateSettle(client, data.payment_id);
       }
+      
+      // Commit transaction
+      await client.query('COMMIT');
+      console.log(`[Processing] Transaction committed for payment ${data.payment_id}`);
 
     } catch (error) {
       console.error(`[Processing] Error processing payment ${data.payment_id}:`, error);
+      // Rollback transaction on error
+      await client.query('ROLLBACK');
+      console.log(`[Processing] Transaction rolled back for payment ${data.payment_id}`);
       throw error;
+    } finally {
+      // Always release the connection
+      client.release();
+      console.log(`[Processing] Database connection released for payment ${data.payment_id}`);
     }
   }
 
@@ -507,6 +525,7 @@ export class PaymentProcessingConsumer {
         consumerTag: 'payment-processing-consumer'
       },
       async (envelope: PaymentEnvelope<PaymentData>, msg) => {
+        console.log('[Processing Consumer] Received message from RabbitMQ:', JSON.stringify(envelope, null, 2));
         try {
           await handler(envelope);
           // Ack is handled automatically by enhanced service
