@@ -3,6 +3,7 @@
  * Starts all payment processing consumers
  */
 
+import { PaymentValidatorConsumer } from './payment-validator-consumer';
 import { PaymentValidationConsumer } from './payment-validation-consumer';
 import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
@@ -26,6 +27,11 @@ export async function startPaymentConsumers(): Promise<void> {
     // const outboxProcessor = new OutboxProcessor();
     // await outboxProcessor.start();
     // console.log('[Consumers] Outbox processor started');
+
+    // Start validator consumer (Step 13)
+    const validatorConsumer = new PaymentValidatorConsumer();
+    await validatorConsumer.start();
+    console.log('[Consumers] Validator consumer started');
 
     // Start validation consumer
     const validationConsumer = new PaymentValidationConsumer();
