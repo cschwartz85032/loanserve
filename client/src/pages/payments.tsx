@@ -106,10 +106,11 @@ export default function Payments() {
   // Submit payment mutation
   const submitPayment = useMutation({
     mutationFn: async (payment: PaymentForm) => {
-      return apiRequest('/api/payments/manual', {
+      const response = await apiRequest('/api/payments/manual', {
         method: 'POST',
         body: payment
       });
+      return await response.json();
     },
     onSuccess: (data: any) => {
       // Show detailed status
