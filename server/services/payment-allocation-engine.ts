@@ -145,36 +145,49 @@ export class PaymentAllocationEngine {
     // Get loan balances
     const loanResult = await client.query(`
       SELECT 
-        COALESCE(late_fee_balance, 0) as late_fees,
-        COALESCE(accrued_interest, 0) as accrued_interest,
         COALESCE(principal_balance, 0) as scheduled_principal
       FROM loans
       WHERE id = $1
+    `, [loanId]);
+    
+    // Get total accrued interest from interest_accruals table
+    const interestResult = await client.query(`
+      SELECT COALESCE(SUM(accrued_amount), 0) as accrued_interest
+      FROM interest_accruals
+      WHERE loan_id = $1
+    `, [loanId]);
+    
+    // Get total late fees from loan_fees table
+    const feeResult = await client.query(`
+      SELECT COALESCE(SUM(fee_amount), 0) as late_fees
+      FROM loan_fees
+      WHERE loan_id = $1 AND fee_type = 'late_fee'
     `, [loanId]);
 
     // Get escrow balances
     const escrowResult = await client.query(`
       SELECT 
-        category,
-        COALESCE(shortage_cents, 0) as shortage,
-        COALESCE(target_balance_cents - balance_cents, 0) as current_due
+        COALESCE(shortage_amount, 0) as shortage,
+        COALESCE(target_balance - current_balance, 0) as current_due
       FROM escrow_accounts
       WHERE loan_id = $1
     `, [loanId]);
 
-    const escrowMap = new Map(escrowResult.rows.map(r => [r.category, r]));
+    // Since there's no category column, we'll treat all escrow as combined
+    const totalShortage = escrowResult.rows.reduce((sum, r) => sum + parseFloat(r.shortage || '0'), 0);
+    const totalCurrentDue = escrowResult.rows.reduce((sum, r) => sum + parseFloat(r.current_due || '0'), 0);
 
     return {
       loan_id: loanId,
-      late_fees: loanResult.rows[0]?.late_fees || 0,
-      accrued_interest: loanResult.rows[0]?.accrued_interest || 0,
-      scheduled_principal: loanResult.rows[0]?.scheduled_principal || 0,
-      escrow_shortage: escrowResult.rows.reduce((sum, r) => sum + r.shortage, 0),
+      late_fees: parseFloat(feeResult.rows[0]?.late_fees || '0'),
+      accrued_interest: parseFloat(interestResult.rows[0]?.accrued_interest || '0'),
+      scheduled_principal: parseFloat(loanResult.rows[0]?.scheduled_principal || '0'),
+      escrow_shortage: totalShortage,
       escrow_current: {
-        tax: escrowMap.get('tax')?.current_due || 0,
-        hazard: escrowMap.get('hazard')?.current_due || 0,
-        flood: escrowMap.get('flood')?.current_due || 0,
-        mi: escrowMap.get('MI')?.current_due || 0
+        tax: totalCurrentDue,  // Combined escrow amount
+        hazard: 0,
+        flood: 0,
+        mi: 0
       }
     };
   }

@@ -27,39 +27,56 @@ export class PaymentProcessingConsumer {
    * Main processing handler
    */
   async processPayment(
-    data: PaymentData,
-    context: ConsumerContext
-  ): Promise<void> {
-    console.log(`[Processing] Processing payment ${data.payment_id}`);
+    envelope: PaymentEnvelope<PaymentData>,
+    client: PoolClient
+  ): Promise<any> {
+    console.log(`[processPayment] Method called with envelope:`, JSON.stringify(envelope, null, 2));
+    console.log(`[processPayment] Envelope has data?`, envelope?.data ? 'yes' : 'no');
+    console.log(`[processPayment] Client is PoolClient?`, client ? 'yes' : 'no');
     
-    // Get database connection from pool
-    const client = await pool.connect();
+    if (!envelope?.data) {
+      throw new Error(`processPayment called with no data in envelope`);
+    }
+    
+    const data = envelope.data;
+    console.log(`[Processing] Processing payment ${data.payment_id}`);
+    console.log(`[Processing] Payment data:`, JSON.stringify(data, null, 2));
     
     try {
-      // Start transaction
-      await client.query('BEGIN');
       // Log audit trail - Payment processing started
-      console.log(`[Processing] Logging audit event for payment ${data.payment_id}`);
-      await this.logAuditEvent(
-        client,
-        'processed',
-        {
-          payment_id: data.payment_id,
-          loan_id: data.loan_id,
-          amount_cents: data.amount_cents,
-          source: data.source,
-          state: 'validated'
-        }
-      );
+      console.log(`[Processing] About to log audit event for payment ${data.payment_id}`);
+      try {
+        await this.logAuditEvent(
+          client,
+          'processed',
+          {
+            payment_id: data.payment_id,
+            loan_id: data.loan_id,
+            amount_cents: data.amount_cents,
+            source: data.source,
+            state: 'validated'
+          }
+        );
+        console.log(`[Processing] Audit event logged successfully`);
+      } catch (auditError) {
+        console.error(`[Processing] Failed to log audit event:`, auditError);
+        throw auditError;
+      }
 
       // Update state to processing
-      console.log(`[Processing] Updating payment state to processing`);
-      await this.updatePaymentState(
-        client,
-        data.payment_id,
-        'validated',
-        'processing'
-      );
+      console.log(`[Processing] About to update payment state to processing for payment_id: ${data.payment_id}`);
+      try {
+        await this.updatePaymentState(
+          client,
+          data.payment_id,
+          'validated',
+          'processing'
+        );
+        console.log(`[Processing] Payment state updated successfully`);
+      } catch (stateError) {
+        console.error(`[Processing] Failed to update payment state:`, stateError);
+        throw stateError;
+      }
 
       // Get payment details
       const paymentResult = await client.query(
@@ -218,21 +235,18 @@ export class PaymentProcessingConsumer {
       if (data.source === 'wire') {
         await this.immediateSettle(client, data.payment_id);
       }
-      
-      // Commit transaction
-      await client.query('COMMIT');
-      console.log(`[Processing] Transaction committed for payment ${data.payment_id}`);
+
+      // Return result for idempotency tracking
+      return {
+        payment_id: data.payment_id,
+        processed: true,
+        allocation,
+        timestamp: new Date().toISOString()
+      };
 
     } catch (error) {
       console.error(`[Processing] Error processing payment ${data.payment_id}:`, error);
-      // Rollback transaction on error
-      await client.query('ROLLBACK');
-      console.log(`[Processing] Transaction rolled back for payment ${data.payment_id}`);
       throw error;
-    } finally {
-      // Always release the connection
-      client.release();
-      console.log(`[Processing] Database connection released for payment ${data.payment_id}`);
     }
   }
 
@@ -250,10 +264,18 @@ export class PaymentProcessingConsumer {
   ): Promise<void> {
     // Get current loan balances for running balance calculation
     const loanResult = await client.query(
-      'SELECT principal_balance, accrued_interest FROM loans WHERE id = $1',
+      'SELECT principal_balance FROM loans WHERE id = $1',
       [loanId]
     );
     const loan = loanResult.rows[0];
+    
+    // Get total accrued interest from interest_accruals table
+    const interestResult = await client.query(
+      'SELECT COALESCE(SUM(accrued_amount), 0) as total_accrued FROM interest_accruals WHERE loan_id = $1',
+      [loanId]
+    );
+    const totalAccruedInterest = parseFloat(interestResult.rows[0]?.total_accrued || '0');
+    loan.accrued_interest = totalAccruedInterest.toString();
     
     // Post each allocation to the general ledger
     for (const alloc of allocation.allocations) {
@@ -358,19 +380,13 @@ export class PaymentProcessingConsumer {
           break;
 
         case 'late_fees':
-          // Update late fee balance
-          await client.query(
-            'UPDATE loans SET late_fee_balance = GREATEST(0, COALESCE(late_fee_balance, 0) - $1) WHERE id = $2',
-            [alloc.amount_cents / 100, loanId]
-          );
+          // Late fee reduction is tracked in payment_ledger, no need to update loans table
+          // Actual fees are tracked in loan_fees table
           break;
 
         case 'accrued_interest':
-          // Update accrued interest
-          await client.query(
-            'UPDATE loans SET accrued_interest = GREATEST(0, COALESCE(accrued_interest, 0) - $1) WHERE id = $2',
-            [alloc.amount_cents / 100, loanId]
-          );
+          // Interest reduction is tracked in payment_ledger, no need to update loans table
+          // Actual interest accrual happens in interest_accruals table
           break;
       }
     }
@@ -477,16 +493,26 @@ export class PaymentProcessingConsumer {
     fromState: PaymentState,
     toState: PaymentState
   ): Promise<void> {
+    console.log(`[updatePaymentState] Called with paymentId: ${paymentId}, fromState: ${fromState}, toState: ${toState}`);
+    console.log(`[updatePaymentState] Type of paymentId: ${typeof paymentId}, value: '${paymentId}'`);
+    
+    if (!paymentId) {
+      throw new Error(`updatePaymentState called with null/undefined paymentId`);
+    }
+    
     await client.query(
       'UPDATE payment_transactions SET state = $1 WHERE payment_id = $2 AND state = $3',
       [toState, paymentId, fromState]
     );
 
+    const params = [paymentId, fromState, toState, 'system', `State changed from ${fromState} to ${toState}`];
+    console.log(`[updatePaymentState] Inserting transition with params:`, params);
+    
     await client.query(`
       INSERT INTO payment_state_transitions (
         payment_id, previous_state, new_state, occurred_at, actor, reason
       ) VALUES ($1, $2, $3, NOW(), $4, $5)
-    `, [paymentId, fromState, toState, 'system', `State changed from ${fromState} to ${toState}`]);
+    `, params);
   }
 
   /**
@@ -515,7 +541,9 @@ export class PaymentProcessingConsumer {
   async start(): Promise<void> {
     const handler = createIdempotentHandler(
       'payment-processing',
-      this.processPayment.bind(this)
+      async (envelope: PaymentEnvelope<PaymentData>, client: PoolClient) => {
+        return await this.processPayment(envelope, client);
+      }
     );
 
     await this.rabbitmq.consume(
@@ -525,12 +553,20 @@ export class PaymentProcessingConsumer {
         consumerTag: 'payment-processing-consumer'
       },
       async (envelope: PaymentEnvelope<PaymentData>, msg) => {
-        console.log('[Processing Consumer] Received message from RabbitMQ:', JSON.stringify(envelope, null, 2));
+        console.log('[Processing Consumer] Received message from RabbitMQ');
+        console.log('[Processing Consumer] Envelope schema:', envelope.schema);
+        console.log('[Processing Consumer] Payment ID:', envelope.data?.payment_id);
+        console.log('[Processing Consumer] Loan ID:', envelope.data?.loan_id);
+        console.log('[Processing Consumer] Amount cents:', envelope.data?.amount_cents);
+        
         try {
-          await handler(envelope);
+          const result = await handler(envelope);
+          console.log('[Processing Consumer] Handler result:', result);
           // Ack is handled automatically by enhanced service
         } catch (error) {
-          console.error('[Processing] Error processing message:', error);
+          console.error('[Processing Consumer] Error processing message:', error);
+          console.error('[Processing Consumer] Error stack:', error instanceof Error ? error.stack : 'No stack');
+          console.error('[Processing Consumer] Payment ID that failed:', envelope.data?.payment_id);
           throw error; // Enhanced service will handle nack
         }
       }

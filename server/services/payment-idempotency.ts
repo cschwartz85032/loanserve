@@ -167,7 +167,14 @@ export function createIdempotentHandler<T, R>(
 
       // Execute handler
       console.log(`[Idempotency] Executing handler for message ${envelope.message_id}`);
-      const result = await handler(envelope, client);
+      let result;
+      try {
+        result = await handler(envelope, client);
+        console.log(`[Idempotency] Handler executed successfully for message ${envelope.message_id}`);
+      } catch (handlerError) {
+        console.error(`[Idempotency] Handler failed for message ${envelope.message_id}:`, handlerError);
+        throw handlerError;
+      }
 
       // Record as processed
       const hash = IdempotencyService.createResultHash(result);
