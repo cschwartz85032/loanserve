@@ -234,7 +234,8 @@ export async function addIpToAllowlist(
   cidr: string,
   label?: string,
   actorUserId?: number,
-  expiresAt?: Date | string
+  expiresAt?: Date | string,
+  beginsAt?: Date | string
 ): Promise<{ success: boolean; id?: string; error?: string }> {
   try {
     // Validate CIDR format
@@ -267,8 +268,10 @@ export async function addIpToAllowlist(
       userId,
       ipAddress, // Required field - the actual IP address
       cidr, // Optional field - the CIDR notation with subnet
-      description: label || `IP allowlist entry for ${cidr}`,
+      label: label || `IP allowlist entry for ${cidr}`, // Set label field (required)
+      description: label || `IP allowlist entry for ${cidr}`, // Also set description for compatibility
       isActive: true,
+      beginsAt: beginsAt ? new Date(beginsAt) : new Date(), // Start date (defaults to now)
       expiresAt: expiresAt ? new Date(expiresAt) : null
     })
     .returning({ id: userIpAllowlist.id });
