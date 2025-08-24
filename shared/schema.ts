@@ -689,17 +689,20 @@ export const payments = pgTable("payments", {
   batchId: text("batch_id"),
   // Column Bank Integration
   columnTransferId: varchar("column_transfer_id", { length: 100 }),
+  columnAccountId: text("column_account_id"),
+  columnEventLastSeen: text("column_event_last_seen"),
   columnWebhookId: varchar("column_webhook_id", { length: 100 }),
+  // Source and Idempotency
+  sourceChannel: text("source_channel"), // 'manual', 'ach', 'wire', 'api', 'column'
+  idempotencyKey: varchar("idempotency_key", { length: 256 }).unique(),
   // Suspense and Reconciliation
-  suspenseAmount: decimal("suspense_amount", { precision: 10, scale: 2 }),
+  suspenseAmount: decimal("suspense_amount", { precision: 18, scale: 2 }).default('0').notNull(),
   reconciledAt: timestamp("reconciled_at"),
   reconciledBy: integer("reconciled_by").references(() => users.id),
   // AI Processing
   aiProcessed: boolean("ai_processed").default(false),
   aiConfidenceScore: decimal("ai_confidence_score", { precision: 3, scale: 2 }),
   aiSuggestedAllocation: jsonb("ai_suggested_allocation"),
-  // Idempotency
-  idempotencyKey: varchar("idempotency_key", { length: 256 }),
   // Additional
   notes: text("notes"),
   metadata: jsonb("metadata"),
@@ -712,6 +715,7 @@ export const payments = pgTable("payments", {
     effectiveDateIdx: index("payment_effective_date_idx").on(table.effectiveDate),
     statusIdx: index("payment_status_idx").on(table.status),
     batchIdx: index("payment_batch_idx").on(table.batchId),
+    columnTransferIdx: index("payments_column_transfer_idx").on(table.columnTransferId),
   };
 });
 
