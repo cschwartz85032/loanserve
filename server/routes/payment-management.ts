@@ -257,11 +257,9 @@ router.post('/manual',
           WHERE payment_id = ${paymentId}
         `);
         
-        // Now publish to processing queue since payment is validated
+        // Now add to outbox for processing since payment is validated
         try {
-          console.log('[Manual Payment] Publishing validated payment to processing queue...');
-          const processingConnection = await amqp.connect(CLOUDAMQP_URL);
-          const processingChannel = await processingConnection.createChannel();
+          console.log('[Manual Payment] Adding validated payment to outbox for processing...');
           
           // Create validated envelope for processing
           const validatedEnvelope = {
@@ -273,19 +271,29 @@ router.post('/manual',
             }
           };
           
-          // Publish to trigger processing
-          const processingRoutingKey = `payment.${paymentData.source}.validated`;
-          await processingChannel.publish(
-            'payments.topic',
-            processingRoutingKey,
-            Buffer.from(JSON.stringify(validatedEnvelope)),
-            { persistent: true }
-          );
-          
-          await processingConnection.close();
-          console.log('[Manual Payment] Payment sent to processing queue');
-        } catch (processingErr) {
-          console.error('[Manual Payment] Failed to send to processing queue:', processingErr);
+          // Add to outbox for processing
+          await db.execute(sql`
+            INSERT INTO outbox (
+              aggregate_type, aggregate_id, schema, routing_key, 
+              payload, headers, created_at
+            )
+            VALUES (
+              'payment',
+              ${paymentId},
+              ${validatedEnvelope.schema},
+              ${`payment.${paymentData.source}.validated`},
+              ${JSON.stringify(validatedEnvelope)}::jsonb,
+              ${JSON.stringify({
+                'x-message-id': validatedEnvelope.envelope_id || uuidv4(),
+                'x-correlation-id': validatedEnvelope.correlation_id || uuidv4(),
+                'x-idempotency-key': paymentId
+              })}::jsonb,
+              NOW()
+            )
+          `);
+          console.log('[Manual Payment] Payment added to outbox for processing');
+        } catch (outboxErr) {
+          console.error('[Manual Payment] Failed to add to outbox:', outboxErr);
           // Continue anyway - payment is validated
         }
         

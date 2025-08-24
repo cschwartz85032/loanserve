@@ -35,7 +35,7 @@ export class PaymentProcessingConsumer {
       // Log audit trail - Payment processing started
       await this.logAuditEvent(
         client,
-        'payment_processing_started',
+        'processed',
         {
           payment_id: data.payment_id,
           loan_id: data.loan_id,
@@ -69,7 +69,7 @@ export class PaymentProcessingConsumer {
       // Log audit trail - Starting allocation
       await this.logAuditEvent(
         client,
-        'payment_allocation_started',
+        'processed',
         {
           payment_id: data.payment_id,
           loan_id: payment.loan_id,
@@ -92,7 +92,7 @@ export class PaymentProcessingConsumer {
       // Log audit trail - Allocation completed
       await this.logAuditEvent(
         client,
-        'payment_allocation_completed',
+        'processed',
         {
           payment_id: data.payment_id,
           loan_id: payment.loan_id,
@@ -120,7 +120,7 @@ export class PaymentProcessingConsumer {
       // Log audit trail - Posted to general ledger
       await this.logAuditEvent(
         client,
-        'payment_posted_to_ledger',
+        'processed',
         {
           payment_id: data.payment_id,
           loan_id: payment.loan_id,
@@ -139,7 +139,7 @@ export class PaymentProcessingConsumer {
       // Log audit trail - Loan balances updated
       await this.logAuditEvent(
         client,
-        'loan_balances_updated',
+        'processed',
         {
           payment_id: data.payment_id,
           loan_id: payment.loan_id,
@@ -176,7 +176,7 @@ export class PaymentProcessingConsumer {
       // Log audit trail - Payment processing completed
       await this.logAuditEvent(
         client,
-        'payment_processing_completed',
+        'processed',
         {
           payment_id: data.payment_id,
           loan_id: payment.loan_id,

@@ -8,7 +8,7 @@ import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
 import { PaymentReversalSaga } from './payment-reversal-saga';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
-// import { OutboxProcessor } from '../services/outbox-processor';
+import { OutboxProcessor } from '../services/outbox-processor';
 
 export async function startPaymentConsumers(): Promise<void> {
   console.log('[Consumers] Starting payment processing consumers...');
@@ -22,10 +22,10 @@ export async function startPaymentConsumers(): Promise<void> {
     await rabbitmq.waitForConnection();
     console.log('[Consumers] RabbitMQ connected');
 
-    // Start outbox processor (commented out until implemented)
-    // const outboxProcessor = new OutboxProcessor();
-    // await outboxProcessor.start();
-    // console.log('[Consumers] Outbox processor started');
+    // Start outbox processor
+    const outboxProcessor = new OutboxProcessor();
+    await outboxProcessor.start();
+    console.log('[Consumers] Outbox processor started');
 
     // Start validation consumer
     const validationConsumer = new PaymentValidationConsumer();
