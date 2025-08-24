@@ -257,6 +257,38 @@ router.post('/manual',
           WHERE payment_id = ${paymentId}
         `);
         
+        // Now publish to processing queue since payment is validated
+        try {
+          console.log('[Manual Payment] Publishing validated payment to processing queue...');
+          const processingConnection = await amqp.connect(CLOUDAMQP_URL);
+          const processingChannel = await processingConnection.createChannel();
+          
+          // Create validated envelope for processing
+          const validatedEnvelope = {
+            ...envelope,
+            schema: 'loanserve.payment.v1.validated',
+            metadata: {
+              ...envelope.metadata,
+              validation_timestamp: new Date().toISOString()
+            }
+          };
+          
+          // Publish to trigger processing
+          const processingRoutingKey = `payment.${paymentData.source}.validated`;
+          await processingChannel.publish(
+            'payments.topic',
+            processingRoutingKey,
+            Buffer.from(JSON.stringify(validatedEnvelope)),
+            { persistent: true }
+          );
+          
+          await processingConnection.close();
+          console.log('[Manual Payment] Payment sent to processing queue');
+        } catch (processingErr) {
+          console.error('[Manual Payment] Failed to send to processing queue:', processingErr);
+          // Continue anyway - payment is validated
+        }
+        
       } catch (queueErr: any) {
         console.error('[Manual Payment] RabbitMQ submission failed:', queueErr);
         // Mark as failed in database
