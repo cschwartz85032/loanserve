@@ -332,7 +332,7 @@ export class PaymentClassifierConsumer {
 
     const consumerTag = await this.rabbitmq.consume(
       {
-        queue: 'payments.classification',
+        queue: 'q.classify',
         prefetch: 25,
         consumerTag: 'classifier-consumer'
       },
