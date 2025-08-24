@@ -2402,21 +2402,22 @@ export const reconciliations = pgTable("reconciliations", {
   channelPeriodIdx: uniqueIndex().on(t.channel, t.periodStart, t.periodEnd)
 }));
 
-// Exception Cases - AI-assisted exception workflow
+// Exception Cases - Exception workflow with AI recommendations (Step 7)
 export const exceptionCases = pgTable("exception_cases", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  exceptionType: text("exception_type").notNull(),
-  severity: text("severity").notNull(), // 'low', 'medium', 'high', 'critical'
-  aiAnalysis: jsonb("ai_analysis"),
-  suggestedAction: text("suggested_action"),
-  status: text("status").notNull().default('open'),
-  assignedTo: integer("assigned_to").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
-  resolvedAt: timestamp("resolved_at")
+  ingestionId: varchar("ingestion_id", { length: 36 }).references(() => paymentIngestions.id),
+  paymentId: integer("payment_id").references(() => payments.id),
+  category: text("category").notNull(), // ach_return|nsf|wire_recall|duplicate|dispute|reconcile_variance
+  subcategory: text("subcategory"),
+  severity: text("severity").notNull(), // CHECK: 'low'|'medium'|'high'|'critical'
+  state: text("state").notNull(), // CHECK: 'open'|'pending'|'resolved'|'cancelled'
+  assignedTo: text("assigned_to"),
+  aiRecommendation: jsonb("ai_recommendation"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true })
 }, (t) => ({
-  statusIdx: index().on(t.status),
-  severityIdx: index().on(t.severity),
-  assignedIdx: index().on(t.assignedTo)
+  // Index on state and severity for efficient filtering
+  stateSeverityIdx: index().on(t.state, t.severity)
 }));
 
 // Export types for new tables
