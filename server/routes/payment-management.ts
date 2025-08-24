@@ -305,7 +305,13 @@ router.get('/transactions',
           const loanResult = await db.execute(sql`
             SELECT 
               l.loan_number,
-              COALESCE(be.full_name, 'Unknown') as borrower_name
+              COALESCE(
+                CASE 
+                  WHEN be.entity_type = 'individual' THEN CONCAT(be.first_name, ' ', be.last_name)
+                  ELSE be.entity_name
+                END, 
+                'Unknown'
+              ) as borrower_name
             FROM loans l
             LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.borrower_type = 'primary'
             LEFT JOIN borrower_entities be ON be.id = lb.borrower_id
@@ -351,7 +357,10 @@ router.get('/:paymentId',
         SELECT 
           pt.*,
           l.loan_number,
-          be.full_name as borrower_name
+          CASE 
+            WHEN be.entity_type = 'individual' THEN CONCAT(be.first_name, ' ', be.last_name)
+            ELSE be.entity_name
+          END as borrower_name
         FROM payment_transactions pt
         LEFT JOIN loans l ON l.id::text = pt.loan_id
         LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.borrower_type = 'primary'
