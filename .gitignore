@@ -1,5 +1,9 @@
 node_modules
 .DS_Store
 server/public
+# Ignore Replit session files
+browser-session.txt
+cookies.txt
+session.txt
 vite.config.ts.*
 *.tar.gz
