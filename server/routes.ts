@@ -81,6 +81,10 @@ const uploadStorage = multer.diskStorage({
 const upload = multer({ storage: uploadStorage });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Health check routes (no auth required - must be accessible for monitoring)
+  const healthRoutes = (await import('./routes/health')).default;
+  app.use('/healthz', healthRoutes);
+
   // Setup authentication
   await setupAuth(app);
 
