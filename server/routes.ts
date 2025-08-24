@@ -106,8 +106,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api', crmRoutes);
 
   // Register payment processing routes
-  app.use(paymentRoutes);
+  // Register payment management routes first (more specific routes)
   app.use('/api/payments', paymentManagementRoutes);
+  // Then register general payment routes
+  app.use(paymentRoutes);
 
   // Register queue monitoring routes
   const queueMonitorRoutes = (await import('./routes/queue-monitor-routes.js')).default;
