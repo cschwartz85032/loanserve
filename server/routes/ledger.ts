@@ -21,7 +21,7 @@ export async function getLoanLedger(req: Request, res: Response) {
       .select()
       .from(loanLedger)
       .where(eq(loanLedger.loanId, parseInt(loanId)))
-      .orderBy(loanLedger.transactionDate, loanLedger.id);
+      .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
     
     res.json(entries);
   } catch (error) {
@@ -160,7 +160,7 @@ export async function exportLedgerToCSV(req: Request, res: Response) {
       .select()
       .from(loanLedger)
       .where(eq(loanLedger.loanId, parseInt(loanId)))
-      .orderBy(loanLedger.transactionDate, loanLedger.id);
+      .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
     
     // Format data for CSV export with proper date formatting and number formatting
     const formattedEntries = entries.map(entry => ({
@@ -211,7 +211,7 @@ export async function exportLedgerToPDF(req: Request, res: Response) {
       .select()
       .from(loanLedger)
       .where(eq(loanLedger.loanId, parseInt(loanId)))
-      .orderBy(loanLedger.transactionDate, loanLedger.id);
+      .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
     
     const loanData = await db
       .select()
@@ -275,7 +275,7 @@ export async function emailLedger(req: Request, res: Response) {
       .select()
       .from(loanLedger)
       .where(eq(loanLedger.loanId, parseInt(loanId)))
-      .orderBy(loanLedger.transactionDate, loanLedger.id);
+      .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
     
     const loanData = await db
       .select()

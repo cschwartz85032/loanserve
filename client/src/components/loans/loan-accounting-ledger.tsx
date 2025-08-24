@@ -289,7 +289,13 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                   ledgerEntries.map((entry: any) => (
                     <TableRow key={entry.id} className={entry.status === 'pending_approval' ? 'bg-yellow-50' : ''}>
                       <TableCell className="font-mono text-sm">
-                        {new Date(entry.transactionDate).toLocaleDateString()}
+                        {entry.transactionDate 
+                          ? new Date(entry.transactionDate).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit'
+                            })
+                          : '-'}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{entry.transactionId}</TableCell>
                       <TableCell>{entry.description}</TableCell>
