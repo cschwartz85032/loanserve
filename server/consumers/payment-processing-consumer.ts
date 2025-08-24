@@ -14,6 +14,7 @@ import { PaymentAllocationEngine } from '../services/payment-allocation-engine';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { getMessageFactory } from '../messaging/message-factory';
 import { db } from '../db';
+import { v4 as uuidv4 } from 'uuid';
 
 export class PaymentProcessingConsumer {
   private rabbitmq = getEnhancedRabbitMQService();
@@ -31,6 +32,19 @@ export class PaymentProcessingConsumer {
     console.log(`[Processing] Processing payment ${data.payment_id}`);
 
     try {
+      // Log audit trail - Payment processing started
+      await this.logAuditEvent(
+        client,
+        'payment_processing_started',
+        {
+          payment_id: data.payment_id,
+          loan_id: data.loan_id,
+          amount_cents: data.amount_cents,
+          source: data.source,
+          state: 'validated'
+        }
+      );
+
       // Update state to processing
       await this.updatePaymentState(
         client,
@@ -52,6 +66,18 @@ export class PaymentProcessingConsumer {
       const payment = paymentResult.rows[0];
       const effectiveDate = new Date(payment.effective_date);
 
+      // Log audit trail - Starting allocation
+      await this.logAuditEvent(
+        client,
+        'payment_allocation_started',
+        {
+          payment_id: data.payment_id,
+          loan_id: payment.loan_id,
+          amount_cents: payment.amount_cents,
+          effective_date: effectiveDate.toISOString()
+        }
+      );
+
       // Allocate payment
       const allocation = await this.allocationEngine.allocate(
         client,
@@ -63,14 +89,44 @@ export class PaymentProcessingConsumer {
 
       console.log(`[Processing] Allocated payment to ${allocation.allocations.length} targets`);
 
-      // Post to ledger (as pending)
-      await this.postToLedger(
+      // Log audit trail - Allocation completed
+      await this.logAuditEvent(
+        client,
+        'payment_allocation_completed',
+        {
+          payment_id: data.payment_id,
+          loan_id: payment.loan_id,
+          allocations: allocation.allocations.map(a => ({
+            target: a.target,
+            amount_cents: a.amount_cents,
+            account: a.account
+          })),
+          total_allocated: allocation.total_allocated,
+          unapplied: allocation.unapplied
+        }
+      );
+
+      // Post to general ledger
+      await this.postToGeneralLedger(
         client,
         data.payment_id,
         payment.loan_id,
+        payment.amount_cents,
         allocation,
         effectiveDate,
-        true // pending
+        payment.external_ref || data.payment_id
+      );
+
+      // Log audit trail - Posted to general ledger
+      await this.logAuditEvent(
+        client,
+        'payment_posted_to_ledger',
+        {
+          payment_id: data.payment_id,
+          loan_id: payment.loan_id,
+          amount_cents: payment.amount_cents,
+          ledger_entries: allocation.allocations.length + 1 // +1 for cash debit
+        }
       );
 
       // Update loan balances
@@ -78,6 +134,20 @@ export class PaymentProcessingConsumer {
         client,
         payment.loan_id,
         allocation
+      );
+
+      // Log audit trail - Loan balances updated
+      await this.logAuditEvent(
+        client,
+        'loan_balances_updated',
+        {
+          payment_id: data.payment_id,
+          loan_id: payment.loan_id,
+          updates: allocation.allocations.map(a => ({
+            target: a.target,
+            amount_cents: a.amount_cents
+          }))
+        }
       );
 
       // Update escrow if applicable
@@ -101,6 +171,19 @@ export class PaymentProcessingConsumer {
         data.payment_id,
         'processing',
         'posted_pending_settlement'
+      );
+
+      // Log audit trail - Payment processing completed
+      await this.logAuditEvent(
+        client,
+        'payment_processing_completed',
+        {
+          payment_id: data.payment_id,
+          loan_id: payment.loan_id,
+          final_state: 'posted_pending_settlement',
+          total_allocated: allocation.total_allocated,
+          processing_timestamp: new Date().toISOString()
+        }
       );
 
       // Emit processed event
@@ -134,48 +217,106 @@ export class PaymentProcessingConsumer {
   }
 
   /**
-   * Post allocations to ledger
+   * Post payment to general ledger (loan_ledger table)
    */
-  private async postToLedger(
+  private async postToGeneralLedger(
     client: PoolClient,
     paymentId: string,
     loanId: string,
+    totalAmountCents: number,
     allocation: any,
     effectiveDate: Date,
-    pending: boolean
+    externalRef: string
   ): Promise<void> {
-    // Credit cash account
-    await client.query(`
-      INSERT INTO payment_ledger (
-        loan_id, payment_id, account, debit_cents, credit_cents,
-        pending, effective_date, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-    `, [
-      loanId,
-      paymentId,
-      'cash',
-      allocation.total_allocated,
-      0,
-      pending,
-      effectiveDate
-    ]);
-
-    // Debit allocation accounts
+    // Get current loan balances for running balance calculation
+    const loanResult = await client.query(
+      'SELECT principal_balance, accrued_interest FROM loans WHERE id = $1',
+      [loanId]
+    );
+    const loan = loanResult.rows[0];
+    
+    // Post each allocation to the general ledger
     for (const alloc of allocation.allocations) {
+      let transactionType: string;
+      let category: string | null = null;
+      let description: string;
+      
+      // Map allocation target to transaction type and description
+      switch (alloc.target) {
+        case 'late_fees':
+          transactionType = 'fee';
+          category = 'late_fee';
+          description = `Late fee payment received - ${alloc.target}`;
+          break;
+        case 'accrued_interest':
+          transactionType = 'interest';
+          category = 'servicing';
+          description = `Interest payment received`;
+          break;
+        case 'scheduled_principal':
+          transactionType = 'principal';
+          category = 'servicing';
+          description = `Principal payment received`;
+          break;
+        case 'escrow_shortage':
+        case 'current_escrow':
+          transactionType = 'escrow';
+          category = 'servicing';
+          description = `Escrow payment received - ${alloc.target}`;
+          break;
+        case 'unapplied_funds':
+          transactionType = 'payment';
+          category = 'unapplied';
+          description = `Unapplied funds from payment`;
+          break;
+        default:
+          transactionType = 'payment';
+          description = `Payment allocation - ${alloc.target}`;
+      }
+      
+      // Calculate new balances after this allocation
+      const newPrincipalBalance = alloc.target === 'scheduled_principal' 
+        ? parseFloat(loan.principal_balance) - (alloc.amount_cents / 100)
+        : parseFloat(loan.principal_balance);
+      
+      const newInterestBalance = alloc.target === 'accrued_interest'
+        ? Math.max(0, parseFloat(loan.accrued_interest || '0') - (alloc.amount_cents / 100))
+        : parseFloat(loan.accrued_interest || '0');
+      
+      // Insert ledger entry
       await client.query(`
-        INSERT INTO payment_ledger (
-          loan_id, payment_id, account, debit_cents, credit_cents,
-          pending, effective_date, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        INSERT INTO loan_ledger (
+          loan_id, transaction_date, transaction_id, description,
+          transaction_type, category, credit_amount, debit_amount,
+          running_balance, principal_balance, interest_balance,
+          status, created_by, notes, metadata, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
       `, [
         loanId,
-        paymentId,
-        alloc.account,
-        0,
-        alloc.amount_cents,
-        pending,
-        effectiveDate
+        effectiveDate,
+        `PAYMENT-${paymentId}-${alloc.target}`,
+        description,
+        transactionType,
+        category,
+        (alloc.amount_cents / 100).toFixed(2), // Credit (payment received)
+        null, // No debit
+        newPrincipalBalance.toFixed(2), // Running balance = principal balance
+        newPrincipalBalance.toFixed(2),
+        newInterestBalance.toFixed(2),
+        'posted',
+        null, // System user
+        `Payment ${externalRef} - Allocated ${(alloc.amount_cents / 100).toFixed(2)} to ${alloc.target}`,
+        JSON.stringify({
+          payment_id: paymentId,
+          allocation_target: alloc.target,
+          amount_cents: alloc.amount_cents,
+          external_ref: externalRef
+        })
       ]);
+      
+      // Update loan balances for next iteration
+      loan.principal_balance = newPrincipalBalance.toString();
+      loan.accrued_interest = newInterestBalance.toString();
     }
   }
 
@@ -326,6 +467,26 @@ export class PaymentProcessingConsumer {
         payment_id, previous_state, new_state, occurred_at, actor, reason
       ) VALUES ($1, $2, $3, NOW(), $4, $5)
     `, [paymentId, fromState, toState, 'system', `State changed from ${fromState} to ${toState}`]);
+  }
+
+  /**
+   * Log audit event for payment processing decisions
+   */
+  private async logAuditEvent(
+    client: PoolClient,
+    eventType: string,
+    details: any
+  ): Promise<void> {
+    await client.query(`
+      INSERT INTO auth_events (
+        id, occurred_at, event_type, details, event_key
+      ) VALUES ($1, NOW(), $2, $3, $4)
+    `, [
+      uuidv4(),
+      `payment.${eventType}`,
+      JSON.stringify(details),
+      `payment_${details.payment_id}_${eventType}_${Date.now()}`
+    ]);
   }
 
   /**

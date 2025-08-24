@@ -17,6 +17,7 @@ import { IdempotencyService, createIdempotentHandler } from '../services/payment
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { getMessageFactory } from '../messaging/message-factory';
 import { db } from '../db';
+import { v4 as uuidv4 } from 'uuid';
 
 export class PaymentValidationConsumer {
   private rabbitmq = getEnhancedRabbitMQService();
@@ -31,6 +32,20 @@ export class PaymentValidationConsumer {
   ): Promise<void> {
     const { data } = envelope;
     console.log(`[Validation] Processing payment ${data.payment_id} from ${data.source}`);
+
+    // Log audit trail - Payment received
+    await this.logAuditEvent(
+      client,
+      'payment_received',
+      {
+        payment_id: data.payment_id,
+        loan_id: data.loan_id,
+        amount_cents: data.amount_cents,
+        source: data.source,
+        external_ref: data.external_ref,
+        currency: data.currency || 'USD'
+      }
+    );
 
     try {
       // Check idempotency
@@ -47,6 +62,21 @@ export class PaymentValidationConsumer {
 
       if (existing.rows.length > 0) {
         console.log(`[Validation] Duplicate payment detected: ${existing.rows[0].payment_id}`);
+        
+        // Log audit trail - Duplicate payment
+        await this.logAuditEvent(
+          client,
+          'payment_duplicate_detected',
+          {
+            payment_id: data.payment_id,
+            existing_payment_id: existing.rows[0].payment_id,
+            state: existing.rows[0].state,
+            idempotency_key: idempotencyKey,
+            decision: 'skip',
+            reason: 'Payment already exists with same idempotency key'
+          }
+        );
+        
         return;
       }
 
@@ -88,6 +118,20 @@ export class PaymentValidationConsumer {
       const isValid = await this.validateBySource(envelope, client);
 
       if (isValid) {
+        // Log audit trail - Validation passed
+        await this.logAuditEvent(
+          client,
+          'payment_validation_passed',
+          {
+            payment_id: data.payment_id,
+            loan_id: data.loan_id,
+            source: data.source,
+            amount_cents: data.amount_cents,
+            decision: 'accept',
+            next_step: 'send_to_processing'
+          }
+        );
+
         // Update state to validated
         await this.updatePaymentState(
           client,
@@ -114,6 +158,21 @@ export class PaymentValidationConsumer {
 
         console.log(`[Validation] Payment ${data.payment_id} validated successfully`);
       } else {
+        // Log audit trail - Validation failed
+        await this.logAuditEvent(
+          client,
+          'payment_validation_failed',
+          {
+            payment_id: data.payment_id,
+            loan_id: data.loan_id,
+            source: data.source,
+            amount_cents: data.amount_cents,
+            decision: 'reject',
+            reason: 'Validation failed',
+            next_step: 'marked_as_rejected'
+          }
+        );
+
         // Update state to rejected
         await this.updatePaymentState(
           client,
@@ -148,12 +207,39 @@ export class PaymentValidationConsumer {
 
     if (loanResult.rows.length === 0) {
       console.log(`[Validation] Loan ${data.loan_id} not found`);
+      
+      // Log audit trail - Loan not found
+      await this.logAuditEvent(
+        client,
+        'payment_loan_not_found',
+        {
+          payment_id: data.payment_id,
+          loan_id: data.loan_id,
+          decision: 'reject',
+          reason: 'Loan does not exist in system'
+        }
+      );
+      
       return false;
     }
 
     const loan = loanResult.rows[0];
     if (loan.status === 'paid_off' || loan.status === 'charged_off') {
       console.log(`[Validation] Loan ${data.loan_id} is ${loan.status}`);
+      
+      // Log audit trail - Loan status invalid
+      await this.logAuditEvent(
+        client,
+        'payment_loan_status_invalid',
+        {
+          payment_id: data.payment_id,
+          loan_id: data.loan_id,
+          loan_status: loan.status,
+          decision: 'reject',
+          reason: `Cannot accept payment for ${loan.status} loan`
+        }
+      );
+      
       return false;
     }
 
@@ -162,8 +248,39 @@ export class PaymentValidationConsumer {
       const expectedPaymentCents = Math.round(parseFloat(loan.payment_amount) * 100);
       if (data.amount_cents < expectedPaymentCents) {
         console.log(`[Validation] Partial payment rejected. Received ${data.amount_cents} cents, expected ${expectedPaymentCents} cents`);
+        
+        // Log audit trail - Partial payment rejected
+        await this.logAuditEvent(
+          client,
+          'payment_partial_rejected',
+          {
+            payment_id: data.payment_id,
+            loan_id: data.loan_id,
+            amount_cents: data.amount_cents,
+            expected_amount_cents: expectedPaymentCents,
+            accept_partial: false,
+            decision: 'reject',
+            reason: 'Loan does not accept partial payments'
+          }
+        );
+        
         return false;
       }
+    } else if (data.amount_cents < Math.round(parseFloat(loan.payment_amount) * 100)) {
+      // Log audit trail - Partial payment accepted
+      await this.logAuditEvent(
+        client,
+        'payment_partial_accepted',
+        {
+          payment_id: data.payment_id,
+          loan_id: data.loan_id,
+          amount_cents: data.amount_cents,
+          full_payment_cents: Math.round(parseFloat(loan.payment_amount) * 100),
+          accept_partial: true,
+          decision: 'accept',
+          note: 'Partial payment accepted per loan terms'
+        }
+      );
     }
 
     // Source-specific validation
@@ -384,6 +501,26 @@ export class PaymentValidationConsumer {
         payment_id, previous_state, new_state, occurred_at, actor, reason
       ) VALUES ($1, $2, $3, NOW(), $4, $5)
     `, [paymentId, previousState, newState, actor, reason]);
+  }
+
+  /**
+   * Log audit event for validation decisions
+   */
+  private async logAuditEvent(
+    client: PoolClient,
+    eventType: string,
+    details: any
+  ): Promise<void> {
+    await client.query(`
+      INSERT INTO auth_events (
+        id, occurred_at, event_type, details, event_key
+      ) VALUES ($1, NOW(), $2, $3, $4)
+    `, [
+      uuidv4(),
+      `payment.${eventType}`,
+      JSON.stringify(details),
+      `payment_${details.payment_id}_${eventType}_${Date.now()}`
+    ]);
   }
 
   /**
