@@ -19,6 +19,7 @@ import { settingsRouter } from "./routes/settings";
 import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { emailTemplatesRouter } from "./routes/email-templates";
 import paymentRoutes from "./routes/payment-routes";
+import paymentManagementRoutes from "./routes/payment-management";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -106,6 +107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register payment processing routes
   app.use(paymentRoutes);
+  app.use(paymentManagementRoutes);
 
   // Register queue monitoring routes
   const queueMonitorRoutes = (await import('./routes/queue-monitor-routes.js')).default;
