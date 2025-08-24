@@ -28,11 +28,11 @@ async function submitTestPayment() {
     
     // Create validated envelope
     const envelope = {
-      envelope_id: ulid(),
+      message_id: ulid(),
       schema: 'loanserve.payment.v1.validated',
       producer: 'test-script',
       correlation_id: ulid(),
-      created_at: new Date().toISOString(),
+      occurred_at: new Date().toISOString(),
       effective_date: effectiveDate,
       data: {
         payment_id: paymentId,
@@ -62,7 +62,7 @@ async function submitTestPayment() {
       'payment.check.validated',
       JSON.stringify(envelope),
       JSON.stringify({
-        'x-message-id': envelope.envelope_id,
+        'x-message-id': envelope.message_id,
         'x-correlation-id': envelope.correlation_id,
         'x-idempotency-key': paymentId
       })

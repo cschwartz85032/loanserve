@@ -33,6 +33,7 @@ export class PaymentProcessingConsumer {
 
     try {
       // Log audit trail - Payment processing started
+      console.log(`[Processing] Logging audit event for payment ${data.payment_id}`);
       await this.logAuditEvent(
         client,
         'processed',
@@ -46,6 +47,7 @@ export class PaymentProcessingConsumer {
       );
 
       // Update state to processing
+      console.log(`[Processing] Updating payment state to processing`);
       await this.updatePaymentState(
         client,
         data.payment_id,
