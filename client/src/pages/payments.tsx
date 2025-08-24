@@ -150,14 +150,27 @@ export default function Payments() {
   };
 
   const handleLoanSelect = (loanId: string) => {
-    const loan = loans?.find(l => l.id.toString() === loanId);
+    if (loanId === 'no-loans') return;
+    
+    const loan = loans?.find((l: any) => l.id.toString() === loanId);
     if (loan) {
       setSelectedLoan(loan);
+      
+      // Get borrower name from loan object - may be in different properties
+      let borrowerName = 'Unknown';
+      if (loan.borrowerName) {
+        borrowerName = loan.borrowerName;
+      } else if (loan.borrower?.name) {
+        borrowerName = loan.borrower.name;
+      } else if (loan.borrowerEntities?.length > 0) {
+        borrowerName = loan.borrowerEntities[0].fullName || loan.borrowerEntities[0].name || 'Unknown';
+      }
+      
       setPaymentForm({
         ...paymentForm,
         loanId: loan.id.toString(),
-        loanNumber: loan.loanNumber,
-        borrowerName: loan.borrowerName || 'Unknown'
+        loanNumber: loan.loanNumber || `Loan ${loan.id}`,
+        borrowerName: borrowerName
       });
     }
   };
@@ -441,11 +454,17 @@ export default function Payments() {
                     <SelectValue placeholder="Choose a loan..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {loans?.map(loan => (
-                      <SelectItem key={loan.id} value={loan.id.toString()}>
-                        {loan.loanNumber} - {loan.borrowerName || 'Unknown'}
+                    {loans && loans.length > 0 ? (
+                      loans.map((loan: any) => (
+                        <SelectItem key={loan.id} value={loan.id.toString()}>
+                          {loan.loanNumber || `Loan ${loan.id}`}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-loans" disabled>
+                        No loans available
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
               </div>
