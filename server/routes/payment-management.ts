@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import * as amqp from 'amqplib';
@@ -12,10 +12,10 @@ const router = Router();
 const CLOUDAMQP_URL = process.env.CLOUDAMQP_URL || '';
 
 // Submit manual payment
-router.post('/api/payments/manual',
+router.post('/manual',
   requireAuth,
-  requirePermission('Payments', PermissionLevel.Write),
-  asyncHandler(async (req, res) => {
+  requirePermission('payments', PermissionLevel.WRITE),
+  asyncHandler(async (req: Request, res: Response) => {
     const paymentData = req.body;
     console.log('[Manual Payment] Received submission:', JSON.stringify(paymentData, null, 2));
     
@@ -198,13 +198,13 @@ router.post('/api/payments/manual',
           WHERE payment_id = ${paymentId}
         `);
         
-      } catch (queueErr) {
+      } catch (queueErr: any) {
         console.error('[Manual Payment] RabbitMQ submission failed:', queueErr);
         // Mark as failed in database
         await db.execute(sql`
           UPDATE payment_transactions 
           SET state = 'submission_failed',
-              metadata = ${JSON.stringify({ error: queueErr.message })}::jsonb
+              metadata = ${JSON.stringify({ error: queueErr?.message || 'Unknown error' })}::jsonb
           WHERE payment_id = ${paymentId}
         `);
       }
@@ -230,7 +230,7 @@ router.post('/api/payments/manual',
         }
       });
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('[Manual Payment] Unexpected error:', error);
       // Log the error to audit trail
       await db.execute(sql`
@@ -244,7 +244,7 @@ router.post('/api/payments/manual',
           ${req.ip || ''}::inet,
           ${req.get('user-agent') || ''},
           ${JSON.stringify({
-            error: error.message,
+            error: error?.message || 'Unknown error',
             loan_id: paymentData.loanId,
             amount: paymentData.amount,
             source: paymentData.source
@@ -254,17 +254,17 @@ router.post('/api/payments/manual',
       
       res.status(500).json({ 
         error: 'Failed to submit payment',
-        details: error.message 
+        details: error?.message || 'Unknown error' 
       });
     }
   })
 );
 
 // Get payment transactions
-router.get('/api/payments/transactions',
+router.get('/transactions',
   requireAuth,
-  requirePermission('Payments', PermissionLevel.Read),
-  asyncHandler(async (req, res) => {
+  requirePermission('payments', PermissionLevel.READ),
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       // First check if table exists and is accessible
       const tableCheck = await db.execute(sql`
@@ -339,10 +339,10 @@ router.get('/api/payments/transactions',
 );
 
 // Get payment details
-router.get('/api/payments/:paymentId',
+router.get('/:paymentId',
   requireAuth,
-  requirePermission('Payments', PermissionLevel.Read),
-  asyncHandler(async (req, res) => {
+  requirePermission('payments', PermissionLevel.READ),
+  asyncHandler(async (req: Request, res: Response) => {
     const { paymentId } = req.params;
     
     try {
@@ -391,10 +391,10 @@ router.get('/api/payments/:paymentId',
 );
 
 // Get payment stats
-router.get('/api/payments/stats',
+router.get('/stats',
   requireAuth,
-  requirePermission('Payments', PermissionLevel.Read),
-  asyncHandler(async (req, res) => {
+  requirePermission('payments', PermissionLevel.READ),
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       const statsResult = await db.execute(sql`
         SELECT 
