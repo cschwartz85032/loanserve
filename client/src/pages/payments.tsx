@@ -98,7 +98,8 @@ export default function Payments() {
     queryKey: ['/api/payments/transactions'],
     queryFn: async () => {
       const response = await apiRequest('/api/payments/transactions');
-      return Array.isArray(response) ? response : [];
+      const data = await response.json();
+      return Array.isArray(data) ? data : [];
     },
     refetchInterval: 5000 // Refresh every 5 seconds to show status updates
   });
