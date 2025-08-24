@@ -91,6 +91,12 @@ export function requireAuth(
   res: Response,
   next: NextFunction
 ): void {
+  // Skip authentication for Vite development routes
+  const path = req.originalUrl || req.url;
+  if (path && (path.startsWith('/@') || path.startsWith('/__') || path.includes('@vite') || path.includes('@react-refresh'))) {
+    return next();
+  }
+  
   if (!req.userPolicy) {
     res.status(401).json({ 
       error: 'Authentication required',
@@ -111,6 +117,12 @@ export function requirePermission(
 ) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // Skip authentication for Vite development routes
+      const path = req.originalUrl || req.url;
+      if (path && (path.startsWith('/@') || path.startsWith('/__') || path.includes('@vite') || path.includes('@react-refresh'))) {
+        return next();
+      }
+      
       // Ensure user is authenticated
       if (!req.userPolicy) {
         res.status(401).json({ 
