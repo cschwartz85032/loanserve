@@ -89,13 +89,15 @@ export default function Payments() {
   });
 
   // Fetch loans for selection
-  const { data: loans } = useQuery({
+  const { data: loansData } = useQuery({
     queryKey: ['/api/loans'],
     queryFn: async () => {
       const response = await apiRequest('/api/loans');
-      return response as any[];
+      return response;
     }
   });
+  
+  const loans = Array.isArray(loansData) ? loansData : [];
 
   // Fetch recent payments
   const { data: payments, isLoading: paymentsLoading } = useQuery({
