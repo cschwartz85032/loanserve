@@ -300,7 +300,47 @@ export function LoanAccountingLedger({ loanId, loanAmount }: LoanAccountingLedge
                   ledgerEntries.map((entry: any) => (
                     <TableRow key={entry.id} className={entry.status === 'pending_approval' ? 'bg-yellow-50' : ''}>
                       <TableCell className="font-mono text-sm">
-                        {entry.transactionDate ? new Date(entry.transactionDate + 'T00:00:00').toLocaleDateString() : 'N/A'}
+                        {(() => {
+                          if (!entry.transactionDate) return 'N/A';
+                          
+                          // Log the raw date value for debugging
+                          console.log('Raw transactionDate:', entry.transactionDate);
+                          
+                          // Handle various date formats
+                          let date;
+                          const dateStr = entry.transactionDate;
+                          
+                          // If it's already a Date object
+                          if (dateStr instanceof Date) {
+                            date = dateStr;
+                          }
+                          // If it's a string, parse it
+                          else if (typeof dateStr === 'string') {
+                            // Handle ISO strings, timestamps, and date-only strings
+                            date = new Date(dateStr);
+                          }
+                          // If it's a number (timestamp)
+                          else if (typeof dateStr === 'number') {
+                            date = new Date(dateStr);
+                          }
+                          else {
+                            console.error('Unexpected date type:', typeof dateStr, dateStr);
+                            return 'Invalid Date';
+                          }
+                          
+                          // Check if date is valid
+                          if (!date || isNaN(date.getTime())) {
+                            console.error('Invalid date after parsing:', dateStr, date);
+                            return 'Invalid Date';
+                          }
+                          
+                          // Format as MM/DD/YYYY
+                          const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                          const day = date.getDate().toString().padStart(2, '0');
+                          const year = date.getFullYear();
+                          
+                          return `${month}/${day}/${year}`;
+                        })()}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{entry.transactionId}</TableCell>
                       <TableCell>{entry.description}</TableCell>
