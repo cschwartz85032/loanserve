@@ -2370,25 +2370,20 @@ export const paymentEvents = pgTable("payment_events", {
   correlationIdx: index().on(t.correlationId)
 }));
 
-// Outbox Messages - Transactional outbox pattern
+// Outbox Messages - Transactional outbox pattern (Step 5)
 export const outboxMessages = pgTable("outbox_messages", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  aggregateId: varchar("aggregate_id", { length: 36 }).notNull(),
-  aggregateType: varchar("aggregate_type", { length: 50 }).notNull(),
-  eventType: varchar("event_type", { length: 100 }).notNull(),
+  aggregateType: text("aggregate_type").notNull(),               // payments
+  aggregateId: varchar("aggregate_id", { length: 36 }).notNull(), // payment_id
+  eventType: text("event_type").notNull(),                       // payment.posted
   payload: jsonb("payload").notNull(),
-  destination: varchar("destination", { length: 100 }).notNull(), // 'rabbitmq', 'column_api', 'webhook'
-  status: varchar("status", { length: 50 }).notNull().default('pending'),
-  retryCount: integer("retry_count").default(0),
-  maxRetries: integer("max_retries").default(3),
-  nextRetryAt: timestamp("next_retry_at"),
-  errorMessage: text("error_message"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  publishedAt: timestamp("published_at")
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastError: text("last_error")
 }, (t) => ({
-  statusIdx: index().on(t.status),
-  aggregateIdx: index().on(t.aggregateId),
-  nextRetryIdx: index().on(t.nextRetryAt)
+  // Index for efficient polling (unpublished messages first, ordered by creation time)
+  publishedCreatedIdx: index().on(t.publishedAt, t.createdAt)
 }));
 
 // Reconciliations - Channel reconciliation tracking
