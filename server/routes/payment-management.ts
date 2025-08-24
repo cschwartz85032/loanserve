@@ -315,7 +315,7 @@ router.get('/transactions',
             FROM loans l
             LEFT JOIN loan_borrowers lb ON lb.loan_id = l.id AND lb.borrower_type = 'primary'
             LEFT JOIN borrower_entities be ON be.id = lb.borrower_id
-            WHERE l.id = ${parseInt(row.loan_id)}
+            WHERE l.id = ${parseInt(String(row.loan_id))}
             LIMIT 1
           `);
           
@@ -340,6 +340,37 @@ router.get('/transactions',
       console.error('[Payment Transactions] Error fetching transactions:', error);
       // Return empty array on error instead of throwing
       res.json([]);
+    }
+  })
+);
+
+// Get payment stats
+router.get('/stats',
+  requireAuth,
+  requirePermission('payments', PermissionLevel.Read),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const statsResult = await db.execute(sql`
+        SELECT 
+          COUNT(*) FILTER (WHERE DATE(received_at) = CURRENT_DATE) as today_count,
+          COALESCE(SUM(amount_cents) FILTER (WHERE DATE(received_at) = CURRENT_DATE), 0) as today_amount,
+          COUNT(*) FILTER (WHERE state = 'posted_pending_settlement') as pending_count,
+          COUNT(*) FILTER (WHERE state = 'settled' AND DATE(received_at) = CURRENT_DATE) as settled_today,
+          COUNT(*) FILTER (WHERE state IN ('rejected', 'reversed')) as failed_count
+        FROM payment_transactions
+      `);
+      
+      res.json(statsResult.rows[0] || {
+        today_count: 0,
+        today_amount: 0,
+        pending_count: 0,
+        settled_today: 0,
+        failed_count: 0
+      });
+      
+    } catch (error) {
+      console.error('[Payment Stats] Error fetching stats:', error);
+      res.status(500).json({ error: 'Failed to fetch payment stats' });
     }
   })
 );
@@ -395,37 +426,6 @@ router.get('/:paymentId',
     } catch (error) {
       console.error('[Payment Details] Error fetching payment:', error);
       res.status(500).json({ error: 'Failed to fetch payment details' });
-    }
-  })
-);
-
-// Get payment stats
-router.get('/stats',
-  requireAuth,
-  requirePermission('payments', PermissionLevel.Read),
-  asyncHandler(async (req: Request, res: Response) => {
-    try {
-      const statsResult = await db.execute(sql`
-        SELECT 
-          COUNT(*) FILTER (WHERE DATE(received_at) = CURRENT_DATE) as today_count,
-          COALESCE(SUM(amount_cents) FILTER (WHERE DATE(received_at) = CURRENT_DATE), 0) as today_amount,
-          COUNT(*) FILTER (WHERE state = 'posted_pending_settlement') as pending_count,
-          COUNT(*) FILTER (WHERE state = 'settled' AND DATE(received_at) = CURRENT_DATE) as settled_today,
-          COUNT(*) FILTER (WHERE state IN ('rejected', 'reversed')) as failed_count
-        FROM payment_transactions
-      `);
-      
-      res.json(statsResult.rows[0] || {
-        today_count: 0,
-        today_amount: 0,
-        pending_count: 0,
-        settled_today: 0,
-        failed_count: 0
-      });
-      
-    } catch (error) {
-      console.error('[Payment Stats] Error fetching stats:', error);
-      res.status(500).json({ error: 'Failed to fetch payment stats' });
     }
   })
 );
