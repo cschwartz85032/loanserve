@@ -6,4 +6,6 @@ browser-session.txt
 cookies.txt
 session.txt
 vite.config.ts.*
-*.tar.gz
+*.tar.gzc
+cookies2.txt
+cookies-new.txt
