@@ -89,7 +89,7 @@ export default function Payments() {
   });
 
   // Fetch loans for selection
-  const { data: loans = [] } = useQuery({
+  const { data: loans = [] } = useQuery<any[]>({
     queryKey: ['/api/loans'],
   });
 
@@ -112,7 +112,7 @@ export default function Payments() {
       });
       return await response.json();
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: any, variables) => {
       // Show detailed status
       const description = data.queue_submitted 
         ? `Payment ${data.payment_id} submitted successfully. Status: ${data.details.status}`
@@ -129,6 +129,10 @@ export default function Payments() {
       setShowRecordPayment(false);
       resetForm();
       queryClient.invalidateQueries({ queryKey: ['/api/payments/transactions'] });
+      // Also invalidate CRM activity for the specific loan to show the payment activity
+      if (variables.loanId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/loans/${variables.loanId}/crm/activity`] });
+      }
     },
     onError: (error: any) => {
       console.error('Payment submission error:', error);
@@ -155,7 +159,7 @@ export default function Payments() {
   };
 
   const handleLoanSelect = (loanId: string) => {
-    const loan = loans?.find((l: any) => l.id.toString() === loanId);
+    const loan = loans.find((l: any) => l.id.toString() === loanId);
     if (loan) {
       setSelectedLoan(loan);
       setPaymentForm({

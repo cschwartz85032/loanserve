@@ -912,8 +912,11 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       const data = await response.json();
       console.log('Activity data fetched:', data);
       console.log('Email activities:', data.filter((a: any) => a.activityType === 'email'));
+      console.log('Payment activities:', data.filter((a: any) => a.activityType === 'payment'));
       return data;
-    }
+    },
+    refetchOnMount: true,  // Always refetch when component mounts
+    refetchOnWindowFocus: true  // Refetch when user focuses the window
   });
 
   const { data: collaborators = [], isLoading: collaboratorsLoading } = useQuery<any[]>({
