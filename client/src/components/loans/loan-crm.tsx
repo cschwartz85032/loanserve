@@ -2873,6 +2873,17 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                     description = item.activityData?.description || 
                       item.description || 
                       'Note added';
+                  } else if (item.activityType === 'payment') {
+                    const status = item.activityData?.status || 'unknown';
+                    const amount = item.activityData?.amount || '0';
+                    const source = item.activityData?.source || 'unknown';
+                    description = `Payment ${status}: $${amount} via ${source.toUpperCase()}`;
+                    if (item.activityData?.check_number) {
+                      description += ` (Check #${item.activityData.check_number})`;
+                    }
+                    if (item.activityData?.wire_ref) {
+                      description += ` (Wire Ref: ${item.activityData.wire_ref})`;
+                    }
                   } else {
                     description = item.activityData?.description || 
                       item.description || 
@@ -2889,6 +2900,13 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                       <div className="text-xs text-black">
                         Description: {description}
                       </div>
+                      {item.activityType === 'payment' && item.activityData?.evidence_url && (
+                        <div className="text-xs text-blue-600 mt-1">
+                          <a href={item.activityData.evidence_url} target="_blank" rel="noopener noreferrer" className="underline">
+                            View Payment Evidence
+                          </a>
+                        </div>
+                      )}
                       <div className="text-xs text-gray-600">
                         Time: {formatTimeAgo(item.createdAt)}
                       </div>

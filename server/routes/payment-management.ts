@@ -7,9 +7,41 @@ import { PermissionLevel } from '../auth/policy-engine';
 import { asyncHandler } from '../utils/error-handler';
 import { loans } from '@shared/schema';
 import { eq, desc, and, or, like, sql } from 'drizzle-orm';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs/promises';
 
 const router = Router();
 const CLOUDAMQP_URL = process.env.CLOUDAMQP_URL || '';
+
+// Configure multer for payment evidence uploads
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'payment-evidence');
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, `payment-${uniqueSuffix}${path.extname(file.originalname)}`);
+    }
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images and documents are allowed.'));
+    }
+  }
+});
 
 // Submit manual payment
 router.post('/manual',
@@ -140,6 +172,33 @@ router.post('/manual',
         data: sourceData
       };
       
+      // Create CRM activity for payment received
+      try {
+        await db.execute(sql`
+          INSERT INTO crm_activity (loan_id, user_id, activity_type, activity_data, is_system)
+          VALUES (
+            ${paymentData.loanId},
+            ${req.user!.id},
+            'payment',
+            ${JSON.stringify({
+              payment_id: paymentId,
+              amount: paymentData.amount,
+              source: paymentData.source,
+              status: 'received',
+              reference: externalRef,
+              check_number: paymentData.checkNumber || null,
+              wire_ref: paymentData.wireRef || null,
+              description: `Payment of $${paymentData.amount} received via ${paymentData.source.toUpperCase()}`,
+              effective_date: paymentData.effectiveDate,
+              submission_time: new Date().toISOString()
+            })}::jsonb,
+            false
+          )
+        `);
+      } catch (crmErr) {
+        console.error('[Manual Payment] CRM activity logging failed:', crmErr);
+      }
+      
       // Log audit event for payment submission
       try {
         await db.execute(sql`
@@ -207,6 +266,32 @@ router.post('/manual',
               metadata = ${JSON.stringify({ error: queueErr?.message || 'Unknown error' })}::jsonb
           WHERE payment_id = ${paymentId}
         `);
+        
+        // Create CRM activity for failed payment
+        try {
+          await db.execute(sql`
+            INSERT INTO crm_activity (loan_id, user_id, activity_type, activity_data, is_system)
+            VALUES (
+              ${paymentData.loanId},
+              ${req.user!.id},
+              'payment',
+              ${JSON.stringify({
+                payment_id: paymentId,
+                amount: paymentData.amount,
+                source: paymentData.source,
+                status: 'failed',
+                error: queueErr?.message || 'Unknown error',
+                reference: externalRef,
+                description: `Payment submission failed: ${queueErr?.message || 'Unknown error'}`,
+                effective_date: paymentData.effectiveDate,
+                submission_time: new Date().toISOString()
+              })}::jsonb,
+              false
+            )
+          `);
+        } catch (crmErr) {
+          console.error('[Manual Payment] CRM activity logging failed:', crmErr);
+        }
       }
       
       // Log manual payment submission
@@ -426,6 +511,111 @@ router.get('/:paymentId',
     } catch (error) {
       console.error('[Payment Details] Error fetching payment:', error);
       res.status(500).json({ error: 'Failed to fetch payment details' });
+    }
+  })
+);
+
+// Upload payment evidence
+router.post('/:paymentId/evidence',
+  requireAuth,
+  requirePermission('payments', PermissionLevel.Write),
+  upload.single('file'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { paymentId } = req.params;
+    const file = req.file;
+    
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    try {
+      // Verify payment exists
+      const paymentResult = await db.execute(sql`
+        SELECT payment_id, loan_id FROM payment_transactions
+        WHERE payment_id = ${paymentId}
+      `);
+      
+      if (paymentResult.rows.length === 0) {
+        await fs.unlink(file.path); // Clean up uploaded file
+        return res.status(404).json({ error: 'Payment not found' });
+      }
+      
+      const payment = paymentResult.rows[0];
+      
+      // Create document record for the evidence
+      const documentId = uuidv4();
+      const storageUrl = `/uploads/payment-evidence/${file.filename}`;
+      
+      await db.execute(sql`
+        INSERT INTO documents (
+          title, file_name, file_size, mime_type, storage_url,
+          loan_id, category, uploaded_by, created_at, updated_at
+        ) VALUES (
+          ${`Payment Evidence - ${paymentId}`},
+          ${file.originalname},
+          ${file.size},
+          ${file.mimetype},
+          ${storageUrl},
+          ${payment.loan_id}::integer,
+          'payment_evidence',
+          ${req.user!.id},
+          NOW(),
+          NOW()
+        ) RETURNING id
+      `);
+      
+      // Update payment metadata to include evidence link
+      await db.execute(sql`
+        UPDATE payment_transactions
+        SET metadata = jsonb_set(
+          COALESCE(metadata, '{}'::jsonb),
+          '{evidence_url}',
+          to_jsonb(${storageUrl}::text)
+        )
+        WHERE payment_id = ${paymentId}
+      `);
+      
+      // Update CRM activity with evidence link
+      await db.execute(sql`
+        UPDATE crm_activity
+        SET activity_data = jsonb_set(
+          activity_data,
+          '{evidence_url}',
+          to_jsonb(${storageUrl}::text)
+        )
+        WHERE (activity_data->>'payment_id')::text = ${paymentId}
+      `);
+      
+      res.json({
+        success: true,
+        message: 'Payment evidence uploaded successfully',
+        evidenceUrl: storageUrl,
+        fileName: file.originalname,
+        fileSize: file.size
+      });
+      
+    } catch (error) {
+      console.error('[Payment Evidence] Upload error:', error);
+      if (file) {
+        await fs.unlink(file.path).catch(() => {}); // Clean up on error
+      }
+      res.status(500).json({ error: 'Failed to upload payment evidence' });
+    }
+  })
+);
+
+// Serve payment evidence files
+router.get('/evidence/:filename',
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { filename } = req.params;
+    const filePath = path.join(process.cwd(), 'uploads', 'payment-evidence', filename);
+    
+    try {
+      await fs.access(filePath);
+      res.sendFile(filePath);
+    } catch (error) {
+      res.status(404).json({ error: 'File not found' });
     }
   })
 );
