@@ -2386,47 +2386,34 @@ export const outboxMessages = pgTable("outbox_messages", {
   publishedCreatedIdx: index().on(t.publishedAt, t.createdAt)
 }));
 
-// Reconciliations - Channel reconciliation tracking
+// Reconciliations - Per channel period reconciliation outcomes (Step 6)
 export const reconciliations = pgTable("reconciliations", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  reconciliationType: varchar("reconciliation_type", { length: 50 }).notNull(), // 'daily', 'monthly', 'adhoc'
-  channel: varchar("channel", { length: 50 }).notNull(),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date").notNull(),
-  internalCount: integer("internal_count").notNull(),
-  internalAmountCents: bigint("internal_amount_cents", { mode: 'number' }).notNull(),
-  externalCount: integer("external_count").notNull(),
-  externalAmountCents: bigint("external_amount_cents", { mode: 'number' }).notNull(),
-  varianceCount: integer("variance_count"),
-  varianceAmountCents: bigint("variance_amount_cents", { mode: 'number' }),
-  status: varchar("status", { length: 50 }).notNull().default('pending'),
-  reconciledBy: integer("reconciled_by").references(() => users.id),
-  reportUrl: text("report_url"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  completedAt: timestamp("completed_at")
+  channel: text("channel").notNull(),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  bankTotal: decimal("bank_total", { precision: 18, scale: 2 }).notNull().default('0'),
+  sorTotal: decimal("sor_total", { precision: 18, scale: 2 }).notNull().default('0'),
+  variance: decimal("variance", { precision: 18, scale: 2 }).notNull().default('0'),
+  status: text("status").notNull(), // CHECK constraint in SQL: 'open'|'balanced'|'variance'
+  details: jsonb("details")
 }, (t) => ({
-  statusIdx: index().on(t.status),
-  dateIdx: index().on(t.startDate, t.endDate),
-  channelIdx: index().on(t.channel)
+  // Unique index on channel and period
+  channelPeriodIdx: uniqueIndex().on(t.channel, t.periodStart, t.periodEnd)
 }));
 
 // Exception Cases - AI-assisted exception workflow
 export const exceptionCases = pgTable("exception_cases", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  paymentIngestionId: varchar("payment_ingestion_id", { length: 36 }).references(() => paymentIngestions.id),
-  exceptionType: varchar("exception_type", { length: 100 }).notNull(),
-  severity: varchar("severity", { length: 20 }).notNull(), // 'low', 'medium', 'high', 'critical'
+  exceptionType: text("exception_type").notNull(),
+  severity: text("severity").notNull(), // 'low', 'medium', 'high', 'critical'
   aiAnalysis: jsonb("ai_analysis"),
-  aiConfidence: decimal("ai_confidence", { precision: 3, scale: 2 }),
   suggestedAction: text("suggested_action"),
-  status: varchar("status", { length: 50 }).notNull().default('open'),
+  status: text("status").notNull().default('open'),
   assignedTo: integer("assigned_to").references(() => users.id),
-  resolution: text("resolution"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
   resolvedAt: timestamp("resolved_at")
 }, (t) => ({
-  ingestionIdx: index().on(t.paymentIngestionId),
   statusIdx: index().on(t.status),
   severityIdx: index().on(t.severity),
   assignedIdx: index().on(t.assignedTo)
