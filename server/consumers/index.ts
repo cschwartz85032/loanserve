@@ -4,6 +4,7 @@
  */
 
 import { PaymentValidatorConsumer } from './payment-validator-consumer';
+import { PaymentClassifierConsumer } from './payment-classifier-consumer';
 import { PaymentValidationConsumer } from './payment-validation-consumer';
 import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
@@ -32,6 +33,11 @@ export async function startPaymentConsumers(): Promise<void> {
     const validatorConsumer = new PaymentValidatorConsumer();
     await validatorConsumer.start();
     console.log('[Consumers] Validator consumer started');
+
+    // Start classifier consumer (Step 14)
+    const classifierConsumer = new PaymentClassifierConsumer();
+    await classifierConsumer.start();
+    console.log('[Consumers] Classifier consumer started');
 
     // Start validation consumer
     const validationConsumer = new PaymentValidationConsumer();

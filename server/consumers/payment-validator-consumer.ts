@@ -439,22 +439,22 @@ export class PaymentValidatorConsumer {
   async start(): Promise<void> {
     console.log('[Validator] Starting payment validator consumer');
     
-    // Set prefetch for controlled concurrency
-    await this.rabbitmq.setQos(50);
-    
     const consumerTag = await this.rabbitmq.consume(
-      'payments.validation',
-      async (msg: any) => {
+      {
+        queue: 'payments.validation',
+        prefetch: 50,
+        consumerTag: 'validator-consumer'
+      },
+      async (envelope: any, msg: any) => {
         if (!msg) return;
         
         const startTime = Date.now();
         
         try {
-          // Parse envelope
-          const envelope = this.parseEnvelope(msg);
-          if (!envelope) {
+          // The envelope is already parsed by the consume method
+          if (!envelope || !envelope.message_id) {
             console.error('[Validator] Invalid message format');
-            await this.rabbitmq.nack(msg, false, false); // Don't requeue invalid messages
+            // Message will be handled by the consume method's error handling
             return;
           }
           
@@ -517,8 +517,7 @@ export class PaymentValidatorConsumer {
             console.log(`[Validator] Payment rejected: ${envelope.message_id}, reason: ${result.reason}`);
           }
           
-          // Acknowledge message
-          await this.rabbitmq.ack(msg);
+          // Message is automatically acknowledged by the consume method
           
           const duration = Date.now() - startTime;
           console.log(`[Validator] Processed in ${duration}ms`);
@@ -528,12 +527,12 @@ export class PaymentValidatorConsumer {
           
           // Check if temporary error (DB outage, etc)
           if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-            // Don't ack, let broker redeliver
+            // Throw error to trigger nack with requeue in consume method
             console.log('[Validator] Temporary error, message will be redelivered');
-            await this.rabbitmq.nack(msg, false, true);
+            throw error;
           } else {
-            // Permanent error, send to DLQ
-            await this.rabbitmq.nack(msg, false, false);
+            // Log error, message will be sent to DLQ by consume method
+            console.error('[Validator] Permanent error:', error);
           }
         }
       }
@@ -546,7 +545,7 @@ export class PaymentValidatorConsumer {
   // Stop consumer gracefully
   async stop(): Promise<void> {
     if (this.consumerTag) {
-      await this.rabbitmq.cancel(this.consumerTag);
+      await this.rabbitmq.cancelConsumer(this.consumerTag);
       this.consumerTag = null;
       console.log('[Validator] Consumer stopped');
     }
