@@ -9,6 +9,7 @@ import { PaymentDistributionConsumer } from './payment-distribution-consumer';
 import { PaymentReversalSaga } from './payment-reversal-saga';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { OutboxProcessor } from '../services/outbox-processor';
+import { ConsumerHealthMonitor } from '../services/consumer-health-monitor';
 
 export async function startPaymentConsumers(): Promise<void> {
   console.log('[Consumers] Starting payment processing consumers...');
@@ -21,6 +22,15 @@ export async function startPaymentConsumers(): Promise<void> {
     console.log('[Consumers] Waiting for RabbitMQ connection...');
     await rabbitmq.waitForConnection();
     console.log('[Consumers] RabbitMQ connected');
+
+    // Initialize health monitoring
+    const healthMonitor = ConsumerHealthMonitor.getInstance();
+    healthMonitor.registerConsumer('payment-validation');
+    healthMonitor.registerConsumer('payment-processing');
+    healthMonitor.registerConsumer('payment-distribution');
+    healthMonitor.registerConsumer('payment-reversal');
+    healthMonitor.startMonitoring();
+    console.log('[Consumers] Health monitoring started');
 
     // Start outbox processor
     const outboxProcessor = new OutboxProcessor();
@@ -52,12 +62,14 @@ export async function startPaymentConsumers(): Promise<void> {
     // Graceful shutdown
     process.on('SIGINT', async () => {
       console.log('[Consumers] Shutting down payment consumers...');
+      healthMonitor.stopMonitoring();
       await rabbitmq.shutdown();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
       console.log('[Consumers] Shutting down payment consumers...');
+      healthMonitor.stopMonitoring();
       await rabbitmq.shutdown();
       process.exit(0);
     });

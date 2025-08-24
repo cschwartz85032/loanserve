@@ -18,10 +18,14 @@ import {
   CheckPaymentData,
   CardPaymentData
 } from '../messaging/payment-envelope';
+import { TransactionalPaymentProcessor } from '../services/transactional-payment-processor';
+import { ConsumerHealthMonitor } from '../services/consumer-health-monitor';
 
 const router = Router();
 const rabbitmq = getEnhancedRabbitMQService();
 const messageFactory = getMessageFactory();
+const transactionalProcessor = TransactionalPaymentProcessor.getInstance();
+const healthMonitor = ConsumerHealthMonitor.getInstance();
 
 // Schema for payment submission
 const PaymentSubmissionSchema = z.object({
@@ -480,6 +484,98 @@ router.post('/api/payments/:paymentId/reverse', requireAuth, async (req, res) =>
   } catch (error) {
     console.error('[API] Error reversing payment:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Recovery endpoint - Reprocess stuck payments
+ * Ensures CRM and accounting are synchronized
+ */
+router.post('/api/payments/recovery', requireAuth, async (req, res) => {
+  try {
+    // Validate admin permissions
+    if (!await hasPermission(req.user.id, 'system', 'admin')) {
+      return res.status(403).json({ error: 'Admin permissions required' });
+    }
+
+    console.log('[API] Starting payment recovery process...');
+    
+    const results = await transactionalProcessor.reprocessStuckPayments();
+    
+    res.json({
+      success: true,
+      message: `Recovery complete: ${results.processed} payments recovered, ${results.failed} failed`,
+      details: results
+    });
+
+  } catch (error) {
+    console.error('[API] Error in payment recovery:', error);
+    res.status(500).json({ error: 'Recovery process failed' });
+  }
+});
+
+/**
+ * Get consumer health status
+ */
+router.get('/api/payments/health', requireAuth, async (req, res) => {
+  try {
+    const healthStatus = healthMonitor.getHealthStatus();
+    const allHealthy = healthMonitor.areAllConsumersHealthy();
+    
+    res.json({
+      healthy: allHealthy,
+      consumers: healthStatus,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('[API] Error getting health status:', error);
+    res.status(500).json({ error: 'Failed to get health status' });
+  }
+});
+
+/**
+ * Get system alerts
+ */
+router.get('/api/system/alerts', requireAuth, async (req, res) => {
+  try {
+    // Get unacknowledged alerts from last 24 hours
+    const result = await db.query(`
+      SELECT * FROM system_alerts 
+      WHERE acknowledged = FALSE 
+        AND created_at > NOW() - INTERVAL '24 hours'
+      ORDER BY severity DESC, created_at DESC
+      LIMIT 100
+    `);
+    
+    res.json(result.rows);
+
+  } catch (error) {
+    console.error('[API] Error getting system alerts:', error);
+    res.status(500).json({ error: 'Failed to get alerts' });
+  }
+});
+
+/**
+ * Acknowledge system alert
+ */
+router.put('/api/system/alerts/:id/acknowledge', requireAuth, async (req, res) => {
+  try {
+    const alertId = req.params.id;
+    
+    await db.query(`
+      UPDATE system_alerts 
+      SET acknowledged = TRUE,
+          acknowledged_by = $1,
+          acknowledged_at = NOW()
+      WHERE id = $2
+    `, [req.user.username || req.user.email, alertId]);
+    
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error('[API] Error acknowledging alert:', error);
+    res.status(500).json({ error: 'Failed to acknowledge alert' });
   }
 });
 
