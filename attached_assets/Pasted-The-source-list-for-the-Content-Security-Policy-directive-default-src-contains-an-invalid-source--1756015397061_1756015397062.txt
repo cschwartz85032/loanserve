@@ -1,0 +1,30 @@
+The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.Understand this error
+10The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?Understand this error
+10The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.Understand this error
+_app-a3c401bfcf9743be.js:16 
+      /////////////////////
+   ///////////////////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////        Curious and driven?
+  ///////////////@@@@@@@///////        Work with us!
+  ///////////////@@@@@@@///////
+  ///////////////@@@@@@@///////        https://join.replit.com/hack.with.us
+  ////////@@@@@@@//////////////
+  ////////@@@@@@@//////////////
+  ////////@@@@@@#//////////////
+   ///////////////////////////
+      /////////////////////
+      
+MortgageServicing:1 The source list for the Content Security Policy directive 'default-src' contains an invalid source: ''unsafe-dynamic''. It will be ignored.Understand this error
+MortgageServicing:1 The Content-Security-Policy directive 'default-src' contains 'report-uri' as a source expression. Did you want to add it as a directive and forget a semicolon?Understand this error
+MortgageServicing:1 The source list for Content Security Policy directive 'default-src' contains a source with an invalid path: '/api/4509669501698048/security/?sentry_key=7eb3d90eb4660416caf507087367e67e'. The query component, including the '?', will be ignored.Understand this error
+_app-a3c401bfcf9743be.js:16 [LaunchDarkly] LaunchDarkly client initialized
+framework-b31cf43028e05976.js:1 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+_ @ framework-b31cf43028e05976.js:1Understand this error
+framework-b31cf43028e05976.js:1 Unrecognized feature: 'ambient-light-sensor'.
+_ @ framework-b31cf43028e05976.js:1Understand this warning
+framework-b31cf43028e05976.js:1 Unrecognized feature: 'battery'.
+_ @ framework-b31cf43028e05976.js:1Understand this warning
+framework-b31cf43028e05976.js:1 Unrecognized feature: 'execution-while-not-rendered'.
+_ @ framework-b31cf43028e05976.js:1Understand this warning
