@@ -2338,20 +2338,18 @@ export const paymentIngestions = pgTable("payment_ingestions", {
   channelReceivedIdx: index().on(t.channel, t.receivedAt)
 }));
 
-// Payment Artifacts - Document storage with hashes
+// Payment Artifacts - Document storage with hashes (Step 3)
 export const paymentArtifacts = pgTable("payment_artifacts", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  paymentIngestionId: varchar("payment_ingestion_id", { length: 36 }).references(() => paymentIngestions.id),
-  artifactType: varchar("artifact_type", { length: 50 }).notNull(), // 'check_image', 'wire_advice', 'ach_trace'
-  storageUrl: text("storage_url").notNull(),
-  sha256Hash: varchar("sha256_hash", { length: 64 }).notNull(),
-  mimeType: varchar("mime_type", { length: 100 }),
-  sizeBytes: integer("size_bytes"),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
+  ingestionId: varchar("ingestion_id", { length: 36 }).notNull().references(() => paymentIngestions.id, { onDelete: 'cascade' }),
+  type: text("type").notNull(), // check_image_front|check_image_back|ach_return_pdf|wire_receipt|psp_receipt
+  uri: text("uri").notNull(),
+  sha256: text("sha256").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: 'number' }),
+  mime: text("mime"),
+  sourceMetadata: jsonb("source_metadata")
 }, (t) => ({
-  ingestionIdx: index().on(t.paymentIngestionId),
-  hashIdx: index().on(t.sha256Hash)
+  ingestionTypeIdx: index().on(t.ingestionId, t.type)
 }));
 
 // Payment Events - Hash-chained audit ledger
