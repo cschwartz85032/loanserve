@@ -105,7 +105,7 @@ router.get('/dlq/:queueName/info', requireAuth, async (req, res) => {
 router.post('/dlq/:queueName/retry', requireAuth, async (req, res) => {
   try {
     const { queueName } = req.params;
-    const { messageCount = 1 } = req.body;
+    const { messageCount = 1, editedMessage } = req.body;
     
     if (!queueName.startsWith('dlq.')) {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
@@ -119,43 +119,85 @@ router.post('/dlq/:queueName/retry', requireAuth, async (req, res) => {
     const originalQueue = queueName.replace('dlq.', '');
     const retriedMessages = [];
     
-    for (let i = 0; i < messageCount; i++) {
+    // If we have an edited message, use that instead of the original
+    if (editedMessage) {
       const message = await channel.get(queueName, { noAck: false });
       
-      if (!message) {
-        break;
-      }
-
-      try {
-        // Publish to original queue
-        await channel.sendToQueue(
-          originalQueue,
-          message.content,
-          {
-            persistent: true,
-            headers: {
-              ...message.properties.headers,
-              'x-retried-from-dlq': true,
-              'x-retry-timestamp': new Date().toISOString(),
-              'x-original-error': message.properties.headers?.['x-death'] ? 
-                JSON.stringify(message.properties.headers['x-death'][0]) : null
+      if (message) {
+        try {
+          // Publish the edited content to original queue
+          await channel.sendToQueue(
+            originalQueue,
+            Buffer.from(JSON.stringify(editedMessage)),
+            {
+              persistent: true,
+              headers: {
+                ...message.properties.headers,
+                'x-retried-from-dlq': true,
+                'x-retry-timestamp': new Date().toISOString(),
+                'x-message-edited': true,
+                'x-original-error': message.properties.headers?.['x-death'] ? 
+                  JSON.stringify(message.properties.headers['x-death'][0]) : null
+              }
             }
-          }
-        );
+          );
 
-        // Acknowledge the message from DLQ (removes it)
-        channel.ack(message);
+          // Acknowledge the message from DLQ (removes it)
+          channel.ack(message);
+          
+          retriedMessages.push({
+            messageId: message.properties.messageId,
+            movedTo: originalQueue,
+            timestamp: new Date().toISOString(),
+            edited: true
+          });
+          
+        } catch (error) {
+          // Reject back to DLQ if retry fails
+          channel.reject(message, true);
+          throw error;
+        }
+      }
+    } else {
+      // Original logic for retrying without edits
+      for (let i = 0; i < messageCount; i++) {
+        const message = await channel.get(queueName, { noAck: false });
         
-        retriedMessages.push({
-          messageId: message.properties.messageId,
-          movedTo: originalQueue,
-          timestamp: new Date().toISOString()
-        });
-        
-      } catch (error) {
-        // Reject back to DLQ if retry fails
-        channel.reject(message, true);
-        throw error;
+        if (!message) {
+          break;
+        }
+
+        try {
+          // Publish to original queue
+          await channel.sendToQueue(
+            originalQueue,
+            message.content,
+            {
+              persistent: true,
+              headers: {
+                ...message.properties.headers,
+                'x-retried-from-dlq': true,
+                'x-retry-timestamp': new Date().toISOString(),
+                'x-original-error': message.properties.headers?.['x-death'] ? 
+                  JSON.stringify(message.properties.headers['x-death'][0]) : null
+              }
+            }
+          );
+
+          // Acknowledge the message from DLQ (removes it)
+          channel.ack(message);
+          
+          retriedMessages.push({
+            messageId: message.properties.messageId,
+            movedTo: originalQueue,
+            timestamp: new Date().toISOString()
+          });
+          
+        } catch (error) {
+          // Reject back to DLQ if retry fails
+          channel.reject(message, true);
+          throw error;
+        }
       }
     }
 
