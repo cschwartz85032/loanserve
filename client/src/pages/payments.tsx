@@ -89,15 +89,9 @@ export default function Payments() {
   });
 
   // Fetch loans for selection
-  const { data: loansData } = useQuery({
+  const { data: loans = [] } = useQuery({
     queryKey: ['/api/loans'],
-    queryFn: async () => {
-      const response = await apiRequest('/api/loans');
-      return response;
-    }
   });
-  
-  const loans = Array.isArray(loansData) ? loansData : [];
 
   // Fetch recent payments
   const { data: payments, isLoading: paymentsLoading } = useQuery({
@@ -150,27 +144,14 @@ export default function Payments() {
   };
 
   const handleLoanSelect = (loanId: string) => {
-    if (loanId === 'no-loans') return;
-    
     const loan = loans?.find((l: any) => l.id.toString() === loanId);
     if (loan) {
       setSelectedLoan(loan);
-      
-      // Get borrower name from loan object - may be in different properties
-      let borrowerName = 'Unknown';
-      if (loan.borrowerName) {
-        borrowerName = loan.borrowerName;
-      } else if (loan.borrower?.name) {
-        borrowerName = loan.borrower.name;
-      } else if (loan.borrowerEntities?.length > 0) {
-        borrowerName = loan.borrowerEntities[0].fullName || loan.borrowerEntities[0].name || 'Unknown';
-      }
-      
       setPaymentForm({
         ...paymentForm,
         loanId: loan.id.toString(),
-        loanNumber: loan.loanNumber || `Loan ${loan.id}`,
-        borrowerName: borrowerName
+        loanNumber: loan.loanNumber,
+        borrowerName: loan.borrowerName || 'Unknown'
       });
     }
   };
@@ -454,17 +435,11 @@ export default function Payments() {
                     <SelectValue placeholder="Choose a loan..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {loans && loans.length > 0 ? (
-                      loans.map((loan: any) => (
-                        <SelectItem key={loan.id} value={loan.id.toString()}>
-                          {loan.loanNumber || `Loan ${loan.id}`}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="no-loans" disabled>
-                        No loans available
+                    {loans.map((loan: any) => (
+                      <SelectItem key={loan.id} value={loan.id.toString()}>
+                        {loan.loanNumber} - {loan.borrowerName}
                       </SelectItem>
-                    )}
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
