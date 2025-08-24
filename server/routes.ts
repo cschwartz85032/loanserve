@@ -115,6 +115,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { columnWebhookHandler } = await import('./services/column-webhook');
   app.post('/api/column/webhook', express.raw({ type: '*/*' }), columnWebhookHandler);
 
+  // Register Column backfill endpoint (Step 12)
+  const { triggerBackfillHandler } = await import('./services/column-backfill');
+  app.post('/api/column/backfill', isAuthenticated, triggerBackfillHandler);
+
   // Register payment ingestion routes (Step 2)
   const paymentIngestionRoutes = (await import('./routes/payment-ingestion')).default;
   app.use('/api/payment-ingestions', paymentIngestionRoutes);
