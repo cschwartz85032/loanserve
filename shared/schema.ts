@@ -1,7 +1,7 @@
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { pgTable, text, timestamp, integer, serial, boolean, jsonb, json, decimal, uuid, varchar, date, index, pgEnum, uniqueIndex, time, primaryKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, timestamp, integer, serial, boolean, jsonb, json, decimal, uuid, varchar, date, index, pgEnum, uniqueIndex, time, primaryKey, unique, bigint } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 
 // ========================================
 // ENUMS - Comprehensive status and type enumerations
@@ -687,6 +687,19 @@ export const payments = pgTable("payments", {
   processedBy: integer("processed_by").references(() => users.id),
   processedDate: timestamp("processed_date"),
   batchId: text("batch_id"),
+  // Column Bank Integration
+  columnTransferId: varchar("column_transfer_id", { length: 100 }),
+  columnWebhookId: varchar("column_webhook_id", { length: 100 }),
+  // Suspense and Reconciliation
+  suspenseAmount: decimal("suspense_amount", { precision: 10, scale: 2 }),
+  reconciledAt: timestamp("reconciled_at"),
+  reconciledBy: integer("reconciled_by").references(() => users.id),
+  // AI Processing
+  aiProcessed: boolean("ai_processed").default(false),
+  aiConfidenceScore: decimal("ai_confidence_score", { precision: 3, scale: 2 }),
+  aiSuggestedAllocation: jsonb("ai_suggested_allocation"),
+  // Idempotency
+  idempotencyKey: varchar("idempotency_key", { length: 256 }),
   // Additional
   notes: text("notes"),
   metadata: jsonb("metadata"),
@@ -2292,4 +2305,197 @@ export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit
 });
 export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 export type EmailTemplate = typeof emailTemplates.$inferSelect;
+
+// ========================================
+// NEW UUID-BASED PAYMENT PIPELINE TABLES
+// Per 25-Step Implementation Specification
+// ========================================
+
+// ID Mapping Bridge - Maps between serial IDs (legacy) and UUIDs (new)
+export const idMappings = pgTable("id_mappings", {
+  uuid: varchar("uuid", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  entityType: varchar("entity_type", { length: 50 }).notNull(), // 'loan', 'payment', 'user', etc.
+  serialId: integer("serial_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  uniqueMapping: unique().on(t.entityType, t.serialId),
+  serialIdx: index().on(t.serialId)
+}));
+
+// Payment Ingestions - Idempotent ingress tracking
+export const paymentIngestions = pgTable("payment_ingestions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  idempotencyKey: varchar("idempotency_key", { length: 256 }).notNull().unique(),
+  channel: varchar("channel", { length: 50 }).notNull(), // 'ach', 'wire', 'check', 'column_webhook'
+  rawPayload: jsonb("raw_payload").notNull(),
+  normalizedEnvelope: jsonb("normalized_envelope"),
+  columnTransferId: varchar("column_transfer_id", { length: 100 }),
+  status: varchar("status", { length: 50 }).notNull().default('pending'),
+  loanId: integer("loan_id").references(() => loans.id), // Bridge to legacy
+  amountCents: integer("amount_cents").notNull(),
+  valueDate: date("value_date").notNull(),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  idempotencyIdx: index().on(t.idempotencyKey),
+  statusIdx: index().on(t.status),
+  loanIdx: index().on(t.loanId),
+  columnTransferIdx: index().on(t.columnTransferId)
+}));
+
+// Payment Artifacts - Document storage with hashes
+export const paymentArtifacts = pgTable("payment_artifacts", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  paymentIngestionId: varchar("payment_ingestion_id", { length: 36 }).references(() => paymentIngestions.id),
+  artifactType: varchar("artifact_type", { length: 50 }).notNull(), // 'check_image', 'wire_advice', 'ach_trace'
+  storageUrl: text("storage_url").notNull(),
+  sha256Hash: varchar("sha256_hash", { length: 64 }).notNull(),
+  mimeType: varchar("mime_type", { length: 100 }),
+  sizeBytes: integer("size_bytes"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  ingestionIdx: index().on(t.paymentIngestionId),
+  hashIdx: index().on(t.sha256Hash)
+}));
+
+// Payment Events - Hash-chained audit ledger
+export const paymentEvents = pgTable("payment_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  paymentIngestionId: varchar("payment_ingestion_id", { length: 36 }).references(() => paymentIngestions.id),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  eventData: jsonb("event_data").notNull(),
+  actorId: varchar("actor_id", { length: 100 }), // User ID or system component
+  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // AI confidence
+  prevEventHash: varchar("prev_event_hash", { length: 64 }),
+  eventHash: varchar("event_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  ingestionIdx: index().on(t.paymentIngestionId),
+  eventTypeIdx: index().on(t.eventType),
+  hashIdx: index().on(t.eventHash),
+  prevHashIdx: index().on(t.prevEventHash)
+}));
+
+// Outbox Messages - Transactional outbox pattern
+export const outboxMessages = pgTable("outbox_messages", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  aggregateId: varchar("aggregate_id", { length: 36 }).notNull(),
+  aggregateType: varchar("aggregate_type", { length: 50 }).notNull(),
+  eventType: varchar("event_type", { length: 100 }).notNull(),
+  payload: jsonb("payload").notNull(),
+  destination: varchar("destination", { length: 100 }).notNull(), // 'rabbitmq', 'column_api', 'webhook'
+  status: varchar("status", { length: 50 }).notNull().default('pending'),
+  retryCount: integer("retry_count").default(0),
+  maxRetries: integer("max_retries").default(3),
+  nextRetryAt: timestamp("next_retry_at"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at")
+}, (t) => ({
+  statusIdx: index().on(t.status),
+  aggregateIdx: index().on(t.aggregateId),
+  nextRetryIdx: index().on(t.nextRetryAt)
+}));
+
+// Reconciliations - Channel reconciliation tracking
+export const reconciliations = pgTable("reconciliations", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  reconciliationType: varchar("reconciliation_type", { length: 50 }).notNull(), // 'daily', 'monthly', 'adhoc'
+  channel: varchar("channel", { length: 50 }).notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  internalCount: integer("internal_count").notNull(),
+  internalAmountCents: bigint("internal_amount_cents", { mode: 'number' }).notNull(),
+  externalCount: integer("external_count").notNull(),
+  externalAmountCents: bigint("external_amount_cents", { mode: 'number' }).notNull(),
+  varianceCount: integer("variance_count"),
+  varianceAmountCents: bigint("variance_amount_cents", { mode: 'number' }),
+  status: varchar("status", { length: 50 }).notNull().default('pending'),
+  reconciledBy: integer("reconciled_by").references(() => users.id),
+  reportUrl: text("report_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at")
+}, (t) => ({
+  statusIdx: index().on(t.status),
+  dateIdx: index().on(t.startDate, t.endDate),
+  channelIdx: index().on(t.channel)
+}));
+
+// Exception Cases - AI-assisted exception workflow
+export const exceptionCases = pgTable("exception_cases", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  paymentIngestionId: varchar("payment_ingestion_id", { length: 36 }).references(() => paymentIngestions.id),
+  exceptionType: varchar("exception_type", { length: 100 }).notNull(),
+  severity: varchar("severity", { length: 20 }).notNull(), // 'low', 'medium', 'high', 'critical'
+  aiAnalysis: jsonb("ai_analysis"),
+  aiConfidence: decimal("ai_confidence", { precision: 3, scale: 2 }),
+  suggestedAction: text("suggested_action"),
+  status: varchar("status", { length: 50 }).notNull().default('open'),
+  assignedTo: integer("assigned_to").references(() => users.id),
+  resolution: text("resolution"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at")
+}, (t) => ({
+  ingestionIdx: index().on(t.paymentIngestionId),
+  statusIdx: index().on(t.status),
+  severityIdx: index().on(t.severity),
+  assignedIdx: index().on(t.assignedTo)
+}));
+
+// Export types for new tables
+export const insertIdMappingSchema = createInsertSchema(idMappings).omit({
+  uuid: true,
+  createdAt: true
+});
+export type InsertIdMapping = z.infer<typeof insertIdMappingSchema>;
+export type IdMapping = typeof idMappings.$inferSelect;
+
+export const insertPaymentIngestionSchema = createInsertSchema(paymentIngestions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertPaymentIngestion = z.infer<typeof insertPaymentIngestionSchema>;
+export type PaymentIngestion = typeof paymentIngestions.$inferSelect;
+
+export const insertPaymentArtifactSchema = createInsertSchema(paymentArtifacts).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertPaymentArtifact = z.infer<typeof insertPaymentArtifactSchema>;
+export type PaymentArtifact = typeof paymentArtifacts.$inferSelect;
+
+export const insertPaymentEventSchema = createInsertSchema(paymentEvents).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertPaymentEvent = z.infer<typeof insertPaymentEventSchema>;
+export type PaymentEvent = typeof paymentEvents.$inferSelect;
+
+export const insertOutboxMessageSchema = createInsertSchema(outboxMessages).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertOutboxMessage = z.infer<typeof insertOutboxMessageSchema>;
+export type OutboxMessage = typeof outboxMessages.$inferSelect;
+
+export const insertReconciliationSchema = createInsertSchema(reconciliations).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertReconciliation = z.infer<typeof insertReconciliationSchema>;
+export type Reconciliation = typeof reconciliations.$inferSelect;
+
+export const insertExceptionCaseSchema = createInsertSchema(exceptionCases).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertExceptionCase = z.infer<typeof insertExceptionCaseSchema>;
+export type ExceptionCase = typeof exceptionCases.$inferSelect;
 
