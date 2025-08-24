@@ -12,7 +12,7 @@ const router = Router();
 const CLOUDAMQP_URL = process.env.CLOUDAMQP_URL || '';
 
 // Submit manual payment
-router.post('/api/payments/manual',
+router.post('/manual',
   requireAuth,
   requirePermission('payments', PermissionLevel.WRITE),
   asyncHandler(async (req: Request, res: Response) => {
@@ -261,7 +261,7 @@ router.post('/api/payments/manual',
 );
 
 // Get payment transactions
-router.get('/api/payments/transactions',
+router.get('/transactions',
   requireAuth,
   requirePermission('payments', PermissionLevel.READ),
   asyncHandler(async (req: Request, res: Response) => {
@@ -345,7 +345,7 @@ router.get('/api/payments/transactions',
 );
 
 // Get payment details
-router.get('/api/payments/:paymentId',
+router.get('/:paymentId',
   requireAuth,
   requirePermission('payments', PermissionLevel.READ),
   asyncHandler(async (req: Request, res: Response) => {
@@ -400,7 +400,7 @@ router.get('/api/payments/:paymentId',
 );
 
 // Get payment stats
-router.get('/api/payments/stats',
+router.get('/stats',
   requireAuth,
   requirePermission('payments', PermissionLevel.READ),
   asyncHandler(async (req: Request, res: Response) => {
