@@ -524,6 +524,10 @@ export const loans = pgTable("loans", {
   homeInsurance: decimal("home_insurance", { precision: 10, scale: 2 }),
   pmi: decimal("pmi", { precision: 10, scale: 2 }),
   otherMonthly: decimal("other_monthly", { precision: 10, scale: 2 }),
+  // Payment Allocation and Interest Calculation Terms
+  acceptPartialPayments: boolean("accept_partial_payments").default(true), // Whether to accept payments less than full amount due
+  paymentAllocationOrder: jsonb("payment_allocation_order"), // Array of allocation targets in order
+  interestCalculationMethod: text("interest_calculation_method"), // How interest is calculated per loan docs
   // Additional fields  
   notes: text("notes"),
   metadata: jsonb("metadata"),

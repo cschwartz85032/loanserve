@@ -51,6 +51,57 @@ export class PaymentAllocationEngine {
     client: PoolClient,
     loanId: string
   ): Promise<AllocationRule[]> {
+    // First check if loan has custom payment allocation order from loan documents
+    const loanResult = await client.query(
+      'SELECT payment_allocation_order FROM loans WHERE id = $1',
+      [loanId]
+    );
+    
+    if (loanResult.rows.length > 0 && loanResult.rows[0].payment_allocation_order) {
+      // Use loan document-specified allocation order
+      const customOrder = loanResult.rows[0].payment_allocation_order as string[];
+      const rules: AllocationRule[] = [];
+      
+      // Map loan document terms to allocation targets
+      const targetMap: Record<string, AllocationTarget> = {
+        'fees': 'late_fees',
+        'late_charges': 'late_fees',
+        'late_fees': 'late_fees',
+        'interest': 'accrued_interest',
+        'accrued_interest': 'accrued_interest',
+        'principal': 'scheduled_principal',
+        'scheduled_principal': 'scheduled_principal',
+        'escrow_shortage': 'escrow_shortage',
+        'escrow': 'current_escrow',
+        'current_escrow': 'current_escrow',
+        'unapplied': 'unapplied_funds',
+        'unapplied_funds': 'unapplied_funds'
+      };
+      
+      customOrder.forEach((item, index) => {
+        const target = targetMap[item.toLowerCase()];
+        if (target) {
+          rules.push({ 
+            target, 
+            priority: index + 1,
+            enabled: true 
+          });
+        }
+      });
+      
+      // Ensure unapplied_funds is always last if not explicitly included
+      if (!rules.find(r => r.target === 'unapplied_funds')) {
+        rules.push({ 
+          target: 'unapplied_funds', 
+          priority: rules.length + 1,
+          enabled: true 
+        });
+      }
+      
+      return rules;
+    }
+    
+    // Check allocation_rules table
     const result = await client.query(`
       SELECT priority, target, enabled
       FROM allocation_rules
@@ -60,16 +111,28 @@ export class PaymentAllocationEngine {
         priority
     `, [loanId]);
 
-    // Use loan-specific rules if exist, otherwise DEFAULT
-    const useLoanId = result.rows.some(r => r.loan_id === loanId) ? loanId : 'DEFAULT';
+    if (result.rows.length > 0) {
+      // Use loan-specific rules if exist, otherwise DEFAULT
+      const useLoanId = result.rows.some(r => r.loan_id === loanId) ? loanId : 'DEFAULT';
+      
+      return result.rows
+        .filter(r => r.loan_id === useLoanId && r.enabled)
+        .map(r => ({
+          priority: r.priority,
+          target: r.target as AllocationTarget,
+          enabled: r.enabled
+        }));
+    }
     
-    return result.rows
-      .filter(r => r.loan_id === useLoanId && r.enabled)
-      .map(r => ({
-        priority: r.priority,
-        target: r.target as AllocationTarget,
-        enabled: r.enabled
-      }));
+    // Fallback to default allocation order per loan document requirements
+    return [
+      { target: 'late_fees', priority: 1, enabled: true },  // Fees and costs owed to Lender
+      { target: 'accrued_interest', priority: 2, enabled: true },  // Accrued interest
+      { target: 'scheduled_principal', priority: 3, enabled: true },  // Scheduled principal
+      { target: 'escrow_shortage', priority: 4, enabled: true },  // Escrow shortage
+      { target: 'current_escrow', priority: 5, enabled: true },  // Current escrow
+      { target: 'unapplied_funds', priority: 6, enabled: true }  // Unapplied funds
+    ];
   }
 
   /**

@@ -141,7 +141,8 @@ export class PaymentValidationConsumer {
 
     // Check loan exists and is active
     const loanResult = await client.query(
-      'SELECT id, status FROM loans WHERE id = $1',
+      `SELECT id, status, payment_amount, accept_partial_payments 
+       FROM loans WHERE id = $1`,
       [data.loan_id]
     );
 
@@ -154,6 +155,15 @@ export class PaymentValidationConsumer {
     if (loan.status === 'paid_off' || loan.status === 'charged_off') {
       console.log(`[Validation] Loan ${data.loan_id} is ${loan.status}`);
       return false;
+    }
+
+    // Check if partial payments are accepted
+    if (loan.accept_partial_payments === false) {
+      const expectedPaymentCents = Math.round(parseFloat(loan.payment_amount) * 100);
+      if (data.amount_cents < expectedPaymentCents) {
+        console.log(`[Validation] Partial payment rejected. Received ${data.amount_cents} cents, expected ${expectedPaymentCents} cents`);
+        return false;
+      }
     }
 
     // Source-specific validation
