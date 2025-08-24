@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
@@ -110,6 +110,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register payment processing routes
   app.use(paymentRoutes);
+
+  // Register Column webhook route (Step 11)
+  const { columnWebhookHandler } = await import('./services/column-webhook');
+  app.post('/api/column/webhook', express.raw({ type: '*/*' }), columnWebhookHandler);
 
   // Register payment ingestion routes (Step 2)
   const paymentIngestionRoutes = (await import('./routes/payment-ingestion')).default;
