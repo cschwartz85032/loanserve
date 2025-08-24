@@ -94,8 +94,17 @@ export class OutboxProcessor {
       for (const row of result.rows) {
         try {
           // pg library returns JSONB columns as objects already
-          const envelope = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
+          const payloadData = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
           const headers = row.headers ? (typeof row.headers === 'string' ? JSON.parse(row.headers) : row.headers) : {};
+          
+          // Create a proper envelope structure with message_id, schema, data
+          const envelope = {
+            message_id: row.aggregate_id, // Use aggregate_id as message_id
+            schema: row.schema,
+            data: payloadData,
+            timestamp: new Date().toISOString(),
+            retry_count: 0
+          };
 
           // Determine exchange based on routing key
           let exchange = 'payments.topic'; // Default

@@ -20,8 +20,12 @@ import { v4 as uuidv4 } from 'uuid';
 
 export class PaymentProcessingConsumer {
   private rabbitmq = getEnhancedRabbitMQService();
-  private messageFactory = getMessageFactory();
+  private messageFactory: any;
   private allocationEngine = new PaymentAllocationEngine();
+  
+  constructor() {
+    this.messageFactory = getMessageFactory();
+  }
 
   /**
    * Main processing handler
@@ -212,15 +216,15 @@ export class PaymentProcessingConsumer {
       );
 
       // Emit processed event
-      const processedEnvelope = this.messageFactory.create({
-        schema: `loanserve.payment.v1.processed`,
-        data: {
+      const processedEnvelope = this.messageFactory.createMessage(
+        `loanserve.payment.v1.processed`,
+        {
           ...data,
           allocation,
           processing_timestamp: new Date().toISOString()
         },
-        correlation_id: data.payment_id
-      });
+        { correlation_id: data.payment_id }
+      );
 
       await IdempotencyService.addToOutbox(
         client,
@@ -397,7 +401,7 @@ export class PaymentProcessingConsumer {
        SET last_payment_date = CURRENT_DATE,
            next_payment_date = CASE 
              WHEN payment_frequency = 'monthly' THEN CURRENT_DATE + INTERVAL '1 month'
-             WHEN payment_frequency = 'biweekly' THEN CURRENT_DATE + INTERVAL '2 weeks'
+             WHEN payment_frequency = 'bi_weekly' THEN CURRENT_DATE + INTERVAL '2 weeks'
              ELSE next_payment_date
            END
        WHERE id = $1`,
@@ -468,13 +472,13 @@ export class PaymentProcessingConsumer {
     );
 
     // Emit settled event
-    const settledEnvelope = this.messageFactory.create({
-      schema: 'loanserve.payment.v1.settled',
-      data: {
+    const settledEnvelope = this.messageFactory.createMessage(
+      'loanserve.payment.v1.settled',
+      {
         payment_id: paymentId,
         settlement_timestamp: new Date().toISOString()
       }
-    });
+    );
 
     await IdempotencyService.addToOutbox(
       client,
