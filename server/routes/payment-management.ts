@@ -261,14 +261,18 @@ router.post('/manual',
         try {
           console.log('[Manual Payment] Adding validated payment to outbox for processing...');
           
-          // Create validated envelope for processing
+          // Create validated envelope for processing with correct structure
           const validatedEnvelope = {
-            ...envelope,
+            message_id: paymentId,
             schema: 'loanserve.payment.v1.validated',
-            metadata: {
-              ...envelope.metadata,
+            data: {
+              payment_id: paymentId,
+              loan_id: paymentData.loanId,
+              amount_cents: amountCents.toString(),
               validation_timestamp: new Date().toISOString()
-            }
+            },
+            timestamp: new Date().toISOString(),
+            retry_count: 0
           };
           
           // Add to outbox for processing
@@ -282,12 +286,12 @@ router.post('/manual',
               ${paymentId},
               ${validatedEnvelope.schema},
               ${`payment.${paymentData.source}.validated`},
-              ${JSON.stringify(validatedEnvelope)}::jsonb,
+              ${JSON.stringify(validatedEnvelope)},
               ${JSON.stringify({
                 'x-message-id': validatedEnvelope.envelope_id || uuidv4(),
                 'x-correlation-id': validatedEnvelope.correlation_id || uuidv4(),
                 'x-idempotency-key': paymentId
-              })}::jsonb,
+              })},
               NOW()
             )
           `);

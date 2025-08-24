@@ -97,14 +97,21 @@ export class OutboxProcessor {
           const payloadData = typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
           const headers = row.headers ? (typeof row.headers === 'string' ? JSON.parse(row.headers) : row.headers) : {};
           
-          // Create a proper envelope structure with message_id, schema, data
-          const envelope = {
-            message_id: row.aggregate_id, // Use aggregate_id as message_id
-            schema: row.schema,
-            data: payloadData,
-            timestamp: new Date().toISOString(),
-            retry_count: 0
-          };
+          // Check if payload already has the envelope structure
+          let envelope;
+          if (payloadData.message_id && payloadData.schema && payloadData.data) {
+            // Payload is already a complete envelope, use it as-is
+            envelope = payloadData;
+          } else {
+            // Legacy format: wrap in envelope structure
+            envelope = {
+              message_id: row.aggregate_id,
+              schema: row.schema,
+              data: payloadData,
+              timestamp: new Date().toISOString(),
+              retry_count: 0
+            };
+          }
 
           // Determine exchange based on routing key
           let exchange = 'payments.topic'; // Default
