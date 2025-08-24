@@ -17,9 +17,11 @@ router.post('/api/payments/manual',
   requirePermission('Payments', PermissionLevel.Write),
   asyncHandler(async (req, res) => {
     const paymentData = req.body;
+    console.log('[Manual Payment] Received submission:', JSON.stringify(paymentData, null, 2));
     
     // Validate required fields
     if (!paymentData.loanId || !paymentData.amount || !paymentData.source) {
+      console.error('[Manual Payment] Validation failed - missing required fields');
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -30,6 +32,7 @@ router.post('/api/payments/manual',
       });
 
       if (!loan) {
+        console.error('[Manual Payment] Loan not found:', paymentData.loanId);
         return res.status(404).json({ error: 'Loan not found' });
       }
 
@@ -37,6 +40,35 @@ router.post('/api/payments/manual',
       const paymentId = uuidv4();
       const externalRef = paymentData.reference || `MANUAL-${Date.now()}`;
       const amountCents = Math.round(parseFloat(paymentData.amount) * 100);
+      
+      console.log('[Manual Payment] Generated payment ID:', paymentId);
+      console.log('[Manual Payment] Amount cents:', amountCents);
+      
+      // First, record the payment in the database for tracking
+      try {
+        await db.execute(sql`
+          INSERT INTO payment_transactions (
+            payment_id, loan_id, source, external_ref, amount_cents, 
+            currency, received_at, effective_date, state, idempotency_key, created_by
+          ) VALUES (
+            ${paymentId},
+            ${paymentData.loanId},
+            ${paymentData.source},
+            ${externalRef},
+            ${amountCents},
+            'USD',
+            NOW(),
+            ${paymentData.effectiveDate || new Date().toISOString().split('T')[0]},
+            'received',
+            ${paymentId},
+            ${req.user?.username || 'manual-entry'}
+          )
+        `);
+        console.log('[Manual Payment] Payment recorded in database');
+      } catch (dbErr) {
+        console.error('[Manual Payment] Database insert failed:', dbErr);
+        // Continue anyway - we'll try to submit to queue
+      }
       
       // Build payment envelope based on source
       let sourceData: any = {
@@ -108,43 +140,122 @@ router.post('/api/payments/manual',
         data: sourceData
       };
       
+      // Log audit event for payment submission
+      try {
+        await db.execute(sql`
+          INSERT INTO auth_events (
+            id, occurred_at, actor_user_id, event_type, ip, user_agent, details
+          ) VALUES (
+            ${uuidv4()},
+            NOW(),
+            ${req.user?.id || null},
+            'payment.manual.submitted',
+            ${req.ip || ''}::inet,
+            ${req.get('user-agent') || ''},
+            ${JSON.stringify({
+              payment_id: paymentId,
+              loan_id: paymentData.loanId,
+              amount_cents: amountCents,
+              source: paymentData.source,
+              external_ref: externalRef
+            })}::jsonb
+          )
+        `);
+        console.log('[Manual Payment] Audit event logged');
+      } catch (auditErr) {
+        console.error('[Manual Payment] Audit logging failed:', auditErr);
+      }
+      
       // Submit to RabbitMQ
-      const connection = await amqp.connect(CLOUDAMQP_URL);
-      const channel = await connection.createChannel();
-      
-      // Ensure exchange exists
-      await channel.assertExchange('payments.topic', 'topic', { durable: true });
-      
-      // Publish to validation queue
-      await channel.publish(
-        'payments.topic',
-        `payment.${paymentData.source}.received`,
-        Buffer.from(JSON.stringify(envelope)),
-        { persistent: true }
-      );
-      
-      await connection.close();
+      let queueSubmitted = false;
+      try {
+        console.log('[Manual Payment] Connecting to RabbitMQ...');
+        const connection = await amqp.connect(CLOUDAMQP_URL);
+        const channel = await connection.createChannel();
+        
+        // Ensure exchange exists
+        await channel.assertExchange('payments.topic', 'topic', { durable: true });
+        
+        // Publish to validation queue
+        const routingKey = `payment.${paymentData.source}.received`;
+        console.log('[Manual Payment] Publishing to exchange with routing key:', routingKey);
+        
+        await channel.publish(
+          'payments.topic',
+          routingKey,
+          Buffer.from(JSON.stringify(envelope)),
+          { persistent: true }
+        );
+        
+        await connection.close();
+        queueSubmitted = true;
+        console.log('[Manual Payment] Successfully published to RabbitMQ');
+        
+        // Update state to show it's in validation
+        await db.execute(sql`
+          UPDATE payment_transactions 
+          SET state = 'validating'
+          WHERE payment_id = ${paymentId}
+        `);
+        
+      } catch (queueErr) {
+        console.error('[Manual Payment] RabbitMQ submission failed:', queueErr);
+        // Mark as failed in database
+        await db.execute(sql`
+          UPDATE payment_transactions 
+          SET state = 'submission_failed',
+              metadata = ${JSON.stringify({ error: queueErr.message })}::jsonb
+          WHERE payment_id = ${paymentId}
+        `);
+      }
       
       // Log manual payment submission
-      console.log(`[Manual Payment] Submitted payment ${paymentId} for loan ${paymentData.loanId}`);
+      console.log(`[Manual Payment] Payment ${paymentId} for loan ${paymentData.loanId}`);
       console.log(`[Manual Payment] Amount: $${paymentData.amount}, Source: ${paymentData.source}`);
+      console.log(`[Manual Payment] Queue submitted: ${queueSubmitted}`);
       
       res.json({
         success: true,
         payment_id: paymentId,
-        message: 'Payment submitted for processing',
+        message: queueSubmitted ? 'Payment submitted for processing' : 'Payment recorded but queue submission failed',
+        queue_submitted: queueSubmitted,
         details: {
+          payment_id: paymentId,
           loan_id: paymentData.loanId,
           loan_number: loan.loanNumber,
           amount: paymentData.amount,
           source: paymentData.source,
-          reference: externalRef
+          reference: externalRef,
+          status: queueSubmitted ? 'validating' : 'submission_failed'
         }
       });
       
     } catch (error) {
-      console.error('[Manual Payment] Error submitting payment:', error);
-      res.status(500).json({ error: 'Failed to submit payment' });
+      console.error('[Manual Payment] Unexpected error:', error);
+      // Log the error to audit trail
+      await db.execute(sql`
+        INSERT INTO auth_events (
+          id, occurred_at, actor_user_id, event_type, ip, user_agent, details
+        ) VALUES (
+          ${uuidv4()},
+          NOW(),
+          ${req.user?.id || null},
+          'payment.manual.error',
+          ${req.ip || ''}::inet,
+          ${req.get('user-agent') || ''},
+          ${JSON.stringify({
+            error: error.message,
+            loan_id: paymentData.loanId,
+            amount: paymentData.amount,
+            source: paymentData.source
+          })}::jsonb
+        )
+      `);
+      
+      res.status(500).json({ 
+        error: 'Failed to submit payment',
+        details: error.message 
+      });
     }
   })
 );

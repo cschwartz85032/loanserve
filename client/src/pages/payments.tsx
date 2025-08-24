@@ -111,19 +111,29 @@ export default function Payments() {
         body: payment
       });
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // Show detailed status
+      const description = data.queue_submitted 
+        ? `Payment ${data.payment_id} submitted successfully. Status: ${data.details.status}`
+        : `Payment ${data.payment_id} recorded but queue submission failed. Manual intervention required.`;
+      
       toast({
-        title: "Payment Submitted",
-        description: "Payment has been submitted for processing"
+        title: data.queue_submitted ? "Payment Submitted" : "Payment Recorded with Warning",
+        description: description,
+        variant: data.queue_submitted ? "default" : "destructive"
       });
+      
+      console.log('Payment submission result:', data);
+      
       setShowRecordPayment(false);
       resetForm();
       queryClient.invalidateQueries({ queryKey: ['/api/payments/transactions'] });
     },
     onError: (error: any) => {
+      console.error('Payment submission error:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to submit payment",
+        description: `Failed to submit payment: ${error.details || error.message || 'Unknown error'}`,
         variant: "destructive"
       });
     }
