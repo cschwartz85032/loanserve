@@ -2394,6 +2394,43 @@ export const ledgerEntries = pgTable("ledger_entries", {
   correlationIdx: index().on(t.correlationId)
 }));
 
+// Inbox for idempotency - tracks processed messages per consumer
+export const inbox = pgTable("inbox", {
+  id: serial("id").primaryKey(),
+  consumer: text("consumer").notNull(),
+  messageId: text("message_id").notNull(),
+  resultHash: text("result_hash").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow()
+}, (t) => ({
+  // Unique constraint to prevent duplicate processing
+  consumerMessageIdx: uniqueIndex().on(t.consumer, t.messageId),
+  // Index for cleanup of old messages
+  processedAtIdx: index().on(t.processedAt)
+}));
+
+// Outbox for transactional messaging - ensures events are published after transaction commits
+export const outbox = pgTable("outbox", {
+  id: serial("id").primaryKey(),
+  aggregateType: text("aggregate_type").notNull(),
+  aggregateId: text("aggregate_id").notNull(),
+  schema: text("schema").notNull(),
+  routingKey: text("routing_key").notNull(),
+  payload: jsonb("payload").notNull(),
+  headers: jsonb("headers"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastError: text("last_error"),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true })
+}, (t) => ({
+  // Index for polling unpublished messages
+  publishedIdx: index().on(t.publishedAt, t.createdAt),
+  // Index for retry mechanism
+  retryIdx: index().on(t.publishedAt, t.nextRetryAt),
+  // Index for aggregate queries
+  aggregateIdx: index().on(t.aggregateType, t.aggregateId)
+}));
+
 // Outbox Messages - Transactional outbox pattern (Step 5)
 export const outboxMessages = pgTable("outbox_messages", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -2484,6 +2521,24 @@ export const insertLedgerEntrySchema = createInsertSchema(ledgerEntries).omit({
 });
 export type InsertLedgerEntry = z.infer<typeof insertLedgerEntrySchema>;
 export type LedgerEntry = typeof ledgerEntries.$inferSelect;
+
+export const insertInboxSchema = createInsertSchema(inbox).omit({
+  id: true,
+  processedAt: true
+});
+export type InsertInbox = z.infer<typeof insertInboxSchema>;
+export type Inbox = typeof inbox.$inferSelect;
+
+export const insertOutboxSchema = createInsertSchema(outbox).omit({
+  id: true,
+  createdAt: true,
+  publishedAt: true,
+  attemptCount: true,
+  lastError: true,
+  nextRetryAt: true
+});
+export type InsertOutbox = z.infer<typeof insertOutboxSchema>;
+export type Outbox = typeof outbox.$inferSelect;
 
 export const insertOutboxMessageSchema = createInsertSchema(outboxMessages).omit({
   id: true,

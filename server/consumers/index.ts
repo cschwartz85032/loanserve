@@ -13,7 +13,7 @@ import { PaymentDistributionConsumer } from './payment-distribution-consumer';
 import { PaymentReversalSaga } from './payment-reversal-saga';
 import { notificationsConsumer } from './notifications-consumer';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
-// import { OutboxProcessor } from '../services/outbox-processor';
+import { getOutboxPublisher } from '../services/outbox-publisher';
 
 export async function startPaymentConsumers(): Promise<void> {
   console.log('[Consumers] Starting payment processing consumers...');
@@ -27,10 +27,10 @@ export async function startPaymentConsumers(): Promise<void> {
     await rabbitmq.waitForConnection();
     console.log('[Consumers] RabbitMQ connected');
 
-    // Start outbox processor (commented out until implemented)
-    // const outboxProcessor = new OutboxProcessor();
-    // await outboxProcessor.start();
-    // console.log('[Consumers] Outbox processor started');
+    // Start outbox publisher for transactional messaging
+    const outboxPublisher = getOutboxPublisher();
+    await outboxPublisher.start();
+    console.log('[Consumers] Outbox publisher started');
 
     // Start validator consumer (Step 13)
     const validatorConsumer = new PaymentValidatorConsumer();
@@ -47,9 +47,9 @@ export async function startPaymentConsumers(): Promise<void> {
     await rulesEngineConsumer.start();
     console.log('[Consumers] Rules engine consumer started');
 
-    // Start poster consumer (Step 16)
-    await posterConsumer.start();
-    console.log('[Consumers] Poster consumer started');
+    // DISABLED: Poster consumer requires q.post queue which conflicts with CloudAMQP settings
+    // await posterConsumer.start();
+    // console.log('[Consumers] Poster consumer started');
 
     // Start validation consumer
     const validationConsumer = new PaymentValidationConsumer();
@@ -71,9 +71,9 @@ export async function startPaymentConsumers(): Promise<void> {
     await reversalSaga.start();
     console.log('[Consumers] Reversal saga started');
 
-    // Start notifications consumer
-    await notificationsConsumer.start();
-    console.log('[Consumers] Notifications consumer started');
+    // DISABLED: Notifications consumer needs refactoring for enhanced RabbitMQ service
+    // await notificationsConsumer.start();
+    // console.log('[Consumers] Notifications consumer started');
 
     console.log('[Consumers] All payment processing consumers started successfully');
 
