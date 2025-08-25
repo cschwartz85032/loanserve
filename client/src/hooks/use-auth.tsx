@@ -44,16 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      const res = await apiRequest("/api/auth/login", {
+      const res = await apiRequest("/api/login", {
         method: "POST",
         body: JSON.stringify({ 
-          email: credentials.username, // Map username to email for auth-service
+          username: credentials.username,
           password: credentials.password 
         }),
       });
       const data = await res.json();
-      // Return just the user object from the response
-      return data.user;
+      // Return the user data directly
+      return data;
     },
     onSuccess: (user: UserWithRoles) => {
       queryClient.setQueryData(["/api/user"], user);
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("/api/auth/logout", {
+      await apiRequest("/api/logout", {
         method: "POST",
       });
     },
