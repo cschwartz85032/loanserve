@@ -57,6 +57,8 @@ const PaymentSubmissionSchema = z.object({
  */
 router.post('/api/payments', requireAuth, async (req, res) => {
   try {
+    console.log('[API] Payment submission request body:', JSON.stringify(req.body, null, 2));
+    
     // Validate permissions
     if (!await hasPermission(req.user.id, 'payments', 'write', { userId: req.user.id })) {
       return res.status(403).json({ error: 'Insufficient permissions' });
@@ -170,7 +172,13 @@ router.post('/api/payments', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('[API] Error submitting payment:', error);
-    res.status(400).json({ error: error.message });
+    if (error instanceof z.ZodError) {
+      console.error('[API] Validation errors:', error.errors);
+      const fieldErrors = error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
+      res.status(400).json({ error: `Validation failed: ${fieldErrors}` });
+    } else {
+      res.status(400).json({ error: error.message || 'Bad Request' });
+    }
   }
 });
 
