@@ -16,7 +16,7 @@ export type ExceptionState = 'open' | 'pending' | 'resolved' | 'cancelled';
 export interface ExceptionCase {
   id?: string;
   ingestionId?: string | null;
-  paymentId?: number | null;
+  paymentId?: string | null; // Changed to string for UUID
   category: ExceptionCategory;
   subcategory?: string | null;
   severity: ExceptionSeverity;
@@ -36,7 +36,7 @@ export class ExceptionCaseService {
       .insert(exceptionCases)
       .values({
         ingestionId: exception.ingestionId,
-        paymentId: exception.paymentId,
+        paymentId: exception.paymentId ? parseInt(exception.paymentId) : undefined, // Convert to int for DB until schema is fixed
         category: exception.category,
         subcategory: exception.subcategory,
         severity: exception.severity,
@@ -48,14 +48,17 @@ export class ExceptionCaseService {
 
     console.log(`[ExceptionCase] Created exception ${created.id}: category=${exception.category}, severity=${exception.severity}, state=${created.state}`);
     
-    return created as ExceptionCase;
+    return {
+      ...created,
+      paymentId: created.paymentId?.toString() // Convert back to string for consistency
+    } as ExceptionCase;
   }
 
   /**
    * Create an ACH return exception
    */
   async createAchReturnException(
-    paymentId: number,
+    paymentId: string, // Changed to string
     returnCode: string,
     returnReason: string,
     amount: number
@@ -82,7 +85,7 @@ export class ExceptionCaseService {
    * Create an NSF (Non-Sufficient Funds) exception
    */
   async createNsfException(
-    paymentId: number,
+    paymentId: string, // Changed to string
     amount: number,
     attemptCount: number
   ): Promise<ExceptionCase> {
@@ -112,7 +115,7 @@ export class ExceptionCaseService {
    */
   async createDuplicateException(
     ingestionId: string,
-    originalPaymentId: number,
+    originalPaymentId: string, // Changed to string
     duplicateAmount: number
   ): Promise<ExceptionCase> {
     return this.createException({
@@ -125,10 +128,9 @@ export class ExceptionCaseService {
         originalPaymentId,
         duplicateAmount,
         suggestedActions: [
-          'Verify with payment processor',
-          'Check for technical issues causing duplicates',
-          'Initiate refund if confirmed duplicate',
-          'Update idempotency controls'
+          'Verify duplicate payment',
+          'Refund if confirmed duplicate',
+          'Update reconciliation records'
         ],
         autoResolve: false
       }
@@ -136,55 +138,164 @@ export class ExceptionCaseService {
   }
 
   /**
-   * Create a reconciliation variance exception
+   * Create a wire recall exception
    */
-  async createReconcileVarianceException(
-    channel: string,
-    variance: number,
-    periodStart: string,
-    periodEnd: string
+  async createWireRecallException(
+    paymentId: string, // Changed to string
+    recallReason: string,
+    amount: number
   ): Promise<ExceptionCase> {
-    const severity = this.determineVarianceSeverity(variance);
+    const severity = this.determineWireRecallSeverity(recallReason);
     
     return this.createException({
-      category: 'reconcile_variance',
-      subcategory: channel,
+      paymentId,
+      category: 'wire_recall',
+      subcategory: recallReason,
       severity,
-      state: 'open',
+      state: 'pending',
       aiRecommendation: {
-        channel,
-        variance,
-        periodStart,
-        periodEnd,
-        suggestedActions: [
-          'Review bank statement for missing transactions',
-          'Check for processing delays',
-          'Verify system recording accuracy',
-          'Investigate refunds or reversals',
-          Math.abs(variance) > 10000 ? 'Escalate to finance team' : 'Document variance reason'
-        ],
-        requiresManualReview: Math.abs(variance) > 1000
+        recallReason,
+        amount,
+        suggestedActions: this.getWireRecallSuggestedActions(recallReason),
+        requiresApproval: true
       }
     });
   }
 
   /**
-   * Update exception state
+   * Create a reconciliation variance exception
    */
-  async updateExceptionState(
+  async createReconciliationVarianceException(
+    expectedAmount: number,
+    actualAmount: number,
+    referenceId: string,
+    source: string
+  ): Promise<ExceptionCase> {
+    const variance = Math.abs(expectedAmount - actualAmount);
+    const severity: ExceptionSeverity = variance > 1000 ? 'high' : variance > 100 ? 'medium' : 'low';
+    
+    return this.createException({
+      category: 'reconcile_variance',
+      severity,
+      state: 'open',
+      aiRecommendation: {
+        expectedAmount,
+        actualAmount,
+        variance,
+        referenceId,
+        source,
+        suggestedActions: [
+          'Review transaction details',
+          'Check for timing differences',
+          'Verify exchange rates if applicable',
+          'Contact counterparty if needed'
+        ]
+      }
+    });
+  }
+
+  /**
+   * Get exception by ID
+   */
+  async getException(id: string): Promise<ExceptionCase | null> {
+    const [exception] = await db
+      .select()
+      .from(exceptionCases)
+      .where(eq(exceptionCases.id, id))
+      .limit(1);
+
+    if (!exception) return null;
+
+    return {
+      ...exception,
+      paymentId: exception.paymentId?.toString() // Convert to string for consistency
+    } as ExceptionCase;
+  }
+
+  /**
+   * Get exceptions by payment ID
+   */
+  async getExceptionsByPaymentId(paymentId: string): Promise<ExceptionCase[]> {
+    const exceptions = await db
+      .select()
+      .from(exceptionCases)
+      .where(eq(exceptionCases.paymentId, parseInt(paymentId))); // Convert to int for query
+
+    return exceptions.map(e => ({
+      ...e,
+      paymentId: e.paymentId?.toString() // Convert back to string
+    })) as ExceptionCase[];
+  }
+
+  /**
+   * Get open exceptions
+   */
+  async getOpenExceptions(
+    category?: ExceptionCategory,
+    severity?: ExceptionSeverity
+  ): Promise<ExceptionCase[]> {
+    let query = db
+      .select()
+      .from(exceptionCases)
+      .where(eq(exceptionCases.state, 'open'));
+
+    if (category) {
+      query = query.where(and(
+        eq(exceptionCases.state, 'open'),
+        eq(exceptionCases.category, category)
+      ));
+    }
+
+    if (severity) {
+      query = query.where(and(
+        eq(exceptionCases.state, 'open'),
+        eq(exceptionCases.severity, severity)
+      ));
+    }
+
+    const exceptions = await query;
+    
+    return exceptions.map(e => ({
+      ...e,
+      paymentId: e.paymentId?.toString() // Convert to string
+    })) as ExceptionCase[];
+  }
+
+  /**
+   * Resolve exception
+   */
+  async resolveException(
     id: string,
-    state: ExceptionState,
-    resolvedAt?: Date
+    resolution?: string,
+    resolvedBy?: string
   ): Promise<void> {
     await db
       .update(exceptionCases)
       .set({
-        state,
-        resolvedAt: resolvedAt || (state === 'resolved' ? new Date() : null)
+        state: 'resolved',
+        resolvedAt: new Date(),
+        aiRecommendation: resolution ? 
+          { resolution, resolvedBy } : 
+          undefined
       })
       .where(eq(exceptionCases.id, id));
 
-    console.log(`[ExceptionCase] Updated exception ${id} state to ${state}`);
+    console.log(`[ExceptionCase] Resolved exception ${id}`);
+  }
+
+  /**
+   * Cancel exception
+   */
+  async cancelException(id: string, reason?: string): Promise<void> {
+    await db
+      .update(exceptionCases)
+      .set({
+        state: 'cancelled',
+        aiRecommendation: reason ? { cancellationReason: reason } : undefined
+      })
+      .where(eq(exceptionCases.id, id));
+
+    console.log(`[ExceptionCase] Cancelled exception ${id}`);
   }
 
   /**
@@ -193,109 +304,86 @@ export class ExceptionCaseService {
   async assignException(id: string, assignedTo: string): Promise<void> {
     await db
       .update(exceptionCases)
-      .set({
-        assignedTo,
-        state: 'pending'
-      })
+      .set({ assignedTo })
       .where(eq(exceptionCases.id, id));
 
     console.log(`[ExceptionCase] Assigned exception ${id} to ${assignedTo}`);
   }
 
   /**
-   * Get open exceptions by severity
-   */
-  async getOpenExceptionsBySeverity(severity?: ExceptionSeverity): Promise<ExceptionCase[]> {
-    const conditions = [eq(exceptionCases.state, 'open')];
-    if (severity) {
-      conditions.push(eq(exceptionCases.severity, severity));
-    }
-
-    const results = await db
-      .select()
-      .from(exceptionCases)
-      .where(and(...conditions))
-      .orderBy(exceptionCases.createdAt);
-
-    return results as ExceptionCase[];
-  }
-
-  /**
-   * Get exceptions by category
-   */
-  async getExceptionsByCategory(category: ExceptionCategory): Promise<ExceptionCase[]> {
-    const results = await db
-      .select()
-      .from(exceptionCases)
-      .where(eq(exceptionCases.category, category))
-      .orderBy(exceptionCases.createdAt);
-
-    return results as ExceptionCase[];
-  }
-
-  /**
-   * Determine ACH return severity based on return code
+   * Determine ACH return severity
    */
   private determineAchReturnSeverity(returnCode: string): ExceptionSeverity {
-    // R01 (Insufficient Funds), R09 (Uncollected Funds)
-    if (['R01', 'R09'].includes(returnCode)) {
-      return 'medium';
-    }
-    // R02 (Account Closed), R03 (No Account), R04 (Invalid Account)
-    if (['R02', 'R03', 'R04'].includes(returnCode)) {
-      return 'high';
-    }
-    // R05 (Unauthorized), R07 (Authorization Revoked), R08 (Payment Stopped)
-    if (['R05', 'R07', 'R08', 'R10', 'R29'].includes(returnCode)) {
-      return 'critical';
-    }
+    // Critical codes that require immediate attention
+    const criticalCodes = ['R02', 'R03', 'R04', 'R20']; // Account closed, no account, invalid account
+    
+    // High severity codes
+    const highCodes = ['R05', 'R07', 'R10', 'R29', 'R16']; // Unauthorized, disputes
+    
+    // Medium severity codes
+    const mediumCodes = ['R01', 'R06', 'R08', 'R09', 'R11', 'R12', 'R31']; // NSF, holds, etc
+    
+    if (criticalCodes.includes(returnCode)) return 'critical';
+    if (highCodes.includes(returnCode)) return 'high';
+    if (mediumCodes.includes(returnCode)) return 'medium';
+    
     return 'low';
   }
 
   /**
-   * Get suggested actions for ACH return codes
+   * Determine wire recall severity
    */
-  private getAchReturnSuggestedActions(returnCode: string): string[] {
-    const actions: Record<string, string[]> = {
-      'R01': ['Retry after payday', 'Contact customer for alternate payment'],
-      'R02': ['Update account information', 'Request new payment method'],
-      'R03': ['Verify account details', 'Contact customer immediately'],
-      'R04': ['Correct account number', 'Verify with customer'],
-      'R05': ['Obtain new authorization', 'Verify mandate status'],
-      'R07': ['Stop future attempts', 'Contact customer for new authorization'],
-      'R08': ['Do not retry', 'Contact customer for resolution'],
-      'R09': ['Retry in 2 business days', 'Monitor account status'],
-      'R10': ['Do not retry', 'Customer disputed - investigate'],
-      'R29': ['Do not retry', 'Corporate customer not authorized']
-    };
+  private determineWireRecallSeverity(recallReason: string): ExceptionSeverity {
+    const highSeverityReasons = ['FRAUD', 'INCORRECT_BENEFICIARY', 'DUPLICATE'];
     
-    return actions[returnCode] || ['Review return reason', 'Contact support'];
+    if (highSeverityReasons.includes(recallReason)) return 'high';
+    
+    return 'medium';
   }
 
   /**
-   * Determine variance severity based on amount
+   * Get ACH return suggested actions
    */
-  private determineVarianceSeverity(variance: number): ExceptionSeverity {
-    const absVariance = Math.abs(variance);
-    
-    if (absVariance < 100) {
-      return 'low';
-    } else if (absVariance < 1000) {
-      return 'medium';
-    } else if (absVariance < 10000) {
-      return 'high';
-    } else {
-      return 'critical';
-    }
+  private getAchReturnSuggestedActions(returnCode: string): string[] {
+    const actionMap: Record<string, string[]> = {
+      R01: ['Contact customer for updated payment method', 'Schedule retry after payday'],
+      R02: ['Remove account from system', 'Request updated banking information'],
+      R03: ['Verify account number', 'Contact customer for correct information'],
+      R04: ['Correct account number', 'Verify with customer'],
+      R05: ['Investigate authorization', 'Contact customer', 'File dispute response if valid'],
+      R07: ['Stop future debits', 'Remove authorization', 'Contact customer'],
+      R10: ['Provide proof of authorization', 'Stop future debits if unauthorized'],
+      R29: ['Verify corporate authorization', 'Update authorization records']
+    };
+
+    return actionMap[returnCode] || ['Review return reason', 'Take appropriate action'];
+  }
+
+  /**
+   * Get wire recall suggested actions
+   */
+  private getWireRecallSuggestedActions(recallReason: string): string[] {
+    const actionMap: Record<string, string[]> = {
+      FRAUD: ['Hold funds immediately', 'Investigate transaction', 'File SAR if confirmed'],
+      DUPLICATE: ['Verify duplicate', 'Reverse if confirmed', 'Update records'],
+      INCORRECT_BENEFICIARY: ['Verify beneficiary', 'Return funds', 'Update beneficiary records'],
+      INCORRECT_AMOUNT: ['Verify correct amount', 'Adjust if needed', 'Document variance'],
+      CUSTOMER_REQUEST: ['Verify request authenticity', 'Process cancellation', 'Document reason']
+    };
+
+    return actionMap[recallReason] || ['Review recall reason', 'Process according to policy'];
   }
 
   /**
    * Calculate retry date based on attempt count
    */
-  private calculateRetryDate(attemptCount: number): Date {
-    const now = new Date();
-    const daysToAdd = attemptCount <= 1 ? 3 : attemptCount <= 2 ? 7 : 14;
-    now.setDate(now.getDate() + daysToAdd);
-    return now;
+  private calculateRetryDate(attemptCount: number): string {
+    const daysToAdd = Math.min(attemptCount * 3, 14); // Max 14 days
+    const retryDate = new Date();
+    retryDate.setDate(retryDate.getDate() + daysToAdd);
+    return retryDate.toISOString().split('T')[0];
   }
 }
+
+// Export singleton instance
+export const exceptionCaseService = new ExceptionCaseService();

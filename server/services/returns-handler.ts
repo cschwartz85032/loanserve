@@ -9,8 +9,7 @@ import {
   ledgerEntries,
   outboxMessages,
   paymentEvents,
-  exceptionCases,
-  paymentIngestion
+  exceptionCases
 } from '@shared/schema';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { ExceptionCaseService } from './exception-case';
@@ -196,7 +195,7 @@ export class ReturnsHandler {
         const eventHash = this.computeEventHash(prevHash, eventData, correlationId);
 
         await tx.insert(paymentEvents).values({
-          paymentId: paymentId,
+          paymentId,
           type: 'payment.reversed',
           actorType: 'system',
           correlationId,
@@ -222,18 +221,18 @@ export class ReturnsHandler {
     code: string,
     severity: "medium" | "high"
   ): Promise<void> {
-    await this.exceptionCaseService.createCase({
-      type: 'payment_dispute',
-      severity,
-      entityType: 'payment',
-      entityId: paymentId,
-      description: `Payment dispute: ${reason}`,
-      metadata: {
-        disputeCode: code,
-        disputeReason: reason,
-        originalPaymentId: paymentId
-      }
-    });
+    // Create exception case for dispute
+    const severityMap = {
+      'medium': 'medium' as const,
+      'high': 'high' as const
+    };
+    
+    await this.exceptionCaseService.createAchReturnException(
+      paymentId,
+      code,
+      reason,
+      0 // Amount will be fetched from payment record
+    );
 
     // Update payment status to disputed (use 'failed' as closest status)
     await db.update(payments)
@@ -261,7 +260,7 @@ export class ReturnsHandler {
 
     // Create payment event
     await db.insert(paymentEvents).values({
-      paymentId: paymentId,
+      paymentId,
       type: 'payment.held',
       actorType: 'system',
       correlationId: crypto.randomUUID(),
@@ -277,13 +276,16 @@ export class ReturnsHandler {
     paymentId: string,
     reason: string
   ): any[] {
+    const correlationId = crypto.randomUUID();
     return originalEntries.map(entry => ({
-      accountId: entry.accountId,
-      entryType: entry.entryType === 'debit' ? 'credit' : 'debit', // Reverse the entry type
-      amount: entry.amount,
-      currency: entry.currency,
+      paymentId,
+      entryDate: new Date().toISOString().split('T')[0],
+      accountType: entry.accountType,
+      accountCode: entry.accountCode,
+      debitAmount: entry.creditAmount, // Reverse the amounts
+      creditAmount: entry.debitAmount, // Reverse the amounts
       description: `Reversal: ${reason}`,
-      effectiveDate: new Date(),
+      correlationId,
       metadata: {
         referenceType: 'payment_reversal',
         referenceId: paymentId,
@@ -335,16 +337,25 @@ export class ReturnsHandler {
     reason: string,
     code?: string
   ): Promise<void> {
-    await this.exceptionCaseService.createCase({
-      type: 'orphan_return',
+    // Since payment doesn't exist, we can't use the standard exception service
+    // We'll create a direct exception case
+    await db.insert(exceptionCases).values({
+      paymentId: undefined, // No valid payment
+      category: 'ach_return',
+      subcategory: 'orphan_return',
       severity: 'high',
-      entityType: 'payment',
-      entityId: paymentId,
-      description: `Orphan return: Payment not found for return/recall`,
-      metadata: {
+      state: 'open',
+      aiRecommendation: {
         paymentId,
         returnReason: reason,
-        returnCode: code
+        returnCode: code,
+        orphanPayment: true,
+        suggestedActions: [
+          'Research payment in external systems',
+          'Check for data entry errors',
+          'Verify payment ID mapping',
+          'Contact originator for clarification'
+        ]
       }
     });
   }
@@ -357,16 +368,22 @@ export class ReturnsHandler {
     code: string,
     type: 'ACH' | 'WIRE'
   ): Promise<void> {
-    await this.exceptionCaseService.createCase({
-      type: 'unknown_return_code',
+    await db.insert(exceptionCases).values({
+      paymentId: undefined,
+      category: type === 'ACH' ? 'ach_return' : 'wire_recall',
+      subcategory: `unknown_${code}`,
       severity: 'medium',
-      entityType: 'payment',
-      entityId: paymentId,
-      description: `Unknown ${type} return code: ${code}`,
-      metadata: {
+      state: 'open',
+      aiRecommendation: {
         paymentId,
         returnCode: code,
-        returnType: type
+        returnType: type,
+        suggestedActions: [
+          'Research return code definition',
+          'Contact financial institution',
+          'Update return code mapping',
+          'Process manually if valid'
+        ]
       }
     });
   }
@@ -383,7 +400,7 @@ export class ReturnsHandler {
     metadata?: any
   ): Promise<void> {
     await db.insert(paymentEvents).values({
-      paymentId: paymentId,
+      paymentId,
       type: `return.${eventType}`,
       actorType: 'system',
       correlationId: crypto.randomUUID(),
