@@ -7,6 +7,8 @@ import { sql } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs/promises";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import { analyzeDocument } from "./openai";
 import feeRoutes from "./routes/fees";
 import { registerLedgerRoutes } from "./routes/ledger";
@@ -139,6 +141,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register DLQ management routes
   const dlqRoutes = (await import('./routes/dlq-routes.js')).default;
   app.use('/api', dlqRoutes);
+
+  // Serve observability dashboard
+  app.get('/observability', (req, res) => {
+    res.sendFile(path.join(process.cwd(), 'server/observability/dashboard-ui.html'));
+  });
 
   // ============= BORROWER ENTITY ROUTES =============
   app.get("/api/borrowers", 
