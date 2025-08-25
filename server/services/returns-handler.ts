@@ -53,7 +53,7 @@ export class ReturnsHandler {
    * Handle ACH return
    */
   async handleACHReturn(
-    paymentId: number,
+    paymentId: string,
     returnCode: string,
     returnDate: Date,
     metadata?: any
@@ -87,7 +87,7 @@ export class ReturnsHandler {
    * Handle wire recall
    */
   async handleWireRecall(
-    paymentId: number,
+    paymentId: string,
     recallReason: string,
     recallDate: Date,
     metadata?: any
@@ -119,7 +119,7 @@ export class ReturnsHandler {
   /**
    * Compensate (reverse) a payment
    */
-  async compensate(paymentId: number, reason: string, code?: string): Promise<void> {
+  async compensate(paymentId: string, reason: string, code?: string): Promise<void> {
     try {
       await db.transaction(async tx => {
         // Check if payment exists
@@ -156,7 +156,7 @@ export class ReturnsHandler {
           .where(
             and(
               sql`${ledgerEntries.metadata}->>'referenceType' = 'payment'`,
-              sql`${ledgerEntries.metadata}->>'referenceId' = ${paymentId.toString()}`
+              sql`${ledgerEntries.metadata}->>'referenceId' = ${paymentId}`
             )
           );
 
@@ -177,7 +177,7 @@ export class ReturnsHandler {
         // Create outbox message
         await tx.insert(outboxMessages).values({
           aggregateType: 'payments',
-          aggregateId: paymentId.toString(),
+          aggregateId: paymentId,
           eventType: 'payment.reversed',
           payload: {
             payment_id: paymentId,
@@ -217,7 +217,7 @@ export class ReturnsHandler {
    * Open a dispute case
    */
   private async openDispute(
-    paymentId: number,
+    paymentId: string,
     reason: string,
     code: string,
     severity: "medium" | "high"
@@ -226,7 +226,7 @@ export class ReturnsHandler {
       type: 'payment_dispute',
       severity,
       entityType: 'payment',
-      entityId: paymentId.toString(),
+      entityId: paymentId,
       description: `Payment dispute: ${reason}`,
       metadata: {
         disputeCode: code,
@@ -248,7 +248,7 @@ export class ReturnsHandler {
    * Hold a payment
    */
   private async holdPayment(
-    paymentId: number,
+    paymentId: string,
     reason: string,
     code: string
   ): Promise<void> {
@@ -274,7 +274,7 @@ export class ReturnsHandler {
    */
   private createReversalLedgerEntries(
     originalEntries: any[],
-    paymentId: number,
+    paymentId: string,
     reason: string
   ): any[] {
     return originalEntries.map(entry => ({
@@ -286,7 +286,7 @@ export class ReturnsHandler {
       effectiveDate: new Date(),
       metadata: {
         referenceType: 'payment_reversal',
-        referenceId: paymentId.toString(),
+        referenceId: paymentId,
         originalEntryId: entry.id,
         reversalReason: reason
       }
@@ -296,7 +296,7 @@ export class ReturnsHandler {
   /**
    * Get previous event hash for a payment
    */
-  private async getPrevEventHash(tx: any, paymentId: number): Promise<string | null> {
+  private async getPrevEventHash(tx: any, paymentId: string): Promise<string | null> {
     const [lastEvent] = await tx.select()
       .from(paymentEvents)
       .where(eq(paymentEvents.paymentId, paymentId))
@@ -331,7 +331,7 @@ export class ReturnsHandler {
    * Handle orphan return (payment not found)
    */
   private async openOrphanReturnCase(
-    paymentId: number,
+    paymentId: string,
     reason: string,
     code?: string
   ): Promise<void> {
@@ -339,7 +339,7 @@ export class ReturnsHandler {
       type: 'orphan_return',
       severity: 'high',
       entityType: 'payment',
-      entityId: paymentId.toString(),
+      entityId: paymentId,
       description: `Orphan return: Payment not found for return/recall`,
       metadata: {
         paymentId,
@@ -353,7 +353,7 @@ export class ReturnsHandler {
    * Handle unknown return code
    */
   private async handleUnknownReturn(
-    paymentId: number,
+    paymentId: string,
     code: string,
     type: 'ACH' | 'WIRE'
   ): Promise<void> {
@@ -361,7 +361,7 @@ export class ReturnsHandler {
       type: 'unknown_return_code',
       severity: 'medium',
       entityType: 'payment',
-      entityId: paymentId.toString(),
+      entityId: paymentId,
       description: `Unknown ${type} return code: ${code}`,
       metadata: {
         paymentId,
@@ -375,7 +375,7 @@ export class ReturnsHandler {
    * Log return event
    */
   private async logReturnEvent(
-    paymentId: number,
+    paymentId: string,
     eventType: string,
     code: string,
     info: any,
@@ -401,7 +401,7 @@ export class ReturnsHandler {
   /**
    * Simulate R01 return for testing
    */
-  async simulateR01Return(paymentId: number): Promise<void> {
+  async simulateR01Return(paymentId: string): Promise<void> {
     console.log(`[ReturnsHandler] Simulating R01 return for payment ${paymentId}`);
     await this.handleACHReturn(
       paymentId,
@@ -414,7 +414,7 @@ export class ReturnsHandler {
   /**
    * Simulate R10 unauthorized return for testing
    */
-  async simulateR10Return(paymentId: number): Promise<void> {
+  async simulateR10Return(paymentId: string): Promise<void> {
     console.log(`[ReturnsHandler] Simulating R10 unauthorized return for payment ${paymentId}`);
     await this.handleACHReturn(
       paymentId,
