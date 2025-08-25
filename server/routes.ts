@@ -93,7 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Apply global middleware for policy engine (must be after auth setup)
   // Only apply to API routes to avoid blocking frontend HTML serving
-  app.use('/api', loadUserPolicy); // Load user policy for API requests
+  app.use(loadUserPolicy); // Load user policy for ALL requests (middleware will filter)
   app.use('/api', applyPIIMasking()); // Apply PII masking for regulators
   
   // Register auth routes after policy middleware
