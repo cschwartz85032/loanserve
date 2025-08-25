@@ -149,6 +149,40 @@ router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH
         } as PaymentData;
     }
 
+    // Save payment to database immediately
+    await db.execute(sql`
+      INSERT INTO payment_transactions (
+        payment_id,
+        loan_id,
+        source,
+        external_ref,
+        amount_cents,
+        currency,
+        received_at,
+        effective_date,
+        state,
+        idempotency_key,
+        created_by,
+        metadata
+      ) VALUES (
+        ${paymentId},
+        ${data.loan_id},
+        ${data.source},
+        ${data.external_ref || null},
+        ${amountCents},
+        'USD',
+        ${new Date().toISOString()},
+        ${data.effective_date || new Date().toISOString()},
+        'received',
+        ${paymentId},
+        ${1}, -- Default user ID for now
+        ${JSON.stringify({
+          ...paymentData,
+          submitted_at: new Date().toISOString()
+        })}
+      )
+    `);
+
     // Create payment envelope
     const envelope = messageFactory.createMessage(
       `loanserve.payment.v1.${data.source}.received`,
@@ -182,6 +216,92 @@ router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH
     } else {
       res.status(400).json({ error: error.message || 'Bad Request' });
     }
+  }
+});
+
+/**
+ * Get all payments
+ */
+router.get('/api/payments/all', requireAuth, async (req, res) => {
+  try {
+    // Check permissions
+    if (!await hasPermission(req.user.id, 'payments', 'read', { userId: req.user.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const result = await db.execute(sql`
+      SELECT 
+        pt.payment_id as id,
+        pt.loan_id as "loanId",
+        l.loan_number as "loanNumber",
+        pt.amount_cents / 100.0 as amount,
+        pt.source,
+        pt.state as status,
+        pt.effective_date as "effectiveDate",
+        pt.received_at as "createdAt",
+        pt.external_ref as "referenceNumber",
+        pt.metadata->>'channel_ref' as "channelReferenceId",
+        pt.metadata->>'error_message' as "errorMessage"
+      FROM payment_transactions pt
+      LEFT JOIN loans l ON pt.loan_id = l.id::text
+      ORDER BY pt.received_at DESC
+      LIMIT 100
+    `);
+
+    return res.json(result.rows);
+
+  } catch (error) {
+    console.error('[API] Error fetching all payments:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Get payment metrics
+ */
+router.get('/api/payments/metrics', requireAuth, async (req, res) => {
+  try {
+    // Check permissions
+    if (!await hasPermission(req.user.id, 'payments', 'read', { userId: req.user.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const metricsResult = await db.execute(sql`
+      SELECT 
+        COUNT(CASE WHEN received_at >= ${todayStart.toISOString()} THEN 1 END) as today_count,
+        COALESCE(SUM(CASE WHEN received_at >= ${todayStart.toISOString()} THEN amount_cents END), 0) / 100.0 as today_amount,
+        COUNT(CASE WHEN state = 'pending' OR state = 'processing' THEN 1 END) as pending_count,
+        COUNT(CASE WHEN state = 'failed' OR state = 'returned' THEN 1 END) as exception_count,
+        COALESCE(SUM(CASE WHEN received_at >= ${monthStart.toISOString()} THEN amount_cents END), 0) / 100.0 as month_amount
+      FROM payment_transactions
+    `);
+
+    const metrics = metricsResult.rows[0] || {
+      today_count: 0,
+      today_amount: 0,
+      pending_count: 0,
+      exception_count: 0,
+      month_amount: 0
+    };
+
+    return res.json({
+      todayCount: metrics.today_count || 0,
+      todayAmount: metrics.today_amount || 0,
+      pendingCount: metrics.pending_count || 0,
+      exceptionCount: metrics.exception_count || 0,
+      monthAmount: metrics.month_amount || 0
+    });
+
+  } catch (error) {
+    console.error('[API] Error fetching payment metrics:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
