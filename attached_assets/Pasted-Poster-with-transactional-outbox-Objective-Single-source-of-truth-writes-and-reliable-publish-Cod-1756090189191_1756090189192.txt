@@ -1,0 +1,60 @@
+Poster with transactional outbox
+
+Objective
+Single source of truth writes and reliable publish.
+
+Code
+
+await db.transaction(async tx => {
+  // find or create payment by idempotency
+  const existing = await tx.select().from(payments).where(eq(payments.idempotencyKey, env.idempotency_key));
+  let paymentId: string;
+  if (existing.length) {
+    paymentId = existing[0].id;
+  } else {
+    const inserted = await tx.insert(payments).values({
+      loanId: env.borrower.loan_id,
+      sourceChannel: env.source.channel,
+      idempotencyKey: env.idempotency_key,
+      columnTransferId: env.external?.column_transfer_id,
+      effectiveDate: env.payment.value_date,
+      totalReceived: env.payment.amount_cents / 100.0,
+      status: postingReady ? "completed" : "pending",
+      suspenseAmount: waterfall.suspense / 100.0,
+      principalAmount: waterfall.xP / 100.0,
+      interestAmount: waterfall.xI / 100.0,
+      feeAmount: waterfall.xF / 100.0,
+      escrowAmount: waterfall.xE / 100.0
+    }).returning({ id: payments.id });
+    paymentId = inserted[0].id;
+  }
+
+  await tx.insert(ledger).values(makeLedgerEntries(paymentId, waterfall, env));
+
+  const eventPayload = { payment_id: paymentId, env, allocations: waterfall, status: postingReady ? "completed" : "pending" };
+  await tx.insert(outboxMessages).values({
+    aggregateType: "payments",
+    aggregateId: paymentId,
+    eventType: "payment.posted",
+    payload: eventPayload
+  });
+
+  await tx.insert(paymentEvents).values({
+    paymentId, ingestionId: findIngestionId(env),
+    type: "payment.posted", actorType: "system", correlationId: env.correlation_id,
+    data: eventPayload, prevEventHash: getPrevHash(paymentId), eventHash: computeEventHash(getPrevHash(paymentId), eventPayload, env.correlation_id)
+  });
+});
+
+
+Errors and fallbacks
+
+Unique violation on idempotency: read and return existing payment id.
+
+Partial failure after payment write but before outbox write: transaction aborts, nothing committed.
+
+Acceptance
+
+Replaying the same envelope results in unchanged payment row and no duplicate ledger entries.
+
+Outbox has one message per payment event.

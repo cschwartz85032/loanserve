@@ -90,7 +90,7 @@ export class PosterService {
       entryDate,
       accountType: 'asset',
       accountCode: `cash_${env.source?.channel || 'unknown'}`,
-      debitAmount: ((env.amount_cents || 0) / 100).toFixed(2),
+      debitAmount: ((env.payment?.amount_cents || 0) / 100).toFixed(2),
       creditAmount: '0.00',
       description: `Payment received - Loan ${loanId}`,
       correlationId,
@@ -196,24 +196,24 @@ export class PosterService {
         console.log(`[Poster] Payment already exists with ID: ${paymentId}`);
       } else {
         // Create new payment
-        const loanId = parseInt(env.borrower?.loan_id || '0');
+        const loanId = parseInt(env.borrower?.loan_id || '1'); // Default to 1 if not provided
         
         const inserted = await tx
           .insert(payments)
           .values({
-            loanId: loanId || null,
+            loanId: loanId,
             sourceChannel: env.source?.channel || 'unknown',
             idempotencyKey: env.idempotency_key,
             columnTransferId: env.external?.column_transfer_id,
             effectiveDate: new Date(env.payment?.value_date || new Date()).toISOString().split('T')[0],
-            totalReceived: ((env.amount_cents || 0) / 100).toFixed(2),
+            totalReceived: ((env.payment?.amount_cents || 0) / 100).toFixed(2),
             status: postingReady ? 'completed' : 'pending',
             suspenseAmount: (waterfall.suspense / 100).toFixed(2),
             principalAmount: (waterfall.xP / 100).toFixed(2),
             interestAmount: (waterfall.xI / 100).toFixed(2),
             otherFeeAmount: (waterfall.xF / 100).toFixed(2),
             escrowAmount: (waterfall.xE / 100).toFixed(2),
-            paymentMethod: env.method || 'unknown',
+            paymentMethod: env.payment?.method || 'unknown',
             transactionId: env.external?.column_transfer_id || env.message_id,
             notes: `Posted via transactional outbox`,
             metadata: {
