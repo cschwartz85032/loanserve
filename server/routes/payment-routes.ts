@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { ulid } from 'ulid';
 import { db } from '../db';
+import { sql } from 'drizzle-orm';
 import { requireAuth } from '../auth/middleware';
 import { hasPermission } from '../auth/policy-engine';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
@@ -191,7 +192,7 @@ router.get('/api/payments/:paymentId', requireAuth, async (req, res) => {
   try {
     const { paymentId } = req.params;
 
-    const result = await db.query(`
+    const result = await db.execute(sql`
       SELECT 
         pt.*,
         json_agg(
@@ -203,11 +204,11 @@ router.get('/api/payments/:paymentId', requireAuth, async (req, res) => {
         ) as transitions
       FROM payment_transactions pt
       LEFT JOIN payment_state_transitions pst ON pt.payment_id = pst.payment_id
-      WHERE pt.payment_id = $1
+      WHERE pt.payment_id = ${paymentId}
       GROUP BY pt.payment_id, pt.loan_id, pt.source, pt.external_ref, 
                pt.amount_cents, pt.currency, pt.received_at, pt.effective_date,
                pt.state, pt.idempotency_key, pt.created_by, pt.metadata
-    `, [paymentId]);
+    `);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Payment not found' });
@@ -292,7 +293,7 @@ router.get('/api/loans/:loanId/payments', requireAuth, async (req, res) => {
     query += ` ORDER BY received_at DESC LIMIT $${++paramCount} OFFSET $${++paramCount}`;
     params.push(limit, offset);
 
-    const result = await db.query(query, params);
+    const result = await db.execute(sql.raw(query, params));
 
     res.json({
       success: true,
@@ -317,9 +318,8 @@ router.get('/api/payments/:paymentId/allocations', requireAuth, async (req, res)
     const { paymentId } = req.params;
 
     // Get payment to check permissions
-    const paymentResult = await db.query(
-      'SELECT loan_id FROM payment_transactions WHERE payment_id = $1',
-      [paymentId]
+    const paymentResult = await db.execute(
+      sql`SELECT loan_id FROM payment_transactions WHERE payment_id = ${paymentId}`
     );
 
     if (paymentResult.rows.length === 0) {
@@ -337,7 +337,7 @@ router.get('/api/payments/:paymentId/allocations', requireAuth, async (req, res)
     }
 
     // Get ledger entries
-    const ledgerResult = await db.query(`
+    const ledgerResult = await db.execute(sql`
       SELECT 
         account,
         debit_cents,
@@ -346,9 +346,9 @@ router.get('/api/payments/:paymentId/allocations', requireAuth, async (req, res)
         effective_date,
         created_at
       FROM payment_ledger
-      WHERE payment_id = $1
+      WHERE payment_id = ${paymentId}
       ORDER BY created_at
-    `, [paymentId]);
+    `);
 
     res.json({
       success: true,
@@ -376,9 +376,8 @@ router.get('/api/payments/:paymentId/distributions', requireAuth, async (req, re
     const { paymentId } = req.params;
 
     // Get payment to check permissions
-    const paymentResult = await db.query(
-      'SELECT loan_id FROM payment_transactions WHERE payment_id = $1',
-      [paymentId]
+    const paymentResult = await db.execute(
+      sql`SELECT loan_id FROM payment_transactions WHERE payment_id = ${paymentId}`
     );
 
     if (paymentResult.rows.length === 0) {
@@ -396,7 +395,7 @@ router.get('/api/payments/:paymentId/distributions', requireAuth, async (req, re
     }
 
     // Get distributions
-    const distResult = await db.query(`
+    const distResult = await db.execute(sql`
       SELECT 
         pd.investor_id,
         i.company_name as investor_name,
@@ -406,9 +405,9 @@ router.get('/api/payments/:paymentId/distributions', requireAuth, async (req, re
         pd.effective_date
       FROM payment_distributions pd
       LEFT JOIN investors i ON pd.investor_id = i.investor_id
-      WHERE pd.payment_id = $1
+      WHERE pd.payment_id = ${paymentId}
       ORDER BY pd.investor_id
-    `, [paymentId]);
+    `);
 
     res.json({
       success: true,
@@ -447,9 +446,8 @@ router.post('/api/payments/:paymentId/reverse', requireAuth, async (req, res) =>
     }
 
     // Get payment details
-    const paymentResult = await db.query(
-      'SELECT * FROM payment_transactions WHERE payment_id = $1',
-      [paymentId]
+    const paymentResult = await db.execute(
+      sql`SELECT * FROM payment_transactions WHERE payment_id = ${paymentId}`
     );
 
     if (paymentResult.rows.length === 0) {
