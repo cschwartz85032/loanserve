@@ -36,6 +36,11 @@ export async function loadUserPolicy(
   next: NextFunction
 ): Promise<void> {
   try {
+    // Skip policy loading for non-API routes
+    if (!req.path.startsWith('/api')) {
+      return next();
+    }
+    
     // Get user ID from passport session first, then fall back to custom session
     const userId = (req.user as any)?.id || (req.session as any)?.passport?.user || (req.session as any)?.userId;
     

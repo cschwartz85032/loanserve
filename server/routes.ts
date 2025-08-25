@@ -92,8 +92,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   await setupAuth(app);
 
   // Apply global middleware for policy engine (must be after auth setup)
-  app.use(loadUserPolicy); // Load user policy for all requests
-  app.use(applyPIIMasking()); // Apply PII masking for regulators
+  // Only apply to API routes to avoid blocking frontend HTML serving
+  app.use('/api', loadUserPolicy); // Load user policy for API requests
+  app.use('/api', applyPIIMasking()); // Apply PII masking for regulators
   
   // Register auth routes after policy middleware
   app.use('/api/auth', authRoutes);
@@ -101,10 +102,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register admin routes (requires authentication)
   app.use('/api/admin/users', adminUsersRouter);
   app.use('/api/ip-allowlist', ipAllowlistRouter);
-  app.use(settingsRouter);
+  app.use('/api', settingsRouter);
   app.use('/api', noticeTemplatesRouter);
   app.use('/api', emailTemplatesRouter);
-  app.use(rabbitmqConfigRoutes);
+  app.use('/api', rabbitmqConfigRoutes);
   
   // Register MFA routes
   app.use('/api/mfa', mfaRoutes);
@@ -113,11 +114,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api', crmRoutes);
 
   // Register payment processing routes
-  app.use(paymentRoutes);
+  app.use('/api', paymentRoutes);
 
   // Register Column banking routes (Step 17)
   const columnWebhookRoutes = await import('./routes/column-webhooks');
-  app.use(columnWebhookRoutes.default);
+  app.use('/api', columnWebhookRoutes.default);
   console.log('[Routes] Registered Column banking routes');
 
   // Register payment ingestion routes (Step 2)
@@ -134,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register enhanced payment UI routes
   const enhancedPaymentRoutes = (await import('./routes/payments')).default;
-  app.use(enhancedPaymentRoutes);
+  app.use('/api', enhancedPaymentRoutes);
 
   // Register queue monitoring routes
   const queueMonitorRoutes = (await import('./routes/queue-monitor-routes.js')).default;

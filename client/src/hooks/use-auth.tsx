@@ -55,11 +55,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Return the user data directly
       return data;
     },
-    onSuccess: (user: UserWithRoles) => {
+    onSuccess: async (user: UserWithRoles) => {
+      // Set the user data in the cache
       queryClient.setQueryData(["/api/user"], user);
-      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-      // Force page reload to ensure authentication state is properly set
-      window.location.href = '/';
+      // Wait a moment for session to be established
+      await new Promise(resolve => setTimeout(resolve, 100));
+      // Then navigate to dashboard
+      window.location.href = '/dashboard';
     },
     onError: (error: Error) => {
       toast({
