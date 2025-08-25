@@ -91,10 +91,11 @@ export function PaymentProcessor() {
   // Submit payment mutation
   const submitPaymentMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('/api/payments', {
+      const response = await apiRequest('/api/payments', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: data,
       });
+      return response.json();
     },
     onSuccess: (response) => {
       toast({
@@ -107,11 +108,26 @@ export function PaymentProcessor() {
       queryClient.invalidateQueries({ queryKey: ['/api/payments/metrics'] });
     },
     onError: (error: any) => {
-      toast({
-        title: "Payment Failed",
-        description: error.message || "Failed to submit payment",
-        variant: "destructive",
-      });
+      console.error('Payment submission error:', error);
+      
+      // Check if it's an authentication error
+      if (error.message?.includes('Authentication required') || error.message?.includes('401')) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to submit payments",
+          variant: "destructive",
+        });
+        // Redirect to login after a short delay
+        setTimeout(() => {
+          window.location.href = '/login';
+        }, 2000);
+      } else {
+        toast({
+          title: "Payment Failed",
+          description: error.message || "Failed to submit payment",
+          variant: "destructive",
+        });
+      }
     },
   });
 
