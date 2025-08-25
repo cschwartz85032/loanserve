@@ -58,6 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: (user: UserWithRoles) => {
       queryClient.setQueryData(["/api/user"], user);
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      // Force page reload to ensure authentication state is properly set
+      window.location.href = '/';
     },
     onError: (error: Error) => {
       toast({
