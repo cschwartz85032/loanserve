@@ -77,9 +77,9 @@ export function PaymentProcessor() {
     queryKey: ['/api/loans'],
   });
 
-  // Fetch payment history
+  // Fetch payment history from the actual backend endpoint
   const { data: payments = [], isLoading: paymentsLoading, refetch: refetchPayments } = useQuery({
-    queryKey: ['/api/payments/history'],
+    queryKey: ['/api/payments/all'],
   });
 
   // Fetch payment metrics
@@ -186,6 +186,8 @@ export function PaymentProcessor() {
       effective_date: paymentData.effectiveDate,
       external_ref: paymentData.reference,
     };
+    
+    console.log('[Frontend] Submitting payment data:', submissionData);
 
     // Add source-specific fields
     if (paymentData.source === 'ach') {
@@ -203,6 +205,7 @@ export function PaymentProcessor() {
       submissionData.issue_date = paymentData.issueDate;
     }
 
+    console.log('[Frontend] Final submission data:', submissionData);
     submitPaymentMutation.mutate(submissionData);
   };
 

@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { payments, paymentEvents, ledgerEntries, loans, paymentArtifacts } from '@shared/schema';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, sql, gte, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 const router = Router();
@@ -369,5 +369,81 @@ function getEventDescription(eventType: string, data: any): string {
       return eventType.replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   }
 }
+
+// Get payment metrics for dashboard
+router.get('/api/payments/metrics', async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    // Get today's collections
+    const todayResult = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(amount), 0)`
+      })
+      .from(payments)
+      .where(
+        and(
+          gte(payments.paymentDate, today.toISOString()),
+          eq(payments.status, 'completed')
+        )
+      );
+    
+    // Get pending payments count
+    const pendingResult = await db
+      .select({
+        count: sql<number>`COUNT(*)`
+      })
+      .from(payments)
+      .where(eq(payments.status, 'pending'));
+    
+    // Get failed payments count
+    const failedResult = await db
+      .select({
+        count: sql<number>`COUNT(*)`
+      })
+      .from(payments)
+      .where(eq(payments.status, 'failed'));
+    
+    // Get month to date collections
+    const mtdResult = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(amount), 0)`
+      })
+      .from(payments)
+      .where(
+        and(
+          gte(payments.paymentDate, firstOfMonth.toISOString()),
+          eq(payments.status, 'completed')
+        )
+      );
+    
+    // Get exception count (failed or returned)
+    const exceptionResult = await db
+      .select({
+        count: sql<number>`COUNT(*)`
+      })
+      .from(payments)
+      .where(
+        or(
+          eq(payments.status, 'failed'),
+          eq(payments.status, 'returned')
+        )
+      );
+
+    res.json({
+      todayCollections: Number(todayResult[0]?.total || 0),
+      pendingCount: Number(pendingResult[0]?.count || 0),
+      failedCount: Number(failedResult[0]?.count || 0),
+      monthToDate: Number(mtdResult[0]?.total || 0),
+      exceptionCount: Number(exceptionResult[0]?.count || 0)
+    });
+  } catch (error) {
+    console.error('Error fetching payment metrics:', error);
+    res.status(500).json({ error: 'Failed to fetch payment metrics' });
+  }
+});
 
 export default router;
