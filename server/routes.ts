@@ -21,6 +21,7 @@ import { settingsRouter } from "./routes/settings";
 import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { emailTemplatesRouter } from "./routes/email-templates";
 import paymentRoutes from "./routes/payment-routes";
+import rabbitmqConfigRoutes from "./routes/rabbitmq-config";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -103,6 +104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(settingsRouter);
   app.use('/api', noticeTemplatesRouter);
   app.use('/api', emailTemplatesRouter);
+  app.use(rabbitmqConfigRoutes);
   
   // Register MFA routes
   app.use('/api/mfa', mfaRoutes);

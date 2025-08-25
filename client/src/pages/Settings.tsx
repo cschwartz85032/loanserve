@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Shield, Mail, Bell } from "lucide-react";
+import { Shield, Mail, Bell, Zap } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import SecuritySettings from "@/components/settings/SecuritySettings";
 import MfaSettings from "@/components/settings/MfaSettings";
 import EmailTemplatesSettings from "@/components/settings/EmailTemplatesSettings";
 import AutoNoticeSettings from "@/components/settings/AutoNoticeSettings";
+import RabbitMQSettings from "@/components/settings/RabbitMQSettings";
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState("security");
@@ -22,7 +23,7 @@ export default function Settings() {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+        <TabsList className="grid w-full max-w-3xl grid-cols-5">
           <TabsTrigger value="security" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
             Security
@@ -38,6 +39,10 @@ export default function Settings() {
           <TabsTrigger value="auto-notice" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
             Notices
+          </TabsTrigger>
+          <TabsTrigger value="rabbitmq" className="flex items-center gap-2">
+            <Zap className="h-4 w-4" />
+            RabbitMQ
           </TabsTrigger>
         </TabsList>
 
@@ -55,6 +60,10 @@ export default function Settings() {
 
             <TabsContent value="auto-notice" className="space-y-4">
               <AutoNoticeSettings />
+            </TabsContent>
+
+            <TabsContent value="rabbitmq" className="space-y-4">
+              <RabbitMQSettings />
             </TabsContent>
             </Tabs>
           </div>

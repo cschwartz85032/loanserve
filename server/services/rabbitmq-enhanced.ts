@@ -7,6 +7,7 @@ import { topologyManager } from '../messaging/rabbitmq-topology.js';
 import { MessageEnvelope, MessageMetadata } from '../../shared/messaging/envelope.js';
 import { getMessageFactory } from '../messaging/message-factory.js';
 import { ErrorClassifier, RetryTracker } from './rabbitmq-errors.js';
+import { rabbitmqConfig } from './rabbitmq-config.js';
 
 export interface PublishOptions {
   exchange: string;
@@ -27,6 +28,7 @@ export interface ConsumeOptions {
   exclusive?: boolean;
   priority?: number;
   consumerTag?: string;
+  consumerType?: string; // For identifying consumer type for prefetch config
 }
 
 export class EnhancedRabbitMQService {
@@ -223,7 +225,7 @@ export class EnhancedRabbitMQService {
   /**
    * Create a consumer channel with specific prefetch
    */
-  async createConsumerChannel(consumerId: string, prefetch: number = 10): Promise<amqp.Channel> {
+  async createConsumerChannel(consumerId: string, prefetch?: number, consumerType?: string): Promise<amqp.Channel> {
     if (!this.consumerConnection) {
       throw new Error('Consumer connection not available');
     }
@@ -231,9 +233,18 @@ export class EnhancedRabbitMQService {
     let channel = this.consumerChannels.get(consumerId);
     
     if (!channel) {
+      // Get configured prefetch if not explicitly provided
+      let actualPrefetch = prefetch;
+      if (actualPrefetch === undefined && consumerType) {
+        actualPrefetch = await this.getConfiguredPrefetch(consumerType);
+      }
+      actualPrefetch = actualPrefetch ?? 10; // Default fallback
+      
       channel = await this.consumerConnection.createChannel();
-      await channel.prefetch(prefetch);
+      await channel.prefetch(actualPrefetch);
       this.consumerChannels.set(consumerId, channel);
+      
+      console.log(`[RabbitMQ] Created consumer channel for ${consumerId} with prefetch ${actualPrefetch}`);
       
       channel.on('error', (error) => {
         console.error(`[RabbitMQ] Consumer channel error for ${consumerId}:`, error);
@@ -250,6 +261,28 @@ export class EnhancedRabbitMQService {
   }
 
   /**
+   * Get configured prefetch for a consumer type
+   */
+  private async getConfiguredPrefetch(consumerType: string): Promise<number> {
+    try {
+      // Map consumer types to config keys
+      const configKey = consumerType.toLowerCase().replace(/-/g, '_');
+      const config = await rabbitmqConfig.getConfig();
+      
+      // Check if this consumer type exists in config
+      if (configKey in config) {
+        return config[configKey as keyof typeof config] as number;
+      }
+      
+      // Return default if not found
+      return config.default;
+    } catch (error) {
+      console.error(`[RabbitMQ] Failed to get prefetch config for ${consumerType}:`, error);
+      return 10; // Fallback default
+    }
+  }
+
+  /**
    * Consume messages from a queue
    */
   async consume<T>(
@@ -258,7 +291,8 @@ export class EnhancedRabbitMQService {
   ): Promise<string> {
     const channel = await this.createConsumerChannel(
       options.consumerTag || options.queue,
-      options.prefetch || 10
+      options.prefetch,
+      options.consumerType
     );
 
     const { consumerTag } = await channel.consume(
