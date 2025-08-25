@@ -100,7 +100,7 @@ export function PaymentProcessor() {
     onSuccess: (response) => {
       toast({
         title: "Payment Submitted",
-        description: `Payment of $${paymentData.amount} has been submitted for processing. ID: ${response.paymentId}`,
+        description: `Payment of $${paymentData.amount} has been submitted for processing. ID: ${response.payment_id}`,
       });
       setShowPaymentDialog(false);
       resetPaymentForm();
