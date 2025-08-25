@@ -6,11 +6,12 @@
  */
 
 import { db } from './server/db';
-import { payments, paymentEvents, ledgerEntries, exceptionCases, loans, properties } from './shared/schema';
-import { returnsHandler } from './server/services/returns-handler';
+import { payments, paymentEvents, ledgerEntries, exceptionCases, loans, properties, outboxMessages } from './shared/schema';
+import { ReturnsHandler } from './server/services/returns-handler';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import crypto from 'crypto';
 
+const returnsHandler = new ReturnsHandler();
 let testLoanId: number;
 
 async function setupTestLoan(): Promise<number> {
@@ -27,6 +28,7 @@ async function setupTestLoan(): Promise<number> {
     purchaseDate: new Date('2020-01-01')
   }).returning();
   console.log(`✅ Created test property: ${property.id}`);
+  
   // Create a test loan with all required fields
   const [loan] = await db.insert(loans).values({
     loanNumber: 'TEST-' + Date.now(),
@@ -102,8 +104,8 @@ async function testR01Reversal() {
   
   const paymentId = await createTestPayment();
   
-  // Simulate R01 return
-  await returnsHandler.simulateR01Return(paymentId);
+  // Process R01 return (NSF)
+  await returnsHandler.handleACHReturn(paymentId, 'R01', new Date());
   
   // Verify payment was reversed
   const [payment] = await db.select()
@@ -114,10 +116,10 @@ async function testR01Reversal() {
   console.log(`Payment status: ${payment.status}`);
   console.log(`Reversal notes: ${payment.notes}`);
   
-  // Check for reversal event
+  // Check for reversal event - now using numeric paymentId
   const events = await db.select()
     .from(paymentEvents)
-    .where(eq(paymentEvents.paymentId, paymentId.toString()))
+    .where(eq(paymentEvents.paymentId, paymentId))
     .orderBy(desc(paymentEvents.eventTime));
   
   console.log('\nPayment Events:');
@@ -132,7 +134,24 @@ async function testR01Reversal() {
   
   console.log('\nLedger Entries:');
   reversalEntries.forEach(entry => {
-    console.log(`  - ${entry.accountId}: ${entry.entryType} ${entry.amount} - ${entry.description}`);
+    const type = entry.debitAmount !== '0.00' ? 'DEBIT' : 'CREDIT';
+    const amount = entry.debitAmount !== '0.00' ? entry.debitAmount : entry.creditAmount;
+    console.log(`  - ${entry.accountCode}: ${type} ${amount} - ${entry.description}`);
+  });
+  
+  // Check outbox messages
+  const outboxMsgs = await db.select()
+    .from(outboxMessages)
+    .where(
+      and(
+        eq(outboxMessages.aggregateType, 'payments'),
+        eq(outboxMessages.aggregateId, paymentId.toString())
+      )
+    );
+  
+  console.log('\nOutbox Messages:');
+  outboxMsgs.forEach(msg => {
+    console.log(`  - ${msg.eventType}: ${msg.status || 'pending'}`);
   });
   
   const hasReversal = events.some(e => e.type === 'payment.reversed');
@@ -152,8 +171,8 @@ async function testR10Dispute() {
   
   const paymentId = await createTestPayment();
   
-  // Simulate R10 return
-  await returnsHandler.simulateR10Return(paymentId);
+  // Process R10 return (Customer Advises Unauthorized)
+  await returnsHandler.handleACHReturn(paymentId, 'R10', new Date());
   
   // Verify payment status
   const [payment] = await db.select()
@@ -204,12 +223,12 @@ async function testDoubleReversal() {
   console.log('Attempting second reversal...');
   await returnsHandler.handleACHReturn(paymentId, 'R01', new Date());
   
-  // Count reversal events
+  // Count reversal events - now using numeric paymentId
   const reversalEvents = await db.select()
     .from(paymentEvents)
     .where(
       and(
-        eq(paymentEvents.paymentId, paymentId.toString()),
+        eq(paymentEvents.paymentId, paymentId),
         eq(paymentEvents.type, 'payment.reversed')
       )
     );
@@ -257,6 +276,51 @@ async function testOrphanReturn() {
   }
 }
 
+async function testWireRecall() {
+  console.log('\n=== Testing Wire Recall (FRAUD) ===\n');
+  
+  // Create a wire payment
+  const [payment] = await db.insert(payments).values({
+    loanId: testLoanId,
+    effectiveDate: new Date(),
+    totalReceived: '250000.00',
+    paymentMethod: 'wire',
+    status: 'completed',
+    notes: 'Test wire payment for recall'
+  }).returning();
+  
+  console.log(`Created wire payment: ${payment.id}`);
+  
+  // Process wire recall for fraud
+  await returnsHandler.handleWireRecall(payment.id, 'FRAUD', new Date());
+  
+  // Verify payment was reversed
+  const [recalledPayment] = await db.select()
+    .from(payments)
+    .where(eq(payments.id, payment.id))
+    .limit(1);
+  
+  console.log(`Wire payment status: ${recalledPayment.status}`);
+  console.log(`Recall notes: ${recalledPayment.notes}`);
+  
+  // Check for reversal event
+  const events = await db.select()
+    .from(paymentEvents)
+    .where(eq(paymentEvents.paymentId, payment.id))
+    .orderBy(desc(paymentEvents.eventTime));
+  
+  console.log('\nWire Recall Events:');
+  events.forEach(event => {
+    console.log(`  - ${event.type}: ${JSON.stringify(event.data)}`);
+  });
+  
+  if (recalledPayment.status === 'reversed') {
+    console.log('\n✅ Wire recall test PASSED');
+  } else {
+    console.log('\n❌ Wire recall test FAILED');
+  }
+}
+
 async function runTests() {
   console.log('🚀 Starting Returns Handler Tests\n');
   
@@ -268,6 +332,7 @@ async function runTests() {
     await testR10Dispute();
     await testDoubleReversal();
     await testOrphanReturn();
+    await testWireRecall();
     
     console.log('\n✨ All tests completed!\n');
   } catch (error) {

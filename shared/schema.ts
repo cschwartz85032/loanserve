@@ -2359,7 +2359,7 @@ export const paymentArtifacts = pgTable("payment_artifacts", {
 // Payment Events - Hash-chained audit ledger (Step 4)
 export const paymentEvents = pgTable("payment_events", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  paymentId: varchar("payment_id", { length: 36 }), // nullable until posting
+  paymentId: integer("payment_id").references(() => payments.id), // Fixed to match payments table's numeric ID
   ingestionId: varchar("ingestion_id", { length: 36 }), // nullable for internal-only events  
   type: text("type").notNull(), // payment.ingested|payment.validated|payment.posted|payment.reversed.nsf|...
   eventTime: timestamp("event_time", { withTimezone: true }).notNull().defaultNow(),

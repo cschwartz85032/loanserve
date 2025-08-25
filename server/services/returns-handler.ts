@@ -135,14 +135,11 @@ export class ReturnsHandler {
         }
 
         // Check for existing reversal to ensure idempotency
-        // Note: paymentEvents uses varchar IDs but payments uses numeric IDs
-        // We need to pad the numeric ID to make it a valid UUID-like string
-        const paymentIdStr = paymentId.toString().padStart(36, '0');
         const [existingReversal] = await tx.select()
           .from(paymentEvents)
           .where(
             and(
-              eq(paymentEvents.paymentId, paymentIdStr),
+              eq(paymentEvents.paymentId, paymentId),
               eq(paymentEvents.type, 'payment.reversed')
             )
           )
@@ -192,7 +189,6 @@ export class ReturnsHandler {
 
         // Get previous event hash
         const prevHash = await this.getPrevEventHash(tx, paymentId);
-        const paymentIdStr = paymentId.toString().padStart(36, '0');
 
         // Create payment event
         const correlationId = crypto.randomUUID();
@@ -200,7 +196,7 @@ export class ReturnsHandler {
         const eventHash = this.computeEventHash(prevHash, eventData, correlationId);
 
         await tx.insert(paymentEvents).values({
-          paymentId: paymentIdStr,
+          paymentId: paymentId,
           type: 'payment.reversed',
           actorType: 'system',
           correlationId,
@@ -264,9 +260,8 @@ export class ReturnsHandler {
       .where(eq(payments.id, paymentId));
 
     // Create payment event
-    const paymentIdStr = paymentId.toString().padStart(36, '0');
     await db.insert(paymentEvents).values({
-      paymentId: paymentIdStr,
+      paymentId: paymentId,
       type: 'payment.held',
       actorType: 'system',
       correlationId: crypto.randomUUID(),
@@ -302,10 +297,9 @@ export class ReturnsHandler {
    * Get previous event hash for a payment
    */
   private async getPrevEventHash(tx: any, paymentId: number): Promise<string | null> {
-    const paymentIdStr = paymentId.toString().padStart(36, '0');
     const [lastEvent] = await tx.select()
       .from(paymentEvents)
-      .where(eq(paymentEvents.paymentId, paymentIdStr))
+      .where(eq(paymentEvents.paymentId, paymentId))
       .orderBy(desc(paymentEvents.eventTime))
       .limit(1);
 
@@ -388,9 +382,8 @@ export class ReturnsHandler {
     returnDate: Date,
     metadata?: any
   ): Promise<void> {
-    const paymentIdStr = paymentId.toString().padStart(36, '0');
     await db.insert(paymentEvents).values({
-      paymentId: paymentIdStr,
+      paymentId: paymentId,
       type: `return.${eventType}`,
       actorType: 'system',
       correlationId: crypto.randomUUID(),
