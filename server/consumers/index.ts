@@ -11,6 +11,7 @@ import { PaymentValidationConsumer } from './payment-validation-consumer';
 import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
 import { PaymentReversalSaga } from './payment-reversal-saga';
+import { notificationsConsumer } from './notifications-consumer';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 // import { OutboxProcessor } from '../services/outbox-processor';
 
@@ -69,6 +70,10 @@ export async function startPaymentConsumers(): Promise<void> {
     const reversalSaga = new PaymentReversalSaga();
     await reversalSaga.start();
     console.log('[Consumers] Reversal saga started');
+
+    // Start notifications consumer
+    await notificationsConsumer.start();
+    console.log('[Consumers] Notifications consumer started');
 
     console.log('[Consumers] All payment processing consumers started successfully');
 

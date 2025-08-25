@@ -292,6 +292,32 @@ export class PosterService {
           eventHash
         });
         console.log(`[Poster] Created payment event with hash: ${eventHash}`);
+
+        // Publish payment.posted event for notifications
+        if (isNew) {
+          const { getEnhancedRabbitMQService } = await import('./rabbitmq-enhanced');
+          const rabbitmq = getEnhancedRabbitMQService();
+          const notificationPayload = {
+            eventType: 'payment.posted',
+            paymentId: paymentId.toString(),
+            loanId: payment.loanId,
+            amount: payment.totalReceived,
+            effectiveDate: payment.effectiveDate.toISOString(),
+            channel: payment.sourceChannel || 'unknown',
+            borrowerName: loan?.borrowerName,
+            metadata: {
+              correlationId: env.correlation_id,
+              idempotencyKey: env.idempotency_key
+            }
+          };
+
+          await rabbitmq.publish('payments.topic', 'payment.posted', notificationPayload, {
+            persistent: true,
+            messageId: eventId,
+            correlationId: env.correlation_id
+          });
+          console.log(`[Poster] Published payment.posted event for notifications`);
+        }
       }
 
       return { paymentId, isNew };
