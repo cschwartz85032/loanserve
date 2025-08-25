@@ -86,6 +86,7 @@
     "express-session": "^1.18.1",
     "framer-motion": "^11.13.1",
     "google-auth-library": "^10.2.1",
+    "groq-sdk": "^0.30.0",
     "input-otp": "^1.4.2",
     "json2csv": "^6.0.0-alpha.2",
     "lucide-react": "^0.453.0",
