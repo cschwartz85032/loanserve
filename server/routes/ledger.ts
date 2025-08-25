@@ -16,6 +16,7 @@ if (process.env.SENDGRID_API_KEY) {
 export async function getLoanLedger(req: Request, res: Response) {
   try {
     const { loanId } = req.params;
+    console.log('[Ledger] Fetching ledger for loan:', loanId);
     
     const entries = await db
       .select()
@@ -23,6 +24,7 @@ export async function getLoanLedger(req: Request, res: Response) {
       .where(eq(loanLedger.loanId, parseInt(loanId)))
       .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
     
+    console.log('[Ledger] Found entries:', entries.length);
     res.json(entries);
   } catch (error) {
     console.error('Error fetching loan ledger:', error);

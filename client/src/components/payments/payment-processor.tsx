@@ -106,6 +106,11 @@ export function PaymentProcessor() {
       resetPaymentForm();
       refetchPayments();
       queryClient.invalidateQueries({ queryKey: ['/api/payments/metrics'] });
+      // Invalidate ledger and CRM activity for the loan
+      if (response.loan_id) {
+        queryClient.invalidateQueries({ queryKey: [`/api/loans/${response.loan_id}/ledger`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/loans/${response.loan_id}/crm/activity`] });
+      }
     },
     onError: (error: any) => {
       console.error('Payment submission error:', error);

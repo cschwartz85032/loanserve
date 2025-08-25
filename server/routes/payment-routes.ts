@@ -271,7 +271,8 @@ router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH
       success: true,
       payment_id: paymentId,
       status: 'received',
-      message: 'Payment submitted for processing'
+      message: 'Payment submitted for processing',
+      loan_id: data.loan_id // Return loan_id for frontend cache invalidation
     });
 
   } catch (error) {
