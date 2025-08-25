@@ -97,7 +97,7 @@
         
         .charts-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
             gap: 20px;
         }
         
@@ -106,13 +106,21 @@
             border-radius: 12px;
             padding: 20px;
             border: 1px solid #334155;
+            height: 300px;
+            display: flex;
+            flex-direction: column;
         }
         
         .chart-title {
             font-size: 16px;
             font-weight: 600;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             color: #f1f5f9;
+        }
+        
+        .chart-card canvas {
+            flex: 1;
+            min-height: 0;
         }
         
         .status-indicator {
