@@ -91,12 +91,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   await setupAuth(app);
 
-  // Register auth routes first (before policy middleware)
-  app.use('/api/auth', authRoutes);
-
-  // Apply global middleware for policy engine
+  // Apply global middleware for policy engine (must be after auth setup)
   app.use(loadUserPolicy); // Load user policy for all requests
   app.use(applyPIIMasking()); // Apply PII masking for regulators
+  
+  // Register auth routes after policy middleware
+  app.use('/api/auth', authRoutes);
 
   // Register admin routes (requires authentication)
   app.use('/api/admin/users', adminUsersRouter);
