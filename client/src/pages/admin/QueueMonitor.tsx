@@ -5,7 +5,7 @@ import { queryClient } from '@/lib/queryClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Activity, Users, MessageSquare, RefreshCw, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, Minus, Trash2, Play, Square, Eye } from 'lucide-react';
+import { AlertCircle, Activity, Users, MessageSquare, RefreshCw, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, Minus, Trash2, Play, Square, Eye, BarChart3 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -277,6 +277,14 @@ function QueueMonitorContent() {
           <p className="text-muted-foreground">Real-time RabbitMQ queue metrics and health status</p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => window.open('/observability', '_blank')}
+            className="bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700"
+          >
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Observability Dashboard
+          </Button>
           <Button
             variant={testRunning ? "destructive" : "outline"}
             onClick={() => testRunnerMutation.mutate(testRunning ? 'stop' : 'start')}
