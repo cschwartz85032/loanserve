@@ -51,8 +51,8 @@ async function setupTestLoan(): Promise<number> {
   return loan.id;
 }
 
-async function createTestPayment(): Promise<number> {
-  // Create a test payment
+async function createTestPayment(): Promise<string> {
+  // Create a test payment using the new UUID-based schema
   const [payment] = await db.insert(payments).values({
     loanId: testLoanId,
     effectiveDate: new Date(),
@@ -76,7 +76,7 @@ async function createTestPayment(): Promise<number> {
       correlationId,
       metadata: {
         referenceType: 'payment',
-        referenceId: payment.id.toString()
+        referenceId: payment.id
       }
     },
     {
@@ -90,7 +90,7 @@ async function createTestPayment(): Promise<number> {
       correlationId,
       metadata: {
         referenceType: 'payment',
-        referenceId: payment.id.toString()
+        referenceId: payment.id
       }
     }
   ]);
@@ -116,7 +116,7 @@ async function testR01Reversal() {
   console.log(`Payment status: ${payment.status}`);
   console.log(`Reversal notes: ${payment.notes}`);
   
-  // Check for reversal event - now using numeric paymentId
+  // Check for reversal event - now using UUID paymentId
   const events = await db.select()
     .from(paymentEvents)
     .where(eq(paymentEvents.paymentId, paymentId))
@@ -130,7 +130,7 @@ async function testR01Reversal() {
   // Check for reversal ledger entries
   const reversalEntries = await db.select()
     .from(ledgerEntries)
-    .where(sql`${ledgerEntries.metadata}->>'referenceId' = ${paymentId.toString()}`);
+    .where(sql`${ledgerEntries.metadata}->>'referenceId' = ${paymentId}`);
   
   console.log('\nLedger Entries:');
   reversalEntries.forEach(entry => {
@@ -145,7 +145,7 @@ async function testR01Reversal() {
     .where(
       and(
         eq(outboxMessages.aggregateType, 'payments'),
-        eq(outboxMessages.aggregateId, paymentId.toString())
+        eq(outboxMessages.aggregateId, paymentId)
       )
     );
   
@@ -188,7 +188,7 @@ async function testR10Dispute() {
     .from(exceptionCases)
     .where(
       and(
-        eq(exceptionCases.entityId, paymentId.toString()),
+        eq(exceptionCases.entityId, paymentId),
         eq(exceptionCases.type, 'payment_dispute')
       )
     )
@@ -223,7 +223,7 @@ async function testDoubleReversal() {
   console.log('Attempting second reversal...');
   await returnsHandler.handleACHReturn(paymentId, 'R01', new Date());
   
-  // Count reversal events - now using numeric paymentId
+  // Count reversal events - now using UUID paymentId
   const reversalEvents = await db.select()
     .from(paymentEvents)
     .where(
@@ -245,7 +245,8 @@ async function testDoubleReversal() {
 async function testOrphanReturn() {
   console.log('\n=== Testing Orphan Return Handling ===\n');
   
-  const fakePaymentId = 999999;
+  // Generate a fake UUID
+  const fakePaymentId = crypto.randomUUID();
   
   try {
     // Attempt to reverse non-existent payment
@@ -259,7 +260,7 @@ async function testOrphanReturn() {
     .from(exceptionCases)
     .where(
       and(
-        eq(exceptionCases.entityId, fakePaymentId.toString()),
+        eq(exceptionCases.entityId, fakePaymentId),
         eq(exceptionCases.type, 'orphan_return')
       )
     )

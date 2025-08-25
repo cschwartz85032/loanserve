@@ -657,7 +657,7 @@ export const paymentSchedule = pgTable("payment_schedule", {
 
 // Payments - Actual payment records
 export const payments = pgTable("payments", {
-  id: serial("id").primaryKey(),
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   loanId: integer("loan_id").references(() => loans.id).notNull(),
   scheduleId: integer("schedule_id").references(() => paymentSchedule.id),
   paymentNumber: integer("payment_number"),
@@ -2359,7 +2359,7 @@ export const paymentArtifacts = pgTable("payment_artifacts", {
 // Payment Events - Hash-chained audit ledger (Step 4)
 export const paymentEvents = pgTable("payment_events", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  paymentId: integer("payment_id").references(() => payments.id), // Fixed to match payments table's numeric ID
+  paymentId: varchar("payment_id", { length: 36 }).references(() => payments.id), // UUID reference
   ingestionId: varchar("ingestion_id", { length: 36 }), // nullable for internal-only events  
   type: text("type").notNull(), // payment.ingested|payment.validated|payment.posted|payment.reversed.nsf|...
   eventTime: timestamp("event_time", { withTimezone: true }).notNull().defaultNow(),
@@ -2377,7 +2377,7 @@ export const paymentEvents = pgTable("payment_events", {
 // Ledger Entries - Double-entry bookkeeping for payments
 export const ledgerEntries = pgTable("ledger_entries", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  paymentId: integer("payment_id").notNull().references(() => payments.id, { onDelete: 'cascade' }),
+  paymentId: varchar("payment_id", { length: 36 }).notNull().references(() => payments.id, { onDelete: 'cascade' }),
   entryDate: date("entry_date").notNull(),
   accountType: text("account_type").notNull(), // asset, liability, revenue, expense
   accountCode: text("account_code").notNull(), // specific account identifier
