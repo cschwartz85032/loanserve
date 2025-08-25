@@ -67,6 +67,9 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     // Rules posting queue - applies business rules
     await ch.assertQueue("q.rules.post", { durable: true, ...quorum });
     
+    // Poster queue - transactional posting with outbox
+    await ch.assertQueue("q.post", { durable: true, ...quorum });
+    
     // Poster outbox queue - stages messages for posting
     await ch.assertQueue("q.poster.outbox", { durable: true, ...quorum });
     
@@ -112,6 +115,9 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     
     // Bind rules posting to saga
     await ch.bindQueue("q.rules.post", "payments.saga", "saga.payment.start");
+    
+    // Bind poster queue to saga for final posting
+    await ch.bindQueue("q.post", "payments.saga", "saga.payment.post");
     
     // Bind notifications to all payment events
     await ch.bindQueue("q.notifications", "payments.events", "payment.*");

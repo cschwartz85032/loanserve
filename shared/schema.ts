@@ -2374,6 +2374,26 @@ export const paymentEvents = pgTable("payment_events", {
   correlationIdx: index().on(t.correlationId)
 }));
 
+// Ledger Entries - Double-entry bookkeeping for payments
+export const ledgerEntries = pgTable("ledger_entries", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  paymentId: integer("payment_id").notNull().references(() => payments.id, { onDelete: 'cascade' }),
+  entryDate: date("entry_date").notNull(),
+  accountType: text("account_type").notNull(), // asset, liability, revenue, expense
+  accountCode: text("account_code").notNull(), // specific account identifier
+  debitAmount: decimal("debit_amount", { precision: 18, scale: 2 }).notNull().default('0'),
+  creditAmount: decimal("credit_amount", { precision: 18, scale: 2 }).notNull().default('0'),
+  description: text("description").notNull(),
+  correlationId: varchar("correlation_id", { length: 36 }).notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, (t) => ({
+  paymentIdx: index().on(t.paymentId),
+  accountIdx: index().on(t.accountCode, t.entryDate),
+  correlationIdx: index().on(t.correlationId)
+}));
+
 // Outbox Messages - Transactional outbox pattern (Step 5)
 export const outboxMessages = pgTable("outbox_messages", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -2453,6 +2473,14 @@ export const insertPaymentEventSchema = createInsertSchema(paymentEvents).omit({
 });
 export type InsertPaymentEvent = z.infer<typeof insertPaymentEventSchema>;
 export type PaymentEvent = typeof paymentEvents.$inferSelect;
+
+export const insertLedgerEntrySchema = createInsertSchema(ledgerEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertLedgerEntry = z.infer<typeof insertLedgerEntrySchema>;
+export type LedgerEntry = typeof ledgerEntries.$inferSelect;
 
 export const insertOutboxMessageSchema = createInsertSchema(outboxMessages).omit({
   id: true,

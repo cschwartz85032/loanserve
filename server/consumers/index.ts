@@ -6,6 +6,7 @@
 import { PaymentValidatorConsumer } from './payment-validator-consumer';
 import { PaymentClassifierConsumer } from './payment-classifier-consumer';
 import { RulesEngineConsumer } from './rules-engine-consumer';
+import { posterConsumer } from './poster-consumer';
 import { PaymentValidationConsumer } from './payment-validation-consumer';
 import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
@@ -44,6 +45,10 @@ export async function startPaymentConsumers(): Promise<void> {
     const rulesEngineConsumer = new RulesEngineConsumer();
     await rulesEngineConsumer.start();
     console.log('[Consumers] Rules engine consumer started');
+
+    // Start poster consumer (Step 16)
+    await posterConsumer.start();
+    console.log('[Consumers] Poster consumer started');
 
     // Start validation consumer
     const validationConsumer = new PaymentValidationConsumer();

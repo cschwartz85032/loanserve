@@ -160,6 +160,59 @@ export class TopologyManager {
       });
     }
 
+    // Payment processing queues - Step 13-16 (Validator, Classifier, Rules, Poster)
+    this.addQueue({
+      name: 'q.validate',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'payments.dlq',
+      },
+      bindings: [
+        // These will be bound to payments.inbound exchange by bootstrap
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.classify',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'payments.dlq',
+      },
+      bindings: [
+        // Will be bound to payments.validation by bootstrap
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.rules.post',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'payments.dlq',
+      },
+      bindings: [
+        // Will be bound to payments.saga by bootstrap
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.post',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'dlx.main',
+        'x-dead-letter-routing-key': 'payments.dlq',
+      },
+      bindings: [
+        // Will be bound to payments.saga by bootstrap
+      ],
+    });
+
     // Payment processing queues
     this.addQueue({
       name: 'payments.validation',
