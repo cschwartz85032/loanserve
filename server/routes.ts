@@ -1323,6 +1323,10 @@ To implement full file serving:
   const messagingTestRoutes = await import('./routes/messaging-test');
   app.use('/api/messaging', messagingTestRoutes.default);
 
+  // Register reconciliation routes
+  const reconciliationRoutes = await import('./routes/reconciliation');
+  app.use('/api/reconciliation', reconciliationRoutes.default);
+
   const httpServer = createServer(app);
   return httpServer;
 }

@@ -4,8 +4,9 @@
  */
 
 import { db } from '../db';
-import { paymentArtifacts, paymentIngestions, outboxMessages } from '@shared/schema';
+import { paymentArtifacts, paymentIngestions, outboxMessages, payments } from '@shared/schema';
 import { columnClient } from './column-api-client';
+import { eq, and, isNotNull } from 'drizzle-orm';
 import crypto from 'crypto';
 import type {
   ColumnAccount,
@@ -295,6 +296,95 @@ export class ColumnBankService {
     });
 
     console.log(`[ColumnBank] Payment ingested for loan ${loanId}: ${transfer.id}`);
+  }
+
+  /**
+   * Get settlement summary for a specific date
+   */
+  async getSettlementSummary(date: string): Promise<{
+    date: string;
+    credits: number;
+    debits: number;
+    netTotal: number;
+    transactionCount: number;
+    transactions?: Array<{
+      id: string;
+      amount: number;
+      type: 'credit' | 'debit';
+      reference?: string;
+    }>;
+  }> {
+    console.log(`[ColumnBank] Fetching settlement summary for ${date}`);
+    
+    try {
+      // Get all transfers for the specified date
+      const startDate = new Date(`${date}T00:00:00Z`);
+      const endDate = new Date(`${date}T23:59:59Z`);
+      
+      // In a real implementation, this would call Column's API
+      // For now, we'll query our database for transferred payments
+      const dayPayments = await db
+        .select({
+          id: payments.columnTransferId,
+          amount: payments.totalReceived,
+          status: payments.status,
+          effectiveDate: payments.effectiveDate,
+          sourceChannel: payments.sourceChannel
+        })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.effectiveDate, date),
+            eq(payments.sourceChannel, 'column'),
+            isNotNull(payments.columnTransferId)
+          )
+        );
+
+      let credits = 0;
+      let debits = 0;
+      const transactions: Array<{ id: string; amount: number; type: 'credit' | 'debit'; reference?: string }> = [];
+
+      for (const payment of dayPayments) {
+        const amount = parseFloat(payment.amount || '0') * 100; // Convert to cents
+        if (amount > 0) {
+          credits += amount;
+          transactions.push({
+            id: payment.id || '',
+            amount,
+            type: 'credit',
+            reference: payment.columnTransferId || undefined
+          });
+        } else {
+          debits += Math.abs(amount);
+          transactions.push({
+            id: payment.id || '',
+            amount: Math.abs(amount),
+            type: 'debit',
+            reference: payment.columnTransferId || undefined
+          });
+        }
+      }
+
+      return {
+        date,
+        credits,
+        debits,
+        netTotal: credits - debits,
+        transactionCount: transactions.length,
+        transactions
+      };
+    } catch (error) {
+      console.error(`[ColumnBank] Error fetching settlement summary:`, error);
+      // Return empty summary on error
+      return {
+        date,
+        credits: 0,
+        debits: 0,
+        netTotal: 0,
+        transactionCount: 0,
+        transactions: []
+      };
+    }
   }
 
   /**
