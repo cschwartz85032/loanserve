@@ -59,41 +59,50 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     // ========================================
     
     // Validation queue - receives all inbound payments for validation
-    await ch.assertQueue("q.validate", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.validate", { durable: true });
     
     // Classification queue - classifies validated payments
-    await ch.assertQueue("q.classify", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.classify", { durable: true });
     
     // Rules posting queue - applies business rules
-    await ch.assertQueue("q.rules.post", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.rules.post", { durable: true });
     
     // Poster queue - transactional posting with outbox
-    await ch.assertQueue("q.post", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.post", { durable: true });
     
     // Poster outbox queue - stages messages for posting
-    await ch.assertQueue("q.poster.outbox", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.poster.outbox", { durable: true });
     
     // Outbox dispatch queue - dispatches outbox messages
-    await ch.assertQueue("q.outbox.dispatch", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.outbox.dispatch", { durable: true });
     
     // Daily reconciliation queue
-    await ch.assertQueue("q.reconcile.daily", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.reconcile.daily", { durable: true });
     
     // Exception handling queue
-    await ch.assertQueue("q.exceptions", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.exceptions", { durable: true });
     
     // Notifications queue
-    await ch.assertQueue("q.notifications", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.notifications", { durable: true });
     
     // Audit trail queue
-    await ch.assertQueue("q.audit", { durable: true, ...quorum });
+    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
+    await ch.assertQueue("q.audit", { durable: true });
     
     // Dead letter queue
+    // TEMPORARILY: Only assert durable and TTL, no quorum args to match existing CloudAMQP queue
     await ch.assertQueue("q.dlq", { 
-      durable: true, 
-      ...quorum,
+      durable: true,
       arguments: {
-        ...quorum.arguments,
         "x-message-ttl": 7 * 24 * 60 * 60 * 1000 // 7 days
       }
     });

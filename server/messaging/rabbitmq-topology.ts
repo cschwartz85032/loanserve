@@ -161,57 +161,45 @@ export class TopologyManager {
     }
 
     // Payment processing queues - Step 13-16 (Validator, Classifier, Rules, Poster)
-    this.addQueue({
-      name: 'q.validate',
-      durable: true,
-      arguments: {
-        // TEMPORARILY REMOVED: 'x-queue-type': 'quorum', // Conflicts with existing queue in CloudAMQP
-        'x-dead-letter-exchange': 'dlx.main',
-        'x-dead-letter-routing-key': 'payments.dlq',
-      },
-      bindings: [
-        // These will be bound to payments.inbound exchange by bootstrap
-      ],
-    });
+    // TEMPORARILY COMMENTED OUT: q.validate already exists in CloudAMQP with different settings
+    // this.addQueue({
+    //   name: 'q.validate',
+    //   durable: true,
+    //   arguments: {},
+    //   bindings: [
+    //     // These will be bound to payments.inbound exchange by bootstrap
+    //   ],
+    // });
 
-    this.addQueue({
-      name: 'q.classify',
-      durable: true,
-      arguments: {
-        'x-queue-type': 'quorum',
-        'x-dead-letter-exchange': 'dlx.main',
-        'x-dead-letter-routing-key': 'payments.dlq',
-      },
-      bindings: [
-        // Will be bound to payments.validation by bootstrap
-      ],
-    });
+    // TEMPORARILY COMMENTED OUT: q.classify already exists in CloudAMQP with different settings
+    // this.addQueue({
+    //   name: 'q.classify',
+    //   durable: true,
+    //   arguments: {},
+    //   bindings: [
+    //     // Will be bound to payments.validation by bootstrap
+    //   ],
+    // });
 
-    this.addQueue({
-      name: 'q.rules.post',
-      durable: true,
-      arguments: {
-        'x-queue-type': 'quorum',
-        'x-dead-letter-exchange': 'dlx.main',
-        'x-dead-letter-routing-key': 'payments.dlq',
-      },
-      bindings: [
-        // Will be bound to payments.saga by bootstrap
-      ],
-    });
+    // TEMPORARILY COMMENTED OUT: q.rules.post already exists in CloudAMQP with different settings
+    // this.addQueue({
+    //   name: 'q.rules.post',
+    //   durable: true,
+    //   arguments: {},
+    //   bindings: [
+    //     // Will be bound to payments.saga by bootstrap
+    //   ],
+    // });
 
-    this.addQueue({
-      name: 'q.post',
-      durable: true,
-      arguments: {
-        'x-queue-type': 'quorum',
-        'x-dead-letter-exchange': 'dlx.main',
-        'x-dead-letter-routing-key': 'payments.dlq',
-      },
-      bindings: [
-        // Will be bound to payments.saga by bootstrap
-      ],
-    });
+    // TEMPORARILY COMMENTED OUT: q.post already exists in CloudAMQP with different settings
+    // this.addQueue({
+    //   name: 'q.post',
+    //   durable: true,
+    //   arguments: {},
+    //   bindings: [
+    //     // Will be bound to payments.saga by bootstrap
+    //   ],
+    // });
 
     // Payment processing queues
     this.addQueue({
