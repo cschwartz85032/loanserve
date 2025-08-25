@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoanServe Pro - Observability Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 20px;
+        }
+        
+        .header {
+            margin-bottom: 30px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .subtitle {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #334155;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .metric-title {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metric-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .metric-change {
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            display: inline-block;
+        }
+        
+        .metric-change.positive {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+        }
+        
+        .metric-change.negative {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+        
+        .metric-change.neutral {
+            background: rgba(148, 163, 184, 0.1);
+            color: #94a3b8;
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+        }
+        
+        .chart-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #334155;
+        }
+        
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #f1f5f9;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.healthy {
+            background: #22c55e;
+        }
+        
+        .status-indicator.warning {
+            background: #f59e0b;
+        }
+        
+        .status-indicator.critical {
+            background: #ef4444;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 currentColor;
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(0, 0, 0, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+            }
+        }
+        
+        .alert-banner {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .alert-banner.active {
+            display: flex;
+        }
+        
+        .alert-icon {
+            font-size: 20px;
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .refresh-btn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>LoanServe Pro Observability Dashboard</h1>
+        <div class="subtitle">
+            <span class="status-indicator healthy"></span>
+            Real-time metrics • Last updated: <span id="lastUpdate">--:--:--</span>
+        </div>
+    </div>
+    
+    <div id="alertBanner" class="alert-banner">
+        <span class="alert-icon">⚠️</span>
+        <span id="alertText">High DLQ rate detected - 15 messages/minute</span>
+    </div>
+    
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-title">Queue Depth</div>
+            <div class="metric-value" id="queueDepth">0</div>
+            <div class="metric-change neutral">messages pending</div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-title">DLQ Rate</div>
+            <div class="metric-value" id="dlqRate">0</div>
+            <div class="metric-change positive">msgs/min</div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-title">Process Latency (P95)</div>
+            <div class="metric-value" id="processLatency">0</div>
+            <div class="metric-change neutral">ms</div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-title">Outbox Lag</div>
+            <div class="metric-value" id="outboxLag">0</div>
+            <div class="metric-change neutral">seconds</div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-title">Reconcile Variance</div>
+            <div class="metric-value" id="reconcileVariance">$0</div>
+            <div class="metric-change neutral">total variance</div>
+        </div>
+        
+        <div class="metric-card">
+            <div class="metric-title">Message Success Rate</div>
+            <div class="metric-value" id="successRate">100%</div>
+            <div class="metric-change positive">last hour</div>
+        </div>
+    </div>
+    
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div class="chart-title">Queue Depth Over Time</div>
+            <canvas id="queueChart"></canvas>
+        </div>
+        
+        <div class="chart-card">
+            <div class="chart-title">Processing Latency Distribution</div>
+            <canvas id="latencyChart"></canvas>
+        </div>
+        
+        <div class="chart-card">
+            <div class="chart-title">Message Processing Rate</div>
+            <canvas id="processingChart"></canvas>
+        </div>
+        
+        <div class="chart-card">
+            <div class="chart-title">DLQ Activity</div>
+            <canvas id="dlqChart"></canvas>
+        </div>
+    </div>
+    
+    <button class="refresh-btn" onclick="refreshMetrics()">↻ Refresh</button>
+    
+    <script>
+        // Chart configurations
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: {
+                        color: '#e2e8f0'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        color: '#334155'
+                    },
+                    ticks: {
+                        color: '#94a3b8'
+                    }
+                },
+                y: {
+                    grid: {
+                        color: '#334155'
+                    },
+                    ticks: {
+                        color: '#94a3b8'
+                    }
+                }
+            }
+        };
+        
+        // Initialize charts
+        const queueChart = new Chart(document.getElementById('queueChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Queue Depth',
+                    data: [],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: chartOptions
+        });
+        
+        const latencyChart = new Chart(document.getElementById('latencyChart'), {
+            type: 'bar',
+            data: {
+                labels: ['P50', 'P75', 'P90', 'P95', 'P99'],
+                datasets: [{
+                    label: 'Latency (ms)',
+                    data: [],
+                    backgroundColor: '#8b5cf6'
+                }]
+            },
+            options: chartOptions
+        });
+        
+        const processingChart = new Chart(document.getElementById('processingChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Processed',
+                    data: [],
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    tension: 0.4
+                }, {
+                    label: 'Failed',
+                    data: [],
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: chartOptions
+        });
+        
+        const dlqChart = new Chart(document.getElementById('dlqChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'DLQ Rate',
+                    data: [],
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: chartOptions
+        });
+        
+        // Mock data generation (replace with real API calls)
+        function generateMockData() {
+            const now = new Date();
+            const labels = [];
+            for (let i = 59; i >= 0; i--) {
+                const time = new Date(now - i * 60000);
+                labels.push(time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+            }
+            
+            return {
+                queueDepth: Math.floor(Math.random() * 100),
+                dlqRate: Math.floor(Math.random() * 5),
+                processLatency: Math.floor(Math.random() * 500) + 100,
+                outboxLag: Math.floor(Math.random() * 60),
+                reconcileVariance: Math.floor(Math.random() * 5000),
+                successRate: (95 + Math.random() * 5).toFixed(1),
+                queueHistory: labels.map(() => Math.floor(Math.random() * 100)),
+                latencyPercentiles: [150, 200, 350, 450, 800],
+                processingHistory: {
+                    processed: labels.map(() => Math.floor(Math.random() * 1000)),
+                    failed: labels.map(() => Math.floor(Math.random() * 50))
+                },
+                dlqHistory: labels.map(() => Math.floor(Math.random() * 10)),
+                labels: labels
+            };
+        }
+        
+        function updateMetrics() {
+            const data = generateMockData();
+            
+            // Update metric cards
+            document.getElementById('queueDepth').textContent = data.queueDepth;
+            document.getElementById('dlqRate').textContent = data.dlqRate;
+            document.getElementById('processLatency').textContent = data.processLatency;
+            document.getElementById('outboxLag').textContent = data.outboxLag;
+            document.getElementById('reconcileVariance').textContent = `$${data.reconcileVariance.toLocaleString()}`;
+            document.getElementById('successRate').textContent = `${data.successRate}%`;
+            
+            // Update charts
+            queueChart.data.labels = data.labels;
+            queueChart.data.datasets[0].data = data.queueHistory;
+            queueChart.update();
+            
+            latencyChart.data.datasets[0].data = data.latencyPercentiles;
+            latencyChart.update();
+            
+            processingChart.data.labels = data.labels;
+            processingChart.data.datasets[0].data = data.processingHistory.processed;
+            processingChart.data.datasets[1].data = data.processingHistory.failed;
+            processingChart.update();
+            
+            dlqChart.data.labels = data.labels;
+            dlqChart.data.datasets[0].data = data.dlqHistory;
+            dlqChart.update();
+            
+            // Check for alerts
+            if (data.dlqRate > 10) {
+                document.getElementById('alertBanner').classList.add('active');
+                document.getElementById('alertText').textContent = `High DLQ rate detected - ${data.dlqRate} messages/minute`;
+            } else {
+                document.getElementById('alertBanner').classList.remove('active');
+            }
+            
+            // Update last update time
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+        }
+        
+        function refreshMetrics() {
+            updateMetrics();
+        }
+        
+        // Initial load
+        updateMetrics();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(updateMetrics, 30000);
+    </script>
+</body>
+</html>

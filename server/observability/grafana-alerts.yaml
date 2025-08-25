@@ -1,0 +1,456 @@
+apiVersion: 1
+groups:
+  - name: loanserve_alerts
+    interval: 30s
+    rules:
+      - uid: dlq_rate_high
+        title: High DLQ Rate Alert
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(rabbitmq_dlq_rate[5m]) * 60
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 10
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              refId: B
+              type: threshold
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: []
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: math
+        noDataState: NoData
+        execErrState: Alerting
+        for: 2m
+        annotations:
+          description: "DLQ rate is {{ $value }} messages/minute, exceeding threshold of 10"
+          runbook_url: https://wiki.example.com/runbook/dlq-rate-high
+          summary: High rate of messages being sent to Dead Letter Queue
+        labels:
+          severity: warning
+          team: platform
+
+      - uid: queue_depth_high
+        title: High Queue Depth Alert
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rabbitmq_queue_depth
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1000
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              refId: B
+              type: threshold
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: []
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: math
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Queue {{ $labels.queue }} has {{ $value }} messages, exceeding threshold of 1000"
+          runbook_url: https://wiki.example.com/runbook/queue-depth-high
+          summary: Queue depth is critically high
+        labels:
+          severity: critical
+          team: platform
+
+      - uid: outbox_lag_high
+        title: High Outbox Lag Alert
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: outbox_lag
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 300
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              refId: B
+              type: threshold
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: []
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: math
+        noDataState: NoData
+        execErrState: Alerting
+        for: 3m
+        annotations:
+          description: "Outbox lag is {{ $value }} seconds, exceeding threshold of 300 seconds"
+          runbook_url: https://wiki.example.com/runbook/outbox-lag-high
+          summary: Outbox messages are not being processed in time
+        labels:
+          severity: warning
+          team: platform
+
+      - uid: reconcile_variance_high
+        title: High Reconciliation Variance Alert
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: reconcile_variance_amount
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 10000
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              refId: B
+              type: threshold
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: []
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: math
+        noDataState: NoData
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          description: "Reconciliation variance is ${{ $value }}, exceeding threshold of $10,000"
+          runbook_url: https://wiki.example.com/runbook/reconcile-variance-high
+          summary: High variance detected in payment reconciliation
+        labels:
+          severity: critical
+          team: finance
+
+      - uid: process_latency_high
+        title: High Process Latency Alert
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, rate(payment_process_latency_bucket[5m]))
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 5000
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              refId: B
+              type: threshold
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: []
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: math
+        noDataState: NoData
+        execErrState: Alerting
+        for: 3m
+        annotations:
+          description: "95th percentile payment processing latency is {{ $value }}ms, exceeding threshold of 5000ms"
+          runbook_url: https://wiki.example.com/runbook/process-latency-high
+          summary: Payment processing is experiencing high latency
+        labels:
+          severity: warning
+          team: platform
+
+      - uid: message_failure_rate_high
+        title: High Message Failure Rate Alert
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                rate(messages_failed_total[5m]) / 
+                (rate(messages_processed_total[5m]) + rate(messages_failed_total[5m]))
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0.05
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - A
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              refId: B
+              type: threshold
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: []
+                  reducer:
+                    params: []
+                    type: avg
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              refId: C
+              type: math
+        noDataState: NoData
+        execErrState: Alerting
+        for: 3m
+        annotations:
+          description: "Message failure rate is {{ $value | humanizePercentage }}, exceeding threshold of 5%"
+          runbook_url: https://wiki.example.com/runbook/message-failure-rate-high
+          summary: High percentage of messages are failing to process
+        labels:
+          severity: critical
+          team: platform

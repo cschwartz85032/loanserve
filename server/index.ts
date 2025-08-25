@@ -3,6 +3,12 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import cors from "cors";
+import { initializeTelemetry, shutdownTelemetry } from './observability/telemetry';
+import { correlationIdMiddleware, correlationErrorHandler } from './middleware/correlation-id';
+import { startMetricsCollection, stopMetricsCollection } from './observability/metrics-collector';
+
+// Initialize telemetry before anything else
+initializeTelemetry();
 
 const app = express();
 
@@ -39,6 +45,9 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// Add correlation ID middleware before other middlewares
+app.use(correlationIdMiddleware);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
@@ -89,8 +98,15 @@ app.use((req, res, next) => {
     // Continue server startup even if consumers fail
   }
   
+  // Start metrics collection
+  startMetricsCollection();
+  console.log('[Server] Metrics collection started');
+  
   const server = await registerRoutes(app);
 
+  // Use correlation error handler
+  app.use(correlationErrorHandler);
+  
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
