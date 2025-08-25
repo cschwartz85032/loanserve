@@ -1,0 +1,654 @@
+Below is a complete, engineer-ready specification for **Phase 2 – Payment ingestion and posting pipeline**. It gives exact data structures, queue/exchange topology, JSON Schemas, TypeScript module contracts, DB migrations, idempotency strategy, retry/DLQ, and test/observability requirements. Implement **exactly** as written. Replace any legacy calls with the new, explicit interfaces shown here.
+
+---
+
+# 0. Scope, dependencies, invariants
+
+* Depends on Phase 0 (runtime, telemetry, Rabbit, health) and Phase 1 (schema, ledger, posting, schedule/waterfall).
+* Currency: USD only in Phase 2. All money in **minor units** (`bigint` cents). No floats beyond the already-approved exponent math in Phase 1.
+* All messages use the **Phase-0 envelope** `MessageEnvelope<T>` and include headers: `x-message-id`, `x-correlation-id`, `x-schema`, `x-trace-id`.
+* At-least-once delivery is assumed. Consumers must be **idempotent**.
+* **No auto-ack**. Always `ack` on success, `nack(requeue= !redelivered)` on error.
+
+---
+
+# 1. RabbitMQ topology (declare via the existing `topologyManager`)
+
+**Exchanges**
+All durable. Create/update exactly these:
+
+* `payments.inbound` **direct**
+* `payments.validation` **topic**
+* `payments.saga` **topic**
+* `payments.events` **topic**
+* `payments.dlq` **direct**
+
+**Queues**
+All **quorum** queues with arguments:
+
+```
+x-queue-type=quorum
+x-delivery-limit=6                # total deliveries before dead-letter
+x-dead-letter-exchange=payments.dlq
+x-message-ttl=604800000           # 7 days, only for DLQ queues
+```
+
+Create these functional queues (durable, quorum):
+
+* `q.payments.intake` bound to `payments.inbound` with `routingKey=received.raw`
+* `q.payments.received` bound to `payments.validation` with `routingKey=received.v1`
+* `q.payments.validated` bound to `payments.saga` with `routingKey=validated.v1`
+* `q.payments.post` bound to `payments.saga` with `routingKey=post.v1`
+* `q.payments.events.audit` bound to `payments.events` with `routingKey=payment.*`
+* `q.payments.dlq` bound to `payments.dlq` with `routingKey=#` (this is the **DLQ**)
+
+**Routing Rules**
+
+* Intake publishes to `payments.validation` with `routingKey=received.v1`.
+* Validator publishes success to `payments.saga` `routingKey=validated.v1`; failure to `payments.events` `routingKey=payment.failed.v1`.
+* Poster subscribes to `payments.saga` `routingKey=validated.v1` and publishes `payment.posted.v1` to `payments.events` with `routingKey=payment.posted.v1`. It also writes the same payload to the **outbox** (see §4) and the **outbox dispatcher** publishes to `payments.events` as well (use the outbox path for all external eventing; the immediate publish is optional signal for internal metrics—choose exactly one pattern; **mandate outbox only**, see §4).
+
+**Prefetch**
+Set consumer prefetch from env `RABBIT_PREFETCH` (Phase 0). Default 10.
+
+---
+
+# 2. Database schema (PostgreSQL)
+
+Apply these migrations after Phase-1 tables exist.
+
+```sql
+-- 004_payments_pipeline.sql
+BEGIN;
+
+CREATE TABLE gateway_provider (
+  provider_code TEXT PRIMARY KEY,             -- e.g., "stripe", "dwolla", "plaid", "mock"
+  display_name TEXT NOT NULL
+);
+
+CREATE TYPE payment_method AS ENUM ('ach','card','wire','check','cash','other');
+
+-- Raw payment intake log (normalized)
+CREATE TABLE payment_intake (
+  payment_id UUID PRIMARY KEY,
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  method payment_method NOT NULL,
+  amount_minor NUMERIC(20,0) NOT NULL CHECK (amount_minor > 0),
+  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  received_at TIMESTAMPTZ NOT NULL,
+  gateway_txn_id TEXT NOT NULL,
+  source_provider TEXT NOT NULL REFERENCES gateway_provider(provider_code),
+  idempotency_key TEXT NOT NULL,                         -- SHA256(loan_id|gateway_txn_id|amount_minor|currency|effective_date)
+  effective_date DATE NOT NULL,                          -- default=received_at::date unless overridden
+  raw_payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (source_provider, gateway_txn_id),
+  UNIQUE (idempotency_key)
+);
+
+-- Validation results
+CREATE TABLE payment_validation (
+  payment_id UUID PRIMARY KEY REFERENCES payment_intake(payment_id) ON DELETE CASCADE,
+  is_valid BOOLEAN NOT NULL,
+  reason TEXT,                              -- non-null if invalid
+  allocation_hints JSONB,                   -- optional ‘{ "bucket":"principal" }’ etc.
+  validated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  effective_date DATE NOT NULL              -- carries forward even if overridden by validator
+);
+
+-- Posting results (summary aside from ledger)
+CREATE TABLE payment_posting (
+  payment_id UUID PRIMARY KEY REFERENCES payment_intake(payment_id) ON DELETE CASCADE,
+  event_id UUID NOT NULL REFERENCES ledger_event(event_id) ON DELETE RESTRICT,
+  applied JSONB NOT NULL,                   -- [{bucket, amount_minor}]
+  new_balances JSONB NOT NULL,              -- { principal_minor, interest_receivable_minor, escrow_liability_minor, fees_receivable_minor, cash_minor }
+  posted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Outbox table (Phase 2 scope)
+CREATE TABLE outbox (
+  event_id UUID PRIMARY KEY,
+  topic TEXT NOT NULL,                      -- exchange+routing key logical name e.g. 'payments.events:payment.posted.v1'
+  payload_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  published_at TIMESTAMPTZ
+);
+
+COMMIT;
+```
+
+---
+
+# 3. JSON Schemas (store under `/shared/schemas/payments/`)
+
+All payloads are embedded in the **Phase-0 MessageEnvelope** and validated **before publish**.
+
+`payment.received.v1.json`
+
+```json
+{
+  "$id": "payment.received.v1",
+  "type": "object",
+  "required": ["payment_id","loan_id","method","amount_minor","currency","received_at","gateway_txn_id","source","idempotency_key","effective_date"],
+  "properties": {
+    "payment_id": {"type":"string","format":"uuid"},
+    "loan_id": {"type":"string","format":"uuid"},
+    "method": {"type":"string","enum":["ach","card","wire","check","cash","other"]},
+    "amount_minor": {"type":"string","pattern":"^-?\\d+$"},
+    "currency": {"type":"string","enum":["USD"]},
+    "received_at": {"type":"string","format":"date-time"},
+    "gateway_txn_id": {"type":"string","minLength":1},
+    "source": {"type":"string","minLength":1},
+    "idempotency_key": {"type":"string","minLength":64,"maxLength":64},
+    "effective_date": {"type":"string","format":"date"}
+  },
+  "additionalProperties": false
+}
+```
+
+`payment.validated.v1.json`
+
+```json
+{
+  "$id": "payment.validated.v1",
+  "type": "object",
+  "required": ["payment_id","loan_id","amount_minor","currency","effective_date","allocation_hints"],
+  "properties": {
+    "payment_id": {"type":"string","format":"uuid"},
+    "loan_id": {"type":"string","format":"uuid"},
+    "amount_minor": {"type":"string","pattern":"^-?\\d+$"},
+    "currency": {"type":"string","enum":["USD"]},
+    "effective_date": {"type":"string","format":"date"},
+    "allocation_hints": {"type":"object","additionalProperties": true}
+  }
+}
+```
+
+`payment.posted.v1.json`
+
+```json
+{
+  "$id": "payment.posted.v1",
+  "type":"object",
+  "required":["payment_id","loan_id","event_id","applied","new_balances","effective_date"],
+  "properties":{
+    "payment_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "event_id":{"type":"string","format":"uuid"},
+    "effective_date":{"type":"string","format":"date"},
+    "applied":{"type":"array","items":{"type":"object","required":["bucket","amount_minor"],"properties":{
+      "bucket":{"type":"string","enum":["fees_due","interest_past_due","interest_current","principal","escrow","future"]},
+      "amount_minor":{"type":"string","pattern":"^-?\\d+$"}
+    }}}},
+    "new_balances":{"type":"object","required":["principal_minor","interest_receivable_minor","escrow_liability_minor","fees_receivable_minor","cash_minor"],"properties":{
+      "principal_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "interest_receivable_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "escrow_liability_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "fees_receivable_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "cash_minor":{"type":"string","pattern":"^-?\\d+$"}
+    }}
+  },
+  "additionalProperties": false
+}
+```
+
+`payment.failed.v1.json`
+
+```json
+{
+  "$id": "payment.failed.v1",
+  "type":"object",
+  "required":["payment_id","loan_id","reason"],
+  "properties":{
+    "payment_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "reason":{"type":"string","minLength":1},
+    "retry_after":{"type":"integer","minimum":0}
+  }
+}
+```
+
+---
+
+# 4. Outbox pattern (mandatory path for external events)
+
+* **All** externally visible events must go through `outbox`. The producer writes to business tables and `outbox` in the **same DB transaction**. A dedicated dispatcher reads `outbox WHERE published_at IS NULL`, publishes to the target exchange/routing key using **publisher confirms**, and sets `published_at=now()` if confirmed.
+* `topic` format is fixed: `<exchange-name>:<routing-key>`. Example: `payments.events:payment.posted.v1`.
+
+Dispatcher behavior:
+
+* Batch size: 100. Order by `created_at, event_id`.
+* On publish error: retry with exponential backoff (1s, 2s, 4s, up to 60s) per dispatcher loop; do **not** mark `published_at`.
+* Idempotent: if a duplicate `event_id` is encountered, skip; `PRIMARY KEY (event_id)` guarantees uniqueness.
+
+---
+
+# 5. TypeScript modules and exact interfaces
+
+Create the following under `/server/payments/`.
+
+## 5.1 Shared types
+
+`/server/payments/types.ts`
+
+```ts
+import { UUID } from "../../shared/types";
+
+export type Minor = bigint;
+
+export type PaymentMethod = 'ach'|'card'|'wire'|'check'|'cash'|'other';
+
+export interface PaymentReceived {
+  payment_id: UUID;
+  loan_id: UUID;
+  method: PaymentMethod;
+  amount_minor: Minor;
+  currency: 'USD';
+  received_at: string;       // ISO datetime
+  gateway_txn_id: string;
+  source: string;            // provider code
+  idempotency_key: string;   // 64 hex chars
+  effective_date: string;    // ISO date
+}
+
+export interface PaymentValidated {
+  payment_id: UUID;
+  loan_id: UUID;
+  amount_minor: Minor;
+  currency: 'USD';
+  effective_date: string;
+  allocation_hints: Record<string, unknown>;
+}
+
+export interface Allocation { bucket: 'fees_due'|'interest_past_due'|'interest_current'|'principal'|'escrow'|'future'; amount_minor: Minor; }
+
+export interface PaymentPosted {
+  payment_id: UUID;
+  loan_id: UUID;
+  event_id: UUID;
+  effective_date: string;
+  applied: Allocation[];
+  new_balances: {
+    principal_minor: Minor;
+    interest_receivable_minor: Minor;
+    escrow_liability_minor: Minor;
+    fees_receivable_minor: Minor;
+    cash_minor: Minor;
+  };
+}
+
+export interface PaymentFailed {
+  payment_id: UUID;
+  loan_id: UUID;
+  reason: string;
+  retry_after?: number; // seconds
+}
+```
+
+## 5.2 Repositories
+
+`/server/payments/repo.ts`
+
+```ts
+import { Pool, PoolClient } from "pg";
+import { PaymentReceived } from "./types";
+
+export class PaymentsRepo {
+  constructor(private pool: Pool) {}
+
+  async withTx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    const c = await this.pool.connect();
+    try {
+      await c.query('BEGIN');
+      const r = await fn(c);
+      await c.query('COMMIT');
+      return r;
+    } catch (e) {
+      await c.query('ROLLBACK');
+      throw e;
+    } finally { c.release(); }
+  }
+
+  async insertIntake(c: PoolClient, p: PaymentReceived & { raw_payload: any }): Promise<void> {
+    await c.query(`
+      INSERT INTO payment_intake(payment_id, loan_id, method, amount_minor, currency, received_at, gateway_txn_id, source_provider, idempotency_key, effective_date, raw_payload)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    `, [p.payment_id, p.loan_id, p.method, p.amount_minor.toString(), p.currency, p.received_at, p.gateway_txn_id, p.source, p.idempotency_key, p.effective_date, p.raw_payload]);
+  }
+
+  async upsertValidation(c: PoolClient, args: { payment_id: string; is_valid: boolean; reason?: string; effective_date: string; allocation_hints: any }): Promise<void> {
+    await c.query(`
+      INSERT INTO payment_validation(payment_id, is_valid, reason, allocation_hints, effective_date)
+      VALUES ($1,$2,$3,$4,$5)
+      ON CONFLICT (payment_id) DO UPDATE SET is_valid=$2, reason=$3, allocation_hints=$4, effective_date=$5, validated_at=now()
+    `, [args.payment_id, args.is_valid, args.reason ?? null, args.allocation_hints ?? {}, args.effective_date]);
+  }
+
+  async insertPostingSummary(c: PoolClient, args: { payment_id: string; event_id: string; applied: any; new_balances: any }): Promise<void> {
+    await c.query(`
+      INSERT INTO payment_posting(payment_id, event_id, applied, new_balances)
+      VALUES ($1,$2,$3,$4)
+    `, [args.payment_id, args.event_id, JSON.stringify(args.applied), JSON.stringify(args.new_balances)]);
+  }
+
+  async insertOutbox(c: PoolClient, args: { event_id: string; topic: string; payload_json: any }): Promise<void> {
+    await c.query(`INSERT INTO outbox(event_id, topic, payload_json) VALUES ($1,$2,$3)`, [args.event_id, args.topic, JSON.stringify(args.payload_json)]);
+  }
+}
+```
+
+## 5.3 Idempotency key computation
+
+`/server/payments/idempotency.ts`
+
+```ts
+import { createHash } from "crypto";
+
+export function computePaymentIdemKey(params: { loan_id: string; gateway_txn_id: string; amount_minor: bigint; currency: 'USD'; effective_date: string }): string {
+  const s = `${params.loan_id}|${params.gateway_txn_id}|${params.amount_minor.toString()}|${params.currency}|${params.effective_date}`;
+  return createHash('sha256').update(s).digest('hex'); // 64 hex
+}
+```
+
+---
+
+# 6. Services
+
+## 6.1 Intake Service
+
+**Responsibility**: Normalize gateway payload → build `payment.received.v1` → write to `payment_intake` (idempotent) → publish **received** event.
+
+**Input**: Gateway webhook/ingest endpoint or file/queue (implement a stub Express endpoint `/payments/intake/:provider` for Phase 2).
+
+**Operations**:
+
+1. Parse gateway payload. Map into:
+
+```ts
+const received: PaymentReceived = {
+  payment_id: uuidv7(),
+  loan_id,                    // resolved from payload mapping (must exist)
+  method: 'ach'|'card'|'wire'|'check'|'cash'|'other',
+  amount_minor: BigInt(normalizeAmountToCents(payload)),
+  currency: 'USD',
+  received_at: new Date().toISOString(),
+  gateway_txn_id: payload.txn_id,
+  source: providerCode,       // path param
+  idempotency_key: computePaymentIdemKey({...}),
+  effective_date: deriveEffectiveDate(payload) // default = today (UTC)
+};
+```
+
+2. In a **single tx**:
+
+* `INSERT INTO payment_intake …` with `raw_payload` = full JSON.
+* On `UNIQUE (idempotency_key)` violation: **read** existing row and **short-circuit**: do **not** publish a duplicate message; return HTTP 200 with `{ status:"duplicate", payment_id:<existing> }`.
+
+3. Publish to Rabbit:
+
+* Exchange: `payments.validation`, `routingKey=received.v1`, payload = `PaymentReceived`.
+* Envelope schema: `"payment.received.v1"`. `correlation_id` = `received.idempotency_key`.
+
+**HTTP responses**:
+
+* `201 Created` `{ payment_id, idempotency_key }` on first insert.
+* `200 OK` `{ status:"duplicate", payment_id, idempotency_key }` on duplicate.
+
+**File locations**:
+
+* `/server/payments/intake-service.ts`
+* `/server/http/routes/payments-intake.ts` (Express route calls service then publishes)
+
+**Express route** (exact):
+
+* `POST /payments/intake/:provider` with JSON body; rejects if `provider` not in `gateway_provider`.
+
+## 6.2 Validator Service
+
+**Responsibility**: Consume `payment.received.v1` → validate → write `payment_validation` → publish `payment.validated.v1` or `payment.failed.v1`.
+
+**Consumer**:
+
+```ts
+rabbit.consume<PaymentReceived>({ queue: 'q.payments.received' }, handler)
+```
+
+**Validation rules** (all required):
+
+* Loan must exist; status ∈ { `active`, `in_modification`, `bankruptcy` } → others fail with reason.
+* Currency must be `USD`.
+* `amount_minor > 0` and ≤ policy cap (env `PAYMENT_MAX_MINOR` default 5\_000\_000\_00 cents).
+* `effective_date` not older than env `PAYMENT_MAX_STALENESS_DAYS` (default 10 days).
+* Borrower eligibility hook: placeholder returns `true` in Phase 2.
+* Optional `allocation_hints`:
+
+  * If method is `escrow` top-up (not in Phase 2), or explicit `{"bucket":"principal"}`, pass through.
+
+**On success**:
+
+* In a tx: `UPSERT payment_validation (is_valid=true, reason=NULL, effective_date, allocation_hints)` for `payment_id`.
+* Publish `payment.validated.v1` to `payments.saga` `routingKey=validated.v1`.
+
+**On failure**:
+
+* In a tx: `UPSERT payment_validation (is_valid=false, reason, effective_date=COALESCE(existing,effective_date))`.
+* Publish `payment.failed.v1` to `payments.events` `routingKey=payment.failed.v1`.
+
+**Idempotent consumption**:
+
+* If `payment_validation.payment_id` already exists with `is_valid=true` and same `effective_date`, **ack** without re-publishing.
+* If exists with `is_valid=false`, **ack** without re-publishing.
+
+## 6.3 Poster Service
+
+**Responsibility**: Consume `payment.validated.v1` → compute allocations via **Phase-1 waterfall** → **post** to ledger using `postEvent` → compute `new_balances` → write `payment_posting` → write **outbox** event `payment.posted.v1` → commit.
+
+**Consumer**:
+
+```ts
+rabbit.consume<PaymentValidated>({ queue: 'q.payments.validated' }, handler)
+```
+
+**Algorithm**:
+
+1. Load `product_policy` and **current outstanding** for the loan using Phase-1 repository `latestBalances(loanId)` and any “due” amounts if implemented; in Phase 2, approximate:
+
+* `fees_due` = `feesReceivableMinor` if positive else `0n`
+* `interest_past_due` = `interestReceivableMinor`
+* `interest_current` = `0n` (Phase 2 simplification; full accrual separation comes later)
+* `principal` = up to outstanding principal (convert sign to positive need)
+* `escrow` = if `escrow_liability` negative (deficit), treat as due, else `0n`
+
+2. Compute allocations:
+
+```ts
+const hints = validated.allocation_hints ?? {};
+const waterfall = productPolicy.paymentWaterfall as any;
+const outstanding = {...} // as above
+const allocations = allocatePayment(validated.amount_minor, waterfall, outstanding); // Phase-1 waterfal.ts
+```
+
+3. Build balanced posting lines:
+
+```ts
+const lines = [{ account: 'cash', debitMinor: validated.amount_minor, memo: 'payment received' }];
+
+for (const a of allocations) {
+  if (a.bucket === 'fees_due') lines.push({ account: 'fees_receivable', creditMinor: a.amount_minor, memo: 'fee collected' });
+  if (a.bucket === 'interest_past_due' || a.bucket === 'interest_current') lines.push({ account: 'interest_receivable', creditMinor: a.amount_minor, memo: 'interest collected' });
+  if (a.bucket === 'principal') lines.push({ account: 'loan_principal', creditMinor: a.amount_minor, memo: 'principal reduction' });
+  if (a.bucket === 'escrow') lines.push({ account: 'escrow_liability', creditMinor: a.amount_minor, memo: 'escrow collected' });
+  if (a.bucket === 'future') lines.push({ account: 'suspense', creditMinor: a.amount_minor, memo: 'unapplied/suspense' });
+}
+```
+
+4. Post to ledger:
+
+```ts
+const correlationId = 'payment:' + validated.payment_id; // unique per payment
+const { eventId } = await postEvent(ledgerRepo, {
+  loanId: validated.loan_id,
+  effectiveDate: validated.effective_date,
+  correlationId,
+  schema: 'posting.payment.v1',
+  currency: 'USD',
+  lines
+});
+```
+
+5. Fetch `new_balances = latestBalances(loanId)`.
+
+6. In the **same tx** as `payment_posting` insert, write **outbox**:
+
+```ts
+await paymentsRepo.insertPostingSummary(c, { payment_id, event_id: eventId, applied: allocations, new_balances });
+await paymentsRepo.insertOutbox(c, {
+  event_id: eventId,
+  topic: 'payments.events:payment.posted.v1',
+  payload_json: { payment_id, loan_id: validated.loan_id, event_id: eventId, effective_date: validated.effective_date, applied: allocations, new_balances }
+});
+```
+
+7. Commit. **Do not** publish directly here; publication is handled by the outbox dispatcher.
+
+**Duplicate handling**:
+
+* If `payment_posting` already has `payment_id`, **ack** without writing a new ledger event.
+
+## 6.4 Outbox Dispatcher
+
+**Responsibility**: Reliable publish of external events.
+
+Loop every 1s:
+
+* `SELECT event_id, topic, payload_json FROM outbox WHERE published_at IS NULL ORDER BY created_at, event_id LIMIT 100 FOR UPDATE SKIP LOCKED`
+* For each row:
+
+  * Parse `topic` into `{ exchange, routingKey }`.
+  * Build `MessageEnvelope` with `schema` equal to `$id` inside payload (e.g., `payment.posted.v1`), `message_id`=`event_id`, `correlation_id` = `payment:<payment_id>` if available in payload.
+  * `rabbit.publish` with confirms.
+  * On success: `UPDATE outbox SET published_at=now() WHERE event_id=$1`.
+  * On error: stop loop, retry next tick (exponential backoff up to 60s).
+
+---
+
+# 7. Message publishing and consuming (exact calls)
+
+**Publish** (everywhere):
+
+```ts
+await rabbit.publish<PaymentReceived>(envelope, {
+  exchange: 'payments.validation',
+  routingKey: 'received.v1',
+  persistent: true
+});
+```
+
+**Consume**:
+
+```ts
+const tag = await rabbit.consume<PaymentValidated>({ queue: 'q.payments.validated' }, async (env) => {
+  // validate schema, process, ack in rabbit.consume implementation
+});
+```
+
+All publishers must call a `validateSchema(schemaId, payload)` helper that loads JSON Schema by `$id` and throws on failure. If validation fails → do **not** publish; log `error` and respond 400/500 accordingly.
+
+---
+
+# 8. Metrics and tracing (OpenTelemetry)
+
+Create counters/histograms in `/server/payments/metrics.ts`:
+
+* `payments_received_total` labels: `provider`, `method`
+* `payments_duplicate_total`
+* `payments_validated_total` labels: `result=ok|fail`, `reason?`
+* `payments_posted_total`
+* `payments_failed_total` labels: `reason`
+* `payments_outbox_published_total`
+* `payments_e2e_latency_ms` histogram (from intake to posted)
+* `payments_validation_latency_ms`, `payments_posting_latency_ms` histograms
+
+Correlate spans via `correlation_id` and `trace_id` propagation in the `MessageEnvelope`.
+
+---
+
+# 9. Configuration (add to Phase-0 config schema)
+
+Add:
+
+```
+PAYMENT_MAX_MINOR=500000000    # $5,000,000.00
+PAYMENT_MAX_STALENESS_DAYS=10
+OUTBOX_DISPATCH_INTERVAL_MS=1000
+OUTBOX_DISPATCH_BATCH=100
+```
+
+Integrate into `config/schema.json` and `bootstrap/config.ts` with validation.
+
+---
+
+# 10. Acceptance and tests
+
+## 10.1 Unit tests
+
+* **Idempotency**: Send the **same** intake twice (same key) → only one `payment_intake` row; validator/poster consume once; second attempt returns duplicate.
+
+* **Validation**:
+
+  * Invalid currency → `payment.failed.v1`.
+  * Stale effective\_date (> max days) → `payment.failed.v1`.
+  * Excessive amount (> max) → `payment.failed.v1`.
+
+* **Allocation math**: For a fixed outstanding set, ensure `allocatePayment` returns expected distribution and sum(applied) ≤ `amount_minor`.
+
+* **Posting invariant**: The ledger event created by Poster is **balanced**; attempting to tamper lines causes `sp_finalize_ledger_event` to fail.
+
+## 10.2 Integration tests (use ephemeral Rabbit + PG)
+
+Scenario: “Happy path”
+
+1. POST intake.
+2. Validator consumes and publishes validated.
+3. Poster consumes, writes ledger + outbox.
+4. Outbox dispatcher publishes `payment.posted.v1`.
+   **Asserts**:
+
+* `payment_posting` row exists.
+* `ledger_event.finalized_at` not null; entries sum debit=credit.
+* One and only one `payment.posted.v1` observed on `q.payments.events.audit`.
+* **Duplicate** POST intake returns `{status:"duplicate"}` and **no additional** ledger event.
+
+## 10.3 SLO check
+
+* Measure E2E latency (`payments_e2e_latency_ms`). Ensure **p95 < 300000 ms** (5 minutes) under test load of 100/s with prefetch=10 and Poster concurrency=number of cores.
+
+---
+
+# 11. Upgrade and replacement plan
+
+* **Remove** any legacy publishing code that bypasses `MessageEnvelope` or confirm channels.
+* **Replace** any direct event emission from Poster with **outbox insertion**. The **only** publisher of `payment.posted.v1` is the **outbox dispatcher**.
+* **Standardize** correlation IDs:
+
+  * Intake → `correlation_id = idempotency_key`
+  * Validator → reuse `correlation_id` from received message
+  * Poster → `correlation_id = 'payment:' + payment_id`
+* **Migrate** any old `payments.*` queues/exchanges to the names above. For existing queues, **redeclare** with `x-queue-type=quorum` and `x-dead-letter-exchange=payments.dlq`. Move consumers to the new queues before detaching the old.
+* **Enforce** JSON Schema validation before publish using a single helper shared by all services.
+
+---
+
+# 12. Exact “Definition of Done” for Phase 2
+
+* The **four exchanges** and **five queues** exist with the exact arguments above; DLQ receives dead-lettered messages on >6 deliveries or rejects.
+* `/payments/intake/:provider` accepts payloads, writes `payment_intake`, and publishes `payment.received.v1`. Duplicates are acknowledged and **not re-emitted**.
+* Validator consumes `payment.received.v1` and **always** writes/upsserts `payment_validation`, publishing either `payment.validated.v1` or `payment.failed.v1`.
+* Poster consumes `payment.validated.v1`, posts a **balanced ledger event** via `postEvent`, writes `payment_posting`, inserts a **single** outbox row for `payment.posted.v1`, and commits atomically.
+* Outbox Dispatcher publishes **exactly once** per outbox row with confirms and sets `published_at`.
+* All event payloads pass **JSON Schema** validation; any schema violations fail fast and are recorded in logs with correlation IDs.
+* **Idempotency tests pass**: duplicate deliveries **never** double post; ledger totals remain correct.
+* Observability shows non-zero counters for received/validated/posted; latency histograms are emitted; p95 E2E < 300s under test load.
+* Health endpoints remain **ready** while the pipeline runs.
+
+This specification is exhaustive. Engineering can implement directly without further choices.

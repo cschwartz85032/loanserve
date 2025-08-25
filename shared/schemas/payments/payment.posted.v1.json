@@ -1,0 +1,23 @@
+{
+  "$id": "payment.posted.v1",
+  "type":"object",
+  "required":["payment_id","loan_id","event_id","applied","new_balances","effective_date"],
+  "properties":{
+    "payment_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","pattern":"^\\d+$"},
+    "event_id":{"type":"string","format":"uuid"},
+    "effective_date":{"type":"string","format":"date"},
+    "applied":{"type":"array","items":{"type":"object","required":["bucket","amount_minor"],"properties":{
+      "bucket":{"type":"string","enum":["fees_due","interest_past_due","interest_current","principal","escrow","future"]},
+      "amount_minor":{"type":"string","pattern":"^-?\\d+$"}
+    }}},
+    "new_balances":{"type":"object","required":["principal_minor","interest_receivable_minor","escrow_liability_minor","fees_receivable_minor","cash_minor"],"properties":{
+      "principal_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "interest_receivable_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "escrow_liability_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "fees_receivable_minor":{"type":"string","pattern":"^-?\\d+$"},
+      "cash_minor":{"type":"string","pattern":"^-?\\d+$"}
+    }}
+  },
+  "additionalProperties": false
+}

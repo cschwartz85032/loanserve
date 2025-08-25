@@ -1,0 +1,18 @@
+{
+  "$id": "payment.received.v1",
+  "type": "object",
+  "required": ["payment_id","loan_id","method","amount_minor","currency","received_at","gateway_txn_id","source","idempotency_key","effective_date"],
+  "properties": {
+    "payment_id": {"type":"string","format":"uuid"},
+    "loan_id": {"type":"string","pattern":"^\\d+$"},
+    "method": {"type":"string","enum":["ach","card","wire","check","cash","other"]},
+    "amount_minor": {"type":"string","pattern":"^-?\\d+$"},
+    "currency": {"type":"string","enum":["USD"]},
+    "received_at": {"type":"string","format":"date-time"},
+    "gateway_txn_id": {"type":"string","minLength":1},
+    "source": {"type":"string","minLength":1},
+    "idempotency_key": {"type":"string","minLength":64,"maxLength":64},
+    "effective_date": {"type":"string","format":"date"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+{
+  "$id": "payment.failed.v1",
+  "type":"object",
+  "required":["payment_id","loan_id","reason"],
+  "properties":{
+    "payment_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","pattern":"^\\d+$"},
+    "reason":{"type":"string","minLength":1},
+    "retry_after":{"type":"integer","minimum":0}
+  },
+  "additionalProperties": false
+}

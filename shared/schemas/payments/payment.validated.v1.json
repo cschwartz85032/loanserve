@@ -1,0 +1,14 @@
+{
+  "$id": "payment.validated.v1",
+  "type": "object",
+  "required": ["payment_id","loan_id","amount_minor","currency","effective_date","allocation_hints"],
+  "properties": {
+    "payment_id": {"type":"string","format":"uuid"},
+    "loan_id": {"type":"string","pattern":"^\\d+$"},
+    "amount_minor": {"type":"string","pattern":"^-?\\d+$"},
+    "currency": {"type":"string","enum":["USD"]},
+    "effective_date": {"type":"string","format":"date"},
+    "allocation_hints": {"type":"object","additionalProperties": true}
+  },
+  "additionalProperties": false
+}

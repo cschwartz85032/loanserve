@@ -69,6 +69,37 @@ export class OptimizedTopologyManager extends TopologyManager {
       durable: true,
     });
 
+    // Phase 2 Payment Pipeline Exchanges
+    this.addExchange({
+      name: 'payments.inbound',
+      type: 'direct',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'payments.validation',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'payments.saga',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'payments.events',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'payments.dlq',
+      type: 'direct',
+      durable: true,
+    });
+
     this.addExchange({
       name: 'documents.direct',
       type: 'direct',
@@ -134,6 +165,90 @@ export class OptimizedTopologyManager extends TopologyManager {
   }
 
   private defineOptimizedQueues(): void {
+    // Phase 2 Payment Pipeline Queues (always needed)
+    this.addQueue({
+      name: 'q.payments.intake',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-delivery-limit': 6,
+        'x-dead-letter-exchange': 'payments.dlq',
+      },
+      bindings: [{
+        exchange: 'payments.inbound',
+        routingKey: 'received.raw',
+      }],
+    });
+
+    this.addQueue({
+      name: 'q.payments.received',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-delivery-limit': 6,
+        'x-dead-letter-exchange': 'payments.dlq',
+      },
+      bindings: [{
+        exchange: 'payments.validation',
+        routingKey: 'received.v1',
+      }],
+    });
+
+    this.addQueue({
+      name: 'q.payments.validated',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-delivery-limit': 6,
+        'x-dead-letter-exchange': 'payments.dlq',
+      },
+      bindings: [{
+        exchange: 'payments.saga',
+        routingKey: 'validated.v1',
+      }],
+    });
+
+    this.addQueue({
+      name: 'q.payments.post',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-delivery-limit': 6,
+        'x-dead-letter-exchange': 'payments.dlq',
+      },
+      bindings: [{
+        exchange: 'payments.saga',
+        routingKey: 'post.v1',
+      }],
+    });
+
+    this.addQueue({
+      name: 'q.payments.events.audit',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-delivery-limit': 6,
+        'x-dead-letter-exchange': 'payments.dlq',
+      },
+      bindings: [{
+        exchange: 'payments.events',
+        routingKey: 'payment.*',
+      }],
+    });
+
+    this.addQueue({
+      name: 'q.payments.dlq',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-message-ttl': 604800000,  // 7 days
+      },
+      bindings: [{
+        exchange: 'payments.dlq',
+        routingKey: '#',
+      }],
+    });
+
     // Servicing queues - reduced shards
     if (this.config.features.servicing) {
       const shardCount = this.config.performance.servicingShards;
