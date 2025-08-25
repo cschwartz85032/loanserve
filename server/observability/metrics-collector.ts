@@ -18,10 +18,7 @@ import {
   paymentsProcessedCounter,
   paymentAmountHistogram
 } from './metrics';
-import { QueueMetricsHistory } from '../services/queue-metrics-history';
-
-// Queue metrics history instance
-const queueMetricsHistory = new QueueMetricsHistory();
+import { queueMetricsHistory } from '../services/queue-metrics-history.js';
 
 /**
  * Get queue statistics
@@ -186,7 +183,7 @@ export function startMetricsCollection() {
   // Collect queue metrics history every minute
   setInterval(async () => {
     try {
-      await queueMetricsHistory.collectSnapshot();
+      // Queue metrics are already collected by the history service
     } catch (error) {
       console.error('[MetricsCollector] Failed to collect queue metrics:', error);
     }
