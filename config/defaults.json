@@ -1,0 +1,12 @@
+{
+  "nodeEnv": "local",
+  "serviceName": "loanserve-core",
+  "httpPort": 8080,
+  "rabbitHeartbeatSec": 30,
+  "rabbitPrefetch": 10,
+  "rabbitReconnectMax": 10,
+  "rabbitReconnectBaseMs": 5000,
+  "otelSamplingRatio": 1,
+  "logLevel": "info",
+  "logPretty": false
+}

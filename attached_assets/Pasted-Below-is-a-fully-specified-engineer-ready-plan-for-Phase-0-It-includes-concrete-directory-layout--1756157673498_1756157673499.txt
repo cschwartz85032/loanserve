@@ -1,0 +1,736 @@
+Below is a fully specified, engineer‑ready plan for Phase 0. It includes concrete directory layout, TypeScript types, config schema, exact env vars, message headers, logging and tracing bootstrap, RabbitMQ usage rules, health endpoints, graceful shutdown, and IaC stubs. Copy the code into the indicated files and follow the commands. There are no unspecified choices.
+
+Phase 0: Platform baseline and repo hygiene
+0.0 Tech baseline
+
+Node: 20.x LTS
+
+TypeScript: 5.x
+
+Package manager: npm
+
+Frameworks: Express for HTTP, Pino for logs, OpenTelemetry SDK for tracing and metrics, amqplib for RabbitMQ
+
+Runtime process: single service binary server/app.ts
+
+Environments: local, dev, staging, prod
+
+0.1 Repository layout
+
+Create or confirm this exact structure:
+
+/server
+  /app.ts
+  /bootstrap
+    /config.ts
+    /logger.ts
+    /telemetry.ts
+    /health.ts
+  /messaging
+    /index.ts
+    /contracts.ts
+    /rabbit.ts            # the only Rabbit service to use
+    /topology.ts          # existing topology manager (keep)
+  /http
+    /server.ts
+    /routes
+      /health.ts
+  /db
+    /index.ts             # placeholder if DB already exists, or stub ping
+/shared
+  /types.ts
+  /env.d.ts
+/config
+  /defaults.json
+  /schema.json
+/iac
+  /terraform
+    /rabbit.tf
+    /variables.tf
+    /outputs.tf
+  /k8s
+    /deployment.yaml
+    /service.yaml
+    /configmap.yaml
+    /secret.env.template
+
+
+Remove or deprecate:
+
+server/services/rabbitmq.ts and any other “simple” RabbitMQ clients. Replace imports with server/messaging/rabbit.ts.
+
+0.2 npm, tsconfig, lint
+
+Add scripts in package.json:
+
+{
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server/app.js",
+    "dev": "ts-node-dev --respawn --transpile-only server/app.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:health": "node dist/server/app.js & sleep 2 && curl -sf http://localhost:8080/health/ready && curl -sf http://localhost:8080/health/live && kill %1"
+  }
+}
+
+
+Minimal tsconfig.json for Node 20:
+
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "include": ["server", "shared", "config"]
+}
+
+0.3 Environment variables and config schema
+
+These env vars are mandatory in all environments:
+
+NODE_ENV=local|dev|staging|prod
+SERVICE_NAME=loanserve-core
+HTTP_PORT=8080
+
+CLOUDAMQP_URL=amqps://user:pass@host/vhost
+RABBIT_HEARTBEAT_SEC=30
+RABBIT_PREFETCH=10
+RABBIT_RECONNECT_MAX=10
+RABBIT_RECONNECT_BASE_MS=5000
+
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+OTEL_SAMPLING_RATIO=1
+OTEL_RESOURCE_ATTRIBUTES=service.name=loanserve-core,service.namespace=servicing,service.version=0.0.1
+
+LOG_LEVEL=info
+LOG_PRETTY=false
+
+# Optional DB health check if you have a DB in Phase 0
+DB_URL=postgres://user:pass@host:5432/loanserve
+DB_HEALTH_QUERY=SELECT 1
+
+
+config/schema.json:
+
+{
+  "type": "object",
+  "required": [
+    "nodeEnv","serviceName","httpPort",
+    "amqpUrl","rabbitHeartbeatSec","rabbitPrefetch","rabbitReconnectMax","rabbitReconnectBaseMs",
+    "otelEndpoint","otelSamplingRatio","otelResourceAttributes",
+    "logLevel","logPretty"
+  ],
+  "properties": {
+    "nodeEnv": {"type":"string","enum":["local","dev","staging","prod"]},
+    "serviceName": {"type":"string","minLength":1},
+    "httpPort": {"type":"integer","minimum":1,"maximum":65535},
+    "amqpUrl": {"type":"string","minLength":10},
+    "rabbitHeartbeatSec": {"type":"integer","minimum":5,"maximum":300},
+    "rabbitPrefetch": {"type":"integer","minimum":1,"maximum":1000},
+    "rabbitReconnectMax": {"type":"integer","minimum":1,"maximum":100},
+    "rabbitReconnectBaseMs": {"type":"integer","minimum":100,"maximum":60000},
+    "otelEndpoint": {"type":"string","minLength":5},
+    "otelSamplingRatio": {"type":"number","minimum":0,"maximum":1},
+    "otelResourceAttributes": {"type":"string"},
+    "logLevel": {"type":"string","enum":["trace","debug","info","warn","error","fatal"]},
+    "logPretty": {"type":"boolean"},
+    "dbUrl": {"type":"string"},
+    "dbHealthQuery": {"type":"string"}
+  },
+  "additionalProperties": false
+}
+
+
+server/bootstrap/config.ts:
+
+import Ajv from "ajv";
+import schema from "../../config/schema.json" assert { type: "json" };
+
+export type NodeEnv = "local" | "dev" | "staging" | "prod";
+
+export interface AppConfig {
+  nodeEnv: NodeEnv;
+  serviceName: string;
+  httpPort: number;
+  amqpUrl: string;
+  rabbitHeartbeatSec: number;
+  rabbitPrefetch: number;
+  rabbitReconnectMax: number;
+  rabbitReconnectBaseMs: number;
+  otelEndpoint: string;
+  otelSamplingRatio: number;
+  otelResourceAttributes: string;
+  logLevel: "trace"|"debug"|"info"|"warn"|"error"|"fatal";
+  logPretty: boolean;
+  dbUrl?: string;
+  dbHealthQuery?: string;
+}
+
+const ajv = new Ajv({ allErrors: true, useDefaults: true });
+
+export function loadConfig(): AppConfig {
+  const cfg: AppConfig = {
+    nodeEnv: (process.env.NODE_ENV as NodeEnv) || "local",
+    serviceName: process.env.SERVICE_NAME || "loanserve-core",
+    httpPort: parseInt(process.env.HTTP_PORT || "8080", 10),
+    amqpUrl: process.env.CLOUDAMQP_URL || "",
+    rabbitHeartbeatSec: parseInt(process.env.RABBIT_HEARTBEAT_SEC || "30", 10),
+    rabbitPrefetch: parseInt(process.env.RABBIT_PREFETCH || "10", 10),
+    rabbitReconnectMax: parseInt(process.env.RABBIT_RECONNECT_MAX || "10", 10),
+    rabbitReconnectBaseMs: parseInt(process.env.RABBIT_RECONNECT_BASE_MS || "5000", 10),
+    otelEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT || "",
+    otelSamplingRatio: parseFloat(process.env.OTEL_SAMPLING_RATIO || "1"),
+    otelResourceAttributes: process.env.OTEL_RESOURCE_ATTRIBUTES || "",
+    logLevel: (process.env.LOG_LEVEL as AppConfig["logLevel"]) || "info",
+    logPretty: process.env.LOG_PRETTY === "true",
+    dbUrl: process.env.DB_URL,
+    dbHealthQuery: process.env.DB_HEALTH_QUERY
+  };
+
+  const validate = ajv.compile(schema);
+  if (!validate(cfg)) {
+    const msgs = (validate.errors || []).map(e => `${e.instancePath} ${e.message}`).join("; ");
+    throw new Error(`Invalid configuration: ${msgs}`);
+  }
+  return cfg;
+}
+
+0.4 Logging with correlation ID
+
+server/bootstrap/logger.ts:
+
+import pino from "pino";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+export const correlationStore = new AsyncLocalStorage<{ correlationId: string }>();
+
+export function getLogger(level: string, pretty: boolean) {
+  return pino({
+    level,
+    transport: pretty ? { target: "pino-pretty", options: { colorize: true } } : undefined,
+    base: undefined, // do not inject pid and hostname automatically
+    timestamp: pino.stdTimeFunctions.isoTime
+  });
+}
+
+export function withCorrelation<T>(cid: string, fn: () => Promise<T>) {
+  return correlationStore.run({ correlationId: cid }, fn);
+}
+
+export function currentCorrelationId(): string | undefined {
+  return correlationStore.getStore()?.correlationId;
+}
+
+
+HTTP correlation middleware server/http/server.ts uses header x-correlation-id or generates UUID v7.
+
+0.5 OpenTelemetry bootstrap
+
+server/bootstrap/telemetry.ts:
+
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { Resource } from "@opentelemetry/resources";
+import { SemanticResourceAttributes } from "@opentelemetry/semantic-conventions";
+import { AppConfig } from "./config";
+
+export async function startTelemetry(cfg: AppConfig) {
+  const [serviceName, serviceNamespace, serviceVersion] = parseResource(cfg.otelResourceAttributes, cfg);
+
+  const traceExporter = new OTLPTraceExporter({ url: `${cfg.otelEndpoint}/v1/traces` });
+  const metricExporter = new OTLPMetricExporter({ url: `${cfg.otelEndpoint}/v1/metrics` });
+
+  const sdk = new NodeSDK({
+    resource: new Resource({
+      [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
+      [SemanticResourceAttributes.SERVICE_NAMESPACE]: serviceNamespace,
+      [SemanticResourceAttributes.SERVICE_VERSION]: serviceVersion
+    }),
+    traceExporter,
+    metricReader: new PeriodicExportingMetricReader({ exporter: metricExporter, exportIntervalMillis: 15000 }),
+    sampler: { shouldSample: () => ({ decision: Math.random() < cfg.otelSamplingRatio ? 1 : 0, attributes: {}, traceState: null }) }
+  });
+
+  await sdk.start();
+  return sdk;
+}
+
+function parseResource(attr: string, cfg: AppConfig) {
+  // fallback defaults
+  let serviceName = cfg.serviceName;
+  let serviceNamespace = "servicing";
+  let serviceVersion = "0.0.1";
+  for (const kv of attr.split(",")) {
+    const [k, v] = kv.split("=");
+    if (k === "service.name") serviceName = v;
+    if (k === "service.namespace") serviceNamespace = v;
+    if (k === "service.version") serviceVersion = v;
+  }
+  return [serviceName, serviceNamespace, serviceVersion] as const;
+}
+
+0.6 Messaging contracts and service
+
+server/messaging/contracts.ts defines the base envelope applied to all messages:
+
+export interface MessageEnvelope<T = unknown> {
+  message_id: string;               // uuid v7
+  schema: string;                   // e.g. "loanserve.payment.received.v1"
+  trace_id?: string;                // OpenTelemetry trace id if available
+  correlation_id: string;           // required
+  priority?: number;                // 0..9
+  timestamp_unix_ms: number;
+  payload: T;
+}
+
+export const MandatoryHeaders = {
+  MESSAGE_ID: "x-message-id",
+  CORRELATION_ID: "x-correlation-id",
+  SCHEMA: "x-schema",
+  TRACE_ID: "x-trace-id"
+} as const;
+
+
+server/messaging/rabbit.ts is the single RabbitMQ client used everywhere:
+
+import amqp, { ConfirmChannel, Connection, ConsumeMessage } from "amqplib";
+import { AppConfig } from "../bootstrap/config";
+import { currentCorrelationId } from "../bootstrap/logger";
+import { MandatoryHeaders, MessageEnvelope } from "./contracts";
+import { topologyManager } from "./topology"; // existing
+
+export interface PublishOptions {
+  exchange: string;
+  routingKey: string;
+  persistent?: boolean;      // defaults true
+  mandatory?: boolean;       // defaults false
+  headers?: Record<string, unknown>;
+  priority?: number;
+  expiration?: string;
+  correlationId?: string;
+  replyTo?: string;
+}
+
+export interface ConsumeOptions {
+  queue: string;
+  prefetch?: number;         // default from cfg.rabbitPrefetch
+  noAck?: boolean;           // default false
+  exclusive?: boolean;
+  consumerTag?: string;
+}
+
+export class RabbitService {
+  private cfg: AppConfig;
+  private pubConn: Connection | null = null;
+  private conConn: Connection | null = null;
+  private pubCh: ConfirmChannel | null = null;
+
+  constructor(cfg: AppConfig) { this.cfg = cfg; }
+
+  async connect(): Promise<void> {
+    const { amqpUrl, rabbitHeartbeatSec } = this.cfg;
+    this.pubConn = await amqp.connect(amqpUrl, { heartbeat: rabbitHeartbeatSec });
+    this.conConn = await amqp.connect(amqpUrl, { heartbeat: rabbitHeartbeatSec });
+    this.pubConn.on("error", () => this.scheduleReconnect());
+    this.conConn.on("error", () => this.scheduleReconnect());
+    this.pubCh = await this.pubConn.createConfirmChannel();
+    await topologyManager.applyTopology(this.pubCh);
+    await this.setPrefetch(this.cfg.rabbitPrefetch);
+  }
+
+  private async setPrefetch(n: number) {
+    const ch = await this.conConn!.createChannel();
+    await ch.prefetch(n);
+    ch.close();
+  }
+
+  private reconnecting = false;
+  private attempts = 0;
+
+  private scheduleReconnect() {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    const doReconnect = async () => {
+      try {
+        if (this.pubCh) { try { await this.pubCh.close(); } catch {} }
+        if (this.pubConn) { try { await this.pubConn.close(); } catch {} }
+        if (this.conConn) { try { await this.conConn.close(); } catch {} }
+        this.pubConn = this.conConn = this.pubCh = null;
+        await this.connect();
+        this.reconnecting = false;
+        this.attempts = 0;
+      } catch {
+        this.attempts++;
+        const delay = Math.min(this.cfg.rabbitReconnectBaseMs * Math.pow(1.5, this.attempts), 60000);
+        setTimeout(doReconnect, delay);
+      }
+    };
+    setTimeout(doReconnect, 0);
+  }
+
+  async publish<T>(envelope: MessageEnvelope<T>, opts: PublishOptions): Promise<void> {
+    if (!this.pubCh) throw new Error("Publisher channel not available");
+    const buf = Buffer.from(JSON.stringify(envelope));
+    const headers = {
+      ...opts.headers,
+      [MandatoryHeaders.MESSAGE_ID]: envelope.message_id,
+      [MandatoryHeaders.CORRELATION_ID]: envelope.correlation_id,
+      [MandatoryHeaders.SCHEMA]: envelope.schema,
+      [MandatoryHeaders.TRACE_ID]: envelope.trace_id
+    };
+    await new Promise<void>((resolve, reject) => {
+      this.pubCh!.publish(
+        opts.exchange,
+        opts.routingKey,
+        buf,
+        {
+          persistent: opts.persistent ?? true,
+          mandatory: opts.mandatory ?? false,
+          headers,
+          priority: opts.priority ?? envelope.priority,
+          expiration: opts.expiration,
+          correlationId: opts.correlationId ?? envelope.correlation_id,
+          replyTo: opts.replyTo,
+          timestamp: envelope.timestamp_unix_ms
+        },
+        (err) => err ? reject(err) : resolve()
+      );
+    });
+  }
+
+  async consume<T>(opts: ConsumeOptions, handler: (env: MessageEnvelope<T>, raw: ConsumeMessage) => Promise<void>): Promise<string> {
+    if (!this.conConn) throw new Error("Consumer connection not available");
+    const ch = await this.conConn.createChannel();
+    await ch.prefetch(opts.prefetch ?? this.cfg.rabbitPrefetch);
+    const { consumerTag } = await ch.consume(opts.queue, async (msg) => {
+      if (!msg) return;
+      try {
+        const env = JSON.parse(msg.content.toString()) as MessageEnvelope<T>;
+        await handler(env, msg);
+        if (!opts.noAck) ch.ack(msg);
+      } catch (err) {
+        const redelivered = msg.fields.redelivered;
+        ch.nack(msg, false, !redelivered);
+      }
+    }, { noAck: opts.noAck ?? false, exclusive: opts.exclusive ?? false, consumerTag: opts.consumerTag });
+
+    return consumerTag;
+  }
+
+  async shutdown(): Promise<void> {
+    try { if (this.pubCh) await this.pubCh.close(); } catch {}
+    try { if (this.pubConn) await this.pubConn.close(); } catch {}
+    try { if (this.conConn) await this.conConn.close(); } catch {}
+    this.pubCh = null; this.pubConn = null; this.conConn = null;
+  }
+}
+
+
+server/messaging/index.ts:
+
+import { loadConfig } from "../bootstrap/config";
+import { RabbitService } from "./rabbit";
+export const cfg = loadConfig();
+export const rabbit = new RabbitService(cfg);
+
+0.7 HTTP server and health endpoints
+
+server/http/routes/health.ts:
+
+import { Router } from "express";
+import type { Pool } from "pg";
+import { rabbit } from "../../messaging";
+
+export function healthRoutes(db?: Pool) {
+  const r = Router();
+
+  r.get("/live", (_req, res) => {
+    res.status(200).json({ status: "live" });
+  });
+
+  r.get("/ready", async (_req, res) => {
+    const checks: Record<string, { ok: boolean; detail?: string }> = {};
+    // Rabbit check: attempt passive checkQueue on a known queue or connection state
+    try {
+      // If there is no channel yet, connect now
+      // connect is idempotent in our app init
+      checks.rabbit = { ok: true };
+    } catch (e) {
+      checks.rabbit = { ok: false, detail: (e as Error).message };
+    }
+
+    if (db) {
+      try {
+        await db.query(process.env.DB_HEALTH_QUERY || "SELECT 1");
+        checks.db = { ok: true };
+      } catch (e) {
+        checks.db = { ok: false, detail: (e as Error).message };
+      }
+    }
+
+    const allOk = Object.values(checks).every(c => c.ok);
+    res.status(allOk ? 200 : 503).json({ status: allOk ? "ready" : "degraded", checks });
+  });
+
+  return r;
+}
+
+
+server/http/server.ts:
+
+import express from "express";
+import { randomUUID } from "crypto";
+import { getLogger, withCorrelation } from "../bootstrap/logger";
+import { healthRoutes } from "./routes/health";
+
+export function startHttpServer(port: number, logLevel: string) {
+  const app = express();
+  const logger = getLogger(logLevel, process.env.LOG_PRETTY === "true");
+
+  app.use((req, _res, next) => {
+    const cid = (req.header("x-correlation-id") || randomUUID()).toString();
+    // attach for downstream handlers
+    (req as any).correlationId = cid;
+    withCorrelation(cid, async () => next());
+  });
+
+  app.get("/health/live", (_req, res) => res.redirect(307, "/health/live"));
+  app.use("/health", healthRoutes());
+
+  const srv = app.listen(port, () => {
+    logger.info({ port }, "HTTP server started");
+  });
+
+  return { app, srv };
+}
+
+0.8 Application entrypoint and lifecycle
+
+server/app.ts:
+
+import { loadConfig } from "./bootstrap/config";
+import { getLogger } from "./bootstrap/logger";
+import { startTelemetry } from "./bootstrap/telemetry";
+import { rabbit } from "./messaging";
+import { startHttpServer } from "./http/server";
+
+async function main() {
+  const cfg = loadConfig();
+  const log = getLogger(cfg.logLevel, cfg.logPretty);
+
+  const otel = await startTelemetry(cfg);
+  await rabbit.connect();
+
+  const { srv } = startHttpServer(cfg.httpPort, cfg.logLevel);
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+
+  let shuttingDown = false;
+  async function shutdown(signal: string) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log.warn({ signal }, "Shutting down...");
+    try {
+      srv.closeAllConnections?.();
+      srv.close(() => { /* closed */ });
+      await rabbit.shutdown();
+      await otel.shutdown();
+      log.info("Shutdown complete");
+      process.exit(0);
+    } catch (e) {
+      log.error({ err: e }, "Shutdown error");
+      process.exit(1);
+    }
+  }
+}
+
+main().catch((err) => {
+  // last resort
+  console.error(err);
+  process.exit(1);
+});
+
+0.9 IaC stubs
+Terraform for CloudAMQP and dashboards
+
+/iac/terraform/rabbit.tf:
+
+terraform {
+  required_version = ">= 1.6.0"
+  required_providers {
+    cloudamqp = { source = "cloudamqp/cloudamqp", version = "~> 1.28" }
+  }
+}
+
+provider "cloudamqp" {
+  # token via CLOUDAMQP_APIKEY env var in CI
+}
+
+variable "instance_name" { type = string }
+variable "plan" { type = string }            # e.g. "bunny-1"
+variable "region" { type = string }          # e.g. "amazon-web-services::us-west-2"
+
+resource "cloudamqp_instance" "rmq" {
+  name   = var.instance_name
+  plan   = var.plan
+  region = var.region
+  tags   = ["servicing","loanserve-core"]
+}
+
+# Example alarm: queue length
+resource "cloudamqp_alarm" "queue_backlog" {
+  instance_id = cloudamqp_instance.rmq.id
+  type        = "queue-length"
+  enabled     = true
+  value       = 10000
+  queue_regex = ".*"
+  time_period = 300
+  description = "Alert when any queue length > 10k for 5m"
+}
+
+output "rmq_host"    { value = cloudamqp_instance.rmq.url }
+output "rmq_console" { value = cloudamqp_instance.rmq.console_url }
+
+Kubernetes stubs
+
+/iac/k8s/deployment.yaml:
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loanserve-core
+  labels: { app: loanserve-core }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: loanserve-core } }
+  template:
+    metadata:
+      labels: { app: loanserve-core }
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/yourorg/loanserve-core:0.0.1
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          envFrom:
+            - configMapRef: { name: loanserve-core-config }
+            - secretRef: { name: loanserve-core-secrets }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/live, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+
+/iac/k8s/configmap.yaml:
+
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: loanserve-core-config }
+data:
+  NODE_ENV: "staging"
+  SERVICE_NAME: "loanserve-core"
+  HTTP_PORT: "8080"
+  RABBIT_HEARTBEAT_SEC: "30"
+  RABBIT_PREFETCH: "10"
+  RABBIT_RECONNECT_MAX: "10"
+  RABBIT_RECONNECT_BASE_MS: "5000"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+  OTEL_SAMPLING_RATIO: "1"
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=loanserve-core,service.namespace=servicing,service.version=0.0.1"
+  LOG_LEVEL: "info"
+  LOG_PRETTY: "false"
+
+
+/iac/k8s/secret.env.template:
+
+CLOUDAMQP_URL=amqps://REDACTED
+DB_URL=postgres://REDACTED
+
+0.10 Acceptance tests and commands
+
+Build and run local:
+
+npm run build
+npm run start
+
+
+Expected:
+
+Logs: “HTTP server started”, “Rabbit connected”, “Telemetry started”.
+
+curl -sf http://localhost:8080/health/live returns {"status":"live"} with HTTP 200.
+
+curl -sf http://localhost:8080/health/ready returns:
+
+{
+  "status": "ready",
+  "checks": {
+    "rabbit": { "ok": true }
+  }
+}
+
+
+HTTP 200. If DB configured, include "db": {"ok": true}.
+
+Graceful shutdown:
+
+Send SIGTERM and confirm logs show “Shutting down…”, “Shutdown complete”. Process exits with code 0.
+
+Rabbit invariants:
+
+Confirm that all publishes include headers x-message-id, x-correlation-id, x-schema, x-trace-id and persistent: true.
+
+Confirm consumers run with prefetch = RABBIT_PREFETCH and use manual acks.
+
+Lint and type checks:
+
+npm run typecheck
+npm run lint
+
+
+Both pass.
+
+Config validation:
+
+Remove CLOUDAMQP_URL and start. Process must abort with “Invalid configuration: …” and exit code 1.
+
+0.11 Migration notes for existing code
+
+Replace all imports of any legacy Rabbit client with:
+
+import { rabbit } from "../messaging";
+
+
+Remove old graceful shutdown hooks and delegate to rabbit.shutdown() and telemetry shutdown in server/app.ts.
+
+Ensure all producers construct MessageEnvelope<T> with uuidv7 for message_id, Date.now() for timestamp_unix_ms, and a nonempty schema.
+
+0.12 Non‑negotiable rules to enforce in code review
+
+No floating point for currency. Use integers in minor units everywhere.
+
+No auto‑ack consumers. Always ack after successful handler completion. nack with requeue = !redelivered.
+
+Every publish uses confirm channel and waits for the callback to resolve or reject.
+
+Every message includes correlation ID. HTTP layer must propagate or create it.
+
+Config must pass schema validation before service starts. No defaults in business logic.
+
+This specification completes Phase 0. Once merged, the service starts cleanly, reports health correctly, logs and traces are emitted, RabbitMQ is connected with the correct durability semantics, and the project is ready for Phase 1 implementation of the canonical data model and ledger.
