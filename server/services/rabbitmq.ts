@@ -1,4 +1,5 @@
 import * as amqp from 'amqplib';
+import { ErrorClassifier, RetryTracker } from './rabbitmq-errors';
 
 /**
  * @deprecated DO NOT USE - This basic RabbitMQ service lacks publisher confirms and is unsafe for payment processing.
@@ -17,6 +18,7 @@ export class RabbitMQService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 5000; // 5 seconds
+  private retryTracker = new RetryTracker(5); // Max 5 retries per message
 
   constructor(private connectionUrl: string) {
     console.warn('[DEPRECATION WARNING] RabbitMQService is deprecated. Use EnhancedRabbitMQService for payment processing.');
@@ -160,13 +162,43 @@ export class RabbitMQService {
       
       const result = await this.channel.consume(queue, async (msg: any) => {
         if (msg) {
+          let content: any;
           try {
-            const content = JSON.parse(msg.content.toString());
+            content = JSON.parse(msg.content.toString());
+          } catch (parseError) {
+            console.error('[RabbitMQ] Failed to parse message:', parseError);
+            // Malformed message - send straight to DLQ
+            this.channel?.nack(msg, false, false);
+            return;
+          }
+
+          const messageId = msg.properties?.messageId || String(Date.now());
+
+          try {
             await callback(content);
             this.channel?.ack(msg);
+            this.retryTracker.clear(messageId);
           } catch (error) {
-            console.error('[RabbitMQ] Message processing failed:', error);
-            this.channel?.nack(msg, false, false); // Send to dead letter queue
+            // Classify the error
+            const classifiedError = ErrorClassifier.classify(error);
+            console.error(`[RabbitMQ] Message processing error (${classifiedError.constructor.name}):`, classifiedError.message);
+            
+            // Check if we should retry
+            const shouldRetry = this.retryTracker.shouldRetry(messageId, classifiedError);
+            
+            if (shouldRetry && classifiedError.isRetryable) {
+              // Requeue for retry
+              console.log(`[RabbitMQ] Requeueing message ${messageId} for retry (transient error)`);
+              this.channel?.nack(msg, false, true);
+            } else {
+              // Send to DLQ - either permanent error or max retries reached
+              const reason = classifiedError.isRetryable 
+                ? 'max retries exceeded' 
+                : 'permanent error';
+              console.log(`[RabbitMQ] Sending message ${messageId} to DLQ (${reason})`);
+              this.channel?.nack(msg, false, false);
+              this.retryTracker.clear(messageId);
+            }
           }
         }
       }, { noAck: false, ...options });

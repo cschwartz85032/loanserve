@@ -6,6 +6,7 @@ import amqp from 'amqplib';
 import { topologyManager } from '../messaging/rabbitmq-topology.js';
 import { MessageEnvelope, MessageMetadata } from '../../shared/messaging/envelope.js';
 import { getMessageFactory } from '../messaging/message-factory.js';
+import { ErrorClassifier, RetryTracker } from './rabbitmq-errors.js';
 
 export interface PublishOptions {
   exchange: string;
@@ -33,6 +34,7 @@ export class EnhancedRabbitMQService {
   private consumerConnection: amqp.Connection | null = null;
   private publisherChannel: amqp.ConfirmChannel | null = null;
   private consumerChannels: Map<string, amqp.Channel> = new Map();
+  private retryTracker = new RetryTracker(5); // Max 5 retries per message
   
   private url: string;
   private isConnected: boolean = false;
@@ -264,20 +266,54 @@ export class EnhancedRabbitMQService {
       async (msg) => {
         if (!msg) return;
 
+        let envelope: MessageEnvelope<T>;
         try {
-          const envelope = JSON.parse(msg.content.toString()) as MessageEnvelope<T>;
+          envelope = JSON.parse(msg.content.toString()) as MessageEnvelope<T>;
+        } catch (parseError) {
+          console.error('[RabbitMQ] Failed to parse message:', parseError);
+          if (!options.noAck) {
+            // Malformed message - send straight to DLQ
+            channel.nack(msg, false, false);
+          }
+          return;
+        }
+
+        const messageId = envelope.message_id || msg.properties.messageId || String(Date.now());
+
+        try {
           await handler(envelope, msg);
           
           if (!options.noAck) {
             channel.ack(msg);
+            this.retryTracker.clear(messageId);
           }
         } catch (error) {
-          console.error('[RabbitMQ] Message processing error:', error);
+          // Classify the error
+          const classifiedError = ErrorClassifier.classify(error);
+          console.error(`[RabbitMQ] Message processing error (${classifiedError.constructor.name}):`, classifiedError.message);
           
           if (!options.noAck) {
-            // Requeue on error, unless it's been redelivered too many times
-            const redelivered = msg.fields.redelivered;
-            channel.nack(msg, false, !redelivered);
+            // Check if we should retry
+            const shouldRetry = this.retryTracker.shouldRetry(messageId, classifiedError);
+            
+            if (shouldRetry && classifiedError.isRetryable) {
+              // Requeue for retry
+              console.log(`[RabbitMQ] Requeueing message ${messageId} for retry (transient error)`);
+              channel.nack(msg, false, true);
+              
+              // Add delay header for next attempt if supported
+              if (classifiedError.retryAfterMs && msg.properties.headers) {
+                msg.properties.headers['x-retry-after'] = classifiedError.retryAfterMs;
+              }
+            } else {
+              // Send to DLQ - either permanent error or max retries reached
+              const reason = classifiedError.isRetryable 
+                ? 'max retries exceeded' 
+                : 'permanent error';
+              console.log(`[RabbitMQ] Sending message ${messageId} to DLQ (${reason})`);
+              channel.nack(msg, false, false);
+              this.retryTracker.clear(messageId);
+            }
           }
         }
       },
