@@ -5,6 +5,7 @@
 
 import { PaymentValidatorConsumer } from './payment-validator-consumer';
 import { PaymentClassifierConsumer } from './payment-classifier-consumer';
+import { RulesEngineConsumer } from './rules-engine-consumer';
 import { PaymentValidationConsumer } from './payment-validation-consumer';
 import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
@@ -38,6 +39,11 @@ export async function startPaymentConsumers(): Promise<void> {
     const classifierConsumer = new PaymentClassifierConsumer();
     await classifierConsumer.start();
     console.log('[Consumers] Classifier consumer started');
+
+    // Start rules engine consumer (Step 15)
+    const rulesEngineConsumer = new RulesEngineConsumer();
+    await rulesEngineConsumer.start();
+    console.log('[Consumers] Rules engine consumer started');
 
     // Start validation consumer
     const validationConsumer = new PaymentValidationConsumer();
