@@ -88,15 +88,16 @@ app.use((req, res, next) => {
   const { runMigrations } = await import('./migrations');
   await runMigrations();
   
+  // TEMPORARILY DISABLED: Reduce CloudAMQP connection load for testing
   // Start payment processing consumers
-  try {
-    const { startPaymentConsumers } = await import('./consumers/index');
-    await startPaymentConsumers();
-    console.log('[Server] Payment consumers started successfully');
-  } catch (error) {
-    console.error('[Server] Failed to start payment consumers:', error);
-    // Continue server startup even if consumers fail
-  }
+  // try {
+  //   const { startPaymentConsumers } = await import('./consumers/index');
+  //   await startPaymentConsumers();
+  //   console.log('[Server] Payment consumers started successfully');
+  // } catch (error) {
+  //   console.error('[Server] Failed to start payment consumers:', error);
+  //   // Continue server startup even if consumers fail
+  // }
   
   // Start metrics collection
   startMetricsCollection();

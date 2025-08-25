@@ -35,7 +35,8 @@ class QueueMetricsHistory {
   private rabbitmq = getEnhancedRabbitMQService();
 
   constructor() {
-    this.startCollection();
+    // DISABLED: Temporarily disable automatic metrics collection to reduce CloudAMQP connection load
+    // this.startCollection();
   }
 
   /**

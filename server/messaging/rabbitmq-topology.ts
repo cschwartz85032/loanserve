@@ -165,7 +165,7 @@ export class TopologyManager {
       name: 'q.validate',
       durable: true,
       arguments: {
-        'x-queue-type': 'quorum',
+        // TEMPORARILY REMOVED: 'x-queue-type': 'quorum', // Conflicts with existing queue in CloudAMQP
         'x-dead-letter-exchange': 'dlx.main',
         'x-dead-letter-routing-key': 'payments.dlq',
       },
