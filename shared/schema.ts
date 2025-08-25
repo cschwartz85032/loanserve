@@ -2404,10 +2404,13 @@ export const outboxMessages = pgTable("outbox_messages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   attemptCount: integer("attempt_count").notNull().default(0),
-  lastError: text("last_error")
+  lastError: text("last_error"),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }) // For exponential backoff
 }, (t) => ({
   // Index for efficient polling (unpublished messages first, ordered by creation time)
-  publishedCreatedIdx: index().on(t.publishedAt, t.createdAt)
+  publishedCreatedIdx: index().on(t.publishedAt, t.createdAt),
+  // Index for retry mechanism
+  retryIdx: index().on(t.publishedAt, t.nextRetryAt, t.attemptCount)
 }));
 
 // Reconciliations - Per channel period reconciliation outcomes (Step 6)
