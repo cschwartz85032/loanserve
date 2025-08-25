@@ -12,7 +12,7 @@ import crypto from 'crypto';
 import { db } from '../db';
 import { paymentIngestions, paymentEvents, outboxMessages } from '@shared/schema';
 import { PaymentEnvelopeNormalizer, PaymentEnvelopeValidator } from './payment-envelope';
-import { getRabbitMQService } from './rabbitmq-enhanced';
+import { getEnhancedRabbitMQService } from './rabbitmq-enhanced';
 import { eq } from 'drizzle-orm';
 
 // ========================================
@@ -94,7 +94,7 @@ export enum ColumnWebhookEventType {
 // ========================================
 
 export class ColumnWebhookProcessor {
-  private rabbitMQ = getRabbitMQService();
+  private rabbitMQ = getEnhancedRabbitMQService();
 
   /**
    * Process incoming webhook from Column

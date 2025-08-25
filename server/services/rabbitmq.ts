@@ -1,5 +1,15 @@
 import * as amqp from 'amqplib';
 
+/**
+ * @deprecated DO NOT USE - This basic RabbitMQ service lacks publisher confirms and is unsafe for payment processing.
+ * Use EnhancedRabbitMQService or InstrumentedRabbitMQService instead.
+ * 
+ * Critical issues with this service:
+ * - No publisher confirms (message loss possible)
+ * - Single connection for both publishing and consuming (anti-pattern)
+ * - No proper error recovery for critical failures
+ * - Not suitable for financial transactions
+ */
 export class RabbitMQService {
   private connection: any = null;
   private channel: any = null;
@@ -8,7 +18,9 @@ export class RabbitMQService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 5000; // 5 seconds
 
-  constructor(private connectionUrl: string) {}
+  constructor(private connectionUrl: string) {
+    console.warn('[DEPRECATION WARNING] RabbitMQService is deprecated. Use EnhancedRabbitMQService for payment processing.');
+  }
 
   async connect(): Promise<void> {
     if (this.connection && !this.isConnectionClosed()) {
@@ -231,7 +243,13 @@ export class RabbitMQService {
 // Singleton instance
 let rabbitmqService: RabbitMQService | null = null;
 
+/**
+ * @deprecated DO NOT USE - Use getEnhancedRabbitMQService() from './rabbitmq-enhanced' instead
+ * This function returns a basic service without publisher confirms which is unsafe for payment processing
+ */
 export function getRabbitMQService(): RabbitMQService {
+  console.warn('[DEPRECATION WARNING] getRabbitMQService() is deprecated and unsafe for payment processing. Use getEnhancedRabbitMQService() instead.');
+  
   if (!rabbitmqService) {
     const connectionUrl = process.env.CLOUDAMQP_URL;
     
@@ -245,4 +263,7 @@ export function getRabbitMQService(): RabbitMQService {
   return rabbitmqService;
 }
 
+/**
+ * @deprecated DO NOT USE - Use getEnhancedRabbitMQService from './rabbitmq-enhanced' instead
+ */
 export default getRabbitMQService;
