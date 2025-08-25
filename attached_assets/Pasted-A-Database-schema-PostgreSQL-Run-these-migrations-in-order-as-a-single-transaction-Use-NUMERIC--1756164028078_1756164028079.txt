@@ -1,0 +1,857 @@
+A. Database schema (PostgreSQL)
+
+Run these migrations in order as a single transaction. Use NUMERIC(20,0) for all money fields in minor units (cents). All times UTC.
+
+-- 001_enums.sql
+BEGIN;
+
+-- jurisdiction codes (ISO 3166-2 or custom)
+CREATE TYPE jurisdiction_code AS ENUM (
+  'US_AZ','US_CA','US_TX','US_NY','US_FL','US_CO','US_NV' -- extend as needed
+);
+
+CREATE TYPE loan_status AS ENUM ('active','matured','paid_off','defaulted','charged_off','in_modification','bankruptcy','foreclosure');
+
+CREATE TYPE interest_type AS ENUM ('fixed','arm','io_then_p_i','interest_only');
+CREATE TYPE compounding_method AS ENUM ('simple','compound');
+CREATE TYPE day_count_convention AS ENUM ('ACT_365F','ACT_360','US_30_360','EURO_30_360','ACT_ACT');
+
+CREATE TYPE payment_method AS ENUM ('ach','card','wire','check','cash','other');
+
+CREATE TYPE escrow_type AS ENUM ('tax','hazard','flood','mip','pmi','hoa','other');
+
+CREATE TYPE fee_code AS ENUM ('late','nsf','deferral','extension','other');
+
+CREATE TYPE rounding_mode AS ENUM ('half_away_from_zero','half_even');
+
+-- Double-entry account chart (minimal to start)
+CREATE TYPE gl_account AS ENUM (
+  -- Asset/Liability balances
+  'loan_principal',          -- asset: outstanding principal
+  'interest_receivable',     -- asset: accrued but unpaid interest
+  'escrow_liability',        -- liability: owed to payees
+  'cash',                    -- asset: cash/bank
+  'suspense',                -- asset: unapplied/suspense
+  'fees_receivable',         -- asset: assessed fees receivable
+  -- Income/Expense (P&L)
+  'interest_income',         -- income
+  'fee_income',              -- income (late/nsf/etc)
+  'writeoff_expense'         -- expense (charge-offs)
+);
+
+COMMIT;
+
+-- 002_core_tables.sql
+BEGIN;
+
+CREATE TABLE product_policy (
+  product_code TEXT PRIMARY KEY,              -- e.g., "FIXED_30", "ARM_5_1"
+  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  rounding rounding_mode NOT NULL DEFAULT 'half_away_from_zero',
+  default_day_count day_count_convention NOT NULL DEFAULT 'ACT_365F',
+  default_compounding compounding_method NOT NULL DEFAULT 'simple',
+  min_payment_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  -- JSONB waterfall array of bucket names in order
+  payment_waterfall JSONB NOT NULL DEFAULT '["fees_due","interest_past_due","interest_current","principal","escrow","future"]'
+);
+
+CREATE TABLE investor (
+  investor_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL
+);
+
+CREATE TABLE loan (
+  loan_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_code TEXT NOT NULL REFERENCES product_policy(product_code),
+  status loan_status NOT NULL DEFAULT 'active',
+  lien_position SMALLINT NOT NULL CHECK (lien_position BETWEEN 1 AND 5),
+  jurisdiction jurisdiction_code NOT NULL,
+  investor_id UUID REFERENCES investor(investor_id),
+  servicing_type TEXT NOT NULL DEFAULT 'primary', -- string for now
+  origination_date DATE NOT NULL,
+  original_principal_minor NUMERIC(20,0) NOT NULL CHECK (original_principal_minor > 0),
+  currency CHAR(3) NOT NULL DEFAULT 'USD',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Effective-dated terms history (no overlaps)
+CREATE TABLE loan_terms (
+  terms_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  effective_from DATE NOT NULL,
+  effective_to DATE, -- NULL = open-ended
+  interest_type interest_type NOT NULL,
+  nominal_rate_bps INTEGER NOT NULL CHECK (nominal_rate_bps >= 0), -- annual rate in basis points
+  index_name TEXT,         -- e.g., SOFR
+  index_margin_bps INTEGER DEFAULT 0,
+  rate_cap_up_bps INTEGER DEFAULT 0,
+  rate_cap_down_bps INTEGER DEFAULT 0,
+  compounding compounding_method NOT NULL,
+  day_count day_count_convention NOT NULL,
+  first_payment_date DATE NOT NULL,
+  term_months INTEGER NOT NULL CHECK (term_months > 0),
+  scheduled_payment_minor NUMERIC(20,0), -- optional; if null, compute
+  interest_only_months INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, effective_from)
+);
+
+-- no-overlap guard (declarative via EXCLUDE)
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+ALTER TABLE loan_terms
+  ADD CONSTRAINT loan_terms_no_overlap
+  EXCLUDE USING gist (
+    loan_id WITH =,
+    daterange(effective_from, COALESCE(effective_to, 'infinity'::date), '[]') WITH &&
+  );
+
+-- Planning schedule (versioned)
+CREATE TABLE schedule_plan (
+  plan_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  terms_id UUID NOT NULL REFERENCES loan_terms(terms_id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, version)
+);
+
+CREATE TABLE schedule_row (
+  plan_id UUID NOT NULL REFERENCES schedule_plan(plan_id) ON DELETE CASCADE,
+  period_no INTEGER NOT NULL CHECK (period_no >= 1),
+  due_date DATE NOT NULL,
+  scheduled_principal_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  scheduled_interest_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  escrow_target_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  fee_target_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  PRIMARY KEY (plan_id, period_no)
+);
+
+-- Ledger event + entries (append-only, double-entry)
+CREATE TABLE ledger_event (
+  event_id UUID PRIMARY KEY,
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  effective_date DATE NOT NULL,
+  schema TEXT NOT NULL,              -- e.g., "posting.payment.v1"
+  correlation_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finalized_at TIMESTAMPTZ,          -- set by finalize function
+  UNIQUE (correlation_id)            -- system-wide idempotency at event-level
+);
+
+CREATE TABLE ledger_entry (
+  entry_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id UUID NOT NULL REFERENCES ledger_event(event_id) ON DELETE CASCADE,
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  account gl_account NOT NULL,
+  debit_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  credit_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  currency CHAR(3) NOT NULL,
+  memo TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (
+    (debit_minor > 0 AND credit_minor = 0) OR
+    (credit_minor > 0 AND debit_minor = 0)
+  )
+);
+
+CREATE INDEX idx_ledger_entry_loan_date ON ledger_entry(loan_id, created_at);
+CREATE INDEX idx_ledger_entry_event ON ledger_entry(event_id);
+
+-- Escrow configuration items
+CREATE TABLE escrow_item (
+  escrow_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  type escrow_type NOT NULL,
+  payee TEXT NOT NULL,
+  frequency_months INTEGER NOT NULL CHECK (frequency_months IN (1,3,6,12)),
+  next_due DATE NOT NULL,
+  estimate_minor NUMERIC(20,0) NOT NULL,
+  last_paid DATE,
+  active BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE (loan_id, type, payee)
+);
+
+-- Fee policy (effective-dated, jurisdiction-aware)
+CREATE TABLE fee_policy (
+  policy_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_code TEXT NOT NULL REFERENCES product_policy(product_code),
+  jurisdiction jurisdiction_code NOT NULL,
+  effective_from DATE NOT NULL,
+  effective_to DATE,
+  late_fee_type TEXT NOT NULL CHECK (late_fee_type IN ('amount','percent')),
+  late_fee_amount_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  late_fee_percent_bps INTEGER NOT NULL DEFAULT 0,
+  late_fee_grace_days INTEGER NOT NULL DEFAULT 0,
+  nsf_fee_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  deferral_fee_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE fee_policy
+  ADD CONSTRAINT fee_policy_no_overlap
+  EXCLUDE USING gist (
+    product_code WITH =,
+    jurisdiction WITH =,
+    daterange(effective_from, COALESCE(effective_to, 'infinity'::date), '[]') WITH &&
+  );
+
+-- Idempotency keys (fine-grained)
+CREATE TABLE idempotency_key (
+  event_type TEXT NOT NULL,
+  key TEXT NOT NULL,
+  seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (event_type, key)
+);
+
+COMMIT;
+
+
+DB procedures for safe posting
+
+-- 003_posting_functions.sql
+BEGIN;
+
+-- Sum check + finalize event. Fails if not balanced or already finalized.
+CREATE OR REPLACE FUNCTION sp_finalize_ledger_event(p_event_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  tot_debit NUMERIC(20,0);
+  tot_credit NUMERIC(20,0);
+  is_final TIMESTAMPTZ;
+BEGIN
+  SELECT finalized_at INTO is_final FROM ledger_event WHERE event_id = p_event_id FOR UPDATE;
+  IF is_final IS NOT NULL THEN
+    RAISE EXCEPTION 'Event % already finalized', p_event_id;
+  END IF;
+
+  SELECT COALESCE(SUM(debit_minor),0), COALESCE(SUM(credit_minor),0)
+  INTO tot_debit, tot_credit
+  FROM ledger_entry WHERE event_id = p_event_id;
+
+  IF tot_debit IS NULL OR tot_credit IS NULL OR tot_debit = 0 OR tot_credit = 0 THEN
+    RAISE EXCEPTION 'Event % has no entries', p_event_id;
+  END IF;
+
+  IF tot_debit <> tot_credit THEN
+    RAISE EXCEPTION 'Event % is unbalanced: debit % credit %', p_event_id, tot_debit, tot_credit;
+  END IF;
+
+  UPDATE ledger_event SET finalized_at = now() WHERE event_id = p_event_id;
+END;
+$$;
+
+-- Guard: forbid inserts after finalize
+CREATE OR REPLACE FUNCTION trg_forbid_after_finalize()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE f TIMESTAMPTZ;
+BEGIN
+  SELECT finalized_at INTO f FROM ledger_event WHERE event_id = NEW.event_id;
+  IF f IS NOT NULL THEN
+    RAISE EXCEPTION 'Cannot insert ledger_entry into finalized event %', NEW.event_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER ledger_entry_forbid_after_finalize
+BEFORE INSERT ON ledger_entry
+FOR EACH ROW EXECUTE FUNCTION trg_forbid_after_finalize();
+
+COMMIT;
+
+B. TypeScript domain types and repositories
+
+All money is bigint (minor units). Convert at the edges only (UI/gateway).
+
+shared/types.ts
+
+export type Minor = bigint; // cents
+
+export type Currency = 'USD';
+
+export type UUID = string;
+
+export type DayCount = 'ACT_365F'|'ACT_360'|'US_30_360'|'EURO_30_360'|'ACT_ACT';
+export type RoundingMode = 'half_away_from_zero'|'half_even';
+
+export interface ProductPolicy {
+  productCode: string;
+  currency: Currency;
+  rounding: RoundingMode;
+  defaultDayCount: DayCount;
+  defaultCompounding: 'simple'|'compound';
+  minPaymentMinor: Minor;
+  paymentWaterfall: readonly string[]; // ['fees_due','interest_past_due',...]
+}
+
+export interface Loan {
+  loanId: UUID;
+  productCode: string;
+  status: 'active'|'matured'|'paid_off'|'defaulted'|'charged_off'|'in_modification'|'bankruptcy'|'foreclosure';
+  lienPosition: number;
+  jurisdiction: string;
+  investorId?: UUID;
+  servicingType: string;
+  originationDate: string; // ISO date
+  originalPrincipalMinor: Minor;
+  currency: Currency;
+}
+
+export interface LoanTerms {
+  termsId: UUID;
+  loanId: UUID;
+  effectiveFrom: string; // ISO date
+  effectiveTo?: string;
+  interestType: 'fixed'|'arm'|'io_then_p_i'|'interest_only';
+  nominalRateBps: number;
+  indexName?: string;
+  indexMarginBps?: number;
+  rateCapUpBps?: number;
+  rateCapDownBps?: number;
+  compounding: 'simple'|'compound';
+  dayCount: DayCount;
+  firstPaymentDate: string; // ISO date
+  termMonths: number;
+  scheduledPaymentMinor?: Minor;
+  interestOnlyMonths?: number;
+}
+
+
+server/db/index.ts (repository contracts)
+
+export interface LedgerEntryRow {
+  entry_id: string;
+  event_id: string;
+  loan_id: string;
+  account: 'loan_principal'|'interest_receivable'|'escrow_liability'|'cash'|'suspense'|'fees_receivable'|'interest_income'|'fee_income'|'writeoff_expense';
+  debit_minor: string;   // NUMERIC as string from pg
+  credit_minor: string;
+  currency: 'USD';
+  memo: string | null;
+  created_at: string;
+}
+
+export interface LedgerEventRow {
+  event_id: string;
+  loan_id: string;
+  effective_date: string;
+  schema: string;
+  correlation_id: string;
+  created_at: string;
+  finalized_at: string | null;
+}
+
+export interface LedgerRepository {
+  begin(): Promise<void>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+
+  createEvent(args: { eventId: string; loanId: string; effectiveDate: string; schema: string; correlationId: string }): Promise<void>;
+  addEntry(args: { eventId: string; loanId: string; account: LedgerEntryRow['account']; debitMinor?: bigint; creditMinor?: bigint; currency: 'USD'; memo?: string }): Promise<void>;
+  finalizeEvent(eventId: string): Promise<void>;
+
+  latestBalances(loanId: string): Promise<{
+    principalMinor: bigint;
+    interestReceivableMinor: bigint;
+    escrowLiabilityMinor: bigint;
+    feesReceivableMinor: bigint;
+    cashMinor: bigint;
+  }>;
+}
+
+export interface LoanRepository {
+  getLoan(loanId: string): Promise<Loan>;
+  getActiveTerms(loanId: string, asOf: string): Promise<LoanTerms>;
+  insertScheduleVersion(loanId: string, termsId: string, version: number, rows: Array<{
+    periodNo: number; dueDate: string; principalMinor: bigint; interestMinor: bigint; escrowTargetMinor: bigint; feeTargetMinor: bigint;
+  }>): Promise<string /* plan_id */>;
+}
+
+C. Money math (deterministic, integer‑safe)
+
+server/domain/money.ts
+
+export type RoundingMode = 'half_away_from_zero'|'half_even';
+
+export function roundMinor(x: bigint, mode: RoundingMode): bigint {
+  return x; // already minor units; no rounding needed here
+}
+
+/**
+ * Convert decimal rate to basis points and back
+ */
+export function bpsToRatePerPeriod(annualBps: number, periodsPerYear: number): number {
+  return (annualBps / 10000) / periodsPerYear; // returns decimal rate per period (floating for exponent math only)
+}
+
+/**
+ * Level payment for fixed loans. Returns minor units bigint.
+ * r = periodic decimal rate (e.g., 0.005 for 0.5% per month).
+ * n = number of periods.
+ * pvMinor = principal in minor units.
+ * rounding = rounding mode for final payment amount in minor units.
+ */
+export function levelPayment(pvMinor: bigint, r: number, n: number, rounding: RoundingMode): bigint {
+  if (n <= 0) throw new Error('n must be > 0');
+  if (r === 0) {
+    // simple division, round half away from zero by default
+    const q = Number(pvMinor) / n;
+    return BigInt(Math.round(q));
+  }
+  const pv = Number(pvMinor);
+  const pmt = (r * pv) / (1 - Math.pow(1 + r, -n));
+  const rounded = rounding === 'half_even'
+    ? Math.round(pmt / 1) // integer cents; JS Math.round is half-away-from-zero; for true half-even you'd use decimal lib
+    : Math.round(pmt);
+  return BigInt(rounded);
+}
+
+/**
+ * Per-diem interest minor units: principal * nominal_rate / base
+ * base: 360, 365, or ACT (caller must pass actual days denominator)
+ * nominalRateBps: annual basis points
+ */
+export function perDiem(principalMinor: bigint, nominalRateBps: number, baseDays: number): bigint {
+  const rate = (nominalRateBps / 10000) / baseDays;
+  const amt = Number(principalMinor) * rate;
+  return BigInt(Math.round(amt));
+}
+
+
+Note: For exponent math we temporarily use number only to compute a single rounded cent value that we immediately convert to bigint. All downstream arithmetic stays integer. If you prefer, swap in a decimal library (e.g., decimal.js) later with identical function signatures.
+
+D. Schedule generator and accruals
+
+server/domain/schedule.ts
+
+import { levelPayment, perDiem } from './money';
+import { DayCount } from '../../shared/types';
+
+function periodsPerYear(dayCount: DayCount): number { return 12; } // monthly only in P1
+
+export interface ScheduleInput {
+  principalMinor: bigint;
+  annualRateBps: number;
+  termMonths: number;
+  startDate: string; // first payment due date
+  dayCount: DayCount;
+  rounding: 'half_away_from_zero'|'half_even';
+  interestOnlyMonths: number;
+}
+
+export interface ScheduleRow {
+  periodNo: number;
+  dueDate: string;
+  principalMinor: bigint;
+  interestMinor: bigint;
+}
+
+export function generateLevelSchedule(inp: ScheduleInput): ScheduleRow[] {
+  const rows: ScheduleRow[] = [];
+  let remaining = inp.principalMinor;
+  const r = (inp.annualRateBps / 10000) / periodsPerYear(inp.dayCount); // decimal per period
+  const n = inp.termMonths;
+  const pmt = levelPayment(inp.principalMinor, r, n, inp.rounding);
+
+  for (let k = 1; k <= n; k++) {
+    const dueDate = addMonths(inp.startDate, k - 1);
+    const interestMinor = BigInt(Math.round(Number(remaining) * r));
+    const principalMinor = k <= inp.interestOnlyMonths ? 0n : (pmt - interestMinor > remaining ? remaining : pmt - interestMinor);
+    rows.push({ periodNo: k, dueDate, principalMinor, interestMinor });
+    remaining = remaining - principalMinor;
+  }
+  return rows;
+}
+
+function addMonths(isoDate: string, m: number): string {
+  const d = new Date(isoDate + 'T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + m);
+  return d.toISOString().slice(0,10);
+}
+
+
+Daily interest accrual event amount:
+
+server/domain/accrual.ts
+
+import { perDiem } from './money';
+import { DayCount } from '../../shared/types';
+
+export function accrualPerDiem(principalMinor: bigint, annualBps: number, dayCount: DayCount, asOfDate: string): bigint {
+  const base = dayCount === 'ACT_360' ? 360 : (dayCount === 'ACT_365F' ? 365 : 360);
+  return perDiem(principalMinor, annualBps, base);
+}
+
+E. Ledger posting service
+
+Contract: All postings must go through a single module that enforces idempotency and double‑entry balance before sp_finalize_ledger_event.
+
+server/domain/posting.ts
+
+import { LedgerRepository } from '../db';
+import { randomUUID } from 'crypto';
+
+export type PostingLine = {
+  account: 'loan_principal'|'interest_receivable'|'escrow_liability'|'cash'|'suspense'|'fees_receivable'|'interest_income'|'fee_income'|'writeoff_expense';
+  debitMinor?: bigint;
+  creditMinor?: bigint;
+  memo?: string;
+};
+
+export interface PostEventArgs {
+  loanId: string;
+  effectiveDate: string;     // ISO date
+  correlationId: string;     // required, unique
+  schema: string;            // e.g., "posting.payment.v1"
+  currency: 'USD';
+  lines: PostingLine[];      // must balance
+}
+
+/**
+ * Posts a balanced double-entry event atomically.
+ * Throws if unbalanced or duplicate correlationId.
+ * Returns { eventId }.
+ */
+export async function postEvent(repo: LedgerRepository, args: PostEventArgs): Promise<{ eventId: string }> {
+  const eventId = randomUUID();
+  await repo.begin();
+  try {
+    await repo.createEvent({ eventId, loanId: args.loanId, effectiveDate: args.effectiveDate, schema: args.schema, correlationId: args.correlationId });
+
+    let debitSum = 0n, creditSum = 0n;
+    for (const l of args.lines) {
+      if ((l.debitMinor ? 1 : 0) + (l.creditMinor ? 1 : 0) !== 1) throw new Error('each line must have exactly one of debitMinor or creditMinor');
+      if ((l.debitMinor ?? 0n) < 0n || (l.creditMinor ?? 0n) < 0n) throw new Error('negative amounts not allowed');
+      debitSum += l.debitMinor ?? 0n;
+      creditSum += l.creditMinor ?? 0n;
+      await repo.addEntry({
+        eventId,
+        loanId: args.loanId,
+        account: l.account,
+        debitMinor: l.debitMinor,
+        creditMinor: l.creditMinor,
+        currency: args.currency,
+        memo: l.memo
+      });
+    }
+
+    if (debitSum !== creditSum) throw new Error(`event unbalanced: debit=${debitSum} credit=${creditSum}`);
+
+    await repo.finalizeEvent(eventId);
+    await repo.commit();
+    return { eventId };
+  } catch (e) {
+    await repo.rollback();
+    throw e;
+  }
+}
+
+
+Example payment posting (cash receipt applied entirely to principal for illustration)
+
+import { postEvent } from './posting';
+
+await postEvent(repo, {
+  loanId,
+  effectiveDate: '2025-08-24',
+  correlationId: 'payment:loan:' + loanId + ':gw:' + gatewayTxnId,
+  schema: 'posting.payment.v1',
+  currency: 'USD',
+  lines: [
+    { account: 'cash', debitMinor: 10000n, memo: 'payment received' },
+    { account: 'loan_principal', creditMinor: 10000n, memo: 'principal reduction' }
+  ]
+});
+
+F. Payment waterfall allocator (config‑driven)
+
+server/domain/waterfall.ts
+
+export type BucketName = 'fees_due'|'interest_past_due'|'interest_current'|'principal'|'escrow'|'future';
+
+export interface Outstanding {
+  feesDueMinor: bigint;
+  interestPastDueMinor: bigint;
+  interestCurrentMinor: bigint;
+  principalMinor: bigint;
+  escrowMinor: bigint;
+}
+
+export interface Allocation {
+  bucket: BucketName;
+  appliedMinor: bigint;
+}
+
+/**
+ * Allocates paymentMinor across buckets according to configured order.
+ * Invariant: sum(applied) <= paymentMinor
+ */
+export function allocatePayment(paymentMinor: bigint, waterfall: readonly BucketName[], out: Outstanding): Allocation[] {
+  const res: Allocation[] = [];
+  let remaining = paymentMinor;
+  const want: Record<BucketName, bigint> = {
+    fees_due: out.feesDueMinor,
+    interest_past_due: out.interestPastDueMinor,
+    interest_current: out.interestCurrentMinor,
+    principal: out.principalMinor,
+    escrow: out.escrowMinor,
+    future: 0n
+  } as any;
+
+  for (const b of waterfall) {
+    if (remaining <= 0n) break;
+    const need = want[b] ?? 0n;
+    const take = b === 'future' ? remaining : (need < remaining ? need : remaining);
+    if (take > 0n) res.push({ bucket: b, appliedMinor: take });
+    remaining -= take;
+  }
+  return res;
+}
+
+
+Posting from allocations (example: fees → interest → principal → escrow):
+
+import { allocatePayment } from './waterfall';
+import { postEvent } from './posting';
+
+const allocations = allocatePayment(amountMinor, product.paymentWaterfall as any, outstanding);
+
+const lines = [];
+lines.push({ account: 'cash', debitMinor: amountMinor });
+for (const a of allocations) {
+  if (a.bucket === 'fees_due') lines.push({ account: 'fees_receivable', creditMinor: a.appliedMinor });
+  if (a.bucket.startsWith('interest')) lines.push({ account: 'interest_receivable', creditMinor: a.appliedMinor });
+  if (a.bucket === 'principal') lines.push({ account: 'loan_principal', creditMinor: a.appliedMinor });
+  if (a.bucket === 'escrow') lines.push({ account: 'escrow_liability', creditMinor: a.appliedMinor });
+}
+await postEvent(repo, {
+  loanId, effectiveDate, correlationId, schema: 'posting.payment.v1', currency: 'USD', lines
+});
+
+G. Repositories: concrete pg implementation
+
+server/db/pg.ts
+
+import { Pool, PoolClient } from 'pg';
+import { LedgerRepository } from '.';
+
+export class PgLedgerRepository implements LedgerRepository {
+  private pool: Pool;
+  private client?: PoolClient;
+  constructor(pool: Pool) { this.pool = pool; }
+  async begin() { this.client = await this.pool.connect(); await this.client.query('BEGIN'); }
+  async commit() { if (!this.client) throw new Error('no tx'); await this.client.query('COMMIT'); this.client.release(); this.client = undefined; }
+  async rollback() { if (this.client) { await this.client.query('ROLLBACK'); this.client.release(); this.client = undefined; } }
+
+  async createEvent(a: {eventId: string; loanId: string; effectiveDate: string; schema: string; correlationId: string}) {
+    await this.client!.query(
+      `INSERT INTO ledger_event(event_id, loan_id, effective_date, schema, correlation_id) VALUES ($1,$2,$3,$4,$5)`,
+      [a.eventId, a.loanId, a.effectiveDate, a.schema, a.correlationId]
+    );
+  }
+  async addEntry(a: { eventId: string; loanId: string; account: any; debitMinor?: bigint; creditMinor?: bigint; currency: 'USD'; memo?: string }) {
+    await this.client!.query(
+      `INSERT INTO ledger_entry(event_id, loan_id, account, debit_minor, credit_minor, currency, memo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [a.eventId, a.loanId, a.account, a.debitMinor ?? 0n, a.creditMinor ?? 0n, a.currency, a.memo ?? null]
+    );
+  }
+  async finalizeEvent(eventId: string) {
+    await this.client!.query(`SELECT sp_finalize_ledger_event($1)`, [eventId]);
+  }
+
+  async latestBalances(loanId: string) {
+    const q = await this.pool.query(`
+      SELECT
+        COALESCE(SUM(CASE WHEN account='loan_principal' THEN debit_minor - credit_minor END),0) AS principal,
+        COALESCE(SUM(CASE WHEN account='interest_receivable' THEN debit_minor - credit_minor END),0) AS interest_recv,
+        COALESCE(SUM(CASE WHEN account='escrow_liability' THEN debit_minor - credit_minor END),0) AS escrow_liab,
+        COALESCE(SUM(CASE WHEN account='fees_receivable' THEN debit_minor - credit_minor END),0) AS fees_recv,
+        COALESCE(SUM(CASE WHEN account='cash' THEN debit_minor - credit_minor END),0) AS cash_bal
+      FROM ledger_entry WHERE loan_id = $1
+    `, [loanId]);
+
+    const r = q.rows[0];
+    return {
+      principalMinor: BigInt(r.principal),
+      interestReceivableMinor: BigInt(r.interest_recv),
+      escrowLiabilityMinor: BigInt(r.escrow_liab),
+      feesReceivableMinor: BigInt(r.fees_recv),
+      cashMinor: BigInt(r.cash_bal)
+    };
+  }
+}
+
+H. Event schemas (RabbitMQ)
+
+All messages use the Phase‑0 envelope. New schemas (JSON Schema files to be stored under /shared/schemas/… and enforced at publish time):
+
+loan.created.v1
+
+{
+  "$id": "loan.created.v1",
+  "type": "object",
+  "required": ["loan_id","product_code","origination_date","original_principal_minor","currency","jurisdiction"],
+  "properties": {
+    "loan_id": {"type":"string","format":"uuid"},
+    "product_code": {"type":"string"},
+    "origination_date": {"type":"string","format":"date"},
+    "original_principal_minor": {"type":"string","pattern":"^-?\\d+$"},
+    "currency": {"type":"string","enum":["USD"]},
+    "jurisdiction": {"type":"string"}
+  },
+  "additionalProperties": false
+}
+
+
+loan.terms.updated.v1
+
+{
+  "$id": "loan.terms.updated.v1",
+  "type": "object",
+  "required": ["loan_id","terms_id","effective_from"],
+  "properties": {
+    "loan_id": {"type":"string","format":"uuid"},
+    "terms_id": {"type":"string","format":"uuid"},
+    "effective_from": {"type":"string","format":"date"}
+  }
+}
+
+
+ledger.event.posted.v1 (emitted after finalize)
+
+{
+  "$id": "ledger.event.posted.v1",
+  "type": "object",
+  "required": ["event_id","loan_id","schema","effective_date","lines"],
+  "properties": {
+    "event_id": {"type":"string","format":"uuid"},
+    "loan_id": {"type":"string","format":"uuid"},
+    "schema": {"type":"string"},
+    "effective_date": {"type":"string","format":"date"},
+    "lines": {
+      "type": "array",
+      "items": {
+        "type":"object",
+        "required":["account","debit_minor","credit_minor"],
+        "properties":{
+          "account":{"type":"string"},
+          "debit_minor":{"type":"string"},
+          "credit_minor":{"type":"string"}
+        }
+      }
+    }
+  }
+}
+
+I. Seed script (exact content)
+
+Create one product, one investor, one loan, one terms record, one schedule.
+
+server/scripts/seed.ts
+
+import { Pool } from 'pg';
+import { randomUUID } from 'crypto';
+(async () => {
+  const pool = new Pool({ connectionString: process.env.DB_URL });
+  const loanId = randomUUID();
+  await pool.query('BEGIN');
+
+  await pool.query(`
+    INSERT INTO product_policy(product_code, currency, rounding, default_day_count, default_compounding, min_payment_minor, payment_waterfall)
+    VALUES ('FIXED_30','USD','half_away_from_zero','ACT_365F','simple',0,'["fees_due","interest_past_due","interest_current","principal","escrow","future"]')
+    ON CONFLICT (product_code) DO NOTHING;
+  `);
+
+  const investor = await pool.query(`INSERT INTO investor(name) VALUES ('Test Investor') RETURNING investor_id`);
+  const investorId = investor.rows[0].investor_id;
+
+  await pool.query(`
+    INSERT INTO loan(loan_id, product_code, status, lien_position, jurisdiction, investor_id, servicing_type, origination_date, original_principal_minor, currency)
+    VALUES ($1,'FIXED_30','active',1,'US_AZ',$2,'primary','2025-01-01', 30000000, 'USD')`,
+    [loanId, investorId]);
+
+  const terms = await pool.query(`
+    INSERT INTO loan_terms(loan_id,effective_from,interest_type,nominal_rate_bps,compounding,day_count,first_payment_date,term_months,interest_only_months)
+    VALUES ($1,'2025-01-01','fixed',650,'simple','ACT_365F','2025-02-01',360,0) RETURNING terms_id
+  `, [loanId]);
+  const termsId = terms.rows[0].terms_id;
+
+  await pool.query('COMMIT');
+  console.log(JSON.stringify({ loanId, termsId }, null, 2));
+  process.exit(0);
+})();
+
+J. Tests and acceptance
+
+Golden schedule tests
+
+Input: principal 300,000.00, annual rate 6.5%, term 360, first due 2025‑02‑01, ACT_365F, rounding half‑away.
+
+Generate first 3 rows and last row; assert expected cent values fixed in test fixtures.
+
+Store fixtures under tests/golden/fixed30y.json. Fail build on mismatch.
+
+Property tests (fast‑check or similar)
+
+For random principal [10,000…5,000,000] cents, random rate [0…2000 bps], random term [1…480]:
+
+sum(principalMinor) across schedule rows ≤ principal; last remaining principal ≤ 1 cent.
+
+Each row principal/interest ≥ 0.
+
+Posting invariants
+
+Unit test: create event with unbalanced lines → expect error and no rows persisted.
+
+Unit test: successful post → ledger_event.finalized_at not null and ledger_entry rows exist.
+
+Balances view
+
+Post: cash debit 100.00, principal credit 100.00 → latestBalances returns principal reduced by 100 and cash +100.
+
+Automate with npm run test and run in CI.
+
+K. Upgrade instructions (repo‑wide)
+
+Replace any money type number in code with bigint named Minor. Add adapters at ingress/egress only.
+
+Deprecate any previous schedule tables; keep only schedule_plan and schedule_row as above. Write a one‑time migration tool to map old data if needed.
+
+Standardize all postings through postEvent. Delete any direct INSERT INTO ledger_entry uses.
+
+Adopt JSON Schema validation at publish time for the three events above. Add a validateSchema(schemaId, payload) helper and fail‑fast if invalid.
+
+Enforce idempotency by always deriving correlation_id deterministically (e.g., payment:<loanId>:<gatewayTxnId>:<amountMinor>). Add a unique index on ledger_event.correlation_id already provided.
+
+L. What engineering delivers by the end of Phase 1
+
+SQL schema migrated exactly as above and available in CI.
+
+generateLevelSchedule and accrualPerDiem deterministic functions with golden tests.
+
+PgLedgerRepository and postEvent integrated; at least one sample posting executed in an integration test.
+
+Seed script creates a real loan + terms; schedule version can be generated and written to DB.
+
+Event schemas live in /shared/schemas and are validated on publish.
+
+All legacy code paths replaced to use:
+
+integer minor units,
+
+Phase‑0 Rabbit envelope,
+
+Phase‑1 repositories and posting service.
+
+Acceptance:
+
+Golden tests pass for 3 canonical loans (fixed‑rate 30y, 15y, and 5/1 ARM as fixed skeleton using nominal rate).
+
+For each test loan, posting a payment event results in a balanced ledger (verified by sp_finalize_ledger_event) and updated balances where total debits equal total credits and balances never go negative unless explicitly posted as such.
+
+This completes the exact specification for Phase 1. Engineering can implement directly from the above SQL, TypeScript contracts, posting logic, and tests with no further decisions required.
