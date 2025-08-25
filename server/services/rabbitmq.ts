@@ -12,8 +12,8 @@ import { ErrorClassifier, RetryTracker } from './rabbitmq-errors';
  * - Not suitable for financial transactions
  */
 export class RabbitMQService {
-  private connection: any = null;
-  private channel: any = null;
+  private connection: amqp.Connection | null = null;
+  private channel: amqp.Channel | null = null;
   private isConnecting = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -104,7 +104,7 @@ export class RabbitMQService {
     }
   }
 
-  async publish(exchange: string, routingKey: string, message: any, options?: any): Promise<boolean> {
+  async publish(exchange: string, routingKey: string, message: any, options?: amqp.Options.Publish): Promise<boolean> {
     try {
       await this.ensureConnected();
       
@@ -125,7 +125,7 @@ export class RabbitMQService {
     }
   }
 
-  async sendToQueue(queue: string, message: any, options?: any): Promise<boolean> {
+  async sendToQueue(queue: string, message: any, options?: amqp.Options.Publish): Promise<boolean> {
     try {
       await this.ensureConnected();
       
@@ -149,7 +149,7 @@ export class RabbitMQService {
     }
   }
 
-  async consume(queue: string, callback: (message: any) => Promise<void>, options?: any): Promise<string> {
+  async consume(queue: string, callback: (message: any) => Promise<void>, options?: amqp.Options.Consume): Promise<string> {
     try {
       await this.ensureConnected();
       
@@ -160,7 +160,7 @@ export class RabbitMQService {
       // Ensure queue exists
       await this.channel.assertQueue(queue, { durable: true });
       
-      const result = await this.channel.consume(queue, async (msg: any) => {
+      const result = await this.channel.consume(queue, async (msg: amqp.ConsumeMessage | null) => {
         if (msg) {
           let content: any;
           try {
@@ -210,7 +210,7 @@ export class RabbitMQService {
     }
   }
 
-  async createExchange(exchange: string, type: 'direct' | 'topic' | 'fanout' | 'headers' = 'direct', options?: any): Promise<void> {
+  async createExchange(exchange: string, type: 'direct' | 'topic' | 'fanout' | 'headers' = 'direct', options?: amqp.Options.AssertExchange): Promise<void> {
     try {
       await this.ensureConnected();
       
@@ -243,7 +243,11 @@ export class RabbitMQService {
     }
   }
 
-  async getConnectionInfo(): Promise<any> {
+  async getConnectionInfo(): Promise<{
+    connected: boolean;
+    reconnectAttempts: number;
+    maxReconnectAttempts: number;
+  }> {
     await this.ensureConnected();
     
     return {
