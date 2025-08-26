@@ -7,6 +7,8 @@ import { DocsRepo } from './repo';
 import { DocumentBuilders } from './document-builders';
 import { RenderService } from './render-service';
 import { requireAuth } from '../auth/middleware';
+import { db } from '../db';
+import { crmActivity } from '@shared/schema';
 
 const router = Router();
 const repo = new DocsRepo();
@@ -60,6 +62,24 @@ router.post('/api/documents/generate/statement', requireAuth, async (req, res) =
       pdf_hash: rendered.pdf_hash,
       pdf_bytes: rendered.pdf_bytes,
       size_bytes: rendered.size_bytes
+    });
+    
+    // Log to CRM activity
+    await db.insert(crmActivity).values({
+      loanId: loan_id,
+      userId: (req as any).user?.id || 1,
+      activityType: 'document',
+      activityData: {
+        description: `Billing Statement generated for period ${period_start} to ${period_end}`,
+        documentType: 'billing_statement',
+        documentId: docId,
+        periodStart: period_start,
+        periodEnd: period_end,
+        dueDate: due_date,
+        source: 'document_generation'
+      },
+      isSystem: false,
+      createdAt: new Date()
     });
     
     res.json({

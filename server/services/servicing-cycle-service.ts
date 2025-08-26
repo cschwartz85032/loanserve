@@ -11,7 +11,8 @@ import {
   escrowAccounts,
   escrowDisbursements,
   loanFees,
-  paymentsInbox
+  paymentsInbox,
+  crmActivity
 } from '@shared/schema';
 import { addDays, differenceInDays, parseISO } from 'date-fns';
 
@@ -579,6 +580,24 @@ export class ServicingCycleService {
             status: 'unpaid',
             dueDate: valuationDate,
             assessedDate: valuationDate
+          });
+          
+          // Log late fee to CRM activity
+          await this.db.insert(crmActivity).values({
+            loanId: loan.id,
+            userId: 1, // System user
+            activityType: 'fee_assessment',
+            activityData: {
+              description: `Late fee of $${lateFeeAmount.toFixed(2)} assessed - ${daysLate} days overdue`,
+              feeType: 'late_fee',
+              amount: lateFeeAmount.toFixed(2),
+              daysLate: daysLate,
+              gracePeriodDays: loan.gracePeriodDays,
+              assessedDate: valuationDate,
+              source: 'servicing_cycle'
+            },
+            isSystem: true,
+            createdAt: new Date()
           });
         }
 
