@@ -155,6 +155,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(documentRoutes);
   console.log('[Routes] Registered document generation routes');
 
+  // Register Phase 6 Cash Management and Reconciliation routes
+  const { registerCashRoutes } = await import('./cash/routes');
+  const { pool } = await import('./db');
+  registerCashRoutes(app, pool);
+  console.log('[Routes] Registered cash management routes');
+
   // Serve observability dashboard
   app.get('/observability', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'server/observability/dashboard-ui.html'));
