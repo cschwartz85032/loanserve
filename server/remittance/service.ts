@@ -8,7 +8,7 @@ import {
   WaterfallCalculation,
   RemittanceReport
 } from './types.js';
-import { format, startOfMonth, endOfMonth, addMonths, isBefore } from 'date-fns';
+import { format as formatDate, startOfMonth, endOfMonth, addMonths, isBefore } from 'date-fns';
 import { Parser } from 'json2csv';
 
 export class RemittanceService {
@@ -234,9 +234,33 @@ export class RemittanceService {
 
     const items = await this.repo.getItems(cycleId);
     
+    // Sort items by loan_id for deterministic output
+    const sortedItems = items.sort((a, b) => {
+      const aId = a.loan_id || '';
+      const bId = b.loan_id || '';
+      return aId.localeCompare(bId);
+    });
+    
+    // Add period dates to each item for export
+    const exportItems = sortedItems.map(item => ({
+      loan_id: item.loan_id || '',
+      period_start: formatDate(cycle.period_start, 'yyyy-MM-dd'),
+      period_end: formatDate(cycle.period_end, 'yyyy-MM-dd'),
+      principal_minor: item.principal_minor,
+      interest_minor: item.interest_minor,
+      fees_minor: item.fees_minor,
+      investor_share_minor: item.investor_share_minor,
+      servicer_fee_minor: item.servicer_fee_minor
+    }));
+    
+    let exportRecord: any;
+    
     if (format === 'csv') {
+      // CSV columns as specified
       const fields = [
         'loan_id',
+        'period_start',
+        'period_end',
         'principal_minor',
         'interest_minor',
         'fees_minor',
@@ -245,49 +269,63 @@ export class RemittanceService {
       ];
       
       const parser = new Parser({ fields });
-      const csv = parser.parse(items);
+      const csv = parser.parse(exportItems);
       const buffer = Buffer.from(csv);
       
-      const exportRecord = await this.repo.createExport(cycleId, format, buffer);
-      await this.repo.updateCycleStatus(cycleId, 'file_generated');
-      
-      return exportRecord.export_id;
+      exportRecord = await this.repo.createExport(cycleId, format, buffer);
     } else {
       // XML format
-      const xml = this.generateXML(cycle, items);
+      const xml = this.generateXML(cycle, sortedItems);
       const buffer = Buffer.from(xml);
       
-      const exportRecord = await this.repo.createExport(cycleId, format, buffer);
-      await this.repo.updateCycleStatus(cycleId, 'file_generated');
-      
-      return exportRecord.export_id;
+      exportRecord = await this.repo.createExport(cycleId, format, buffer);
     }
+    
+    // Update cycle status
+    await this.repo.updateCycleStatus(cycleId, 'file_generated');
+    
+    // Publish message to RabbitMQ
+    try {
+      const { getPublisher } = await import('../messaging/publisher');
+      const publisher = await getPublisher();
+      await publisher.publish({
+        exchange: 'remittance',
+        routingKey: 'remittance.file.generated.v1',
+        content: {
+          cycleId,
+          exportId: exportRecord.export_id,
+          format,
+          fileHash: exportRecord.file_hash,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('[RemittanceService] Failed to publish file generation event:', error);
+      // Continue even if publishing fails
+    }
+    
+    return exportRecord.export_id;
   }
 
   private generateXML(cycle: RemittanceCycle, items: any[]): string {
+    const periodStart = formatDate(cycle.period_start, 'yyyy-MM-dd');
+    const periodEnd = formatDate(cycle.period_end, 'yyyy-MM-dd');
+    
+    // XML structure mirroring CSV
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<RemittanceReport>
-  <CycleId>${cycle.cycle_id}</CycleId>
-  <ContractId>${cycle.contract_id}</ContractId>
-  <PeriodStart>${format(cycle.period_start, 'yyyy-MM-dd')}</PeriodStart>
-  <PeriodEnd>${format(cycle.period_end, 'yyyy-MM-dd')}</PeriodEnd>
-  <TotalPrincipal>${cycle.total_principal_minor}</TotalPrincipal>
-  <TotalInterest>${cycle.total_interest_minor}</TotalInterest>
-  <TotalFees>${cycle.total_fees_minor}</TotalFees>
-  <ServicerFee>${cycle.servicer_fee_minor}</ServicerFee>
-  <InvestorDue>${cycle.investor_due_minor}</InvestorDue>
-  <Items>
-    ${items.map(item => `
-    <Item>
-      <LoanId>${item.loan_id || 'N/A'}</LoanId>
-      <Principal>${item.principal_minor}</Principal>
-      <Interest>${item.interest_minor}</Interest>
-      <Fees>${item.fees_minor}</Fees>
-      <InvestorShare>${item.investor_share_minor}</InvestorShare>
-      <ServicerFee>${item.servicer_fee_minor}</ServicerFee>
-    </Item>`).join('')}
-  </Items>
-</RemittanceReport>`;
+<Remittance>
+  ${items.map(item => `
+  <Item>
+    <loan_id>${item.loan_id || ''}</loan_id>
+    <period_start>${periodStart}</period_start>
+    <period_end>${periodEnd}</period_end>
+    <principal_minor>${item.principal_minor}</principal_minor>
+    <interest_minor>${item.interest_minor}</interest_minor>
+    <fees_minor>${item.fees_minor}</fees_minor>
+    <investor_share_minor>${item.investor_share_minor}</investor_share_minor>
+    <servicer_fee_minor>${item.servicer_fee_minor}</servicer_fee_minor>
+  </Item>`).join('')}
+</Remittance>`;
     return xml;
   }
 

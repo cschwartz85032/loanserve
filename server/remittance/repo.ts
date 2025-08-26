@@ -149,15 +149,13 @@ export class RemittanceRepository {
 
   // Remittance items
   async createItem(item: Omit<RemittanceItem, 'item_id'>): Promise<RemittanceItem> {
-    const itemId = ulid();
     const result = await this.pool.query(
       `INSERT INTO remittance_item 
-       (item_id, cycle_id, loan_id, principal_minor, interest_minor, 
+       (cycle_id, loan_id, principal_minor, interest_minor, 
         fees_minor, investor_share_minor, servicer_fee_minor)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
-        itemId,
         item.cycle_id,
         item.loan_id || null,
         item.principal_minor,
@@ -180,15 +178,14 @@ export class RemittanceRepository {
 
   // Export management
   async createExport(cycleId: string, format: 'csv' | 'xml', data: Buffer): Promise<RemittanceExport> {
-    const exportId = ulid();
     const hash = createHash('sha256').update(data).digest('hex');
     
     const result = await this.pool.query(
       `INSERT INTO remittance_export 
-       (export_id, cycle_id, format, file_hash, bytes)
-       VALUES ($1, $2, $3, $4, $5)
+       (cycle_id, format, file_hash, bytes)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [exportId, cycleId, format, hash, data]
+      [cycleId, format, hash, data]
     );
     return result.rows[0];
   }
@@ -215,8 +212,7 @@ export class RemittanceRepository {
         SELECT DISTINCT 
           l.id as loan_id, 
           l.loan_number, 
-          l.current_balance_minor,
-          l.product_code
+          l.principal_balance
         FROM loans l
         JOIN investors io ON l.id = io.loan_id
         JOIN investor_contract ic ON io.investor_id = ic.investor_id
@@ -225,7 +221,7 @@ export class RemittanceRepository {
       SELECT 
         cl.loan_id,
         cl.loan_number,
-        cl.current_balance_minor,
+        cl.principal_balance,
         COALESCE(SUM((pp.applied->>'principal_collected')::numeric), 0) as principal_collected,
         COALESCE(SUM((pp.applied->>'interest_collected')::numeric), 0) as interest_collected,
         COALESCE(SUM((pp.applied->>'late_fees_collected')::numeric), 0) as late_fees_collected,
@@ -235,7 +231,7 @@ export class RemittanceRepository {
       LEFT JOIN payment_posting pp ON pi.payment_id = pp.payment_id
       WHERE (pi.effective_date >= $2 AND pi.effective_date <= $3)
         OR pi.payment_id IS NULL
-      GROUP BY cl.loan_id, cl.loan_number, cl.current_balance_minor`;
+      GROUP BY cl.loan_id, cl.loan_number, cl.principal_balance`;
     
     const result = await this.pool.query(query, [contractId, periodStart, periodEnd]);
     return result.rows;

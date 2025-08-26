@@ -98,7 +98,7 @@ export class RemittanceScheduler {
     const existingCycleResult = await this.pool.query(
       `SELECT * FROM remittance_cycle 
        WHERE contract_id = $1 
-       AND status IN ('open', 'calculating', 'locked')
+       AND status IN ('open', 'locked')
        ORDER BY created_at DESC
        LIMIT 1`,
       [contract.contract_id]

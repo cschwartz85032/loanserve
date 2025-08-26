@@ -154,6 +154,13 @@ export class OptimizedTopologyManager extends TopologyManager {
       durable: true,
     });
 
+    // Remittance exchange for file generation events
+    this.addExchange({
+      name: 'remittance',
+      type: 'topic',
+      durable: true,
+    });
+
     // Add optimized queues
     this.defineOptimizedQueues();
   }
