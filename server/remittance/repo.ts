@@ -201,27 +201,43 @@ export class RemittanceRepository {
     return result.rows[0] || null;
   }
 
-  // Loan collections for period
-  async getLoanCollections(contractId: string, periodStart: Date, periodEnd: Date): Promise<any[]> {
-    const result = await this.pool.query(
-      `SELECT 
-         l.id as loan_id,
-         l.loan_number,
-         l.current_balance_minor,
-         COALESCE(SUM(CASE WHEN le.account_name = 'cash' THEN le.credit_minor - le.debit_minor ELSE 0 END), 0) as collected_minor,
-         COALESCE(SUM(CASE WHEN le.account_name = 'interest_receivable' THEN le.debit_minor - le.credit_minor ELSE 0 END), 0) as interest_minor,
-         COALESCE(SUM(CASE WHEN le.account_name = 'principal' THEN le.credit_minor - le.debit_minor ELSE 0 END), 0) as principal_minor,
-         COALESCE(SUM(CASE WHEN le.account_name = 'late_fee_income' THEN le.credit_minor - le.debit_minor ELSE 0 END), 0) as fees_minor
-       FROM loans l
-       JOIN investors io ON l.id = io.loan_id
-       JOIN investor_contract ic ON io.investor_id = ic.investor_id
-       LEFT JOIN ledger_entry le ON l.id = le.loan_id 
-         AND le.transaction_date >= $2 
-         AND le.transaction_date <= $3
-       WHERE ic.contract_id = $1
-       GROUP BY l.id, l.loan_number, l.current_balance_minor`,
-      [contractId, periodStart, periodEnd]
-    );
+  // Loan collections for period from payment_posting
+  async getLoanCollections(
+    contractId: string, 
+    periodStart: Date, 
+    periodEnd: Date,
+    custodialBankAcctId?: string
+  ): Promise<any[]> {
+    // Get loans under this contract based on product_code and investor ownership
+    // If custodialBankAcctId is provided, also filter by reconciled bank account
+    const query = `
+      WITH contract_loans AS (
+        SELECT DISTINCT 
+          l.id as loan_id, 
+          l.loan_number, 
+          l.current_balance_minor,
+          l.product_code
+        FROM loans l
+        JOIN investors io ON l.id = io.loan_id
+        JOIN investor_contract ic ON io.investor_id = ic.investor_id
+        WHERE ic.contract_id = $1
+      )
+      SELECT 
+        cl.loan_id,
+        cl.loan_number,
+        cl.current_balance_minor,
+        COALESCE(SUM((pp.applied->>'principal_collected')::numeric), 0) as principal_collected,
+        COALESCE(SUM((pp.applied->>'interest_collected')::numeric), 0) as interest_collected,
+        COALESCE(SUM((pp.applied->>'late_fees_collected')::numeric), 0) as late_fees_collected,
+        COALESCE(SUM((pp.applied->>'escrow_collected')::numeric), 0) as escrow_collected
+      FROM contract_loans cl
+      LEFT JOIN payment_intake pi ON cl.loan_id = pi.loan_id
+      LEFT JOIN payment_posting pp ON pi.payment_id = pp.payment_id
+      WHERE (pi.effective_date >= $2 AND pi.effective_date <= $3)
+        OR pi.payment_id IS NULL
+      GROUP BY cl.loan_id, cl.loan_number, cl.current_balance_minor`;
+    
+    const result = await this.pool.query(query, [contractId, periodStart, periodEnd]);
     return result.rows;
   }
 

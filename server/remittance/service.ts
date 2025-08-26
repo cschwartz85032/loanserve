@@ -115,103 +115,103 @@ export class RemittanceService {
       cycle.period_end
     );
 
-    // Aggregate collections
-    let totalPrincipal = 0n;
-    let totalInterest = 0n;
-    let totalFees = 0n;
+    // Process loan-level aggregations and waterfall
+    let totalPrincipalToInvestor = 0n;
+    let totalInterestToInvestor = 0n;
+    let totalFeesToInvestor = 0n;
+    let totalServicerFee = 0n;
+    let totalInvestorDue = 0n;
     
     for (const loan of collections) {
-      totalPrincipal += BigInt(loan.principal_minor || 0);
-      totalInterest += BigInt(loan.interest_minor || 0);
-      totalFees += BigInt(loan.fees_minor || 0);
-    }
-
-    // Apply waterfall rules
-    const buckets = {
-      interest: 0n,
-      principal: 0n,
-      late_fees: 0n,
-      escrow: 0n,
-      recoveries: 0n
-    };
-
-    let remainingCash = totalPrincipal + totalInterest + totalFees;
-    
-    for (const rule of rules) {
-      const bucket = rule.bucket as keyof typeof buckets;
-      let amount = 0n;
+      const principalCollected = BigInt(Math.round(Number(loan.principal_collected || 0)));
+      const interestCollected = BigInt(Math.round(Number(loan.interest_collected || 0)));
+      const lateFeesCollected = BigInt(Math.round(Number(loan.late_fees_collected || 0)));
       
-      switch (bucket) {
-        case 'interest':
-          amount = totalInterest;
-          break;
-        case 'principal':
-          amount = totalPrincipal;
-          break;
-        case 'late_fees':
-          amount = totalFees;
-          break;
-        default:
-          amount = 0n;
-      }
-
-      // Apply cap if defined
-      if (rule.cap_minor) {
-        amount = amount > BigInt(rule.cap_minor) ? BigInt(rule.cap_minor) : amount;
-      }
-
-      // Apply to bucket
-      if (amount <= remainingCash) {
-        buckets[bucket] = amount;
-        remainingCash -= amount;
-      } else {
-        buckets[bucket] = remainingCash;
-        remainingCash = 0n;
-      }
-    }
-
-    // Calculate servicer fee
-    const totalCollected = totalPrincipal + totalInterest + totalFees;
-    const servicerFee = (totalCollected * BigInt(contract.servicer_fee_bps)) / 10000n;
-    const investorDue = totalCollected - servicerFee;
-
-    // Create remittance items
-    for (const loan of collections) {
-      const loanServicerFee = (BigInt(loan.collected_minor || 0) * BigInt(contract.servicer_fee_bps)) / 10000n;
-      const loanInvestorShare = BigInt(loan.collected_minor || 0) - loanServicerFee;
+      // Calculate servicer fee on interest collected
+      const servicerFeeOnInterest = (interestCollected * BigInt(contract.servicer_fee_bps)) / 10000n;
       
+      // Apply waterfall rules per loan
+      let loanInvestorPrincipal = 0n;
+      let loanInvestorInterest = 0n;
+      let loanInvestorFees = 0n;
+      let loanServicerFee = servicerFeeOnInterest;
+      
+      // Sort rules by rank to ensure proper sequence
+      const sortedRules = rules.sort((a, b) => a.rank - b.rank);
+      
+      for (const rule of sortedRules) {
+        switch (rule.bucket) {
+          case 'interest':
+            // Apply interest to investor up to cap, less servicer fee
+            let interestToInvestor = interestCollected - servicerFeeOnInterest;
+            if (rule.cap_minor) {
+              const cap = BigInt(rule.cap_minor);
+              interestToInvestor = interestToInvestor > cap ? cap : interestToInvestor;
+            }
+            loanInvestorInterest = interestToInvestor;
+            break;
+            
+          case 'principal':
+            // Apply principal to investor
+            loanInvestorPrincipal = principalCollected;
+            if (rule.cap_minor) {
+              const cap = BigInt(rule.cap_minor);
+              loanInvestorPrincipal = loanInvestorPrincipal > cap ? cap : loanInvestorPrincipal;
+            }
+            break;
+            
+          case 'late_fees':
+            // Apply late fees split by late_fee_split_bps to investor
+            const investorFeePortion = (lateFeesCollected * BigInt(contract.late_fee_split_bps)) / 10000n;
+            const servicerFeePortion = lateFeesCollected - investorFeePortion;
+            loanInvestorFees = investorFeePortion;
+            loanServicerFee += servicerFeePortion;
+            break;
+        }
+      }
+      
+      const loanInvestorShare = loanInvestorPrincipal + loanInvestorInterest + loanInvestorFees;
+      
+      // Create remittance item for this loan
       await this.repo.createItem({
         cycle_id: cycleId,
         loan_id: loan.loan_id,
-        principal_minor: loan.principal_minor || '0',
-        interest_minor: loan.interest_minor || '0',
-        fees_minor: loan.fees_minor || '0',
+        principal_minor: loanInvestorPrincipal.toString(),
+        interest_minor: loanInvestorInterest.toString(),
+        fees_minor: loanInvestorFees.toString(),
         investor_share_minor: loanInvestorShare.toString(),
         servicer_fee_minor: loanServicerFee.toString()
       });
+      
+      // Update totals
+      totalPrincipalToInvestor += loanInvestorPrincipal;
+      totalInterestToInvestor += loanInvestorInterest;
+      totalFeesToInvestor += loanInvestorFees;
+      totalServicerFee += loanServicerFee;
+      totalInvestorDue += loanInvestorShare;
     }
 
     // Update cycle totals
     await this.repo.updateCycleTotals(cycleId, {
-      principal: totalPrincipal.toString(),
-      interest: totalInterest.toString(),
-      fees: totalFees.toString(),
-      servicerFee: servicerFee.toString(),
-      investorDue: investorDue.toString()
+      principal: totalPrincipalToInvestor.toString(),
+      interest: totalInterestToInvestor.toString(),
+      fees: totalFeesToInvestor.toString(),
+      servicerFee: totalServicerFee.toString(),
+      investorDue: totalInvestorDue.toString()
     });
 
     return {
       contractId: contract.contract_id,
-      totalCollected: totalCollected.toString(),
+      totalCollected: (totalInvestorDue + totalServicerFee).toString(),
       buckets: {
-        interest: buckets.interest.toString(),
-        principal: buckets.principal.toString(),
-        late_fees: buckets.late_fees.toString(),
-        escrow: buckets.escrow.toString(),
-        recoveries: buckets.recoveries.toString()
+        interest: totalInterestToInvestor.toString(),
+        principal: totalPrincipalToInvestor.toString(),
+        late_fees: totalFeesToInvestor.toString(),
+        escrow: '0',
+        recoveries: '0'
       },
-      servicerFee: servicerFee.toString(),
-      investorDue: investorDue.toString()
+      servicerFee: totalServicerFee.toString(),
+      investorDue: totalInvestorDue.toString()
     };
   }
 
