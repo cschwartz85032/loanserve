@@ -2283,14 +2283,15 @@ export const insertEmailTemplateFolderSchema = createInsertSchema(emailTemplateF
 export type InsertEmailTemplateFolder = z.infer<typeof insertEmailTemplateFolderSchema>;
 export type EmailTemplateFolder = typeof emailTemplateFolders.$inferSelect;
 
-// Email Templates for storing email templates
+// Email Templates for storing email and SMS templates
 export const emailTemplates = pgTable('email_templates', {
   id: serial('id').primaryKey(),
   folderId: integer('folder_id').references(() => emailTemplateFolders.id),
   name: varchar('name', { length: 255 }).notNull(),
   templateKey: varchar('template_key', { length: 100 }).unique(), // Unique key for template identification
-  subject: text('subject'),
-  body: text('body'),
+  type: varchar('type', { length: 20 }).default('email').notNull(), // 'email', 'sms'
+  subject: text('subject'), // For email templates
+  body: text('body'), // For both email and SMS
   format: varchar('format', { length: 20 }).default('markdown'), // 'markdown', 'html', 'text'
   flags: jsonb('flags'), // Store template flags like include_fdCPA_if_applicable
   trigger: jsonb('trigger'), // Store trigger conditions

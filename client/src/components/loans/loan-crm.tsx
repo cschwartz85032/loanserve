@@ -67,18 +67,20 @@ interface LoanCRMProps {
   loanData?: any;
 }
 
-// Email Templates Content Component
+// Email/SMS Templates Content Component
 const EmailTemplatesContent = React.memo(({ 
   onSelectTemplate, 
-  onClose 
+  onClose,
+  templateType = 'email'
 }: { 
   onSelectTemplate: (template: any) => void;
   onClose: () => void;
+  templateType?: 'email' | 'sms';
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
   const [folderPath, setFolderPath] = useState<Array<{id: number | null, name: string}>>([
-    { id: null, name: 'Email Templates' }
+    { id: null, name: templateType === 'sms' ? 'SMS Templates' : 'Email Templates' }
   ]);
   
   // Fetch folders with template count
@@ -145,7 +147,7 @@ const EmailTemplatesContent = React.memo(({
       <div className="relative">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Search Email Templates"
+          placeholder={`Search ${templateType === 'sms' ? 'SMS' : 'Email'} Templates`}
           className="pl-8"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -159,11 +161,11 @@ const EmailTemplatesContent = React.memo(({
           {!currentFolderId && !searchTerm && (
             <div
               className="flex items-center justify-between p-3 hover:bg-muted/50 cursor-pointer transition-colors border rounded"
-              onClick={() => navigateToFolder({ id: null, name: 'All Email Templates' })}
+              onClick={() => navigateToFolder({ id: null, name: `All ${templateType === 'sms' ? 'SMS' : 'Email'} Templates` })}
             >
               <div className="flex items-center gap-2">
                 <ChevronDown className="h-4 w-4 rotate-[-90deg]" />
-                <span className="text-sm font-medium">All Email Templates ({totalTemplates} Templates)</span>
+                <span className="text-sm font-medium">All {templateType === 'sms' ? 'SMS' : 'Email'} Templates ({totalTemplates} Templates)</span>
               </div>
             </div>
           )}
@@ -193,7 +195,7 @@ const EmailTemplatesContent = React.memo(({
             >
               <p className="text-sm font-medium">{template.name}</p>
               <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                {template.subject || 'No subject'}
+                {templateType === 'sms' ? (template.body ? template.body.substring(0, 100) + '...' : 'No message') : (template.subject || 'No subject')}
               </p>
             </div>
           ))}
@@ -3514,143 +3516,18 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               Select a template to use for your SMS
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-4 space-y-3">
-            {/* Built-in SMS Templates */}
-            <ScrollArea className="h-[400px] w-full border rounded-md p-4">
-              <div className="space-y-3">
-                {/* Payment Reminder Template */}
-                <div 
-                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    setTextMessage('Your loan payment of [AMOUNT] is due on [DATE]. Please ensure timely payment to avoid late fees. Reply STOP to unsubscribe.');
-                    setShowSmsTemplatesModal(false);
-                    toast({
-                      title: 'Template Loaded',
-                      description: 'Payment reminder template loaded'
-                    });
-                  }}
-                >
-                  <div className="font-medium text-sm">Payment Reminder</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Remind borrower about upcoming payment
-                  </div>
-                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
-                    Your loan payment of [AMOUNT] is due on [DATE]...
-                  </div>
-                </div>
-
-                {/* Late Notice Template */}
-                <div 
-                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    setTextMessage('Your loan payment is [DAYS] days overdue. Please make payment immediately to avoid additional fees. Contact us at [PHONE] for assistance.');
-                    setShowSmsTemplatesModal(false);
-                    toast({
-                      title: 'Template Loaded',
-                      description: 'Late notice template loaded'
-                    });
-                  }}
-                >
-                  <div className="font-medium text-sm">Late Payment Notice</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Notify borrower about overdue payment
-                  </div>
-                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
-                    Your loan payment is [DAYS] days overdue...
-                  </div>
-                </div>
-
-                {/* Payment Received Template */}
-                <div 
-                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    setTextMessage('Payment of [AMOUNT] received for loan [LOAN_NUMBER]. Thank you for your payment. Your new balance is [BALANCE].');
-                    setShowSmsTemplatesModal(false);
-                    toast({
-                      title: 'Template Loaded',
-                      description: 'Payment received template loaded'
-                    });
-                  }}
-                >
-                  <div className="font-medium text-sm">Payment Received</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Confirm payment receipt
-                  </div>
-                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
-                    Payment of [AMOUNT] received for loan [LOAN_NUMBER]...
-                  </div>
-                </div>
-
-                {/* Escrow Shortage Template */}
-                <div 
-                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    setTextMessage('Escrow shortage detected on your loan. Amount needed: [AMOUNT]. Please contact us to discuss payment options.');
-                    setShowSmsTemplatesModal(false);
-                    toast({
-                      title: 'Template Loaded',
-                      description: 'Escrow shortage template loaded'
-                    });
-                  }}
-                >
-                  <div className="font-medium text-sm">Escrow Shortage</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Notify about escrow shortage
-                  </div>
-                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
-                    Escrow shortage detected on your loan...
-                  </div>
-                </div>
-
-                {/* Rate Change Template */}
-                <div 
-                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    setTextMessage('Your loan interest rate will change from [OLD_RATE]% to [NEW_RATE]% effective [DATE]. Your new payment will be [AMOUNT].');
-                    setShowSmsTemplatesModal(false);
-                    toast({
-                      title: 'Template Loaded',
-                      description: 'Rate change template loaded'
-                    });
-                  }}
-                >
-                  <div className="font-medium text-sm">Rate Change Notice</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Notify about interest rate change
-                  </div>
-                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
-                    Your loan interest rate will change from [OLD_RATE]%...
-                  </div>
-                </div>
-
-                {/* General Update Template */}
-                <div 
-                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
-                  onClick={() => {
-                    setTextMessage('Important update regarding your loan [LOAN_NUMBER]: [MESSAGE]. Please contact us if you have questions.');
-                    setShowSmsTemplatesModal(false);
-                    toast({
-                      title: 'Template Loaded',
-                      description: 'General update template loaded'
-                    });
-                  }}
-                >
-                  <div className="font-medium text-sm">General Update</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Send general loan update
-                  </div>
-                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
-                    Important update regarding your loan [LOAN_NUMBER]...
-                  </div>
-                </div>
-              </div>
-            </ScrollArea>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSmsTemplatesModal(false)}>
-              Cancel
-            </Button>
-          </DialogFooter>
+          <EmailTemplatesContent 
+            onSelectTemplate={(template: any) => {
+              setTextMessage(template.body);
+              setShowSmsTemplatesModal(false);
+              toast({
+                title: 'Template Loaded',
+                description: `${template.name} has been loaded into your SMS`
+              });
+            }}
+            onClose={() => setShowSmsTemplatesModal(false)}
+            templateType="sms"
+          />
         </DialogContent>
       </Dialog>
 
