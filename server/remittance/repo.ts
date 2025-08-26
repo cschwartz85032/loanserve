@@ -241,8 +241,8 @@ export class RemittanceRepository {
     return result.rows;
   }
 
-  // Process remittance with ledger entries
-  async processRemittance(cycleId: string): Promise<void> {
+  // Process remittance settlement with proper ledger entries
+  async processRemittanceSettlement(cycleId: string): Promise<void> {
     const cycle = await this.getCycle(cycleId);
     if (!cycle || cycle.status !== 'locked') {
       throw new Error('Cycle must be locked before processing');
@@ -253,40 +253,7 @@ export class RemittanceRepository {
       throw new Error('Contract not found');
     }
 
-    // Create ledger entries for investor payables
-    const entries = [
-      {
-        account_name: 'cash' as const,
-        debit_minor: BigInt(cycle.investor_due_minor),
-        credit_minor: 0n,
-        description: `Remittance to investor for cycle ${cycleId}`
-      },
-      {
-        account_name: 'investor_payable_principal' as const,
-        debit_minor: BigInt(cycle.total_principal_minor),
-        credit_minor: 0n,
-        description: `Principal remittance for cycle ${cycleId}`
-      },
-      {
-        account_name: 'investor_payable_interest' as const,
-        debit_minor: BigInt(cycle.total_interest_minor),
-        credit_minor: 0n,
-        description: `Interest remittance for cycle ${cycleId}`
-      },
-      {
-        account_name: 'servicer_fee_income' as const,
-        debit_minor: 0n,
-        credit_minor: BigInt(cycle.servicer_fee_minor),
-        description: `Servicer fee for cycle ${cycleId}`
-      }
-    ];
-
-    await this.ledgerRepo.createEntries({
-      reference_type: 'remittance',
-      reference_id: cycleId,
-      entries
-    });
-
-    await this.updateCycleStatus(cycleId, 'sent');
+    // Update status to settled
+    await this.updateCycleStatus(cycleId, 'settled');
   }
 }

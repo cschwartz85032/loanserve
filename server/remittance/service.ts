@@ -291,9 +291,102 @@ export class RemittanceService {
     return xml;
   }
 
-  // Process remittance and update ledger
-  async processRemittance(cycleId: string): Promise<void> {
-    await this.repo.processRemittance(cycleId);
+  // Process remittance settlement with proper ledger entries
+  async settleRemittance(cycleId: string): Promise<void> {
+    const cycle = await this.repo.getCycle(cycleId);
+    if (!cycle || cycle.status !== 'locked') {
+      throw new Error('Cycle must be locked before settling');
+    }
+
+    const contract = await this.repo.getContract(cycle.contract_id);
+    if (!contract) {
+      throw new Error('Contract not found');
+    }
+
+    // Import postEvent from domain/posting
+    const { postEvent } = await import('../domain/posting');
+    const { LedgerRepository } = await import('../db/ledger-repository');
+    const ledgerRepo = new LedgerRepository(this.pool);
+
+    // Calculate amounts
+    const principalMinor = BigInt(cycle.total_principal_minor);
+    const interestMinor = BigInt(cycle.total_interest_minor);
+    const feesMinor = BigInt(cycle.total_fees_minor);
+    const servicerFeeMinor = BigInt(cycle.servicer_fee_minor);
+    const investorDueMinor = BigInt(cycle.investor_due_minor);
+    
+    // Calculate interest portion of servicer fee (interest * servicer_fee_bps / 10000)
+    const interestCollected = interestMinor + servicerFeeMinor; // Total interest collected before servicer fee
+    const servicerFeeFromInterest = (interestCollected * BigInt(contract.servicer_fee_bps)) / 10000n;
+    const interestToInvestor = interestMinor; // Already net of servicer fee based on our waterfall calc
+    
+    // Prepare posting lines for settlement
+    const lines: any[] = [];
+    
+    // First, create payables if not already created
+    // (In practice, these might be created earlier during the cycle)
+    
+    // Settlement entries:
+    // Debit investor_payable_principal for principal amount
+    if (principalMinor > 0n) {
+      lines.push({
+        account: 'investor_payable_principal',
+        debitMinor: principalMinor,
+        memo: `Settle principal remittance cycle ${cycleId}`
+      });
+    }
+    
+    // Debit investor_payable_interest for interest (net of servicer fee)
+    if (interestToInvestor > 0n) {
+      lines.push({
+        account: 'investor_payable_interest',
+        debitMinor: interestToInvestor,
+        memo: `Settle interest remittance cycle ${cycleId}`
+      });
+    }
+    
+    // Debit investor_payable_fees for fee portion to investor
+    if (feesMinor > 0n) {
+      lines.push({
+        account: 'investor_payable_fees',
+        debitMinor: feesMinor,
+        memo: `Settle fees remittance cycle ${cycleId}`
+      });
+    }
+    
+    // Credit cash from custodial account for total investor due
+    if (investorDueMinor > 0n) {
+      lines.push({
+        account: 'cash',
+        creditMinor: investorDueMinor,
+        memo: `Cash payment to investor for cycle ${cycleId}`
+      });
+    }
+    
+    // Credit servicer_fee_income for servicer fee
+    if (servicerFeeMinor > 0n) {
+      lines.push({
+        account: 'servicer_fee_income',
+        creditMinor: servicerFeeMinor,
+        memo: `Servicer fee income for cycle ${cycleId}`
+      });
+    }
+    
+    // If lines array is not empty, post the event
+    if (lines.length > 0) {
+      // We need a loan_id for the posting - use 0 for portfolio-level entries
+      await postEvent(ledgerRepo, {
+        loanId: 0, // Portfolio-level entry
+        effectiveDate: new Date().toISOString().split('T')[0],
+        correlationId: `remit:${cycleId}`,
+        schema: 'posting.remittance.v1',
+        currency: 'USD',
+        lines
+      });
+    }
+    
+    // Update cycle status to settled
+    await this.repo.updateCycleStatus(cycleId, 'settled');
   }
 
   // Get remittance report

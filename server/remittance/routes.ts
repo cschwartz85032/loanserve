@@ -82,15 +82,15 @@ export function createRemittanceRoutes(pool: Pool): Router {
     }
   });
 
-  router.post('/cycles/:cycleId/process', async (req, res) => {
+  router.post('/cycles/:cycleId/settle', async (req, res) => {
     try {
       const { cycleId } = req.params;
-      await service.processRemittance(cycleId);
-      res.json({ success: true, message: 'Remittance processed successfully' });
+      await service.settleRemittance(cycleId);
+      res.json({ success: true, message: 'Remittance settled successfully' });
     } catch (error) {
-      console.error('Error processing remittance:', error);
+      console.error('Error settling remittance:', error);
       res.status(400).json({ 
-        error: error instanceof Error ? error.message : 'Failed to process remittance' 
+        error: error instanceof Error ? error.message : 'Failed to settle remittance' 
       });
     }
   });
