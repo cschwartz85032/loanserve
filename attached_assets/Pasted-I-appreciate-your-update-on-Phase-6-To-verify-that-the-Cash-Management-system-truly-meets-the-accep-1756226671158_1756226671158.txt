@@ -1,0 +1,57 @@
+I appreciate your update on Phase 6. To verify that the Cash Management system truly meets the acceptance criteria, please provide detailed evidence for each of the features you listed. Specifically:
+
+Bank account management:
+
+Point me to the migration scripts and code modules that create and manage bank_account records.
+
+Show how these accounts are linked to the GL cash accounts in the ledger.
+
+ACH processing:
+
+Provide the table definitions (e.g., ach_batch, ach_entry) and code that groups validated payments into NACHA batches.
+
+Show the deterministic NACHA file generator, including where trace numbers are assigned and persisted.
+
+Demonstrate idempotency handling by showing how duplicate requests are detected and ignored.
+
+Bank statement ingestion:
+
+Show the parsers for BAI2 and CAMT.053 formats.
+
+Provide examples of how these files are stored (e.g., bank_statement_file) and how canonical transactions (bank_txn) are created.
+
+Reconciliation engine:
+
+Explain the matching algorithm and confidence scoring.
+
+Show the tables used to store match candidates and exceptions (e.g., cash_match_candidate, recon_exception).
+
+Provide an example where a bank transaction is auto‑matched and where an exception is raised for manual review.
+
+Return processing:
+
+Show how ACH returns are ingested, mapped back to the original ach_entry, and inserted into ach_return.
+
+Provide the code that posts the exact reversal entries to the ledger and assesses NSF fees based on the fee policy.
+
+Show an emitted ach.return.received event and a corresponding payment.reversed event.
+
+Exception management:
+
+Demonstrate the UI or API for the reconciliation worklist.
+
+Show how an operator can manually match, write off, or annotate an unmatched bank transaction, and how that action updates the ledger and exception status.
+
+Event publishing:
+
+Provide examples of outbox entries and RabbitMQ messages for cash.reconciled, ach.file.created, ach.return.received, and payment.reversed.
+
+Include evidence that these events are schema‑validated and published via confirm channels.
+
+Ledger integration and zero‑variance reconciliation:
+
+Show how the reconciliation engine uses the Phase 1 double‑entry ledger instead of a legacy payments table.
+
+Provide a test run or daily report demonstrating day‑plus‑one reconciliation with zero variance across all bank accounts.
+
+If you can supply links to the relevant modules, migration files, test cases, and sample outputs for each item, we can quickly confirm that Phase 6 is complete and reliable. Thank you!
