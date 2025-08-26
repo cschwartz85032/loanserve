@@ -1,0 +1,205 @@
+Phase 7 - Investor remittance and reporting
+0) Scope and dependencies
+
+Depends on Phases 1 to 3 and 6.
+
+Goals: custodial P&I accounting, configurable investor waterfalls, scheduled remittances, investor exports, and reconciliations to GL.
+
+1) Database schema
+-- 010_investor_remittance.sql
+BEGIN;
+
+CREATE TABLE investor_contract (
+  contract_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  investor_id UUID NOT NULL REFERENCES investor(investor_id),
+  product_code TEXT NOT NULL REFERENCES product_policy(product_code),
+  method TEXT NOT NULL CHECK (method IN ('scheduled_p_i','actual_cash','scheduled_p_i_with_interest_shortfall')),
+  remittance_day SMALLINT NOT NULL CHECK (remittance_day BETWEEN 1 AND 31),
+  cutoff_day SMALLINT NOT NULL CHECK (cutoff_day BETWEEN 1 AND 31),
+  custodial_bank_acct_id UUID NOT NULL REFERENCES bank_account(bank_acct_id),
+  servicer_fee_bps INTEGER NOT NULL DEFAULT 0,
+  late_fee_split_bps INTEGER NOT NULL DEFAULT 0,  -- portion to investor
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Waterfall configuration
+CREATE TABLE investor_waterfall_rule (
+  rule_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_id UUID NOT NULL REFERENCES investor_contract(contract_id) ON DELETE CASCADE,
+  rank SMALLINT NOT NULL,       -- order of application
+  bucket TEXT NOT NULL CHECK (bucket IN ('interest','principal','late_fees','escrow','recoveries')),
+  cap_minor NUMERIC(20,0),      -- optional cap for this bucket
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (contract_id, rank)
+);
+
+-- Remittance cycle
+CREATE TYPE remit_status AS ENUM ('open','locked','file_generated','sent','settled','closed');
+
+CREATE TABLE remittance_cycle (
+  cycle_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contract_id UUID NOT NULL REFERENCES investor_contract(contract_id) ON DELETE CASCADE,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  status remit_status NOT NULL DEFAULT 'open',
+  total_principal_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  total_interest_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  total_fees_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  servicer_fee_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  investor_due_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (contract_id, period_start, period_end)
+);
+
+-- Cycle line items (loan-level or pool-level)
+CREATE TABLE remittance_item (
+  item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cycle_id UUID NOT NULL REFERENCES remittance_cycle(cycle_id) ON DELETE CASCADE,
+  loan_id UUID REFERENCES loan(loan_id),
+  principal_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  interest_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  fees_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  investor_share_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  servicer_fee_minor NUMERIC(20,0) NOT NULL DEFAULT 0
+);
+
+-- Export files registry
+CREATE TABLE remittance_export (
+  export_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cycle_id UUID NOT NULL REFERENCES remittance_cycle(cycle_id) ON DELETE CASCADE,
+  format TEXT NOT NULL CHECK (format IN ('csv','xml')),
+  file_hash CHAR(64) NOT NULL,
+  bytes BYTEA NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMIT;
+
+
+Add GL accounts if missing:
+
+investor_payable_principal
+
+investor_payable_interest
+
+servicer_fee_income
+
+2) Aggregation and waterfall
+
+Input set per cycle: all payment_posting.applied rows for loans under the contract’s product_code and investor_id, with effective_date between period_start and period_end and matched by the reconciled bank account used for custodial cash if applicable.
+
+Aggregate by loan:
+
+principal_collected, interest_collected, late_fees_collected.
+
+Servicer fee:
+
+servicer_fee_minor = round( interest_collected * servicer_fee_bps / 10000 ).
+
+Investor share per rule sequence:
+
+Apply interest to investor up to cap if any, less servicer fee.
+
+Apply principal.
+
+Apply late_fees split by late_fee_split_bps to investor; remainder to servicer fee or income.
+
+Compute investor_share_minor and servicer_fee_minor per item and sum to cycle totals.
+
+3) Posting rules on settlement
+
+When cycle moves to settled:
+
+Debit investor_payable_principal by total_principal_minor, credit cash from custodial account if paid out.
+
+Debit investor_payable_interest by total_interest_minor - servicer_fee_minor_in_interest_share, credit cash.
+
+Credit servicer_fee_income by servicer_fee_minor.
+
+If you maintain investor payables earlier in the month, then settlement posting clears them to cash. If not, create payables here prior to cash movement.
+
+All through postEvent, one balanced event per cycle, correlation_id='remit:'+cycle_id.
+
+4) Remittance scheduling
+
+For each investor_contract, create cycles:
+
+period_start and period_end are bounded by cutoff_day.
+
+remittance_day schedules settlement N business days after cutoff. Make holidays configurable later.
+
+Job runs daily to open new cycles and close old ones when period_end passes. Lock cycle before export.
+
+5) Exports
+
+CSV columns minimal to start:
+
+loan_id, period_start, period_end, principal_minor, interest_minor, fees_minor, investor_share_minor, servicer_fee_minor
+
+XML stub mirrors CSV structure under <Remittance> root.
+
+Files are deterministic and hashed. Insert into remittance_export, and publish remittance.file.generated.v1.
+
+6) Events and queues
+
+Exchanges:
+
+remit.saga topic
+
+remit.events topic
+
+remit.dlq direct
+
+Queues:
+
+q.remit.aggregate ← remit.saga:cycle.aggregate.v1
+
+q.remit.export ← remit.saga:cycle.export.v1
+
+q.remit.settle ← remit.saga:cycle.settle.v1
+
+q.remit.events.audit ← remit.events:remit.*
+
+q.remit.dlq
+
+Events:
+
+remittance.cycle.created.v1
+
+remittance.file.generated.v1
+
+remittance.settled.v1
+
+7) Reconciliation report
+
+Create a report query that ties:
+
+sum(remittance_item.investor_share_minor) and sum(remittance_item.servicer_fee_minor) to
+
+GL balances movement from corresponding payables and income in ledger_entry over the same period.
+
+Store a snapshot row in an internal table remittance_recon_snapshot with the signed differences. Threshold must be zero to pass acceptance.
+
+8) Acceptance tests
+
+Build a cycle with two loans, ensure waterfall splits are correct to the cent.
+
+Generate CSV and XML, verify hashes are stable across runs.
+
+Settlement posting is balanced and GL reconciliation report shows zero variance.
+
+9) Legacy upgrade hit-list
+
+Any code that pays investors directly from cash without creating investor payables:
+
+grep for investor payout, pay investor, wire investor. Replace with cycle settlement posting.
+
+Old “remittance” spreadsheets or ad hoc exports:
+
+grep for remittance.csv, investor_export. Replace with remittance_export.
+
+Direct fees netting in payment poster:
+
+grep for servicerFee in payment code. Servicer fees must be computed in remittance, not at payment time.
+
+Definition of Done: cycles created and settled on schedule, exports produced, GL reconciliation equals zero, and all legacy direct payouts removed.
