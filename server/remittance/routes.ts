@@ -136,6 +136,22 @@ export function createRemittanceRoutes(pool: Pool): Router {
     }
   });
 
+  // Scheduler endpoints
+  router.post('/scheduler/run', async (req, res) => {
+    try {
+      // Create a temporary scheduler instance to run manually
+      const { RemittanceScheduler } = await import('./scheduler.js');
+      const scheduler = new RemittanceScheduler(pool);
+      await scheduler.runNow();
+      res.json({ success: true, message: 'Scheduler run completed' });
+    } catch (error) {
+      console.error('Error running scheduler manually:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Failed to run scheduler' 
+      });
+    }
+  });
+
   // Report endpoints
   router.get('/cycles/:cycleId/report', async (req, res) => {
     try {

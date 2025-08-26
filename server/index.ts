@@ -133,6 +133,21 @@ app.use((req, res, next) => {
     console.error('[Server] Failed to start CRM notification checks:', error);
   }
   
+  // Start Remittance Scheduler
+  try {
+    const { neonConfig } = await import('@neondatabase/serverless');
+    const { Pool } = await import('@neondatabase/serverless');
+    const { RemittanceScheduler } = await import('./remittance/scheduler');
+    
+    neonConfig.fetchConnectionCache = true;
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const scheduler = new RemittanceScheduler(pool);
+    scheduler.start();
+    console.log('[Server] Remittance scheduler started successfully');
+  } catch (error) {
+    console.error('[Server] Failed to start remittance scheduler:', error);
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler
