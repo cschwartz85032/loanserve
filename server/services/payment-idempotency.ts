@@ -114,9 +114,14 @@ export class IdempotencyService {
    * Create result hash for caching
    */
   static createResultHash(result: any): string {
+    // Handle undefined or null results
+    const dataToHash = result !== undefined && result !== null 
+      ? JSON.stringify(result) 
+      : 'void';
+    
     return crypto
       .createHash('sha256')
-      .update(JSON.stringify(result))
+      .update(dataToHash)
       .digest('hex');
   }
 }

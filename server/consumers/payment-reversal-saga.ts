@@ -88,14 +88,15 @@ export class PaymentReversalSaga {
       );
 
       // Emit reversal complete event
-      const reversalCompleteEnvelope = this.messageFactory.createReply(envelope, {
-        schema: 'loanserve.payment.v1.reversed',
-        data: {
+      const reversalCompleteEnvelope = this.messageFactory.createReply(
+        envelope,
+        'loanserve.payment.v1.reversed',
+        {
           payment_id,
           reversal_id: sagaId,
           reversal_timestamp: new Date().toISOString()
         }
-      });
+      );
 
       await IdempotencyService.addToOutbox(
         client,
@@ -451,10 +452,11 @@ export class PaymentReversalSaga {
       reversal_id: ulid()
     };
 
-    const reversalEnvelope = this.messageFactory.createReply(envelope, {
-      schema: 'loanserve.payment.v1.reversal.requested',
-      data: reversalData
-    });
+    const reversalEnvelope = this.messageFactory.createReply(
+      envelope,
+      'loanserve.payment.v1.reversal.requested',
+      reversalData
+    );
 
     await this.executeReversal(reversalEnvelope, client);
   }

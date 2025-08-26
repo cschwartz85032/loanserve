@@ -57,7 +57,7 @@ const PaymentSubmissionSchema = z.object({
 /**
  * Submit a payment for processing
  */
-router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH FOR TESTING
+router.post('/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH FOR TESTING
   try {
     console.log('[API] Payment submission request body:', JSON.stringify(req.body, null, 2));
     
@@ -150,39 +150,9 @@ router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH
         } as PaymentData;
     }
 
-    // Save payment to database immediately
-    await db.execute(sql`
-      INSERT INTO payment_transactions (
-        payment_id,
-        loan_id,
-        source,
-        external_ref,
-        amount_cents,
-        currency,
-        received_at,
-        effective_date,
-        state,
-        idempotency_key,
-        created_by,
-        metadata
-      ) VALUES (
-        ${paymentId},
-        ${data.loan_id},
-        ${data.source},
-        ${data.external_ref || null},
-        ${amountCents},
-        'USD',
-        ${new Date().toISOString()},
-        ${data.effective_date || new Date().toISOString()},
-        'received',
-        ${paymentId},
-        ${1}, -- Default user ID for now
-        ${JSON.stringify({
-          ...paymentData,
-          submitted_at: new Date().toISOString()
-        })}
-      )
-    `);
+    // Payment will be saved by the validation consumer after processing
+    // We just log the submission here for tracking
+    console.log(`[API] Payment ${paymentId} prepared for validation`);
 
     // Create CRM activity for the payment
     await logActivity(
@@ -199,56 +169,7 @@ router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH
       null
     );
 
-    // Create ledger entry for the payment
-    const transactionId = `PAY-${paymentId}`;
-    
-    // Get the last balance for this loan
-    const lastLedgerEntry = await db.execute(sql`
-      SELECT running_balance, principal_balance
-      FROM loan_ledger
-      WHERE loan_id = ${parseInt(data.loan_id)}
-      ORDER BY transaction_date DESC, id DESC
-      LIMIT 1
-    `);
-    
-    const lastBalance = lastLedgerEntry.rows[0]?.running_balance || '0';
-    const lastPrincipalBalance = lastLedgerEntry.rows[0]?.principal_balance || '0';
-    const newBalance = parseFloat(lastBalance) - data.amount; // Payment reduces the balance
-    const newPrincipalBalance = parseFloat(lastPrincipalBalance) - data.amount; // Assume payment goes to principal for now
-    
-    await db.execute(sql`
-      INSERT INTO loan_ledger (
-        loan_id,
-        transaction_date,
-        transaction_id,
-        description,
-        transaction_type,
-        category,
-        debit_amount,
-        credit_amount,
-        running_balance,
-        principal_balance,
-        interest_balance,
-        status,
-        created_by,
-        notes
-      ) VALUES (
-        ${parseInt(data.loan_id)},
-        ${data.effective_date || new Date().toISOString()},
-        ${transactionId},
-        ${`Payment received via ${data.source}`},
-        'payment',
-        'payment',
-        ${data.amount.toString()},
-        NULL,
-        ${newBalance.toFixed(2)},
-        ${newPrincipalBalance.toFixed(2)},
-        '0.00',
-        'posted',
-        ${1},
-        ${`Payment ID: ${paymentId}, Source: ${data.source}`}
-      )
-    `);
+    // Ledger entry will be created after payment is validated and processed
 
     // Create payment envelope
     const envelope = messageFactory.createMessage(
@@ -260,10 +181,10 @@ router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH
     );
 
     // Publish to validation queue
-    await rabbitmq.publish(
-      `payment.${data.source}.received`,
-      envelope
-    );
+    await rabbitmq.publish(envelope, {
+      exchange: 'payments.inbound',
+      routingKey: data.source
+    });
 
     console.log(`[API] Payment ${paymentId} submitted for processing`);
 
@@ -290,7 +211,7 @@ router.post('/api/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH
 /**
  * Get all payments
  */
-router.get('/api/payments/all', requireAuth, async (req, res) => {
+router.get('/payments/all', requireAuth, async (req, res) => {
   try {
     // Permission check is handled by requireAuth middleware
     // The middleware sets req.userPolicy if the user is authenticated
@@ -325,7 +246,7 @@ router.get('/api/payments/all', requireAuth, async (req, res) => {
 /**
  * Get payment metrics
  */
-router.get('/api/payments/metrics', requireAuth, async (req, res) => {
+router.get('/payments/metrics', requireAuth, async (req, res) => {
   try {
     // Permission check is handled by requireAuth middleware
     // The middleware sets req.userPolicy if the user is authenticated
@@ -372,7 +293,7 @@ router.get('/api/payments/metrics', requireAuth, async (req, res) => {
 /**
  * Get payment status
  */
-router.get('/api/payments/:paymentId', requireAuth, async (req, res) => {
+router.get('/payments/:paymentId', requireAuth, async (req, res) => {
   try {
     const { paymentId } = req.params;
 
@@ -425,7 +346,7 @@ router.get('/api/payments/:paymentId', requireAuth, async (req, res) => {
 /**
  * Get payments for a loan
  */
-router.get('/api/loans/:loanId/payments', requireAuth, async (req, res) => {
+router.get('/loans/:loanId/payments', requireAuth, async (req, res) => {
   try {
     const { loanId } = req.params;
     const { status, from_date, to_date, limit = 50, offset = 0 } = req.query;
@@ -497,7 +418,7 @@ router.get('/api/loans/:loanId/payments', requireAuth, async (req, res) => {
 /**
  * Get payment allocations
  */
-router.get('/api/payments/:paymentId/allocations', requireAuth, async (req, res) => {
+router.get('/payments/:paymentId/allocations', requireAuth, async (req, res) => {
   try {
     const { paymentId } = req.params;
 
@@ -555,7 +476,7 @@ router.get('/api/payments/:paymentId/allocations', requireAuth, async (req, res)
 /**
  * Get investor distributions for a payment
  */
-router.get('/api/payments/:paymentId/distributions', requireAuth, async (req, res) => {
+router.get('/payments/:paymentId/distributions', requireAuth, async (req, res) => {
   try {
     const { paymentId } = req.params;
 
@@ -615,7 +536,7 @@ router.get('/api/payments/:paymentId/distributions', requireAuth, async (req, re
 /**
  * Reverse a payment (admin only)
  */
-router.post('/api/payments/:paymentId/reverse', requireAuth, async (req, res) => {
+router.post('/payments/:paymentId/reverse', requireAuth, async (req, res) => {
   try {
     const { paymentId } = req.params;
     const { reason } = req.body;
@@ -659,7 +580,10 @@ router.post('/api/payments/:paymentId/reverse', requireAuth, async (req, res) =>
     });
 
     // Publish to reversal queue
-    await rabbitmq.publish('payment.reversal.requested', reversalEnvelope);
+    await rabbitmq.publish(reversalEnvelope, {
+      exchange: 'payments.reversal',
+      routingKey: 'requested'
+    });
 
     console.log(`[API] Reversal requested for payment ${paymentId}`);
 

@@ -29,17 +29,35 @@ export class PaymentValidationConsumer {
     envelope: PaymentEnvelope<PaymentData>,
     client: PoolClient
   ): Promise<void> {
-    const { data } = envelope;
+    console.log('[Validation] Received envelope with message_id:', envelope.message_id);
+    
+    // Get the payment data from the envelope's data property
+    const data = envelope.data;
+    
+    if (!data || !data.payment_id) {
+      console.error('[Validation] Invalid envelope:', JSON.stringify(envelope, null, 2));
+      throw new Error('Invalid envelope: missing payment data or payment_id');
+    }
+    
     console.log(`[Validation] Processing payment ${data.payment_id} from ${data.source}`);
 
     try {
       // Check idempotency
-      const idempotencyKey = IdempotencyService.generateIdempotencyKey(
-        data.source,
-        data
-      );
+      let idempotencyKey: string;
+      try {
+        idempotencyKey = IdempotencyService.generateIdempotencyKey(
+          data.source,
+          data
+        );
+        console.log(`[Validation] Generated idempotency key: "${idempotencyKey}" (length: ${idempotencyKey.length})`);
+      } catch (err) {
+        console.error('[Validation] Error generating idempotency key:', err);
+        // Fallback to payment_id
+        idempotencyKey = data.payment_id;
+      }
 
       // Check if payment already exists
+      console.log('[Validation] Checking for duplicate with idempotency_key:', idempotencyKey);
       const existing = await client.query(
         'SELECT payment_id, state FROM payment_transactions WHERE idempotency_key = $1',
         [idempotencyKey]
@@ -53,6 +71,22 @@ export class PaymentValidationConsumer {
       // Insert payment record with 'received' state
       console.log(`[Validation] Inserting payment with loan_id: ${data.loan_id} (type: ${typeof data.loan_id})`);
       
+      // Ensure loan_id is properly formatted
+      const loanIdStr = String(data.loan_id).substring(0, 50);
+      const producerStr = (envelope.producer || 'payment-api').substring(0, 100);
+      
+      // Debug log the values
+      console.log(`[Validation] Insert values:`, {
+        payment_id: data.payment_id,
+        loan_id: loanIdStr,
+        source: data.source,
+        external_ref: data.external_ref,
+        amount_cents: data.amount_cents,
+        currency: data.currency || 'USD',
+        producer: producerStr,
+        idempotency_key: idempotencyKey
+      });
+      
       await client.query(`
         INSERT INTO payment_transactions (
           payment_id, loan_id, source, external_ref, amount_cents,
@@ -61,7 +95,7 @@ export class PaymentValidationConsumer {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       `, [
         data.payment_id,
-        String(data.loan_id),  // Convert to string for varchar field
+        loanIdStr,  // Ensure it fits in varchar(50)
         data.source,
         data.external_ref,
         data.amount_cents,
@@ -70,7 +104,7 @@ export class PaymentValidationConsumer {
         envelope.effective_date || new Date().toISOString().split('T')[0],
         'received' as PaymentState,
         idempotencyKey,
-        envelope.producer,
+        producerStr, // Use the truncated producer string
         JSON.stringify(envelope.data)
       ]);
 
@@ -97,13 +131,14 @@ export class PaymentValidationConsumer {
         );
 
         // Emit validated event
-        const validatedEnvelope = this.messageFactory.createReply(envelope, {
-          schema: `loanserve.payment.v1.validated`,
-          data: {
+        const validatedEnvelope = this.messageFactory.createReply(
+          envelope,
+          `loanserve.payment.v1.validated`,
+          {
             ...data,
             validation_timestamp: new Date().toISOString()
           }
-        });
+        );
 
         await IdempotencyService.addToOutbox(
           client,
@@ -387,7 +422,7 @@ export class PaymentValidationConsumer {
 
     await this.rabbitmq.consume(
       { 
-        queue: 'payments.validation',
+        queue: 'q.validate',
         prefetch: 10,
         consumerTag: 'payment-validation-consumer'
       },

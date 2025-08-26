@@ -127,15 +127,16 @@ export class PaymentDistributionConsumer {
       );
 
       // Emit distribution event
-      const distributionEnvelope = this.messageFactory.createReply(envelope, {
-        schema: 'loanserve.distribution.v1.calculated',
-        data: {
+      const distributionEnvelope = this.messageFactory.createReply(
+        envelope,
+        'loanserve.distribution.v1.calculated',
+        {
           payment_id: data.payment_id,
           distributions,
           total_distributed: distributableAfterFees,
           servicing_fee_total: servicingFeeAmount
         } as DistributionData
-      });
+      );
 
       await IdempotencyService.addToOutbox(
         client,
@@ -279,14 +280,15 @@ export class PaymentDistributionConsumer {
     }
 
     // Emit clawback event
-    const clawbackEnvelope = this.messageFactory.createReply(envelope, {
-      schema: 'loanserve.distribution.v1.clawback',
-      data: {
+    const clawbackEnvelope = this.messageFactory.createReply(
+      envelope,
+      'loanserve.distribution.v1.clawback',
+      {
         payment_id,
         reason,
         clawback_count: distributions.rows.length
       }
-    });
+    );
 
     await IdempotencyService.addToOutbox(
       client,

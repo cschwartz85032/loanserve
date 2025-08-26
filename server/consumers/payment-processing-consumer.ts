@@ -104,14 +104,15 @@ export class PaymentProcessingConsumer {
       );
 
       // Emit processed event
-      const processedEnvelope = this.messageFactory.createReply(envelope, {
-        schema: `loanserve.payment.v1.processed`,
-        data: {
+      const processedEnvelope = this.messageFactory.createReply(
+        envelope,
+        `loanserve.payment.v1.processed`,
+        {
           ...data,
           allocation,
           processing_timestamp: new Date().toISOString()
         }
-      });
+      );
 
       await IdempotencyService.addToOutbox(
         client,
