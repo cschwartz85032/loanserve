@@ -89,11 +89,32 @@ export class RemittanceService {
       periodEnd = cutoffDate;
     }
 
-    return await this.repo.createCycle({
+    const cycle = await this.repo.createCycle({
       contractId,
       periodStart,
       periodEnd
     });
+
+    // Publish cycle created event
+    try {
+      const { getPublisher } = await import('../messaging/publisher');
+      const publisher = await getPublisher();
+      await publisher.publish({
+        exchange: 'remit.events',
+        routingKey: 'remittance.cycle.created.v1',
+        content: {
+          cycleId: cycle.cycle_id,
+          contractId: cycle.contract_id,
+          periodStart: cycle.period_start.toISOString(),
+          periodEnd: cycle.period_end.toISOString(),
+          status: cycle.status
+        }
+      });
+    } catch (error) {
+      console.error('[RemittanceService] Failed to publish cycle created event:', error);
+    }
+
+    return cycle;
   }
 
   // Process collections and calculate waterfall
@@ -289,7 +310,7 @@ export class RemittanceService {
       const { getPublisher } = await import('../messaging/publisher');
       const publisher = await getPublisher();
       await publisher.publish({
-        exchange: 'remittance',
+        exchange: 'remit.events',
         routingKey: 'remittance.file.generated.v1',
         content: {
           cycleId,
@@ -425,6 +446,27 @@ export class RemittanceService {
     
     // Update cycle status to settled
     await this.repo.updateCycleStatus(cycleId, 'settled');
+    
+    // Publish settled event
+    try {
+      const { getPublisher } = await import('../messaging/publisher');
+      const publisher = await getPublisher();
+      await publisher.publish({
+        exchange: 'remit.events',
+        routingKey: 'remittance.settled.v1',
+        content: {
+          cycleId,
+          principalMinor: principalMinor.toString(),
+          interestMinor: interestToInvestor.toString(),
+          feesMinor: feesMinor.toString(),
+          investorDueMinor: investorDueMinor.toString(),
+          servicerFeeMinor: servicerFeeMinor.toString(),
+          settledAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('[RemittanceService] Failed to publish settled event:', error);
+    }
   }
 
   // Get remittance report

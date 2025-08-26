@@ -161,6 +161,32 @@ export class OptimizedTopologyManager extends TopologyManager {
       durable: true,
     });
 
+    // Phase 7 Remittance exchanges
+    this.addExchange({
+      name: 'remit.saga',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'remit.events',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'remit.dlq',
+      type: 'direct',
+      durable: true,
+    });
+
+    // Cash management exchanges for Phase 6
+    this.addExchange({
+      name: 'cash.events',
+      type: 'topic',
+      durable: true,
+    });
+
     // Add optimized queues
     this.defineOptimizedQueues();
   }
@@ -340,6 +366,69 @@ export class OptimizedTopologyManager extends TopologyManager {
       },
       bindings: [
         { exchange: 'investor.direct', routingKey: 'clawback' },
+      ],
+    });
+
+    // Phase 7 Remittance queues
+    this.addQueue({
+      name: 'q.remit.aggregate',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'remit.dlq',
+        'x-dead-letter-routing-key': 'aggregate.failed',
+      },
+      bindings: [
+        { exchange: 'remit.saga', routingKey: 'cycle.aggregate.v1' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.remit.export',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'remit.dlq',
+        'x-dead-letter-routing-key': 'export.failed',
+      },
+      bindings: [
+        { exchange: 'remit.saga', routingKey: 'cycle.export.v1' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.remit.settle',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'remit.dlq',
+        'x-dead-letter-routing-key': 'settle.failed',
+      },
+      bindings: [
+        { exchange: 'remit.saga', routingKey: 'cycle.settle.v1' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.remit.events.audit',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-message-ttl': 604800000, // 7 days for audit
+      },
+      bindings: [
+        { exchange: 'remit.events', routingKey: 'remit.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.remit.dlq',
+      durable: true,
+      arguments: {
+        'x-message-ttl': 86400000, // 24 hours
+      },
+      bindings: [
+        { exchange: 'remit.dlq', routingKey: '#' },
       ],
     });
 
