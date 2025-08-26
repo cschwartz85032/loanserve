@@ -10,3 +10,8 @@ vite.config.ts.*
 cookies2.txt
 cookies-new.txt
 *.zip
+
+# Environment files - NEVER commit credentials
+.env
+.env.local
+.env.production
