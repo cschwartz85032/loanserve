@@ -1,0 +1,584 @@
+Below is a complete, engineer-ready specification for **Phase 4 – Statements, Notices, Documents**. It defines exact database schema, TypeScript contracts, algorithms, rendering pipeline (deterministic, byte-stable), queues/exchanges, JSON Schemas, services, jobs, metrics, acceptance, and upgrade steps. Implement this verbatim. There are no unspecified choices.
+
+---
+
+# 0) Scope, dependencies, invariants
+
+* Depends on Phases 1–3 (ledger, schedules, escrow analysis, outbox).
+* Currency: USD. Amounts stored in **minor units** (`bigint` cents). No floats in persisted data.
+* All inter-service events use Phase-0 `MessageEnvelope<T>` with headers: `x-message-id`, `x-correlation-id`, `x-schema`, `x-trace-id`.
+* All publishes go through the **outbox** (single source of truth for external events).
+* PDFs must be **deterministic** and **byte-stable**: given the same inputs, the produced PDF bytes are identical. See §7 for deterministic rendering rules.
+
+Artifacts in Phase 4:
+
+1. **Periodic billing statements** (monthly) from ledger snapshot and schedule rows.
+2. **Escrow analysis statements** from Phase-3 `escrow_analysis`.
+3. **Year-end 1098** (mortgage interest) statements (cash basis).
+4. **Notices engine** with jurisdictional templates and timers (e.g., late notices after grace).
+
+---
+
+# 1) RabbitMQ topology (additions)
+
+Extend topology (durable exchanges; quorum queues).
+
+**Exchanges**
+
+* `docs.saga` topic
+* `docs.events` topic
+* `docs.dlq` direct
+* `notices.saga` topic
+* `notices.events` topic
+* `notices.dlq` direct
+
+**Queues** (all quorum; args on each: `x-queue-type=quorum`, `x-dead-letter-exchange=<*.dlq>`, `x-delivery-limit=6`)
+
+* `q.docs.generate` ← `docs.saga:generate.request.v1`
+* `q.docs.render` ← `docs.saga:render.request.v1`
+* `q.docs.events.audit` ← `docs.events:doc.*`
+* `q.docs.dlq` ← `docs.dlq:#`
+* `q.notices.schedule` ← `notices.saga:schedule.request.v1`
+* `q.notices.dispatch` ← `notices.saga:dispatch.request.v1`
+* `q.notices.events.audit` ← `notices.events:notice.*`
+* `q.notices.dlq` ← `notices.dlq:#`
+
+---
+
+# 2) Database schema (PostgreSQL 15+) — migrations
+
+Apply in this order, in a single transaction per file.
+
+```sql
+-- 006_document_template_and_artifacts.sql
+BEGIN;
+
+CREATE TYPE document_type AS ENUM ('billing_statement','escrow_analysis','year_end_1098','notice');
+
+CREATE TABLE document_template (
+  template_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type document_type NOT NULL,
+  jurisdiction jurisdiction_code,                    -- NULL => global
+  version INTEGER NOT NULL,
+  engine TEXT NOT NULL CHECK (engine IN ('handlebars-html')),
+  html_source TEXT NOT NULL,                         -- full HTML with {{placeholders}}
+  css_source TEXT NOT NULL,                          -- CSS chunk (no external fetches)
+  font_family TEXT NOT NULL DEFAULT 'DejaVu Sans',   -- pinned for determinism
+  retired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (type, jurisdiction, version)
+);
+
+-- Canonical inputs used to render, and the resulting PDF artifact
+CREATE TABLE document_artifact (
+  doc_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type document_type NOT NULL,
+  loan_id UUID REFERENCES loan(loan_id) ON DELETE SET NULL,
+  related_id UUID,                                   -- analysis_id for escrow_analysis; notice_id for notices; NULL for generic
+  period_start DATE,                                 -- monthly statements
+  period_end DATE,
+  tax_year INTEGER,                                  -- 1098
+  template_id UUID NOT NULL REFERENCES document_template(template_id),
+  payload_json JSONB NOT NULL,                       -- canonical, fully-resolved data (no lookups required)
+  inputs_hash CHAR(64) NOT NULL,                     -- sha256(payload_json || template_id || css_source || engine || version)
+  pdf_hash CHAR(64) NOT NULL,                        -- sha256(pdf_bytes)
+  pdf_bytes BYTEA,                                   -- Phase 4 stores inline; Phase 5 can move to object storage
+  size_bytes INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  event_id UUID,                                     -- event that produced this doc (e.g., docs.generated)
+  UNIQUE (type, loan_id, period_start, period_end, tax_year)
+);
+
+-- Statement registries for quick search (redundant indices)
+CREATE INDEX idx_document_artifact_loan ON document_artifact(loan_id, type, period_start, period_end);
+CREATE INDEX idx_document_artifact_hash ON document_artifact(inputs_hash, pdf_hash);
+
+-- Notice templates and schedules
+CREATE TABLE notice_template (
+  notice_template_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  jurisdiction jurisdiction_code,
+  code TEXT NOT NULL,                   -- e.g., 'LATE_NOTICE_15', 'DEFAULT_LETTER'
+  version INTEGER NOT NULL,
+  engine TEXT NOT NULL CHECK (engine IN ('handlebars-html')),
+  html_source TEXT NOT NULL,
+  css_source TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  retired_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (code, jurisdiction, version)
+);
+
+CREATE TYPE notice_status AS ENUM ('scheduled','sent','canceled');
+
+CREATE TABLE notice_schedule (
+  notice_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  notice_template_id UUID NOT NULL REFERENCES notice_template(notice_template_id),
+  trigger_code TEXT NOT NULL,                  -- 'LATE_AFTER_GRACE', 'CUSTOM'
+  params JSONB NOT NULL DEFAULT '{}',          -- computed variables (e.g., days_late, amount_due)
+  scheduled_for TIMESTAMPTZ NOT NULL,          -- exact send time UTC
+  status notice_status NOT NULL DEFAULT 'scheduled',
+  sent_doc_id UUID REFERENCES document_artifact(doc_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, notice_template_id, scheduled_for)
+);
+
+COMMIT;
+```
+
+---
+
+# 3) TypeScript domain types & repositories
+
+`/server/docs/types.ts`
+
+```ts
+import { UUID } from "../../shared/types";
+
+export type Minor = bigint;
+export type DocumentType = 'billing_statement'|'escrow_analysis'|'year_end_1098'|'notice';
+
+export interface BillingStatementPayload {
+  loan_id: UUID;
+  borrower: { name: string; mailing_address: string }; // Phase 4 assumes already available
+  statement_period: { start: string; end: string; due_date: string };
+  previous_balance_minor: Minor;
+  transactions: Array<{
+    posted_at: string; description: string;
+    debit_minor?: Minor; credit_minor?: Minor;   // viewer-friendly orientation
+  }>;
+  escrow_monthly_target_minor: Minor;
+  total_due_minor: Minor;       // at due_date
+  past_due_minor: Minor;        // if any
+  late_fee_policy: { grace_days: number; amount_minor?: Minor; percent_bps?: number };
+  messages?: string[];
+}
+
+export interface EscrowAnalysisDocPayload {
+  loan_id: UUID;
+  analysis_id: UUID;
+  period_start: string; period_end: string;
+  annual_expected_minor: Minor;
+  cushion_target_minor: Minor;
+  current_balance_minor: Minor;  // credit-normal
+  shortage_minor: Minor;
+  deficiency_minor: Minor;
+  surplus_minor: Minor;
+  new_monthly_target_minor: Minor;
+  deficiency_recovery_monthly_minor: Minor;
+  items: Array<{ due_date: string; type: string; payee: string; amount_minor: Minor }>;
+}
+
+export interface YearEnd1098Payload {
+  loan_id: UUID;
+  tax_year: number;
+  borrower: { name: string; mailing_address: string; tin_last4?: string };
+  lender: { name: string; address: string; tin_last4?: string };
+  interest_received_minor: Minor;     // cash basis
+  mortgage_insurance_premiums_minor?: Minor; // optional
+  points_paid_minor?: Minor;                 // optional
+  property_address: string;
+  account_number: string;
+}
+
+export interface RenderRequest<T> {
+  type: DocumentType;
+  template_id: UUID;
+  payload: T; // one of the payloads above
+}
+```
+
+`/server/docs/repo.ts`
+
+```ts
+import { Pool, PoolClient } from "pg";
+
+export class DocsRepo {
+  constructor(private pool: Pool) {}
+  async withTx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    const c = await this.pool.connect(); try { await c.query('BEGIN'); const r = await fn(c); await c.query('COMMIT'); return r; }
+    catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
+  }
+
+  async getLatestTemplate(c: PoolClient, type: string, jurisdiction?: string): Promise<{ template_id: string; engine: string; html_source: string; css_source: string; font_family: string; version: number }> {
+    const r = await c.query(`
+      SELECT template_id, engine, html_source, css_source, font_family, version
+      FROM document_template
+      WHERE type=$1 AND (jurisdiction IS NULL OR jurisdiction=$2) AND retired_at IS NULL
+      ORDER BY jurisdiction NULLS LAST, version DESC
+      LIMIT 1
+    `, [type, jurisdiction ?? null]);
+    if (!r.rowCount) throw new Error(`No active template for ${type}`);
+    return r.rows[0];
+  }
+
+  async insertArtifact(c: PoolClient, a: {
+    type: string; loan_id?: string; related_id?: string;
+    period_start?: string; period_end?: string; tax_year?: number;
+    template_id: string; payload_json: any; inputs_hash: string;
+    pdf_hash: string; pdf_bytes: Buffer; size_bytes: number; event_id?: string;
+  }): Promise<string> {
+    const q = await c.query(`
+      INSERT INTO document_artifact(type, loan_id, related_id, period_start, period_end, tax_year, template_id, payload_json, inputs_hash, pdf_hash, pdf_bytes, size_bytes, event_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      RETURNING doc_id
+    `, [a.type, a.loan_id ?? null, a.related_id ?? null, a.period_start ?? null, a.period_end ?? null, a.tax_year ?? null,
+        a.template_id, JSON.stringify(a.payload_json), a.inputs_hash, a.pdf_hash, a.pdf_bytes, a.size_bytes, a.event_id ?? null]);
+    return q.rows[0].doc_id;
+  }
+
+  async linkNoticeSent(c: PoolClient, noticeId: string, docId: string) {
+    await c.query(`UPDATE notice_schedule SET status='sent', sent_doc_id=$2 WHERE notice_id=$1`, [noticeId, docId]);
+  }
+}
+```
+
+---
+
+# 4) Algorithms and data assembly
+
+## 4.1 Billing statement builder
+
+Input: `loan_id`, `period_start`, `period_end`, `due_date` (usually next scheduled due).
+
+Steps:
+
+1. **Ledger snapshot** at `period_start`:
+
+   * Compute viewer-oriented `previous_balance_minor` = sum of loan receivables/liabilities as displayed on billing (principal due+interest due+escrow due+fees due minus unapplied). For Phase 4, define:
+   * `prev_bal = max(0, fees_receivable) + max(0, interest_receivable) + max(0, escrow_due_estimate) + max(0, principal_due_estimate) - max(0, suspense)` where estimates come from schedule rows due by `due_date`. If not yet separating “past/current”, include scheduled current bucket.
+
+2. **Transactions in period**:
+
+   * Query `ledger_entry` joined to `ledger_event` where `loan_id=? AND created_at >= period_start AND created_at < period_end`.
+   * Map entries into user-friendly rows:
+
+     * Payment received → show as credit (reduces amount due).
+     * Fee assessed → debit.
+     * Interest accrual isn’t shown as a line item in most statements; for Phase 4, include only assessments and payments (configurable later).
+
+3. **Escrow monthly target**:
+
+   * Fetch latest `schedule_plan` version for the loan where `due_date >= period_end` and read `escrow_target_minor` for the next due line (from Phase 3 new plan). If not found, default to `0`.
+
+4. **Total due** at `due_date`:
+
+   * `total_due = previous_balance + scheduled_current (principal+interest+escrow+fees) - payments_credits_in_period` (viewer semantics).
+   * `past_due_minor` = any amount still unpaid from periods prior to `period_start`.
+
+5. **Late fee policy**:
+
+   * From `fee_policy` effective at `due_date`. Include `grace_days` and either fixed `late_fee_amount_minor` or `late_fee_percent_bps`.
+
+6. Build `BillingStatementPayload`. **Sort** `transactions` by `posted_at ASC, description ASC`. All formatting done at render time (no currency symbols in payload).
+
+## 4.2 Escrow analysis statement builder
+
+Input: `analysis_id`.
+
+Steps:
+
+1. Load `escrow_analysis` header and `escrow_analysis_item` rows.
+2. Load borrower + property address, loan account number, jurisdiction, template selection.
+3. Build `EscrowAnalysisDocPayload` from DB fields (no external computation here).
+4. Sort items by `due_date ASC, type, payee`.
+
+## 4.3 Year-end 1098 builder (cash basis)
+
+Input: `loan_id`, `tax_year`.
+
+Steps:
+
+1. Interest **received** in `tax_year`:
+
+   * Sum of **cash receipts applied to interest** in postings with `schema='posting.payment.v1'` and line `account='interest_receivable'` credit matched to a `cash` debit in the same event. Alternatively sum interest parts in Poster allocations persisted in `payment_posting.applied` where bucket starts with `interest_`. Use the latter for exactness.
+2. Optional: mortgage insurance premiums (if modeled) and points paid (future phases).
+3. Borrower name/address (assume available) and lender info.
+4. Build `YearEnd1098Payload`.
+
+---
+
+# 5) Deterministic rendering pipeline
+
+## 5.1 Renderer service (HTML → PDF)
+
+* **Engine**: `handlebars-html` with **no helpers except a fixed, audited set**:
+
+  * `formatMinor` (produces string without currency symbol; formatting rule: `X.XX`); no locale dependencies.
+  * `formatDateISO` (YYYY-MM-DD).
+  * `uppercase`, `lowercase`, `truncate(n)`.
+* **HTML → PDF**: use headless Chromium (e.g., `puppeteer`) with:
+
+  * **Fixed Chromium build** pinned in lockfile.
+  * `--no-sandbox` not used in prod; run sandboxed.
+  * Page size: US Letter, margins 0.5in all sides, print backgrounds true.
+  * **Fonts**: embed **DejaVu Sans**, **DejaVu Sans Mono**; load via data URLs from `css_source`. No network access; `page.setRequestInterception(true)` and block all external requests.
+  * **Metadata**: Set `CreationDate` & `ModDate` to **statement period end at 00:00:00Z**, not now.
+  * **Page numbers**: if added, render via CSS counters; no timestamps.
+
+## 5.2 Deterministic inputs hashing
+
+* `inputs_hash = sha256( canonical_json(payload) || template_id || css_source || engine || version )`.
+
+  * `canonical_json` = JSON.stringify after:
+
+    * Sort object keys lexicographically at every level.
+    * Convert all numbers to strings (for money we already use strings/BigInt when serializing).
+* After rendering, `pdf_hash = sha256(pdf_bytes)`.
+* The rendering must **not** read current time or environment. Any dates in the output come from the payload or template constants.
+
+---
+
+# 6) JSON Schemas (under `/shared/schemas/docs/` and `/shared/schemas/notices/`)
+
+`docs.generated.v1.json`
+
+```json
+{
+  "$id": "docs.generated.v1",
+  "type": "object",
+  "required": ["doc_id","type","loan_id","template_id","inputs_hash","pdf_hash","size_bytes"],
+  "properties": {
+    "doc_id": {"type":"string","format":"uuid"},
+    "type": {"type":"string","enum":["billing_statement","escrow_analysis","year_end_1098","notice"]},
+    "loan_id": {"type":"string","format":"uuid"},
+    "template_id": {"type":"string","format":"uuid"},
+    "inputs_hash": {"type":"string","minLength":64,"maxLength":64},
+    "pdf_hash": {"type":"string","minLength":64,"maxLength":64},
+    "size_bytes": {"type":"integer","minimum":1}
+  },
+  "additionalProperties": false
+}
+```
+
+`notices.scheduled.v1.json`
+
+```json
+{
+  "$id": "notices.scheduled.v1",
+  "type":"object",
+  "required":["notice_id","loan_id","notice_template_id","scheduled_for","trigger_code"],
+  "properties":{
+    "notice_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "notice_template_id":{"type":"string","format":"uuid"},
+    "scheduled_for":{"type":"string","format":"date-time"},
+    "trigger_code":{"type":"string"}
+  }
+}
+```
+
+`notices.sent.v1.json`
+
+```json
+{
+  "$id": "notices.sent.v1",
+  "type":"object",
+  "required":["notice_id","loan_id","doc_id","pdf_hash"],
+  "properties":{
+    "notice_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "doc_id":{"type":"string","format":"uuid"},
+    "pdf_hash":{"type":"string","minLength":64,"maxLength":64}
+  }
+}
+```
+
+---
+
+# 7) Services & jobs
+
+## 7.1 Document Builder (data assembly)
+
+`/server/docs/builder.ts`
+
+```ts
+export interface BuildBillingArgs { loanId: string; periodStart: string; periodEnd: string; dueDate: string }
+export interface BuildEscrowAnalysisArgs { analysisId: string }
+export interface Build1098Args { loanId: string; taxYear: number }
+
+export interface Builder {
+  buildBillingStatement(args: BuildBillingArgs): Promise<{ payload: BillingStatementPayload; templateId: string }>;
+  buildEscrowAnalysis(args: BuildEscrowAnalysisArgs): Promise<{ payload: EscrowAnalysisDocPayload; templateId: string }>;
+  buildYearEnd1098(args: Build1098Args): Promise<{ payload: YearEnd1098Payload; templateId: string }>;
+}
+```
+
+* Retrieves all required data, resolves a **concrete** `template_id` via `DocsRepo.getLatestTemplate(type, jurisdiction)` and returns payload + template id. No side effects.
+
+## 7.2 Render Service
+
+`/server/docs/render-service.ts`
+
+```ts
+export async function renderAndStore<T>(args: {
+  type: 'billing_statement'|'escrow_analysis'|'year_end_1098'|'notice';
+  templateId: string;
+  payload: T;
+  loanId?: string;
+  relatedId?: string;
+  periodStart?: string; periodEnd?: string; taxYear?: number;
+  correlationId: string;
+}): Promise<{ docId: string; pdfHash: string; sizeBytes: number }> {
+  // 1) Load template (html, css, engine, font)
+  // 2) Canonicalize payload; compute inputs_hash
+  // 3) Render HTML → PDF with deterministic settings
+  // 4) Compute pdf_hash
+  // 5) Insert document_artifact with pdf bytes and hashes
+  // 6) Insert outbox: topic 'docs.events:doc.generated.v1'
+}
+```
+
+## 7.3 Docs Saga Consumer
+
+* Consumes `docs.saga:generate.request.v1` with payloads:
+
+  * For billing: `{ loan_id, period_start, period_end, due_date }`
+  * For escrow: `{ analysis_id }`
+  * For 1098: `{ loan_id, tax_year }`
+* Calls Builder → Render Service → outbox emits `docs.generated.v1`.
+
+## 7.4 Notices Engine
+
+### 7.4.1 Scheduler
+
+* Triggers:
+
+  * **Late notices**: daily 08:00 local (convert to UTC) compute loans with `grace expired`:
+
+    * Find loans with unpaid amount past `due_date + grace_days`. Use `fee_policy.late_fee_grace_days`.
+    * Build `params` `{ days_late, amount_due_minor, due_date }`.
+    * Select template `notice_template` by jurisdiction+code `LATE_NOTICE_XX` (code configured per product).
+    * Write `notice_schedule` with `scheduled_for = today 18:00Z` (example) and insert outbox `notices.scheduled.v1`.
+  * **Custom**: API endpoint can schedule arbitrary notices.
+
+### 7.4.2 Dispatcher
+
+* Consumes `notices.saga:dispatch.request.v1` or runs cron every 10 min:
+
+  * `SELECT * FROM notice_schedule WHERE status='scheduled' AND scheduled_for <= now() FOR UPDATE SKIP LOCKED LIMIT 100`.
+  * For each:
+
+    * Build **notice payload**: same shape as `BillingStatementPayload` but with `messages` and any jurisdiction disclaimers; or a specific notice payload the template expects—**payload is template-specific** and stored in `document_artifact.payload_json`.
+    * Resolve template version.
+    * Render & store via `renderAndStore` with `type='notice'`, `relatedId=notice_id`.
+    * Mark schedule `status='sent'`, `sent_doc_id=doc_id`.
+    * Insert outbox `notices.sent.v1`.
+
+**Delivery**: Phase 4 renders PDF only. Actual email/print is Phase 5. Provide a stub endpoint `GET /notices/:notice_id/pdf` to fetch PDF by `sent_doc_id`.
+
+---
+
+# 8) HTTP Endpoints (internal, auth required)
+
+* `GET /documents/:doc_id` → streams PDF (sets `Content-Type: application/pdf`). Return `ETag` = `pdf_hash`.
+* `GET /loans/:loan_id/documents?type=&from=&to=` → returns list `{ doc_id, type, period_start, period_end, tax_year, created_at, pdf_hash }`.
+* `POST /docs/generate/billing` body `{ loan_id, period_start, period_end, due_date }` → enqueues saga request; returns `{ correlation_id }`.
+* `POST /docs/generate/escrow` body `{ analysis_id }`
+* `POST /docs/generate/1098` body `{ loan_id, tax_year }`
+* `POST /notices/schedule` body `{ loan_id, code, scheduled_for, params }` → creates `notice_schedule`.
+
+---
+
+# 9) Events (publish via outbox only)
+
+* `docs.generated.v1` (see schema above) — topic `docs.events:doc.generated.v1`
+* `notices.scheduled.v1` — topic `notices.events:notice.scheduled.v1`
+* `notices.sent.v1` — topic `notices.events:notice.sent.v1`
+
+The **message\_id** equals the `doc_id` for `docs.generated` and `notice_id` for `notices.*`.
+
+---
+
+# 10) Metrics & tracing
+
+Counters:
+
+* `docs_generated_total{type}`
+* `docs_render_fail_total{type, reason}`
+* `notices_scheduled_total{code}`
+* `notices_sent_total{code}`
+
+Histograms:
+
+* `docs_build_ms{type}`
+* `docs_render_ms{type}`
+* `docs_end_to_end_ms{type}` (from generate.request to generated)
+* `notice_schedule_to_send_ms{code}`
+
+Gauges:
+
+* `pdf_size_bytes{type}`
+
+All spans propagate `correlation_id`.
+
+---
+
+# 11) Configuration (extend Phase-0 schema)
+
+Add with validation & defaults:
+
+```
+DOCS_RENDER_TIMEOUT_MS = 20000
+DOCS_RENDER_CONCURRENCY = 4
+STATEMENT_RUN_CRON = "0 0 2 * * *"            # 02:00 UTC daily to enqueue monthly statements due next
+NOTICES_SCHEDULE_CRON = "0 0 13 * * *"       # 13:00 UTC (morning US) compute late notices
+NOTICES_DISPATCH_CRON = "0 */10 * * * *"     # every 10 minutes
+```
+
+---
+
+# 12) Acceptance tests
+
+## 12.1 Deterministic regeneration
+
+* Build a billing statement payload fixture; run `renderAndStore` twice → the **same `inputs_hash`** and **same `pdf_hash`**; byte-for-byte identical.
+* Modify only `messages` order → re-sort before hashing to maintain determinism; differing content must produce different hash.
+
+## 12.2 End-to-end billing
+
+* Seed a loan with a schedule row and some period transactions.
+* Enqueue `docs.saga:generate.request.v1 (billing)`.
+* Assert:
+
+  * `document_artifact` row exists with non-null `pdf_bytes`, `inputs_hash`, `pdf_hash`.
+  * `docs.generated.v1` emitted exactly once via outbox; headers set; `doc_id` returned.
+  * `GET /documents/:doc_id` streams PDF, `ETag`=hash.
+
+## 12.3 Escrow analysis statement
+
+* Use Phase-3 `escrow_analysis` data.
+* Generate statement; assert fields mirror DB, doc stored with `related_id=analysis_id`.
+
+## 12.4 1098
+
+* Seed payments with interest allocations in a given tax year totaling `$4,321.09`.
+* Build 1098; assert payload value equals sum of **interest allocations**; rendering succeeds; schema validated; doc stored with `tax_year`.
+
+## 12.5 Notices pipeline
+
+* Create a schedule where grace expired; scheduler creates a `notice_schedule` and emits `notices.scheduled.v1`.
+* Dispatcher renders and stores PDF; status becomes `sent`; emits `notices.sent.v1`.
+
+---
+
+# 13) Upgrade & replacement
+
+* **No legacy templates**: import any previous HTML into `document_template` records. Remove any ad-hoc rendering code; **all** documents must flow through `renderAndStore`.
+* **Escrow statements**: if Phase-3 stored a document hash in `escrow_statement`, add a one-time task to migrate into `document_artifact` with `type='escrow_analysis'`, `related_id=analysis_id`. Then **drop** `escrow_statement` in a later migration.
+* **Outbox only**: remove any direct publishing of document/notice events; outbox dispatcher is authoritative.
+* **Determinism**: remove any `new Date()` usage in templates/helpers. Only payload fields supply dates. Fix fonts to the default; disallow external CSS/JS.
+
+---
+
+# 14) Definition of Done (Phase 4)
+
+* Builders produce canonical payloads for **billing**, **escrow analysis**, and **1098** using only DB reads and deterministic calculations.
+* Renderer generates PDFs that are **byte-stable**; `inputs_hash` and `pdf_hash` are stored and exposed.
+* `document_artifact` holds PDFs and canonical inputs; retrieval works via HTTP; `docs.generated.v1` emitted via outbox.
+* Notice engine schedules and dispatches late notices based on fee policy, renders notice PDFs, stores artifacts, and emits `notices.scheduled.v1` / `notices.sent.v1`.
+* All schema validations pass; all ledger-derived amounts match fixtures.
+* Acceptance tests in §12 pass in CI; metrics and health remain green.
+* Audit requirement satisfied: every document is reproducible from `payload_json` + `template_id` (and versioned assets), and retrievable by `event_id` or `doc_id`.
+
+This specification fully defines Phase 4. Engineering can implement directly with no further decisions.
