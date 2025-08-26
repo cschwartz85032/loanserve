@@ -20,6 +20,11 @@ export async function runMigrations() {
     // Verify critical tables exist
     await verifyDatabaseTables();
     
+    // Run schema validation after migrations complete
+    console.log('[Migration] Running schema validation...');
+    const { runStartupValidations } = await import('./utils/schema-validator');
+    await runStartupValidations();
+    
   } catch (error) {
     console.error('[Migration] Error running migrations:', error);
     // Don't crash the app, but log the error for monitoring

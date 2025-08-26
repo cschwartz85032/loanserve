@@ -6,6 +6,7 @@ import cors from "cors";
 import { initializeTelemetry, shutdownTelemetry } from './observability/telemetry';
 import { correlationIdMiddleware, correlationErrorHandler } from './middleware/correlation-id';
 import { startMetricsCollection, stopMetricsCollection } from './observability/metrics-collector';
+import { runStartupValidations } from './utils/schema-validator';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -97,6 +98,16 @@ app.use((req, res, next) => {
   // Running in both dev and production ensures schema consistency
   const { runMigrations } = await import('./migrations');
   await runMigrations();
+  
+  // Run startup validations (schema and environment checks)
+  try {
+    console.log('[Server] About to run startup validations...');
+    await runStartupValidations();
+    console.log('[Server] Startup validations completed');
+  } catch (error) {
+    console.error('[Server] Startup validation error:', error);
+    // Continue server startup even if validations fail (non-fatal)
+  }
   
   // Start payment processing consumers with idempotency
   try {

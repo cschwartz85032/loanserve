@@ -133,40 +133,36 @@ export async function getPaymentStats() {
  */
 export async function getNotificationStats() {
   try {
-    // Notifications table not yet created - return empty stats
-    return { sent: 0, failed: 0 };
-    
-    // TODO: Uncomment when notifications table is created
-    // const result = await db.execute(sql`
-    //   SELECT 
-    //     status,
-    //     COUNT(*) as count
-    //   FROM notifications
-    //   WHERE created_at > NOW() - INTERVAL '1 hour'
-    //   GROUP BY status
-    // `);
+    // Query notifications using the actual schema columns
+    const result = await db.execute(sql`
+      SELECT 
+        COUNT(CASE WHEN sent_at IS NOT NULL THEN 1 END) as sent,
+        COUNT(CASE WHEN sent_at IS NULL AND scheduled_for < NOW() THEN 1 END) as pending,
+        COUNT(CASE WHEN email_sent = true THEN 1 END) as emails_sent,
+        COUNT(CASE WHEN sms_sent = true THEN 1 END) as sms_sent
+      FROM notifications
+      WHERE created_at > NOW() - INTERVAL '1 hour'
+    `);
 
-    // let sent = 0;
-    // let failed = 0;
-
-    // for (const row of result.rows) {
-    //   const count = parseInt(row.count as string) || 0;
-    //   if (row.status === 'sent') {
-    //     sent = count;
-    //   } else if (row.status === 'failed') {
-    //     failed = count;
-    //   }
-    // }
+    const sent = parseInt(result.rows[0]?.sent as string) || 0;
+    const pending = parseInt(result.rows[0]?.pending as string) || 0;
+    const emailsSent = parseInt(result.rows[0]?.emails_sent as string) || 0;
+    const smsSent = parseInt(result.rows[0]?.sms_sent as string) || 0;
 
     // Record to counters
-    // if (sent > 0) {
-    //   recordMetric(notificationSentCounter, sent, {});
-    // }
-    // if (failed > 0) {
-    //   recordMetric(notificationFailedCounter, failed, {});
-    // }
+    if (sent > 0) {
+      recordMetric(notificationSentCounter, sent, {});
+    }
+    if (pending > 0) {
+      recordMetric(notificationFailedCounter, pending, {});
+    }
 
-    // return { sent, failed };
+    return { 
+      sent, 
+      failed: pending, // Consider pending as failed for backwards compatibility
+      emailsSent,
+      smsSent 
+    };
   } catch (error) {
     console.error('[MetricsCollector] Failed to get notification stats:', error);
     return { sent: 0, failed: 0 };
@@ -222,7 +218,7 @@ export function startMetricsCollection() {
  */
 export function stopMetricsCollection() {
   // Clear all intervals
-  const highestIntervalId = setInterval(() => {}, 0);
+  const highestIntervalId = setInterval(() => {}, 0) as unknown as number;
   for (let i = 0; i < highestIntervalId; i++) {
     clearInterval(i);
   }
