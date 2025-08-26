@@ -150,6 +150,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/escrow', escrowRoutes);
   console.log('[Routes] Registered escrow subsystem routes');
 
+  // Register Phase 4 Documents and Notices routes
+  const documentRoutes = (await import('./docs/routes')).default;
+  app.use(documentRoutes);
+  console.log('[Routes] Registered document generation routes');
+
   // Serve observability dashboard
   app.get('/observability', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'server/observability/dashboard-ui.html'));

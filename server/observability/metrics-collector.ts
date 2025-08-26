@@ -133,36 +133,40 @@ export async function getPaymentStats() {
  */
 export async function getNotificationStats() {
   try {
-    const result = await db.execute(sql`
-      SELECT 
-        status,
-        COUNT(*) as count
-      FROM notifications
-      WHERE created_at > NOW() - INTERVAL '1 hour'
-      GROUP BY status
-    `);
+    // Notifications table not yet created - return empty stats
+    return { sent: 0, failed: 0 };
+    
+    // TODO: Uncomment when notifications table is created
+    // const result = await db.execute(sql`
+    //   SELECT 
+    //     status,
+    //     COUNT(*) as count
+    //   FROM notifications
+    //   WHERE created_at > NOW() - INTERVAL '1 hour'
+    //   GROUP BY status
+    // `);
 
-    let sent = 0;
-    let failed = 0;
+    // let sent = 0;
+    // let failed = 0;
 
-    for (const row of result.rows) {
-      const count = parseInt(row.count as string) || 0;
-      if (row.status === 'sent') {
-        sent = count;
-      } else if (row.status === 'failed') {
-        failed = count;
-      }
-    }
+    // for (const row of result.rows) {
+    //   const count = parseInt(row.count as string) || 0;
+    //   if (row.status === 'sent') {
+    //     sent = count;
+    //   } else if (row.status === 'failed') {
+    //     failed = count;
+    //   }
+    // }
 
     // Record to counters
-    if (sent > 0) {
-      recordMetric(notificationSentCounter, sent, {});
-    }
-    if (failed > 0) {
-      recordMetric(notificationFailedCounter, failed, {});
-    }
+    // if (sent > 0) {
+    //   recordMetric(notificationSentCounter, sent, {});
+    // }
+    // if (failed > 0) {
+    //   recordMetric(notificationFailedCounter, failed, {});
+    // }
 
-    return { sent, failed };
+    // return { sent, failed };
   } catch (error) {
     console.error('[MetricsCollector] Failed to get notification stats:', error);
     return { sent: 0, failed: 0 };
