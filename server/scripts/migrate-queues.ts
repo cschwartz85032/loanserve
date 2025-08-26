@@ -180,13 +180,13 @@ class QueueMigrator {
       },
       {
         name: 'audit.events',
-        newName: 'audit.events.v2',
+        newName: 'audit.events',
         args: {
-          'x-queue-type': 'quorum',
-          'x-dead-letter-exchange': 'dlx.main',
+          'x-queue-mode': 'lazy',
+          'x-max-length': 10000000, // 10 million events
         },
         bindings: [
-          { exchange: 'audit.topic', routingKey: 'audit.*.*' },
+          { exchange: 'audit.topic', routingKey: 'audit.*' },
         ],
       },
       {
