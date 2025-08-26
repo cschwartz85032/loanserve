@@ -41,6 +41,18 @@ export async function loadUserPolicy(
       return next();
     }
     
+    // Debug RabbitMQ routes specifically
+    if (req.path.includes('rabbitmq')) {
+      console.log('[Policy] RabbitMQ route auth check:', {
+        path: req.path,
+        hasUser: !!(req.user),
+        userId: (req.user as any)?.id,
+        sessionPassport: (req.session as any)?.passport?.user,
+        sessionUserId: (req.session as any)?.userId,
+        sessionKeys: req.session ? Object.keys(req.session) : []
+      });
+    }
+    
     // Get user ID from passport session first, then fall back to custom session
     const userId = (req.user as any)?.id || (req.session as any)?.passport?.user || (req.session as any)?.userId;
     

@@ -4,67 +4,13 @@ import { db } from '../db';
 import { userRoles, roles, users } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import { sendError } from '../utils/response-utils';
+import { requireAuth, requirePermission } from '../auth/middleware';
+import { PermissionLevel } from '../auth/policy-engine';
 
 const router = Router();
 
-// Combined authentication and admin check middleware
-const requireAuthAndAdmin = async (req: any, res: any, next: any) => {
-  try {
-    // Get user ID from multiple possible sources
-    const userId = req.user?.id || 
-                  req.session?.passport?.user || 
-                  req.session?.userId ||
-                  req.userPolicy?.userId;
-    
-    if (!userId) {
-      return res.status(401).json({ 
-        error: 'Authentication required',
-        code: 'AUTH_REQUIRED' 
-      });
-    }
-
-    // Ensure req.user is populated for backward compatibility
-    if (!req.user) {
-      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-      if (user) {
-        req.user = user;
-      } else {
-        return res.status(401).json({ 
-          error: 'User not found',
-          code: 'USER_NOT_FOUND' 
-        });
-      }
-    }
-
-    // Check if user has admin role using RBAC system
-    const userRoleRecords = await db.select({
-      roleName: roles.name
-    })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(eq(userRoles.userId, userId));
-
-    const hasAdminRole = userRoleRecords.some(r => r.roleName === 'admin');
-    
-    if (!hasAdminRole) {
-      return res.status(403).json({ 
-        error: 'Admin access required',
-        code: 'ADMIN_REQUIRED'
-      });
-    }
-
-    next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    return res.status(500).json({ 
-      error: 'Authentication error',
-      code: 'AUTH_ERROR' 
-    });
-  }
-};
-
 // Get current RabbitMQ prefetch configuration
-router.get('/api/admin/rabbitmq/config', requireAuthAndAdmin, async (req, res) => {
+router.get('/admin/rabbitmq/config', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     const config = await rabbitmqConfig.getConfig();
     res.json({ config });
@@ -77,7 +23,7 @@ router.get('/api/admin/rabbitmq/config', requireAuthAndAdmin, async (req, res) =
 });
 
 // Update RabbitMQ prefetch configuration
-router.put('/api/admin/rabbitmq/config', requireAuthAndAdmin, async (req, res) => {
+router.put('/admin/rabbitmq/config', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     const { config } = req.body;
     
@@ -112,7 +58,7 @@ router.put('/api/admin/rabbitmq/config', requireAuthAndAdmin, async (req, res) =
 });
 
 // Reset RabbitMQ configuration to defaults
-router.post('/api/admin/rabbitmq/config/reset', requireAuthAndAdmin, async (req, res) => {
+router.post('/admin/rabbitmq/config/reset', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     const userId = (req as any).user?.id || (req as any).session?.passport?.user || (req as any).session?.userId;
     await rabbitmqConfig.resetToDefaults(userId);
@@ -130,7 +76,7 @@ router.post('/api/admin/rabbitmq/config/reset', requireAuthAndAdmin, async (req,
 });
 
 // Get prefetch recommendation based on processing time
-router.post('/api/admin/rabbitmq/config/recommend', requireAuthAndAdmin, async (req, res) => {
+router.post('/admin/rabbitmq/config/recommend', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     const { avgProcessingTimeMs, networkRoundTripMs } = req.body;
     
