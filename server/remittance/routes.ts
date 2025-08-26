@@ -1,0 +1,152 @@
+import { Router } from 'express';
+import { Pool } from '@neondatabase/serverless';
+import { RemittanceService } from './service.js';
+import { PgLedgerRepository } from '../db/ledger-repository.js';
+import { z } from 'zod';
+
+const createContractSchema = z.object({
+  investorId: z.string().uuid(),
+  productCode: z.string(),
+  method: z.enum(['scheduled_p_i', 'actual_cash', 'scheduled_p_i_with_interest_shortfall']),
+  remittanceDay: z.number().min(1).max(31),
+  cutoffDay: z.number().min(1).max(31),
+  custodialBankAcctId: z.string().uuid(),
+  servicerFeeBps: z.number().min(0).max(10000),
+  lateFeeSpiltBps: z.number().min(0).max(10000),
+  waterfallRules: z.array(z.object({
+    rank: z.number(),
+    bucket: z.enum(['interest', 'principal', 'late_fees', 'escrow', 'recoveries']),
+    capMinor: z.string().optional()
+  }))
+});
+
+export function createRemittanceRoutes(pool: Pool): Router {
+  const router = Router();
+  const ledgerRepo = new PgLedgerRepository(pool);
+  const service = new RemittanceService(pool, ledgerRepo);
+
+  // Contract endpoints
+  router.post('/contracts', async (req, res) => {
+    try {
+      const data = createContractSchema.parse(req.body);
+      const contract = await service.createContract(data);
+      res.json(contract);
+    } catch (error) {
+      console.error('Error creating contract:', error);
+      res.status(400).json({ 
+        error: error instanceof z.ZodError ? error.errors : 'Failed to create contract' 
+      });
+    }
+  });
+
+  // Cycle endpoints
+  router.post('/cycles/initiate', async (req, res) => {
+    try {
+      const { contractId } = z.object({
+        contractId: z.string().uuid()
+      }).parse(req.body);
+      
+      const cycle = await service.initiateCycle(contractId);
+      res.json(cycle);
+    } catch (error) {
+      console.error('Error initiating cycle:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Failed to initiate cycle' 
+      });
+    }
+  });
+
+  router.post('/cycles/:cycleId/calculate', async (req, res) => {
+    try {
+      const { cycleId } = req.params;
+      const calculation = await service.calculateWaterfall(cycleId);
+      res.json(calculation);
+    } catch (error) {
+      console.error('Error calculating waterfall:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Failed to calculate waterfall' 
+      });
+    }
+  });
+
+  router.post('/cycles/:cycleId/lock', async (req, res) => {
+    try {
+      const { cycleId } = req.params;
+      await service.lockCycle(cycleId);
+      res.json({ success: true, message: 'Cycle locked successfully' });
+    } catch (error) {
+      console.error('Error locking cycle:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Failed to lock cycle' 
+      });
+    }
+  });
+
+  router.post('/cycles/:cycleId/process', async (req, res) => {
+    try {
+      const { cycleId } = req.params;
+      await service.processRemittance(cycleId);
+      res.json({ success: true, message: 'Remittance processed successfully' });
+    } catch (error) {
+      console.error('Error processing remittance:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Failed to process remittance' 
+      });
+    }
+  });
+
+  // Export endpoints
+  router.post('/cycles/:cycleId/export', async (req, res) => {
+    try {
+      const { cycleId } = req.params;
+      const { format } = z.object({
+        format: z.enum(['csv', 'xml'])
+      }).parse(req.body);
+      
+      const exportId = await service.generateExport(cycleId, format);
+      res.json({ exportId, format });
+    } catch (error) {
+      console.error('Error generating export:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Failed to generate export' 
+      });
+    }
+  });
+
+  router.get('/exports/:exportId/download', async (req, res) => {
+    try {
+      const { exportId } = req.params;
+      const file = await service.getExportFile(exportId);
+      
+      if (!file) {
+        return res.status(404).json({ error: 'Export not found' });
+      }
+
+      // Determine content type based on file content
+      const isXML = file.toString('utf8').startsWith('<?xml');
+      const contentType = isXML ? 'application/xml' : 'text/csv';
+      const extension = isXML ? 'xml' : 'csv';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="remittance_${exportId}.${extension}"`);
+      res.send(file);
+    } catch (error) {
+      console.error('Error downloading export:', error);
+      res.status(500).json({ error: 'Failed to download export' });
+    }
+  });
+
+  // Report endpoints
+  router.get('/cycles/:cycleId/report', async (req, res) => {
+    try {
+      const { cycleId } = req.params;
+      const report = await service.getReport(cycleId);
+      res.json(report);
+    } catch (error) {
+      console.error('Error generating report:', error);
+      res.status(500).json({ error: 'Failed to generate report' });
+    }
+  });
+
+  return router;
+}
