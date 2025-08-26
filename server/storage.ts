@@ -51,6 +51,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, sql, count, sum, isNull, gte, inArray } from "drizzle-orm";
+import { neon } from "@neondatabase/serverless";
 import session, { Store } from "express-session";
 import { CustomSessionStore } from "./auth/custom-session-store";
 
@@ -188,28 +189,50 @@ export class DatabaseStorage implements IStorage {
 
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    if (!user) return undefined;
-    
-    // Fetch user roles
-    const userRolesList = await db.select({
-      roleId: userRoles.roleId,
-      roleName: roles.name
-    })
-    .from(userRoles)
-    .innerJoin(roles, eq(userRoles.roleId, roles.id))
-    .where(eq(userRoles.userId, id));
-    
-    // Add roles to user object
-    return {
-      ...user,
-      roles: userRolesList.map(r => r.roleName)
-    } as any;
+    try {
+      // Use Neon client directly to bypass Drizzle issues
+      const dbSql = neon(process.env.DATABASE_URL!);
+      const result = await dbSql`SELECT * FROM users WHERE id = ${id}`;
+      const user = result[0];
+      if (!user) return undefined;
+      
+      // Fetch user roles - simplified query without join
+      const userRolesList = await db.select()
+        .from(userRoles)
+        .where(eq(userRoles.userId, id));
+      
+      const roleIds = userRolesList.map(ur => ur.roleId);
+      let roleNames: string[] = [];
+      
+      if (roleIds.length > 0) {
+        const rolesList = await db.select()
+          .from(roles)
+          .where(inArray(roles.id, roleIds));
+        roleNames = rolesList.map(r => r.name);
+      }
+      
+      // Add roles to user object
+      return {
+        ...user,
+        roles: roleNames
+      } as any;
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      return undefined;
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user || undefined;
+    try {
+      // Use Neon client directly to bypass Drizzle issues
+      const dbSql = neon(process.env.DATABASE_URL!);
+      const result = await dbSql`SELECT * FROM users WHERE username = ${username}`;
+      const user = result[0];
+      return user || undefined;
+    } catch (error) {
+      console.error('Error fetching user by username:', error);
+      return undefined;
+    }
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
