@@ -414,6 +414,7 @@ export const loans = pgTable("loans", {
   principalAndInterest: decimal("principal_and_interest", { precision: 10, scale: 2 }),
   monthlyEscrow: decimal("monthly_escrow", { precision: 10, scale: 2 }),
   monthlyMI: decimal("monthly_mi", { precision: 10, scale: 2 }),
+  paymentDueDay: integer("payment_due_day"), // Day of month (1-31)
   // LTV and Insurance
   originalLTV: decimal("original_ltv", { precision: 5, scale: 2 }),
   currentLTV: decimal("current_ltv", { precision: 5, scale: 2 }),
