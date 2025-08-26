@@ -84,7 +84,7 @@ const EmailTemplatesContent = React.memo(({
   ]);
   
   // Fetch folders with template count
-  const { data: foldersResponse, isLoading: loadingFolders } = useQuery({
+  const { data: foldersResponse, isLoading: loadingFolders } = useQuery<any>({
     queryKey: ['/api/email-template-folders'],
   });
   const folders = foldersResponse?.data || [];
@@ -241,7 +241,7 @@ function DocumentSelector({
   onSelectionChange: (docs: Array<{id: number, name: string, size?: number}>) => void;
 }) {
   // Fetch all documents
-  const { data: documents = [], isLoading } = useQuery({
+  const { data: documents = [], isLoading } = useQuery<any[]>({
     queryKey: [`/api/documents`],
   });
 
@@ -3518,11 +3518,28 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           </DialogHeader>
           <EmailTemplatesContent 
             onSelectTemplate={(template: any) => {
-              setTextMessage(template.body);
+              // Convert template to plain text for SMS
+              let smsText = '';
+              
+              // Include subject if present
+              if (template.subject) {
+                smsText = template.subject + '\n\n';
+              }
+              
+              // Convert body HTML/rich text to plain text
+              if (template.body) {
+                // Strip HTML tags and convert to plain text
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = template.body;
+                const plainText = tempDiv.textContent || tempDiv.innerText || '';
+                smsText += plainText;
+              }
+              
+              setTextMessage(smsText.trim());
               setShowSmsTemplatesModal(false);
               toast({
                 title: 'Template Loaded',
-                description: `${template.name} has been loaded into your SMS`
+                description: `${template.name} has been converted to SMS format`
               });
             }}
             onClose={() => setShowSmsTemplatesModal(false)}
