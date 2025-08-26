@@ -18,6 +18,9 @@ import sgMail from '@sendgrid/mail';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { sendError, sendSuccess, asyncHandler } from '../utils/api-helpers';
+import { createLogger } from '../utils/logger';
+import { numericIdSchema } from '../utils/validators';
 import { 
   CRM_CONSTANTS,
   logActivity as logCrmActivity,
@@ -38,6 +41,7 @@ import { CRMNotificationService } from '../crm/notification-service';
 import { twilioService } from '../services/twilio-service';
 
 const router = Router();
+const logger = createLogger('CRM');
 
 // Initialize SendGrid
 if (process.env.SENDGRID_API_KEY) {
@@ -59,67 +63,59 @@ const upload = multer({
 const logActivity = logCrmActivity;
 
 // Notes endpoints
-router.get('/loans/:loanId/crm/notes', async (req, res) => {
-  try {
-    const loanId = parseInt(req.params.loanId);
-    
-    const notes = await db
-      .select({
-        id: crmNotes.id,
-        content: crmNotes.content,
-        isPrivate: crmNotes.isPrivate,
-        mentionedUsers: crmNotes.mentionedUsers,
-        attachments: crmNotes.attachments,
-        createdAt: crmNotes.createdAt,
-        userId: crmNotes.userId,
-        userName: users.username
-      })
-      .from(crmNotes)
-      .leftJoin(users, eq(crmNotes.userId, users.id))
-      .where(eq(crmNotes.loanId, loanId))
-      .orderBy(desc(crmNotes.createdAt));
-    
-    res.json(notes);
-  } catch (error) {
-    console.error('Error fetching CRM notes:', error);
-    res.status(500).json({ error: 'Failed to fetch notes' });
-  }
-});
+router.get('/loans/:loanId/crm/notes', asyncHandler(async (req, res) => {
+  const loanId = numericIdSchema.parse(req.params.loanId);
+  logger.info('Fetching CRM notes', { loanId });
+  
+  const notes = await db
+    .select({
+      id: crmNotes.id,
+      content: crmNotes.content,
+      isPrivate: crmNotes.isPrivate,
+      mentionedUsers: crmNotes.mentionedUsers,
+      attachments: crmNotes.attachments,
+      createdAt: crmNotes.createdAt,
+      userId: crmNotes.userId,
+      userName: users.username
+    })
+    .from(crmNotes)
+    .leftJoin(users, eq(crmNotes.userId, users.id))
+    .where(eq(crmNotes.loanId, loanId))
+    .orderBy(desc(crmNotes.createdAt));
+  
+  sendSuccess(res, notes);
+}));
 
-router.post('/loans/:loanId/crm/notes', async (req, res) => {
-  try {
-    const loanId = parseInt(req.params.loanId);
-    const userId = (req as any).user?.id || 1; // Get from session
-    const { content, isPrivate, mentionedUsers, attachments } = req.body;
-    
-    const [note] = await db
-      .insert(crmNotes)
-      .values({
-        loanId,
-        userId,
-        content,
-        isPrivate: isPrivate || false,
-        mentionedUsers: mentionedUsers || [],
-        attachments: attachments || []
-      })
-      .returning();
-    
-    // Log activity
-    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.NOTE, {
-      description: `Added a note: ${content.substring(0, 100)}...`
-    }, note.id);
-    
-    res.json(note);
-  } catch (error) {
-    console.error('Error creating CRM note:', error);
-    res.status(500).json({ error: 'Failed to create note' });
-  }
-});
+router.post('/loans/:loanId/crm/notes', asyncHandler(async (req, res) => {
+  const loanId = numericIdSchema.parse(req.params.loanId);
+  const userId = (req as any).user?.id || 1; // Get from session
+  const { content, isPrivate, mentionedUsers, attachments } = req.body;
+  
+  logger.info('Creating CRM note', { loanId, userId });
+  
+  const [note] = await db
+    .insert(crmNotes)
+    .values({
+      loanId,
+      userId,
+      content,
+      isPrivate: isPrivate || false,
+      mentionedUsers: mentionedUsers || [],
+      attachments: attachments || []
+    })
+    .returning();
+  
+  // Log activity
+  await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.NOTE, {
+    description: `Added a note: ${content.substring(0, 100)}...`
+  }, note.id);
+  
+  sendSuccess(res, note, 'Note created successfully');
+}));
 
 // Tasks endpoints
-router.get('/loans/:loanId/crm/tasks', async (req, res) => {
-  try {
-    const loanId = parseInt(req.params.loanId);
+router.get('/loans/:loanId/crm/tasks', asyncHandler(async (req, res) => {
+  const loanId = numericIdSchema.parse(req.params.loanId);
     
     const tasks = await db
       .select({
@@ -141,12 +137,8 @@ router.get('/loans/:loanId/crm/tasks', async (req, res) => {
       .where(eq(crmTasks.loanId, loanId))
       .orderBy(desc(crmTasks.createdAt));
     
-    res.json(tasks);
-  } catch (error) {
-    console.error('Error fetching CRM tasks:', error);
-    res.status(500).json({ error: 'Failed to fetch tasks' });
-  }
-});
+  sendSuccess(res, tasks);
+}));
 
 router.post('/loans/:loanId/crm/tasks', async (req, res) => {
   try {
