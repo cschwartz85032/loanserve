@@ -3,7 +3,7 @@
  */
 
 import amqp from 'amqplib';
-import { topologyManager } from '../messaging/rabbitmq-topology.js';
+import { topologyManager } from '../messaging/topology.js';
 import { MessageEnvelope, MessageMetadata } from '../../shared/messaging/envelope.js';
 import { getMessageFactory } from '../messaging/message-factory.js';
 import { ErrorClassifier, RetryTracker } from './rabbitmq-errors.js';
@@ -126,7 +126,9 @@ export class EnhancedRabbitMQService {
       throw new Error('Publisher channel not available');
     }
     
-    await topologyManager.applyTopology(this.publisherChannel);
+    // DISABLED: CloudAMQP queues already exist with different settings
+    // await topologyManager.applyTopology(this.publisherChannel);
+    console.log('[RabbitMQ] Skipping topology application - using existing CloudAMQP queues');
   }
 
   /**

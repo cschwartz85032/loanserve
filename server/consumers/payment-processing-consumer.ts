@@ -338,6 +338,18 @@ export class PaymentProcessingConsumer {
       this.processPayment.bind(this)
     );
 
+    // Manually bind the queue to receive validated messages
+    // This is needed since topology application is disabled
+    try {
+      const channel = await this.rabbitmq.createChannel('processing-bind');
+      await channel.bindQueue('payments.processing', 'payments.topic', 'payment.*.validated');
+      console.log('[Processing] Bound queue to receive payment.*.validated messages');
+      channel.close();
+    } catch (error) {
+      console.error('[Processing] Failed to bind queue:', error);
+      // Continue anyway - binding might already exist
+    }
+
     await this.rabbitmq.consume(
       {
         queue: 'payments.processing',

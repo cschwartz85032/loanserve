@@ -1,0 +1,167 @@
+Short answer: use the topology-driven, confirm-channel implementation as the single source of truth. In other words, topology.ts is the “correct” one if it’s the module that declaratively defines exchanges/queues/bindings and is consumed by an instrumented RabbitMQ layer with publisher confirms, manual acks, DLQs, and prefetch. rabbitmq-bootstrap.ts should be deprecated if it opens ad-hoc channels, declares entities imperatively, or publishes without confirms.
+
+Below is a precise decision rule and a consolidation plan so there’s zero ambiguity.
+
+How to decide in <10 minutes
+
+Pick the module that satisfies all of these. That is the keeper.
+
+Confirm channel publishing
+
+Uses createConfirmChannel() and awaits confirms on every publish.
+
+NACKs result in retry with backoff and eventual DLQ.
+
+Manual-ack consumers with prefetch
+
+Sets channel.prefetch(N) from config.
+
+Calls ack only after successful processing; nack(requeue=false) routes to DLQ.
+
+Declarative topology
+
+Exposes a structure like:
+
+exchanges: name, type, durable
+
+queues: name, durable, arguments (x-queue-type=quorum, x-dead-letter-exchange, x-delivery-limit)
+
+bindings: exchange↔queue with routing keys
+
+Applies idempotent declarations at startup.
+
+Quorum queues + DLQ
+
+All queues are quorum with DLX and delivery-limit set.
+
+Message envelope + observability
+
+Injects message_id, correlation_id, schema, and trace_id headers.
+
+Emits OpenTelemetry spans/tags and structured logs with the correlation ID.
+
+Outbox dispatcher compatibility
+
+Publisher is called only by an outbox dispatcher (Phase 2 pattern), not directly by business code.
+
+If topology.ts ticks the boxes above and rabbitmq-bootstrap.ts does not, keep topology.ts and delete/retire rabbitmq-bootstrap.ts.
+
+Common anti-patterns that disqualify a bootstrap
+
+If the module does any of the below, it’s the legacy one to remove:
+
+Uses default channels (non-confirm) for publish.
+
+Hard-codes queue/exchange creation imperatively inside business services.
+
+Auto-acks or acks before side effects complete.
+
+No DLQ, no quorum, no delivery limits.
+
+Publishes directly from handlers (skipping the outbox).
+
+No correlation IDs / trace context.
+
+Consolidation plan (exact steps)
+
+Freeze the legacy bootstrap
+
+Search:
+
+grep -R "rabbitmq-bootstrap" -n
+
+grep -R "new RabbitMQService" -n
+
+grep -R "channel.publish(" -n | grep -v outbox
+
+Replace all imports/usages with the topology + instrumented publisher/consumer factory.
+
+Single entrypoint
+
+Create server/messaging/index.ts that:
+
+Loads typed config.
+
+Builds connections: one for publishes, one for consumes.
+
+Applies topology.ts declarations idempotently.
+
+Wires the outbox dispatcher to the confirm publisher.
+
+Registers consumer handlers with manual ack, prefetch.
+
+Enforce topology
+
+topology.ts exports:
+
+export interface Exchange { name:string; type:'topic'|'direct'|'fanout'; durable:true }
+export interface Queue { name:string; durable:true; args: Record<string, any> }
+export interface Binding { exchange:string; queue:string; routingKey:string }
+export const topology = { exchanges:[...], queues:[...], bindings:[...] };
+
+
+Startup applies assertExchange, assertQueue, bindQueue for each entry.
+
+Harden publishing
+
+Publisher wraps confirmChannel.publish with:
+
+Mandatory headers: message_id, correlation_id, schema, traceparent (W3C).
+
+JSON-schema validation pre-publish.
+
+Retries on NACK with exponential backoff and final DLQ route.
+
+Harden consuming
+
+Consumer factory sets prefetch = CONFIG.RMQ_PREFETCH.
+
+Handler pattern:
+
+try { await handle(msg); channel.ack(msg); }
+catch (e) { channel.nack(msg, false, false); /* DLQ */ }
+
+
+Idempotency check at handler start (idempotency table).
+
+Delete legacy declarations
+
+Remove any queue/exchange asserts from feature services. Only topology.ts declares entities.
+
+Add an ESLint rule or code-review check: no assert* calls outside server/messaging/.
+
+Tests
+
+Integration test: publish → consume path with manual ack and confirm publish.
+
+Topology test: spin a test broker, apply topology.ts, verify entities and args (quorum, DLX).
+
+Failure test: force a handler error, ensure message lands in <queue>.DLQ.
+
+Observability
+
+Emit metrics: rmq_publish_total{result}, rmq_consume_total, rmq_dlq_total, rmq_confirm_latency_ms.
+
+Correlate spans across publish/consume via traceparent.
+
+Docs & cutover
+
+README block: “All RabbitMQ declarations live in topology.ts. Do not declare queues/exchanges elsewhere.”
+
+Remove rabbitmq-bootstrap.ts from the build; if you must keep it briefly, export a stub that throws on import with a clear message.
+
+Quick acceptance checklist
+
+Only one module declares topology: topology.ts.
+
+All publishes use confirm channels.
+
+All consumers are manual-ack with prefetch.
+
+All queues are quorum with DLQ + delivery-limit.
+
+Outbox is the only path to external publishes.
+
+Correlation IDs and traces appear in both publish and consume logs.
+
+If your topology.ts doesn’t yet meet the six keeper criteria, upgrade it to do so and then delete rabbitmq-bootstrap.ts.
