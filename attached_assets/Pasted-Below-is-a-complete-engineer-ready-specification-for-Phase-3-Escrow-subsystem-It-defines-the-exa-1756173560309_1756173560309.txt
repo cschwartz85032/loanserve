@@ -1,0 +1,750 @@
+Below is a complete, engineer-ready specification for Phase 3 – Escrow subsystem. It defines the exact data structures, SQL, TypeScript contracts, algorithms, ledger postings, message schemas, services, jobs, and acceptance tests. It also upgrades topology and GL accounts where needed. Implement this verbatim. There are no unspecified choices.
+
+0. Scope and dependencies
+
+Depends on Phase 1 (schema, ledger, posting, schedule/waterfall) and Phase 2 (outbox, envelope, Rabbit).
+
+Money in minor units (bigint cents). No floats in persisted data.
+
+All cross-service communication uses the Phase-0 MessageEnvelope<T> with headers: x-message-id, x-correlation-id, x-schema, x-trace-id.
+
+Consumers are manual ack, idempotent, with DLQ and limited retries.
+
+1. RabbitMQ topology additions
+
+Create these durable exchanges and quorum queues via topologyManager.applyTopology (extend your existing topology code):
+
+Exchanges
+
+escrow.saga topic
+
+escrow.events topic
+
+escrow.dlq direct
+
+Queues (all quorum)
+
+q.escrow.forecast bound to escrow.saga with routingKey=forecast.request.v1
+
+q.escrow.disburse.schedule bound to escrow.saga with routingKey=disbursement.schedule.v1
+
+q.escrow.disburse.post bound to escrow.saga with routingKey=disbursement.post.v1
+
+q.escrow.analysis.run bound to escrow.saga with routingKey=analysis.run.v1
+
+q.escrow.events.audit bound to escrow.events with routingKey=escrow.*
+
+q.escrow.dlq bound to escrow.dlq with routingKey=#
+
+Queue arguments for all escrow queues:
+
+x-queue-type=quorum
+x-dead-letter-exchange=escrow.dlq
+x-delivery-limit=6
+
+2. Database migrations (PostgreSQL 15+)
+
+Apply in this order, in a transaction. Extend existing enums and GL accounts.
+
+-- 005_escrow_enums_and_gl.sql
+BEGIN;
+
+-- Extend gl_account for escrow advances tracking (asset), and refunds payable (liability)
+ALTER TYPE gl_account ADD VALUE IF NOT EXISTS 'escrow_advances';
+ALTER TYPE gl_account ADD VALUE IF NOT EXISTS 'escrow_refund_payable';
+
+-- Policy table for escrow behavior (product x jurisdiction). All caps are enforced here.
+CREATE TABLE escrow_policy (
+  policy_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_code TEXT NOT NULL REFERENCES product_policy(product_code),
+  jurisdiction jurisdiction_code NOT NULL,
+  cushion_months SMALLINT NOT NULL CHECK (cushion_months BETWEEN 0 AND 2),
+  shortage_amortization_months SMALLINT NOT NULL CHECK (shortage_amortization_months BETWEEN 1 AND 24),
+  deficiency_amortization_months SMALLINT NOT NULL CHECK (deficiency_amortization_months BETWEEN 1 AND 24),
+  surplus_refund_threshold_minor NUMERIC(20,0) NOT NULL DEFAULT 5000,  -- $50.00 default
+  collect_surplus_as_reduction BOOLEAN NOT NULL DEFAULT true,         -- if false, refund surplus to borrower
+  pay_when_insufficient BOOLEAN NOT NULL DEFAULT true,                -- advance if escrow balance insufficient
+  rounding rounding_mode NOT NULL DEFAULT 'half_away_from_zero',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (product_code, jurisdiction)
+);
+
+-- Forecasted disbursements for the next 12 months (rolling)
+CREATE TABLE escrow_forecast (
+  forecast_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  escrow_id UUID NOT NULL REFERENCES escrow_item(escrow_id) ON DELETE CASCADE,
+  due_date DATE NOT NULL,
+  amount_minor NUMERIC(20,0) NOT NULL CHECK (amount_minor > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, escrow_id, due_date)
+);
+
+-- Scheduled and posted disbursements
+CREATE TYPE disbursement_status AS ENUM ('scheduled','posted','canceled');
+
+CREATE TABLE escrow_disbursement (
+  disb_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  escrow_id UUID NOT NULL REFERENCES escrow_item(escrow_id) ON DELETE CASCADE,
+  due_date DATE NOT NULL,
+  amount_minor NUMERIC(20,0) NOT NULL CHECK (amount_minor > 0),
+  status disbursement_status NOT NULL DEFAULT 'scheduled',
+  event_id UUID,  -- ledger_event when posted
+  scheduled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  posted_at TIMESTAMPTZ,
+  UNIQUE (loan_id, escrow_id, due_date)
+);
+
+-- Annual analysis header and lines
+CREATE TABLE escrow_analysis (
+  analysis_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  as_of_date DATE NOT NULL,
+  period_start DATE NOT NULL,      -- analysis projection start (usually as_of_date)
+  period_end DATE NOT NULL,        -- +12 months
+  annual_expected_minor NUMERIC(20,0) NOT NULL,
+  cushion_target_minor NUMERIC(20,0) NOT NULL,
+  current_balance_minor NUMERIC(20,0) NOT NULL,   -- sign convention explained below
+  shortage_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  deficiency_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  surplus_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  new_monthly_target_minor NUMERIC(20,0) NOT NULL,   -- excludes deficiency recovery
+  deficiency_recovery_monthly_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL,           -- increments per loan per run
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, version)
+);
+
+CREATE TABLE escrow_analysis_item (
+  analysis_id UUID NOT NULL REFERENCES escrow_analysis(analysis_id) ON DELETE CASCADE,
+  escrow_id UUID NOT NULL REFERENCES escrow_item(escrow_id) ON DELETE CASCADE,
+  forecast_due_date DATE NOT NULL,
+  forecast_amount_minor NUMERIC(20,0) NOT NULL,
+  PRIMARY KEY (analysis_id, escrow_id, forecast_due_date)
+);
+
+-- Generated statement artifact metadata (PDF stored elsewhere per Phase 4)
+CREATE TABLE escrow_statement (
+  analysis_id UUID PRIMARY KEY REFERENCES escrow_analysis(analysis_id) ON DELETE CASCADE,
+  document_hash TEXT NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMIT;
+
+
+Escrow balance sign convention for analysis
+Use credit-normal liability. Compute from ledger as credit - debit on escrow_liability. Positive means funds held. This differs from the Phase-1 latestBalances that returned debit - credit for display. We will create a helper that returns both views to avoid ambiguity.
+
+3. TypeScript domain and repositories
+
+/server/escrow/types.ts
+
+import { UUID } from "../../shared/types";
+
+export type Minor = bigint;
+
+export interface EscrowPolicy {
+  productCode: string;
+  jurisdiction: string;
+  cushionMonths: 0|1|2;
+  shortageAmortizationMonths: number;      // 1..24
+  deficiencyAmortizationMonths: number;    // 1..24
+  surplusRefundThresholdMinor: Minor;
+  collectSurplusAsReduction: boolean;
+  payWhenInsufficient: boolean;
+  rounding: 'half_away_from_zero'|'half_even';
+}
+
+export interface ForecastItem {
+  escrow_id: UUID;
+  due_date: string;            // ISO date
+  amount_minor: Minor;
+}
+
+export interface AnalysisResult {
+  analysis_id: UUID;
+  period_start: string;
+  period_end: string;
+  annual_expected_minor: Minor;
+  cushion_target_minor: Minor;
+  current_balance_minor: Minor;      // credit-normal
+  new_monthly_target_minor: Minor;   // base monthly escrow
+  shortage_minor: Minor;
+  deficiency_minor: Minor;
+  surplus_minor: Minor;
+  deficiency_recovery_monthly_minor: Minor;
+}
+
+export interface Disbursement {
+  disb_id: UUID;
+  loan_id: UUID;
+  escrow_id: UUID;
+  due_date: string;
+  amount_minor: Minor;
+  status: 'scheduled'|'posted'|'canceled';
+  event_id?: UUID;
+}
+
+
+/server/escrow/repo.ts
+
+import { Pool, PoolClient } from "pg";
+import { ForecastItem, AnalysisResult } from "./types";
+
+export class EscrowRepo {
+  constructor(private pool: Pool) {}
+
+  async withTx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    const c = await this.pool.connect();
+    try { await c.query('BEGIN'); const r = await fn(c); await c.query('COMMIT'); return r; }
+    catch (e) { await c.query('ROLLBACK'); throw e; }
+    finally { c.release(); }
+  }
+
+  async upsertForecast(c: PoolClient, loanId: string, items: ForecastItem[]): Promise<void> {
+    for (const it of items) {
+      await c.query(`
+        INSERT INTO escrow_forecast(loan_id, escrow_id, due_date, amount_minor)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT (loan_id, escrow_id, due_date)
+        DO UPDATE SET amount_minor=EXCLUDED.amount_minor
+      `, [loanId, it.escrow_id, it.due_date, it.amount_minor.toString()]);
+    }
+  }
+
+  async createScheduledDisbursement(c: PoolClient, args: { loanId: string; escrowId: string; dueDate: string; amountMinor: bigint }): Promise<string> {
+    const q = await c.query(`
+      INSERT INTO escrow_disbursement(loan_id, escrow_id, due_date, amount_minor)
+      VALUES ($1,$2,$3,$4)
+      ON CONFLICT (loan_id, escrow_id, due_date) DO UPDATE SET amount_minor=EXCLUDED.amount_minor
+      RETURNING disb_id
+    `, [args.loanId, args.escrowId, args.dueDate, args.amountMinor.toString()]);
+    return q.rows[0].disb_id;
+  }
+
+  async analysisVersion(c: PoolClient, loanId: string): Promise<number> {
+    const r = await c.query(`SELECT COALESCE(MAX(version),0) AS v FROM escrow_analysis WHERE loan_id=$1`, [loanId]);
+    return Number(r.rows[0].v) + 1;
+  }
+
+  async insertAnalysis(c: PoolClient, args: Omit<AnalysisResult,'analysis_id'> & { loan_id: string; version: number }, items: ForecastItem[], docHash?: string): Promise<string> {
+    const q = await c.query(`
+      INSERT INTO escrow_analysis(loan_id, as_of_date, period_start, period_end, annual_expected_minor, cushion_target_minor, current_balance_minor, shortage_minor, deficiency_minor, surplus_minor, new_monthly_target_minor, deficiency_recovery_monthly_minor, version)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING analysis_id
+    `, [
+      args.loan_id, args.period_start, args.period_start, args.period_end,
+      args.annual_expected_minor.toString(), args.cushion_target_minor.toString(),
+      args.current_balance_minor.toString(), args.shortage_minor.toString(),
+      args.deficiency_minor.toString(), args.surplus_minor.toString(),
+      args.new_monthly_target_minor.toString(), args.deficiency_recovery_monthly_minor.toString(),
+      args.version
+    ]);
+    const analysisId = q.rows[0].analysis_id;
+
+    for (const it of items) {
+      await c.query(`
+        INSERT INTO escrow_analysis_item(analysis_id, escrow_id, forecast_due_date, forecast_amount_minor)
+        VALUES ($1,$2,$3,$4)
+      `, [analysisId, it.escrow_id, it.due_date, it.amount_minor.toString()]);
+    }
+    if (docHash) {
+      await c.query(`INSERT INTO escrow_statement(analysis_id, document_hash) VALUES ($1,$2)`, [analysisId, docHash]);
+    }
+    return analysisId;
+  }
+
+  async markDisbursementPosted(c: PoolClient, disbId: string, eventId: string): Promise<void> {
+    await c.query(`
+      UPDATE escrow_disbursement SET status='posted', event_id=$2, posted_at=now() WHERE disb_id=$1
+    `, [disbId, eventId]);
+  }
+}
+
+4. Algorithms and functions
+4.1 Forecast 12 months ahead
+
+For each active escrow_item on a loan:
+
+Start from max(next_due, period_start) where period_start defaults to analysis run date.
+
+Generate dates by stepping frequency_months until period_end = period_start + 12 months.
+
+Amount for each forecast equals estimate_minor (Phase 3 uses estimate; later we can override per incoming actual bills).
+
+/server/escrow/forecast.ts
+
+import { ForecastItem } from "./types";
+
+export function forecast12Months(args: {
+  escrowItems: Array<{ escrow_id: string; next_due: string; frequency_months: number; estimate_minor: bigint; active: boolean }>;
+  period_start: string; // ISO date
+}): ForecastItem[] {
+  const end = addMonths(args.period_start, 12);
+  const out: ForecastItem[] = [];
+  for (const it of args.escrowItems) {
+    if (!it.active) continue;
+    let d = it.next_due < args.period_start ? args.period_start : it.next_due;
+    while (d < end) {
+      out.push({ escrow_id: it.escrow_id, due_date: d, amount_minor: it.estimate_minor });
+      d = addMonths(d, it.frequency_months);
+    }
+  }
+  return out.sort((a,b) => a.due_date.localeCompare(b.due_date));
+}
+
+function addMonths(iso: string, m: number): string {
+  const dt = new Date(iso + "T00:00:00Z"); dt.setUTCMonth(dt.getUTCMonth() + m); return dt.toISOString().slice(0,10);
+}
+
+4.2 Monthly escrow collection computation
+
+Let:
+
+E = sum of forecast amounts in next 12 months.
+
+Cmonths = escrow_policy.cushion_months in months. Enforced 0..2.
+
+C = ceil( E * Cmonths / 12 ).
+
+B_credit = credit-normal escrow balance = credit - debit from escrow_liability ledger. If negative, deficiency exists.
+
+Required base monthly M = ceil( (E + C - B_credit) / 12 ), using policy rounding.
+
+Deficiency D = max(0, -B_credit).
+
+Deficiency recovery monthly D_m = ceil( D / deficiency_amortization_months ).
+
+Shortage due to rounding S = max(0, E + C - (B_credit + 12*M)).
+
+Shortage recovery monthly S_m = ceil( S / shortage_amortization_months ).
+
+New monthly target M_new = M + D_m + S_m.
+
+Surplus U = max(0, (B_credit + 12*M) - (E + C)). If U >= surplus_refund_threshold_minor and collect_surplus_as_reduction=false, plan a surplus refund posting and keep M_new = M + D_m (no S_m because S = 0 in that case).
+
+Implement with bigint and integer division up-rounding.
+
+/server/escrow/analysis.ts
+
+import { Minor } from "./types";
+
+function ceilDiv(a: bigint, b: bigint): bigint { return (a + b - 1n) / b; }
+
+export function computeMonthlyTarget(args: {
+  annualExpectedMinor: Minor;  // E
+  cushionMonths: 0|1|2;        // Cmonths
+  currentEscrowCreditMinor: Minor; // B_credit
+  shortageMonths: number;      // shortage_amortization_months
+  deficiencyMonths: number;    // deficiency_amortization_months
+  surplusRefundThresholdMinor: Minor;
+  collectSurplusAsReduction: boolean;
+}): {
+  cushionTargetMinor: Minor;   // C
+  baseMonthlyMinor: Minor;     // M
+  deficiencyMinor: Minor;      // D
+  deficiencyMonthlyMinor: Minor; // D_m
+  shortageMinor: Minor;        // S
+  shortageMonthlyMinor: Minor; // S_m
+  surplusMinor: Minor;         // U
+  newMonthlyTargetMinor: Minor; // M_new
+} {
+  const E = args.annualExpectedMinor;
+  const C = ceilDiv(E * BigInt(args.cushionMonths), 12n);
+  const B = args.currentEscrowCreditMinor;  // can be negative
+  const baseM = ceilDiv((E + C - B), 12n);
+
+  const D = B < 0n ? (-B) : 0n;
+  const Dm = D > 0n ? ceilDiv(D, BigInt(args.deficiencyMonths)) : 0n;
+
+  const S = (E + C) > (B + baseM * 12n) ? (E + C - (B + baseM * 12n)) : 0n;
+  const Sm = S > 0n ? ceilDiv(S, BigInt(args.shortageMonths)) : 0n;
+
+  let U = (B + baseM * 12n) > (E + C) ? (B + baseM * 12n - (E + C)) : 0n;
+
+  let M_new = baseM + Dm + Sm;
+
+  if (!args.collectSurplusAsReduction && U >= args.surplusRefundThresholdMinor) {
+    // keep M_new as baseM + Dm, plan separate refund
+    M_new = baseM + Dm;
+  } else {
+    // if collecting surplus as reduction, keep M_new and allow U to implicitly reduce balances
+  }
+
+  return {
+    cushionTargetMinor: C,
+    baseMonthlyMinor: baseM,
+    deficiencyMinor: D,
+    deficiencyMonthlyMinor: Dm,
+    shortageMinor: S,
+    shortageMonthlyMinor: Sm,
+    surplusMinor: U,
+    newMonthlyTargetMinor: M_new
+  };
+}
+
+5. JSON Schemas (under /shared/schemas/escrow/)
+
+escrow.disbursement.scheduled.v1.json
+
+{
+  "$id": "escrow.disbursement.scheduled.v1",
+  "type": "object",
+  "required": ["disb_id","loan_id","escrow_id","due_date","amount_minor"],
+  "properties": {
+    "disb_id": {"type":"string","format":"uuid"},
+    "loan_id": {"type":"string","format":"uuid"},
+    "escrow_id": {"type":"string","format":"uuid"},
+    "due_date": {"type":"string","format":"date"},
+    "amount_minor": {"type":"string","pattern":"^-?\\d+$"}
+  },
+  "additionalProperties": false
+}
+
+
+escrow.disbursement.posted.v1.json
+
+{
+  "$id": "escrow.disbursement.posted.v1",
+  "type":"object",
+  "required":["disb_id","loan_id","escrow_id","event_id","due_date","amount_minor","advancement_minor"],
+  "properties":{
+    "disb_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "escrow_id":{"type":"string","format":"uuid"},
+    "event_id":{"type":"string","format":"uuid"},
+    "due_date":{"type":"string","format":"date"},
+    "amount_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "advancement_minor":{"type":"string","pattern":"^-?\\d+$"}
+  },
+  "additionalProperties": false
+}
+
+
+escrow.analysis.completed.v1.json
+
+{
+  "$id": "escrow.analysis.completed.v1",
+  "type":"object",
+  "required":["analysis_id","loan_id","period_start","period_end","annual_expected_minor","cushion_target_minor","current_balance_minor","new_monthly_target_minor","shortage_minor","deficiency_minor","surplus_minor"],
+  "properties":{
+    "analysis_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "period_start":{"type":"string","format":"date"},
+    "period_end":{"type":"string","format":"date"},
+    "annual_expected_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "cushion_target_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "current_balance_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "new_monthly_target_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "shortage_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "deficiency_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "surplus_minor":{"type":"string","pattern":"^-?\\d+$"}
+  }
+}
+
+
+All publishes must validate the payload against the $id before sending.
+
+6. Services and jobs
+6.1 Escrow Forecast Service
+
+Consumes: escrow.saga:forecast.request.v1
+Publishes: none (writes DB)
+
+Steps:
+
+Load escrow_item for loan_id where active=true.
+
+Generate ForecastItem[] via forecast12Months.
+
+repo.upsertForecast(tx, loanId, items).
+
+Ack.
+
+API (used by analysis job too):
+
+export async function generateAndStoreForecast(loanId: string, periodStartISO: string): Promise<ForecastItem[]>
+
+
+Returns the stored forecast list.
+
+6.2 Escrow Disbursement Scheduler Job
+
+Runs daily at 00:30 UTC.
+Generates scheduled disbursements for all loans with forecasted due dates in [today, today+N] where N=30 days.
+
+Algorithm:
+
+Query escrow_forecast for window.
+
+For each forecast row, create or update escrow_disbursement to status scheduled.
+
+For each created or updated row, insert outbox event:
+
+topic='escrow.events:escrow.disbursement.scheduled.v1'
+
+payload from schema.
+
+6.3 Escrow Disbursement Poster Service
+
+Consumes: escrow.saga:disbursement.post.v1 and also polls for due scheduled items daily.
+
+Two paths:
+
+A) Event-driven: another job publishes disbursement.post.v1 when due_date<=today.
+
+B) Cron mode: at 01:00 UTC, load all escrow_disbursement WHERE status='scheduled' AND due_date<=today and post them.
+
+Posting algorithm for a single disbursement:
+
+Compute escrow credit balance B_credit from ledger: sum(credit - debit) on escrow_liability. Use repository or SQL.
+
+If B_credit >= amount: post:
+
+Debit escrow_liability by amount.
+
+Credit cash by amount.
+
+Else if pay_when_insufficient=true:
+
+Shortfall X = amount - B_credit.
+
+Lines:
+
+Debit escrow_liability by B_credit (if B_credit > 0)
+
+Debit escrow_advances by X
+
+Credit cash by amount
+
+If B_credit <= 0, omit the first debit and debit escrow_advances by whole amount.
+
+Else (do not advance):
+
+Fail the disbursement: mark canceled with reason (log). Emit operational alert. Do not create a ledger event.
+
+All postings go through Phase-1 postEvent(repo, ...), with:
+
+schema='posting.escrow.disbursement.v1'
+
+effectiveDate=due_date
+
+correlationId='escrow_disb:'+disb_id
+
+After successful finalize:
+
+repo.markDisbursementPosted(disb_id, event_id)
+
+Insert outbox row for escrow.disbursement.posted.v1 with fields { disb_id, loan_id, escrow_id, event_id, due_date, amount_minor, advancement_minor: X }.
+
+6.4 Escrow Analysis Job
+
+Triggers:
+
+Annually per loan on analysis anniversary (configurable by policy), or adhoc.
+Consumes: escrow.saga:analysis.run.v1 with { loan_id, as_of_date }.
+Publishes: escrow.events:escrow.analysis.completed.v1.
+
+Steps for a single loan:
+
+Period window:
+
+period_start = as_of_date
+
+period_end = addMonths(period_start, 12)
+
+Load policy: by product_code and jurisdiction.
+
+Generate or load forecast for the window:
+
+If forecast rows exist covering [period_start, period_end), reuse; else call generateAndStoreForecast.
+
+Compute annualExpected = sum(forecast.amount_minor).
+
+Compute credit-normal escrow balance B_credit from ledger: sum(credit - debit) on escrow_liability for the loan.
+
+Compute monthly targets using computeMonthlyTarget.
+
+Write header and lines:
+
+Determine version = repo.analysisVersion(loanId)
+
+repo.insertAnalysis(tx, { loan_id, period_start, period_end, annual_expected_minor, cushion_target_minor, current_balance_minor: B_credit, shortage_minor, deficiency_minor, surplus_minor, new_monthly_target_minor, deficiency_recovery_monthly_minor, version }, forecastItems, docHash?)
+
+Adjust schedule escrow targets starting at the first due date ≥ period_start:
+
+Load the latest schedule_plan for the loan.
+
+Clone into new version = prior.version + 1.
+
+For all schedule_row in the new plan with due_date >= period_start, set escrow_target_minor = new_monthly_target_minor.
+
+Insert new schedule_plan + schedule_row set in a tx.
+
+This does not change principal or interest rows.
+
+Insert outbox row with topic='escrow.events:escrow.analysis.completed.v1' and payload per schema.
+
+PDF statement generation is Phase 4. For Phase 3, allow optional injection of document_hash from a mocked generator and store in escrow_statement.
+
+Idempotency:
+
+Use correlation_id='escrow_analysis:'+loan_id+':'+period_start.
+
+If an escrow_analysis already exists for the same loan and version computed at step 7, short-circuit and do not duplicate.
+
+7. Posting details and invariants
+
+All postings must be balanced and finalized via sp_finalize_ledger_event.
+
+Accounts used:
+
+Disbursement: escrow_liability (debit), cash (credit), optionally escrow_advances (debit) for shortfalls.
+
+Surplus refund (if policy says refund, not reduction):
+
+Debit escrow_liability by refund amount; Credit escrow_refund_payable.
+
+When paid out: Debit escrow_refund_payable; Credit cash.
+
+This workflow can be deferred until Phase 4; keep schemas ready.
+
+No direct inserts to ledger_entry. Use postEvent.
+
+8. Configuration (extend Phase-0 schema)
+
+Add to config/schema.json and loader:
+
+ESCROW_FORECAST_LOOKAHEAD_DAYS integer default 365
+ESCROW_SCHEDULER_WINDOW_DAYS integer default 30
+ESCROW_ANALYSIS_RUN_CRON string default "0 30 0 * * *"   # 00:30 UTC daily check
+ESCROW_DISBURSE_POST_CRON string default "0 0 1 * * *"   # 01:00 UTC daily post
+
+9. Endpoints and commands
+
+Optional admin endpoints (auth required, internal only):
+
+POST /escrow/analysis/run body { loan_id, as_of_date } → enqueues analysis.run.v1.
+
+POST /escrow/disbursement/schedule body { loan_id, escrow_id, due_date, amount_minor } → creates a scheduled disbursement (for manual overrides).
+
+Both respond 202 Accepted with { correlation_id }.
+
+10. Metrics and tracing
+
+Create counters/histograms in /server/escrow/metrics.ts:
+
+escrow_forecast_items_total
+
+escrow_disbursement_scheduled_total
+
+escrow_disbursement_posted_total labels: advanced=yes|no
+
+escrow_disbursement_failed_total
+
+escrow_analysis_completed_total
+
+Histograms:
+
+escrow_projection_compute_ms
+
+escrow_disbursement_post_latency_ms (scheduled → posted)
+
+escrow_analysis_latency_ms
+
+Gauges:
+
+escrow_monthly_target_minor labeled by product and jurisdiction
+
+Propagate correlation_id and trace context across all messages.
+
+11. Acceptance tests
+11.1 Deterministic simulations
+
+Create fixtures for two loans:
+
+Tax increase mid-year
+
+Escrow items: Tax semi-annual on Jun 1 and Dec 1. Estimates: $1,200 then increase to $1,500 starting Dec.
+
+Starting escrow balance: $600 credit. Policy: cushion 2 months, shortage amort 12, deficiency amort 12.
+
+Expected:
+
+Forecast has two rows (Jun, Dec).
+
+annualExpected = 270000 cents.
+
+Cushion target C = ceil(270000 * 2 / 12) = 45000.
+
+Compute M_new per formula; assert exact cents.
+
+shortageMonthlyMinor equals ceil(S/12).
+
+Schedule rows after period_start have escrow_target_minor = M_new.
+
+Insurance increase and deficiency
+
+Starting escrow balance negative $200 (advance taken earlier). Insurance annual due Mar 1: $1200 → $1500 mid-year.
+
+Policy: cushion 1 month, deficiency amort 6.
+
+Expected:
+
+deficiency_minor = 20000. deficiency_recovery_monthly = ceil(20000 / 6).
+
+Disbursement on Mar 1 posts with part to escrow_advances if insufficient.
+
+Analysis computes M_new = baseM + D_m + S_m.
+
+New schedule applied.
+
+For each scenario:
+
+Validate JSON Schema for all published events.
+
+Verify ledger events balanced.
+
+Verify escrow_disbursement.posted.v1 includes correct advancement_minor.
+
+11.2 Property tests
+
+For random sets of forecast items and balances:
+
+M_new >= 0.
+
+Projection with M_new keeps minimum projected balance ≥ -cushion_target when collect_surplus_as_reduction=true.
+
+Sum of ledger debits equals sum of credits per disbursement.
+
+12. Upgrade and replacement
+
+Add GL accounts escrow_advances, escrow_refund_payable via migration 005.
+
+Standardize escrow balance computation functions:
+
+Provide getEscrowCreditBalance(loanId) returning credit-normal balance to avoid sign mistakes.
+
+Replace any legacy schedule escrow updates with the new versioned plan write described above. Do not overwrite prior schedule rows in place.
+
+Mandate outbox for escrow.* events. No direct publisher bypass.
+
+Re-declare any legacy escrow queues with quorum and DLQ escrow.dlq.
+
+13. Definition of Done for Phase 3
+
+Forecast service stores 12-month escrow_forecast rows per active escrow item.
+
+Daily scheduler creates escrow_disbursement rows and emits escrow.disbursement.scheduled.v1.
+
+Poster posts scheduled disbursements, including shortfalls to escrow_advances, and emits escrow.disbursement.posted.v1.
+
+Annual analysis job writes escrow_analysis and per-item lines, computes new_monthly_target_minor, creates a new schedule_plan version with updated escrow_target_minor, and emits escrow.analysis.completed.v1.
+
+All events are validated against JSON Schemas and published through outbox with confirms.
+
+Acceptance scenarios pass with exact cents; all ledger postings are balanced and finalized by sp_finalize_ledger_event.
+
+This specification fully defines Phase 3. Engineering can implement directly with no further decisions.

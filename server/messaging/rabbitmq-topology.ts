@@ -75,6 +75,25 @@ export class TopologyManager {
       durable: true,
     });
 
+    // Phase 3: Escrow saga exchanges
+    this.addExchange({
+      name: 'escrow.saga',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'escrow.events',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'escrow.dlq',
+      type: 'direct',
+      durable: true,
+    });
+
     this.addExchange({
       name: 'compliance.topic',
       type: 'topic',
@@ -375,6 +394,85 @@ export class TopologyManager {
       },
       bindings: [
         { exchange: 'escrow.workflow', routingKey: 'escrow.reconcile' },
+      ],
+    });
+
+    // Phase 3: Escrow saga queues
+    this.addQueue({
+      name: 'q.escrow.forecast',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'escrow.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'escrow.saga', routingKey: 'forecast.request.v1' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.escrow.disburse.schedule',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'escrow.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'escrow.saga', routingKey: 'disbursement.schedule.v1' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.escrow.disburse.post',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'escrow.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'escrow.saga', routingKey: 'disbursement.post.v1' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.escrow.analysis.run',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'escrow.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'escrow.saga', routingKey: 'analysis.run.v1' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.escrow.events.audit',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'escrow.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'escrow.events', routingKey: 'escrow.*' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'q.escrow.dlq',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'escrow.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'escrow.dlq', routingKey: '#' },
       ],
     });
 
