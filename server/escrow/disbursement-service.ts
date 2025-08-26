@@ -44,19 +44,19 @@ export class EscrowDisbursementService {
           ef.escrow_id,
           ef.due_date,
           ef.amount_minor,
-          ei.type as escrow_type,
-          ei.payee_name
+          ed.disbursement_type as escrow_type,
+          ed.payee_name
         FROM escrow_forecast ef
-        JOIN escrow_items ei ON ei.id = ef.escrow_id
+        JOIN escrow_disbursements ed ON ed.id = ef.escrow_id
         WHERE ef.loan_id = $1
           AND ef.due_date >= $2
           AND ef.due_date <= $3
           AND NOT EXISTS (
-            SELECT 1 FROM escrow_disbursement ed
-            WHERE ed.loan_id = ef.loan_id
-              AND ed.escrow_id = ef.escrow_id
-              AND ed.due_date = ef.due_date
-              AND ed.status != 'canceled'
+            SELECT 1 FROM escrow_disbursement edb
+            WHERE edb.loan_id = ef.loan_id
+              AND edb.escrow_id = ef.escrow_id
+              AND edb.due_date = ef.due_date
+              AND edb.status != 'canceled'
           )
         ORDER BY ef.due_date, ef.escrow_id
       `, [loan_id, effective_date, endDate.toISOString().split('T')[0]]);
@@ -129,22 +129,22 @@ export class EscrowDisbursementService {
       // Get all scheduled disbursements due today or earlier
       const dueResult = await this.db.query(`
         SELECT 
-          ed.disb_id,
-          ed.loan_id,
-          ed.escrow_id,
-          ed.due_date,
-          ed.amount_minor,
-          ei.type as escrow_type,
-          ei.payee_name,
+          edb.disb_id,
+          edb.loan_id,
+          edb.escrow_id,
+          edb.due_date,
+          edb.amount_minor,
+          ed.disbursement_type as escrow_type,
+          ed.payee_name,
           l.loan_number,
           ea.balance as escrow_balance
-        FROM escrow_disbursement ed
-        JOIN escrow_items ei ON ei.id = ed.escrow_id
-        JOIN loans l ON l.id = ed.loan_id
-        JOIN escrow_accounts ea ON ea.loan_id = ed.loan_id
-        WHERE ed.status = 'scheduled'
-          AND ed.due_date <= $1
-        ORDER BY ed.loan_id, ed.due_date
+        FROM escrow_disbursement edb
+        JOIN escrow_disbursements ed ON ed.id = edb.escrow_id
+        JOIN loans l ON l.id = edb.loan_id
+        JOIN escrow_accounts ea ON ea.loan_id = edb.loan_id
+        WHERE edb.status = 'scheduled'
+          AND edb.due_date <= $1
+        ORDER BY edb.loan_id, edb.due_date
       `, [asOfDate]);
       
       // Process each disbursement
@@ -191,37 +191,37 @@ export class EscrowDisbursementService {
         schema: 'escrow.disbursement.v1',
         currency: 'USD',
         lines: hasInsufficientFunds ? [
-          // Advance from servicer
+          // Advance from servicer (use suspense account for tracking advances)
           {
-            account: 'escrow_advances',
+            account: 'suspense' as const,
             debitMinor: amountMinor - escrowBalance,
             memo: `Escrow advance for ${disbursement.escrow_type} - ${disbursement.payee_name}`
           },
           {
-            account: 'cash',
+            account: 'cash' as const,
             creditMinor: amountMinor - escrowBalance,
             memo: `Advance funded for insufficient escrow`
           },
           // Use available escrow balance
           {
-            account: 'escrow_liability',
+            account: 'escrow_liability' as const,
             debitMinor: escrowBalance,
             memo: `${disbursement.escrow_type} payment to ${disbursement.payee_name}`
           },
           {
-            account: 'cash',
+            account: 'cash' as const,
             creditMinor: escrowBalance,
             memo: `Escrow disbursement`
           }
         ] : [
           // Normal disbursement from escrow
           {
-            account: 'escrow_liability',
+            account: 'escrow_liability' as const,
             debitMinor: amountMinor,
             memo: `${disbursement.escrow_type} payment to ${disbursement.payee_name}`
           },
           {
-            account: 'cash',
+            account: 'cash' as const,
             creditMinor: amountMinor,
             memo: `Escrow disbursement to ${disbursement.payee_name}`
           }

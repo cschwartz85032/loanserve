@@ -56,16 +56,16 @@ export class EscrowAnalysisService {
       const periodEnd = new Date(periodStart);
       periodEnd.setFullYear(periodEnd.getFullYear() + 1);
       
-      // Get forecasts for the analysis period
+      // Get forecasts for the analysis period (using unified escrow_disbursements table)
       const forecastResult = await this.db.query(`
         SELECT 
           ef.escrow_id,
           ef.due_date,
           ef.amount_minor,
-          ei.type as escrow_type,
-          ei.payee_name
+          ed.disbursement_type as escrow_type,
+          ed.payee_name
         FROM escrow_forecast ef
-        JOIN escrow_items ei ON ei.id = ef.escrow_id
+        JOIN escrow_disbursements ed ON ed.id = ef.escrow_id
         WHERE ef.loan_id = $1
           AND ef.due_date >= $2
           AND ef.due_date < $3

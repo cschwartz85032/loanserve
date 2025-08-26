@@ -30,24 +30,25 @@ export class EscrowForecastService {
         [loan_id]
       );
       
-      // Get active escrow items for the loan
+      // Get active escrow disbursements for the loan (single source of truth)
       const escrowItemsResult = await this.db.query(`
         SELECT 
-          ei.id as escrow_id,
-          ei.type as escrow_type,
-          ei.payee_name,
-          ei.amount,
-          ei.due_day,
-          ei.frequency,
-          ei.next_due_date
-        FROM escrow_items ei
-        WHERE ei.loan_id = $1
-          AND ei.is_active = true
-        ORDER BY ei.type, ei.payee_name
+          ed.id as escrow_id,
+          ed.disbursement_type as escrow_type,
+          ed.payee_name,
+          ed.payment_amount as amount,
+          EXTRACT(DAY FROM ed.next_due_date)::integer as due_day,
+          ed.frequency,
+          ed.next_due_date
+        FROM escrow_disbursements ed
+        WHERE ed.loan_id = $1
+          AND ed.status = 'active'
+          AND ed.is_on_hold = false
+        ORDER BY ed.disbursement_type, ed.payee_name
       `, [loan_id]);
       
       if (escrowItemsResult.rows.length === 0) {
-        console.log(`[EscrowForecast] No active escrow items for loan ${loan_id}`);
+        console.log(`[EscrowForecast] No active escrow disbursements for loan ${loan_id}`);
         await this.db.query('COMMIT');
         return {
           loan_id,
@@ -66,13 +67,13 @@ export class EscrowForecastService {
       const endDate = new Date(asOfDate);
       endDate.setFullYear(endDate.getFullYear() + 1); // 12 months forward
       
-      // Generate forecast for each escrow item
+      // Generate forecast for each escrow disbursement
       for (const item of escrowItemsResult.rows) {
         const itemForecasts = await this.generateItemForecast(
           loan_id,
           item.escrow_id,
-          item.amount,
-          item.frequency,
+          item.amount || '0',
+          item.frequency || 'monthly',
           item.next_due_date || asOfDate.toISOString().split('T')[0],
           asOfDate,
           endDate
@@ -102,7 +103,7 @@ export class EscrowForecastService {
   }
   
   /**
-   * Generate forecast for a single escrow item
+   * Generate forecast for a single escrow disbursement
    */
   private async generateItemForecast(
     loan_id: number,

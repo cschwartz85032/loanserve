@@ -1,0 +1,842 @@
+Phase 5 — Collections and Default (engineer-ready spec)
+
+This is an exact, end-to-end specification. It defines DB schema, state machines, algorithms, JSON Schemas, services, queues, posting rules, configs, and acceptance. Implement as written. No hidden choices.
+
+0) Scope and dependencies
+
+Depends on Phase 1 (ledger, schedule), Phase 2 (outbox, payment events), Phase 4 (notice infrastructure).
+
+All currency in minor units as bigint. No floats in persisted data.
+
+All inter-service messages use Phase-0 MessageEnvelope<T> and publish via outbox only.
+
+Consumers use manual ack, prefetch from env, DLQ with quorum queues.
+
+1) RabbitMQ topology (additions)
+Exchanges
+
+collections.saga topic
+
+collections.events topic
+
+collections.dlq direct
+
+foreclosure.saga topic
+
+foreclosure.events topic
+
+foreclosure.dlq direct
+
+Queues (all quorum, args: x-queue-type=quorum, x-dead-letter-exchange=<*.dlq>, x-delivery-limit=6)
+
+q.collections.delinquency.compute ← collections.saga:delinquency.compute.v1
+
+q.collections.latefee.assess ← collections.saga:latefee.assess.v1
+
+q.collections.plan.orchestrate ← collections.saga:plan.*
+
+q.collections.events.audit ← collections.events:delinquency.*|latefee.*|plan.*
+
+q.collections.dlq ← collections.dlq:#
+
+q.foreclosure.pipeline ← foreclosure.saga:milestone.*|case.*
+
+q.foreclosure.events.audit ← foreclosure.events:foreclosure.*
+
+q.foreclosure.dlq ← foreclosure.dlq:#
+
+2) Database schema (PostgreSQL 15+)
+
+Apply migrations in order. Use NUMERIC(20,0) for money.
+
+-- 007_collections_enums.sql
+BEGIN;
+
+CREATE TYPE delinquency_bucket AS ENUM ('current','dpd_1_29','dpd_30_59','dpd_60_89','dpd_90_plus');
+
+CREATE TYPE collection_case_status AS ENUM ('normal','soft','hard','pre_foreclosure','foreclosure','bankruptcy','closed');
+
+CREATE TYPE plan_type AS ENUM ('repayment','deferral','forbearance','trial_mod');
+
+CREATE TYPE plan_status AS ENUM ('draft','active','completed','defaulted','canceled');
+
+CREATE TYPE foreclosure_milestone AS ENUM (
+  'breach_letter_sent',
+  'referral_to_attorney',
+  'notice_of_default_recorded',
+  'lis_pendens_filed',
+  'sale_scheduled',
+  'sale_postponed',
+  'sale_completed',
+  'reinstated',
+  'redeemed',
+  'eviction_started',
+  'eviction_completed',
+  'case_closed'
+);
+
+-- extend GL accounts if missing
+ALTER TYPE gl_account ADD VALUE IF NOT EXISTS 'late_fee_income';
+-- fees_receivable already exists
+
+COMMIT;
+
+-- 008_collections_core.sql
+BEGIN;
+
+-- daily snapshot of delinquency state
+CREATE TABLE delinquency_snapshot (
+  snap_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  as_of_date DATE NOT NULL,
+  earliest_unpaid_due_date DATE,
+  unpaid_due_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  dpd INTEGER NOT NULL DEFAULT 0,
+  bucket delinquency_bucket NOT NULL,
+  schedule_plan_id UUID,                 -- the plan used for computation
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, as_of_date)
+);
+
+-- fast lookup for current status
+CREATE TABLE delinquency_current (
+  loan_id UUID PRIMARY KEY REFERENCES loan(loan_id) ON DELETE CASCADE,
+  as_of_date DATE NOT NULL,
+  earliest_unpaid_due_date DATE,
+  unpaid_due_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  dpd INTEGER NOT NULL DEFAULT 0,
+  bucket delinquency_bucket NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- late fee rules extension
+ALTER TABLE fee_policy
+  ADD COLUMN late_fee_base TEXT NOT NULL DEFAULT 'scheduled_pi' CHECK (late_fee_base IN ('scheduled_pi','total_due','principal_only')),
+  ADD COLUMN late_fee_cap_minor NUMERIC(20,0) DEFAULT NULL;
+
+-- prevent duplicate assessments
+CREATE TABLE late_fee_assessment (
+  fee_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  period_due_date DATE NOT NULL,            -- installment due date the fee belongs to
+  assessed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  amount_minor NUMERIC(20,0) NOT NULL CHECK (amount_minor > 0),
+  policy_id UUID NOT NULL REFERENCES fee_policy(policy_id),
+  event_id UUID NOT NULL REFERENCES ledger_event(event_id) ON DELETE RESTRICT,
+  UNIQUE (loan_id, period_due_date)
+);
+
+-- collection case envelope
+CREATE TABLE collection_case (
+  case_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID UNIQUE NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  status collection_case_status NOT NULL DEFAULT 'normal',
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at TIMESTAMPTZ
+);
+
+-- repayment/deferral/forbearance plan
+CREATE TABLE plan_header (
+  plan_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  type plan_type NOT NULL,
+  status plan_status NOT NULL DEFAULT 'draft',
+  starts_on DATE NOT NULL,
+  ends_on DATE,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, status) WHERE (status IN ('active'))
+);
+
+CREATE TABLE plan_schedule (
+  plan_id UUID NOT NULL REFERENCES plan_header(plan_id) ON DELETE CASCADE,
+  installment_no INTEGER NOT NULL CHECK (installment_no>=1),
+  due_date DATE NOT NULL,
+  amount_minor NUMERIC(20,0) NOT NULL CHECK (amount_minor>=0),
+  PRIMARY KEY (plan_id, installment_no),
+  UNIQUE (plan_id, due_date)
+);
+
+-- progress tracking per installment
+CREATE TABLE plan_progress (
+  plan_id UUID NOT NULL REFERENCES plan_header(plan_id) ON DELETE CASCADE,
+  installment_no INTEGER NOT NULL,
+  due_date DATE NOT NULL,
+  paid_minor NUMERIC(20,0) NOT NULL DEFAULT 0,
+  last_payment_event UUID,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','partial','paid','missed')),
+  PRIMARY KEY (plan_id, installment_no)
+);
+
+-- legal partners (attorney firms)
+CREATE TABLE attorney (
+  attorney_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT
+);
+
+-- foreclosure case and milestones
+CREATE TABLE foreclosure_case (
+  fc_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loan(loan_id) ON DELETE CASCADE,
+  case_opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  attorney_id UUID REFERENCES attorney(attorney_id),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+  UNIQUE (loan_id)  -- one open foreclosure case at a time
+);
+
+CREATE TABLE foreclosure_event (
+  fc_id UUID NOT NULL REFERENCES foreclosure_case(fc_id) ON DELETE CASCADE,
+  milestone foreclosure_milestone NOT NULL,
+  occurred_at TIMESTAMPTZ NOT NULL,
+  meta JSONB NOT NULL DEFAULT '{}',
+  PRIMARY KEY (fc_id, milestone)
+);
+
+COMMIT;
+
+3) Deterministic rules and algorithms
+3.1 Delinquency computation (daily)
+
+Inputs:
+
+as_of_date (UTC date).
+
+Latest schedule_plan for the loan.
+
+Ledger postings of payments up to as_of_date.
+
+Steps:
+
+Compute scheduled due rows with due_date <= as_of_date.
+
+For those rows, compute scheduled sums:
+
+scheduled_pi_minor = sum(scheduled_principal_minor + scheduled_interest_minor)
+
+scheduled_escrow_minor = sum(escrow_target_minor)
+
+scheduled_fee_target_minor = sum(fee_target_minor)
+
+Compute payments applied to buckets up to as_of_date from ledger:
+
+Use allocations persisted in payment_posting.applied.
+
+Sum per bucket: fees, interest, principal, escrow.
+
+Compute unpaid:
+
+unpaid_minor = max(0, scheduled_fee_target - applied.fees) + max(0, scheduled_interest - applied.interest) + max(0, scheduled_principal - applied.principal) + max(0, scheduled_escrow - applied.escrow)
+
+Earliest unpaid due date:
+
+Scan schedule rows by due date and find the first date where the cumulative applied for that row’s buckets is less than that row’s scheduled totals (PIE+fees). That row’s due_date is earliest_unpaid_due_date.
+
+If none, set earliest_unpaid_due_date = NULL and dpd=0, bucket='current'.
+
+Days past due:
+
+If earliest_unpaid_due_date is not null, dpd = days_between(as_of_date, earliest_unpaid_due_date). Negative values are treated as 0.
+
+Bucket mapping:
+
+dpd=0 → current
+
+1..29 → dpd_1_29
+
+30..59 → dpd_30_59
+
+60..89 → dpd_60_89
+
+>=90 → dpd_90_plus
+
+Write:
+
+Insert delinquency_snapshot.
+
+Upsert delinquency_current with same values.
+
+Publish:
+
+If bucket changed since last snapshot, outbox collections.events:delinquency.status.changed.v1.
+
+3.2 Late fee calculation
+
+Policy from fee_policy effective at the installment due_date:
+
+late_fee_type: amount or percent.
+
+late_fee_base:
+
+scheduled_pi → base = scheduled principal + scheduled interest for that installment.
+
+total_due → base = P+I+escrow+fees scheduled for the installment.
+
+principal_only → base = scheduled principal only.
+
+late_fee_percent_bps applies to base if type percent.
+
+late_fee_amount_minor if type amount.
+
+Cap: if late_fee_cap_minor set, clamp fee to that value.
+
+Grace: late_fee_grace_days from policy.
+
+Assessment rule:
+
+On day due_date + grace_days, if installment is not fully paid for its base components, assess late fee once per installment.
+
+Assessment posting:
+
+Debit fees_receivable by fee_amount.
+
+Credit late_fee_income by fee_amount.
+
+Event schema posting.late_fee.v1.
+
+correlation_id = 'latefee:' + loan_id + ':' + due_date.
+
+Persist:
+
+Insert into late_fee_assessment with period_due_date = due_date.
+
+Publish:
+
+Outbox collections.events:latefee.assessed.v1.
+
+3.3 Plans
+
+Types:
+
+repayment: additional payment schedule on top of normal schedule to cure arrears.
+
+deferral: move one or more installments to the end; no immediate payment due for deferred periods.
+
+forbearance: suspend payments for a time window; interest accrual policy is unchanged in Phase 5.
+
+Plan creation:
+
+plan_header status draft → active when schedule is set and start date reached or user activates.
+
+Plan schedule rules:
+
+plan_schedule defines exact due_date and amount_minor per installment.
+
+plan_progress starts as pending.
+
+On each payments.events:payment.posted.v1, apply to plan installments in chronological order if allocation_hints.plan_id equals the plan or if configured to auto-apply surplus to active plan.
+
+Transitions:
+
+pending → partial when paid_minor > 0 but < amount_minor.
+
+partial → paid when paid_minor >= amount_minor.
+
+pending|partial → missed when current_date > due_date + plan_grace_days. plan_grace_days default 0, configurable per plan.
+
+Plan status:
+
+draft → active by orchestrator command.
+
+active → completed when all installments paid.
+
+active → defaulted on any missed unless policy allows catch-up; in Phase 5 set immediate default.
+
+active → canceled by command.
+
+Publish:
+
+collections.events:plan.created.v1 on activation.
+
+collections.events:plan.status.changed.v1 on status changes.
+
+3.4 Foreclosure pipeline
+
+Case open:
+
+Trigger when bucket becomes dpd_90_plus or by command. Open a foreclosure_case if not exists.
+
+Milestones:
+
+The milestones enum defines allowed steps.
+
+Each milestone can be set once; use PRIMARY KEY(fc_id, milestone).
+
+Attorney handoff:
+
+referral_to_attorney must include attorney_id in meta and set foreclosure_case.attorney_id.
+
+Publish:
+
+foreclosure.events:foreclosure.milestone.hit.v1 for each milestone insert.
+
+4) TypeScript contracts
+
+/server/collections/types.ts
+
+import { UUID } from "../../shared/types";
+export type Minor = bigint;
+
+export type DelinquencyBucket = 'current'|'dpd_1_29'|'dpd_30_59'|'dpd_60_89'|'dpd_90_plus';
+
+export interface DelinquencyStatus {
+  loan_id: UUID;
+  as_of_date: string;
+  earliest_unpaid_due_date?: string;
+  unpaid_due_minor: Minor;
+  dpd: number;
+  bucket: DelinquencyBucket;
+}
+
+export interface LateFeeAssessment {
+  fee_id: UUID;
+  loan_id: UUID;
+  period_due_date: string;
+  amount_minor: Minor;
+  policy_id: UUID;
+  event_id: UUID;
+}
+
+export type PlanType = 'repayment'|'deferral'|'forbearance'|'trial_mod';
+export type PlanStatus = 'draft'|'active'|'completed'|'defaulted'|'canceled';
+
+export interface PlanHeader {
+  plan_id: UUID;
+  loan_id: UUID;
+  type: PlanType;
+  status: PlanStatus;
+  starts_on: string;
+  ends_on?: string;
+  created_by: string;
+}
+
+export interface PlanInstallment {
+  plan_id: UUID;
+  installment_no: number;
+  due_date: string;
+  amount_minor: Minor;
+  paid_minor: Minor;
+  status: 'pending'|'partial'|'paid'|'missed';
+}
+
+5) Repositories
+
+/server/collections/repo.ts
+
+import { Pool, PoolClient } from "pg";
+import { DelinquencyStatus } from "./types";
+
+export class CollectionsRepo {
+  constructor(private pool: Pool) {}
+
+  async withTx<T>(fn: (c: PoolClient)=>Promise<T>): Promise<T> {
+    const c = await this.pool.connect();
+    try { await c.query('BEGIN'); const r = await fn(c); await c.query('COMMIT'); return r; }
+    catch (e) { await c.query('ROLLBACK'); throw e; }
+    finally { c.release(); }
+  }
+
+  async upsertDelinquency(c: PoolClient, s: DelinquencyStatus, schedulePlanId?: string): Promise<void> {
+    await c.query(`
+      INSERT INTO delinquency_snapshot(loan_id, as_of_date, earliest_unpaid_due_date, unpaid_due_minor, dpd, bucket, schedule_plan_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (loan_id, as_of_date) DO UPDATE SET earliest_unpaid_due_date=$3, unpaid_due_minor=$4, dpd=$5, bucket=$6, schedule_plan_id=$7
+    `, [s.loan_id, s.as_of_date, s.earliest_unpaid_due_date ?? null, s.unpaid_due_minor.toString(), s.dpd, s.bucket, schedulePlanId ?? null]);
+
+    await c.query(`
+      INSERT INTO delinquency_current(loan_id, as_of_date, earliest_unpaid_due_date, unpaid_due_minor, dpd, bucket)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT (loan_id) DO UPDATE SET as_of_date=$2, earliest_unpaid_due_date=$3, unpaid_due_minor=$4, dpd=$5, bucket=$6, updated_at=now()
+    `, [s.loan_id, s.as_of_date, s.earliest_unpaid_due_date ?? null, s.unpaid_due_minor.toString(), s.dpd, s.bucket]);
+  }
+
+  async insertLateFee(c: PoolClient, args: { loan_id: string; period_due_date: string; amount_minor: bigint; policy_id: string; event_id: string }): Promise<string> {
+    const q = await c.query(`
+      INSERT INTO late_fee_assessment(loan_id, period_due_date, amount_minor, policy_id, event_id)
+      VALUES ($1,$2,$3,$4,$5) RETURNING fee_id
+    `, [args.loan_id, args.period_due_date, args.amount_minor.toString(), args.policy_id, args.event_id]);
+    return q.rows[0].fee_id;
+  }
+
+  async getPlanHeader(c: PoolClient, planId: string) {
+    return (await c.query(`SELECT * FROM plan_header WHERE plan_id=$1`, [planId])).rows[0];
+  }
+
+  async createPlan(c: PoolClient, h: { loan_id: string; type: string; starts_on: string; ends_on?: string; created_by: string }): Promise<string> {
+    const q = await c.query(`
+      INSERT INTO plan_header(loan_id,type,starts_on,ends_on,created_by,status)
+      VALUES ($1,$2,$3,$4,$5,'draft') RETURNING plan_id
+    `, [h.loan_id, h.type, h.starts_on, h.ends_on ?? null, h.created_by]);
+    return q.rows[0].plan_id;
+  }
+
+  async setPlanStatus(c: PoolClient, planId: string, status: string) {
+    await c.query(`UPDATE plan_header SET status=$2, updated_at=now() WHERE plan_id=$1`, [planId, status]);
+  }
+
+  async setPlanSchedule(c: PoolClient, planId: string, rows: Array<{ no: number; due: string; amt: bigint }>) {
+    for (const r of rows) {
+      await c.query(`INSERT INTO plan_schedule(plan_id,installment_no,due_date,amount_minor) VALUES ($1,$2,$3,$4)`,
+        [planId, r.no, r.due, r.amt.toString()]);
+      await c.query(`INSERT INTO plan_progress(plan_id,installment_no,due_date) VALUES ($1,$2,$3)`,
+        [planId, r.no, r.due]);
+    }
+  }
+
+  async applyPlanPayment(c: PoolClient, planId: string, amountMinor: bigint, paymentEventId: string, paidAt: string) {
+    // Apply in order of installment_no
+    let remaining = amountMinor;
+    const rows = (await c.query(`
+      SELECT installment_no, amount_minor, paid_minor, status FROM plan_progress
+      JOIN plan_schedule USING(plan_id,installment_no)
+      WHERE plan_id=$1 ORDER BY installment_no ASC
+    `, [planId])).rows;
+    for (const row of rows) {
+      if (remaining <= 0n) break;
+      if (row.status === 'paid') continue;
+      const need = BigInt(row.amount_minor) - BigInt(row.paid_minor);
+      const take = need <= remaining ? need : remaining;
+      const newPaid = BigInt(row.paid_minor) + take;
+      const newStatus = newPaid >= BigInt(row.amount_minor) ? 'paid' : 'partial';
+      await c.query(`UPDATE plan_progress SET paid_minor=$1, status=$2, last_payment_event=$3 WHERE plan_id=$4 AND installment_no=$5`,
+        [newPaid.toString(), newStatus, paymentEventId, planId, row.installment_no]);
+      remaining -= take;
+    }
+  }
+}
+
+6) Posting rules
+6.1 Late fee posting
+
+Lines:
+
+Debit fees_receivable amount.
+
+Credit late_fee_income amount.
+
+schema='posting.late_fee.v1'
+
+correlation_id = 'latefee:' + loan_id + ':' + period_due_date
+
+Balanced event enforced by postEvent.
+
+6.2 Plan payments
+
+Handled by normal posting.payment.v1. Plan progress is logical tracking. No extra GL lines in Phase 5.
+
+If you need to earmark a payment for plan, include allocation_hints: { plan_id } in payment.validated so Poster tags payment_posting and Collections can consume.
+
+7) JSON Schemas (store under /shared/schemas/collections/ and /shared/schemas/foreclosure/)
+
+delinquency.status.changed.v1.json
+
+{
+  "$id": "delinquency.status.changed.v1",
+  "type":"object",
+  "required":["loan_id","as_of_date","previous_bucket","new_bucket","dpd","unpaid_due_minor","earliest_unpaid_due_date"],
+  "properties":{
+    "loan_id":{"type":"string","format":"uuid"},
+    "as_of_date":{"type":"string","format":"date"},
+    "previous_bucket":{"type":"string","enum":["current","dpd_1_29","dpd_30_59","dpd_60_89","dpd_90_plus"]},
+    "new_bucket":{"type":"string","enum":["current","dpd_1_29","dpd_30_59","dpd_60_89","dpd_90_plus"]},
+    "dpd":{"type":"integer","minimum":0},
+    "unpaid_due_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "earliest_unpaid_due_date":{"type":"string","format":"date"}
+  }
+}
+
+
+latefee.assessed.v1.json
+
+{
+  "$id": "latefee.assessed.v1",
+  "type":"object",
+  "required":["fee_id","loan_id","period_due_date","amount_minor","policy_id","event_id"],
+  "properties":{
+    "fee_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "period_due_date":{"type":"string","format":"date"},
+    "amount_minor":{"type":"string","pattern":"^-?\\d+$"},
+    "policy_id":{"type":"string","format":"uuid"},
+    "event_id":{"type":"string","format":"uuid"}
+  }
+}
+
+
+plan.created.v1.json
+
+{
+  "$id": "plan.created.v1",
+  "type":"object",
+  "required":["plan_id","loan_id","type","starts_on","ends_on","installments"],
+  "properties":{
+    "plan_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "type":{"type":"string","enum":["repayment","deferral","forbearance","trial_mod"]},
+    "starts_on":{"type":"string","format":"date"},
+    "ends_on":{"type":["string","null"],"format":"date"},
+    "installments":{"type":"array","items":{"type":"object","required":["no","due_date","amount_minor"],"properties":{
+      "no":{"type":"integer","minimum":1},
+      "due_date":{"type":"string","format":"date"},
+      "amount_minor":{"type":"string","pattern":"^-?\\d+$"}
+    }}}
+  }
+}
+
+
+foreclosure.milestone.hit.v1.json
+
+{
+  "$id": "foreclosure.milestone.hit.v1",
+  "type":"object",
+  "required":["fc_id","loan_id","milestone","occurred_at","meta"],
+  "properties":{
+    "fc_id":{"type":"string","format":"uuid"},
+    "loan_id":{"type":"string","format":"uuid"},
+    "milestone":{"type":"string","enum":["breach_letter_sent","referral_to_attorney","notice_of_default_recorded","lis_pendens_filed","sale_scheduled","sale_postponed","sale_completed","reinstated","redeemed","eviction_started","eviction_completed","case_closed"]},
+    "occurred_at":{"type":"string","format":"date-time"},
+    "meta":{"type":"object","additionalProperties":true}
+  }
+}
+
+8) Services and jobs
+8.1 Delinquency Engine
+
+Consumes:
+
+collections.saga:delinquency.compute.v1 with { loan_id, as_of_date }.
+
+Also runs as daily cron at 02:30 UTC for all active loans.
+
+Behavior:
+
+Compute delinquency per §3.1.
+
+Read previous delinquency_current.bucket.
+
+Write snapshot and current.
+
+If changed, outbox delinquency.status.changed.v1.
+
+Idempotency:
+
+Use correlation_id='delinq:'+loan_id+':'+as_of_date.
+
+8.2 Late Fee Assessor
+
+Runs daily at 03:30 UTC.
+
+Algorithm:
+
+For each loan, find schedule rows where due_date + grace_days = today.
+
+Compute base per policy and verify if installment is fully paid for that base.
+
+If not paid and no late_fee_assessment exists for that loan_id, period_due_date:
+
+Post fee via postEvent with lines in §6.1.
+
+Insert late_fee_assessment.
+
+Outbox latefee.assessed.v1.
+
+Idempotency:
+
+Unique constraint on late_fee_assessment.
+
+correlation_id from §6.1 guarantees no double post.
+
+8.3 Plan Orchestrator
+
+Endpoints:
+
+POST /collections/plan body { loan_id, type, starts_on, ends_on?, installments: [{no, due_date, amount_minor}], created_by }.
+
+POST /collections/plan/:plan_id/activate
+
+POST /collections/plan/:plan_id/cancel
+
+POST /collections/plan/:plan_id/complete (admin only)
+
+Behavior:
+
+Create header (draft), write schedule and progress rows, then activate on command.
+
+On activation:
+
+Ensure no other active plan for the loan.
+
+Set status active.
+
+Outbox plan.created.v1 with full schedule summary.
+
+Payments integration:
+
+Subscribe to payments.events:payment.posted.v1.
+
+If allocation_hints.plan_id matches an active plan, apply amount to plan via applyPlanPayment.
+
+If an installment passes due_date and is not paid, mark missed and set plan status defaulted. Outbox plan.status.changed.v1 (define schema like created but with old_status and new_status).
+
+8.4 Foreclosure Orchestrator
+
+Commands:
+
+POST /foreclosure/case/open body { loan_id, attorney_id? } opens a case if none open.
+
+POST /foreclosure/case/:fc_id/milestone body { milestone, occurred_at, meta }.
+
+Behavior:
+
+Create foreclosure_case if needed.
+
+Insert foreclosure_event with uniqueness per milestone.
+
+On referral_to_attorney, set foreclosure_case.attorney_id.
+
+Outbox foreclosure.milestone.hit.v1.
+
+9) Configuration (extend Phase-0 schema)
+
+Add:
+
+DELINQUENCY_CRON = "0 30 2 * * *"            # 02:30 UTC
+LATEFEE_ASSESS_CRON = "0 30 3 * * *"         # 03:30 UTC
+PLAN_GRACE_DAYS_DEFAULT = 0
+LATEFEE_MAX_PER_INSTALLMENT = 1              # enforced by unique row
+
+
+Validate in config loader with types and defaults.
+
+10) Metrics and tracing
+
+Counters:
+
+delinquency_compute_total{result="changed|unchanged"}
+
+latefee_assessed_total
+
+plan_created_total{type}
+
+plan_status_changed_total{from,to}
+
+foreclosure_milestone_total{milestone}
+
+Histograms:
+
+delinquency_compute_ms
+
+latefee_assess_ms
+
+plan_apply_payment_ms
+
+Gauges:
+
+loans_by_bucket{bucket}
+
+Include correlation_id in spans and logs.
+
+11) Acceptance tests
+11.1 State machine proofs
+
+Plan status transitions:
+
+Allowed:
+
+draft → active
+
+active → completed
+
+active → defaulted
+
+active → canceled
+
+Disallowed:
+
+any other transitions
+
+Unit tests assert that invalid transitions throw and do not update DB.
+
+Foreclosure milestones:
+
+Cannot duplicate a milestone for the same case.
+
+Sequence does not enforce strict ordering in Phase 5, but inserting a milestone must be idempotent.
+
+11.2 Delinquency aging
+
+Fixtures:
+
+Schedule row due on 2025-03-01 P=50000 I=20000, no payment.
+
+As of 2025-03-20:
+
+dpd=19, bucket='dpd_1_29', earliest_unpaid_due_date=2025-03-01.
+
+Apply a payment of 30000 toward that row:
+
+Recompute: still unpaid. unpaid_due_minor = 40000.
+
+Apply payment to full due:
+
+Recompute: bucket='current', dpd=0.
+
+11.3 Late fee correctness
+
+Policies:
+
+Type amount=2500, grace 10 days. On day 11 if unpaid base, fee assessed once.
+
+Type percent=500 bps on scheduled_pi of 70000 gives 3500, cap at 3000 sets 3000.
+
+Verify ledger posting is balanced:
+
+Debit fees_receivable 3000
+
+Credit late_fee_income 3000
+
+Duplicate attempt does not create a second fee due to unique constraint.
+
+11.4 Plan progress
+
+Create repayment plan with two installments of 10000 each.
+
+Post a payment of 15000 with allocation_hints.plan_id.
+
+First installment paid, second partial with paid_minor=5000.
+
+Advance time past second installment due.
+
+Orchestrator marks missed, sets plan defaulted, publishes status change.
+
+11.5 Foreclosure events
+
+Open case on a 95 DPD loan.
+
+Record breach_letter_sent and referral_to_attorney with attorney_id.
+
+Consumable events emitted via outbox and pass JSON Schema validation.
+
+12) Upgrade and replacement
+
+Use late_fee_income account for late fees. Remove any ad-hoc fee postings that credited fee_income. Standardize on late_fee_income.
+
+All delinquency computations must use payment_posting.applied for allocations and schedule_plan version recorded in snapshot.
+
+Remove any legacy “days past due” fields from other tables; delinquency_current is the single source of truth.
+
+Any old plan or promise-to-pay implementations must be migrated to plan_header, plan_schedule, plan_progress. No parallel structures.
+
+13) Definition of Done
+
+Delinquency Engine runs daily and on demand. delinquency_current is accurate. Changes emit delinquency.status.changed.v1.
+
+Late Fee Assessor computes fees per policy, posts balanced ledger events, records late_fee_assessment, and emits latefee.assessed.v1. No duplicates.
+
+Plan Orchestrator creates, activates, tracks, and completes or defaults plans. Payments update plan progress. Events emitted.
+
+Foreclosure Orchestrator opens cases, records milestones with attorney handoffs, and emits events.
+
+All schemas validated before publish. All outbox publications confirmed. All new tables migrated in CI. All acceptance tests pass.
