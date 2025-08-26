@@ -338,6 +338,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
   const [showCc, setShowCc] = useState(false);
   const [showBcc, setShowBcc] = useState(false);
   const [textMessage, setTextMessage] = useState('');
+  const [smsTo, setSmsTo] = useState('');
+  const [showSmsTemplatesModal, setShowSmsTemplatesModal] = useState(false);
+  const [smsScheduledTime, setSmsScheduledTime] = useState<string | null>(null);
   const [callDuration, setCallDuration] = useState('');
   const [callOutcome, setCallOutcome] = useState('');
   const [emailAttachments, setEmailAttachments] = useState<Array<{id?: number, name: string, size?: number, file?: File}>>([]);
@@ -892,7 +895,14 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         setEmailTo(firstEmail);
       }
     }
-  }, [communicationType, emailAddresses]);
+    // Initialize SMS To field with primary phone when switching to text tab
+    if (communicationType === 'text' && phoneNumbers.length > 0 && !smsTo) {
+      const primaryPhone = phoneNumbers.find(p => !p.isBad)?.number || phoneNumbers[0]?.number;
+      if (primaryPhone) {
+        setSmsTo(primaryPhone);
+      }
+    }
+  }, [communicationType, emailAddresses, phoneNumbers]);
 
   // Mutations
   const createNoteMutation = useMutation({
@@ -931,29 +941,41 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
 
   const createTextMutation = useMutation({
-    mutationFn: async (textData: { message: string; recipientPhone?: string }) => {
+    mutationFn: async (textData: { message: string; recipients: string[]; scheduled?: string }) => {
       console.log('Sending text message:', textData);
-      const response = await apiRequest(`/api/loans/${loanId}/crm/texts`, {
-        method: 'POST',
-        body: JSON.stringify(textData),
-      });
-      const result = await response.json();
-      console.log('Text message logged:', result);
-      return result;
+      
+      // Send SMS to each recipient
+      const promises = textData.recipients.map(recipient => 
+        apiRequest(`/api/loans/${loanId}/sms`, {
+          method: 'POST',
+          body: JSON.stringify({
+            to: recipient,
+            message: textData.message,
+            scheduled: textData.scheduled
+          }),
+        })
+      );
+      
+      const responses = await Promise.all(promises);
+      const results = await Promise.all(responses.map(r => r.json()));
+      console.log('SMS sent:', results);
+      return results;
     },
     onSuccess: async () => {
-      console.log('Text message logged successfully, invalidating queries...');
+      console.log('SMS sent successfully, invalidating queries...');
       // Force immediate refetch of activity timeline
       await queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
       await queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
       
       setTextMessage('');
-      toast({ title: 'Success', description: 'Text message logged' });
+      setSmsTo('');
+      setSmsScheduledTime(null);
+      toast({ title: 'Success', description: 'SMS message sent' });
     },
     onError: (error: any) => {
       toast({ 
         title: 'Error', 
-        description: error.message || 'Failed to log text message',
+        description: error.message || 'Failed to send SMS',
         variant: 'destructive'
       });
     }
@@ -2237,24 +2259,127 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
               {/* Text Tab Content */}
               <TabsContent value="text" className="mt-4">
                 <div className="border rounded-lg p-3 space-y-3">
-                  <Textarea
-                    placeholder="Type your message..."
-                    value={textMessage}
-                    onChange={(e) => setTextMessage(e.target.value)}
-                    className="min-h-[100px]"
-                  />
-                  <div className="flex justify-end">
-                    <Button onClick={() => {
-                      if (textMessage.trim()) {
-                        createTextMutation.mutate({
-                          message: textMessage,
-                          recipientPhone: phoneNumbers[0]?.number || ''
-                        });
-                      }
-                    }}>
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      Send Text
-                    </Button>
+                  {/* To Field */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">To:</label>
+                    <Input
+                      placeholder="+1234567890 (separate multiple with comma or semicolon)"
+                      value={smsTo}
+                      onChange={(e) => setSmsTo(e.target.value)}
+                      className="text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter phone numbers separated by comma or semicolon
+                    </p>
+                  </div>
+
+                  {/* Message Field */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium">Message:</label>
+                    <Textarea
+                      placeholder="Type your SMS message (160 characters max for single SMS)..."
+                      value={textMessage}
+                      onChange={(e) => setTextMessage(e.target.value)}
+                      className="min-h-[100px]"
+                      maxLength={1000}
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>{textMessage.length}/1000 characters</span>
+                      {textMessage.length > 160 && (
+                        <span>Will be sent as {Math.ceil(textMessage.length / 160)} SMS messages</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Templates, Delete and Action Buttons */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        onClick={() => setShowSmsTemplatesModal(true)}
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs px-2"
+                      >
+                        <FileText className="h-3 w-3 mr-1" />
+                        Templates
+                      </Button>
+                      
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => {
+                          // Clear all SMS fields
+                          setSmsTo('');
+                          setTextMessage('');
+                          setSmsScheduledTime(null);
+                        }}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                      
+                      <div className="flex-1" />
+                      
+                      <Button 
+                        onClick={() => {
+                          if (textMessage.trim() && smsTo.trim()) {
+                            // Parse multiple recipients
+                            const recipients = smsTo
+                              .split(/[,;]/)
+                              .map(r => r.trim())
+                              .filter(r => r);
+                            
+                            createTextMutation.mutate({
+                              message: textMessage,
+                              recipients,
+                              scheduled: smsScheduledTime || undefined
+                            });
+                          }
+                        }}
+                        disabled={!smsTo || !textMessage || createTextMutation.isPending}
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
+                        {createTextMutation.isPending ? 'Sending...' : 'Send SMS'}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          // Schedule send functionality
+                          const scheduledTime = prompt('Enter time to send (e.g., "in 1 hour" or "tomorrow at 3pm")');
+                          if (scheduledTime) {
+                            setSmsScheduledTime(scheduledTime);
+                            toast({
+                              title: 'SMS Scheduled',
+                              description: `SMS scheduled for ${scheduledTime}`
+                            });
+                          }
+                        }}
+                        disabled={!smsTo || !textMessage}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        title="Schedule"
+                      >
+                        <Clock className="h-3 w-3" />
+                      </Button>
+                    </div>
+
+                    {smsScheduledTime && (
+                      <div className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+                        <span className="text-muted-foreground">
+                          Scheduled for: {smsScheduledTime}
+                        </span>
+                        <Button
+                          onClick={() => setSmsScheduledTime(null)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0"
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </TabsContent>
@@ -3377,6 +3502,155 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             }}
             onClose={() => setShowTemplatesModal(false)}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* SMS Templates Modal */}
+      <Dialog open={showSmsTemplatesModal} onOpenChange={setShowSmsTemplatesModal}>
+        <DialogContent className="sm:max-w-[700px] max-h-[600px] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>SMS Templates</DialogTitle>
+            <DialogDescription>
+              Select a template to use for your SMS
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-3">
+            {/* Built-in SMS Templates */}
+            <ScrollArea className="h-[400px] w-full border rounded-md p-4">
+              <div className="space-y-3">
+                {/* Payment Reminder Template */}
+                <div 
+                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setTextMessage('Your loan payment of [AMOUNT] is due on [DATE]. Please ensure timely payment to avoid late fees. Reply STOP to unsubscribe.');
+                    setShowSmsTemplatesModal(false);
+                    toast({
+                      title: 'Template Loaded',
+                      description: 'Payment reminder template loaded'
+                    });
+                  }}
+                >
+                  <div className="font-medium text-sm">Payment Reminder</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Remind borrower about upcoming payment
+                  </div>
+                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
+                    Your loan payment of [AMOUNT] is due on [DATE]...
+                  </div>
+                </div>
+
+                {/* Late Notice Template */}
+                <div 
+                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setTextMessage('Your loan payment is [DAYS] days overdue. Please make payment immediately to avoid additional fees. Contact us at [PHONE] for assistance.');
+                    setShowSmsTemplatesModal(false);
+                    toast({
+                      title: 'Template Loaded',
+                      description: 'Late notice template loaded'
+                    });
+                  }}
+                >
+                  <div className="font-medium text-sm">Late Payment Notice</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Notify borrower about overdue payment
+                  </div>
+                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
+                    Your loan payment is [DAYS] days overdue...
+                  </div>
+                </div>
+
+                {/* Payment Received Template */}
+                <div 
+                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setTextMessage('Payment of [AMOUNT] received for loan [LOAN_NUMBER]. Thank you for your payment. Your new balance is [BALANCE].');
+                    setShowSmsTemplatesModal(false);
+                    toast({
+                      title: 'Template Loaded',
+                      description: 'Payment received template loaded'
+                    });
+                  }}
+                >
+                  <div className="font-medium text-sm">Payment Received</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Confirm payment receipt
+                  </div>
+                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
+                    Payment of [AMOUNT] received for loan [LOAN_NUMBER]...
+                  </div>
+                </div>
+
+                {/* Escrow Shortage Template */}
+                <div 
+                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setTextMessage('Escrow shortage detected on your loan. Amount needed: [AMOUNT]. Please contact us to discuss payment options.');
+                    setShowSmsTemplatesModal(false);
+                    toast({
+                      title: 'Template Loaded',
+                      description: 'Escrow shortage template loaded'
+                    });
+                  }}
+                >
+                  <div className="font-medium text-sm">Escrow Shortage</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Notify about escrow shortage
+                  </div>
+                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
+                    Escrow shortage detected on your loan...
+                  </div>
+                </div>
+
+                {/* Rate Change Template */}
+                <div 
+                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setTextMessage('Your loan interest rate will change from [OLD_RATE]% to [NEW_RATE]% effective [DATE]. Your new payment will be [AMOUNT].');
+                    setShowSmsTemplatesModal(false);
+                    toast({
+                      title: 'Template Loaded',
+                      description: 'Rate change template loaded'
+                    });
+                  }}
+                >
+                  <div className="font-medium text-sm">Rate Change Notice</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Notify about interest rate change
+                  </div>
+                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
+                    Your loan interest rate will change from [OLD_RATE]%...
+                  </div>
+                </div>
+
+                {/* General Update Template */}
+                <div 
+                  className="border rounded-lg p-3 hover:bg-muted/50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setTextMessage('Important update regarding your loan [LOAN_NUMBER]: [MESSAGE]. Please contact us if you have questions.');
+                    setShowSmsTemplatesModal(false);
+                    toast({
+                      title: 'Template Loaded',
+                      description: 'General update template loaded'
+                    });
+                  }}
+                >
+                  <div className="font-medium text-sm">General Update</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Send general loan update
+                  </div>
+                  <div className="text-xs bg-muted rounded p-2 mt-2 font-mono">
+                    Important update regarding your loan [LOAN_NUMBER]...
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSmsTemplatesModal(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

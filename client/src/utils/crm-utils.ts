@@ -8,6 +8,7 @@ export const CRM_CONSTANTS = {
     NOTE: 'note',
     EMAIL: 'email',
     TEXT: 'text',
+    SMS: 'sms',
     CALL: 'call',
     APPOINTMENT: 'appointment',
     CONTACT_UPDATE: 'contact_update',
@@ -212,6 +213,8 @@ export function getActivityDescription(type: ActivityType, data: any): string {
       return `Email: ${data.subject || 'No subject'}`;
     case CRM_CONSTANTS.ACTIVITY_TYPES.TEXT:
       return `Text: ${data.message?.substring(0, 50) || 'Sent text message'}`;
+    case CRM_CONSTANTS.ACTIVITY_TYPES.SMS:
+      return data.description || `SMS sent to ${data.to || 'recipient'}`;
     case CRM_CONSTANTS.ACTIVITY_TYPES.CALL:
       return data.description || 'Phone call';
     case CRM_CONSTANTS.ACTIVITY_TYPES.APPOINTMENT:
