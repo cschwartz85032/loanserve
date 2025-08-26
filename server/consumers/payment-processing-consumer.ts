@@ -345,6 +345,11 @@ export class PaymentProcessingConsumer {
         consumerTag: 'payment-processing-consumer'
       },
       async (envelope: PaymentEnvelope<PaymentData>, msg) => {
+        console.log('[Processing] Received message from queue:', {
+          message_id: envelope.message_id,
+          schema: envelope.schema,
+          payment_id: envelope.data?.payment_id
+        });
         try {
           await handler(envelope);
           // Ack is handled automatically by enhanced service
