@@ -562,16 +562,19 @@ export class OptimizedTopologyManager extends TopologyManager {
       });
       
       // Escrow DLQ
-      this.addQueue({
-        name: 'q.escrow.dlq',
-        durable: true,
-        arguments: {
-          'x-message-ttl': 86400000, // 24 hours
-        },
-        bindings: [
-          { exchange: 'escrow.dlq', routingKey: '#' },
-        ],
-      });
+      // SKIPPED: q.escrow.dlq already exists in CloudAMQP with different arguments
+      // This queue causes channel closure during topology application.
+      // Using the existing queue instead - proper queue migration needed.
+      // this.addQueue({
+      //   name: 'q.escrow.dlq',
+      //   durable: true,
+      //   arguments: {
+      //     // Different arguments than what's in CloudAMQP
+      //   },
+      //   bindings: [
+      //     { exchange: 'escrow.dlq', routingKey: '#' },
+      //   ],
+      // });
       
       // Legacy escrow workflow queues (keep for backward compatibility)
       if (this.config.performance.useConsolidatedQueues) {
@@ -860,10 +863,10 @@ export function getEnvironmentConfig(): Partial<TopologyOptimizationConfig> {
   // Development/staging - minimal configuration
   return {
     features: {
-      servicing: false, // Disabled to avoid CloudAMQP conflicts
+      servicing: false, // Temporarily disabled due to CloudAMQP conflicts - needs queue migration
       settlement: false,
       reconciliation: false,
-      escrow: true,
+      escrow: true, // NEVER disable business features for infrastructure issues
       compliance: false,
       aml: false,
       notifications: {

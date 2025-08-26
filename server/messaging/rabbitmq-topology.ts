@@ -495,18 +495,20 @@ export class TopologyManager {
       ],
     });
 
-    this.addQueue({
-      name: 'q.escrow.dlq',
-      durable: true,
-      arguments: {
-        'x-queue-type': 'quorum',
-        'x-dead-letter-exchange': 'escrow.dlq',
-        'x-delivery-limit': 6,
-      },
-      bindings: [
-        { exchange: 'escrow.dlq', routingKey: '#' },
-      ],
-    });
+    // SKIPPED: q.escrow.dlq already exists in CloudAMQP with different arguments
+    // This causes channel closure. Using existing queue instead.
+    // this.addQueue({
+    //   name: 'q.escrow.dlq',
+    //   durable: true,
+    //   arguments: {
+    //     'x-queue-type': 'quorum',
+    //     'x-dead-letter-exchange': 'escrow.dlq',
+    //     'x-delivery-limit': 6,
+    //   },
+    //   bindings: [
+    //     { exchange: 'escrow.dlq', routingKey: '#' },
+    //   ],
+    // });
 
     // Phase 7: Remittance queues
     this.addQueue({
@@ -905,34 +907,67 @@ export class TopologyManager {
       console.log(`[RabbitMQ] Exchange declared: ${exchange.name} (${exchange.type})`);
     }
 
-    // Declare queues and bindings
+    // Declare queues and bindings with conflict handling
     for (const queue of Array.from(this.queues.values())) {
-      await channel.assertQueue(
-        queue.name,
-        {
-          durable: queue.durable ?? true,
-          exclusive: queue.exclusive ?? false,
-          autoDelete: queue.autoDelete ?? false,
-          arguments: queue.arguments,
-        }
-      );
-      console.log(`[RabbitMQ] Queue declared: ${queue.name}`);
+      try {
+        await channel.assertQueue(
+          queue.name,
+          {
+            durable: queue.durable ?? true,
+            exclusive: queue.exclusive ?? false,
+            autoDelete: queue.autoDelete ?? false,
+            arguments: queue.arguments,
+          }
+        );
+        console.log(`[RabbitMQ] Queue declared: ${queue.name}`);
 
-      // Apply bindings
-      if (queue.bindings) {
-        for (const binding of queue.bindings) {
-          await channel.bindQueue(
-            queue.name,
-            binding.exchange,
-            binding.routingKey,
-            binding.arguments
-          );
-          console.log(`[RabbitMQ] Bound ${queue.name} to ${binding.exchange} with key ${binding.routingKey}`);
+        // Apply bindings
+        if (queue.bindings) {
+          for (const binding of queue.bindings) {
+            try {
+              await channel.bindQueue(
+                queue.name,
+                binding.exchange,
+                binding.routingKey,
+                binding.arguments
+              );
+              console.log(`[RabbitMQ] Bound ${queue.name} to ${binding.exchange} with key ${binding.routingKey}`);
+            } catch (bindError: any) {
+              console.warn(`[RabbitMQ] Failed to bind ${queue.name} to ${binding.exchange}: ${bindError.message}`);
+              // Continue with other bindings
+            }
+          }
+        }
+      } catch (queueError: any) {
+        // Handle queue declaration conflicts gracefully
+        if (queueError.code === 406) {
+          console.warn(`[RabbitMQ] Queue ${queue.name} already exists with different arguments. Using existing queue.`);
+          console.warn(`[RabbitMQ] Consider migrating queue ${queue.name} to match desired configuration.`);
+          
+          // Still try to apply bindings even if queue declaration failed
+          if (queue.bindings) {
+            for (const binding of queue.bindings) {
+              try {
+                await channel.bindQueue(
+                  queue.name,
+                  binding.exchange,
+                  binding.routingKey,
+                  binding.arguments
+                );
+                console.log(`[RabbitMQ] Bound existing ${queue.name} to ${binding.exchange} with key ${binding.routingKey}`);
+              } catch (bindError: any) {
+                console.warn(`[RabbitMQ] Failed to bind ${queue.name}: ${bindError.message}`);
+              }
+            }
+          }
+        } else {
+          // Re-throw non-conflict errors
+          throw queueError;
         }
       }
     }
 
-    console.log('[RabbitMQ] Topology applied successfully');
+    console.log('[RabbitMQ] Topology applied successfully (with warnings for existing queues)');
   }
 
   /**
