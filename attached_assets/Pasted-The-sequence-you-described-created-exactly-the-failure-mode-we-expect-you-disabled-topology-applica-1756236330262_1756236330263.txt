@@ -1,0 +1,193 @@
+The sequence you described created exactly the failure mode we expect: you disabled topology application to “avoid conflicts,” which left the validated messages with no queue bound to their routing keys. The outbox happily published payment.wire.validated to payments.topic, but there was no binding to route that message to the processing consumer. That’s why the payment stayed stuck in the validated state.
+
+Below is an exact, engineer-ready prescription: what to keep, what to deprecate, the canonical topology (exchanges, queues, bindings, arguments), the fast hotfix you can apply today, and the safe migration to reconcile CloudAMQP’s existing resources without downtime.
+
+1) Source of truth
+
+Keep: server/messaging/topology.ts (the optimized, declarative, confirm-channel aware topology manager).
+
+Deprecate: any rabbitmq-bootstrap.ts or “rabbitmq-topology.js” variants. Remove all imports. No business service should declare exchanges/queues; only the topology manager may do so.
+
+Implementation action:
+
+In every service: replace any import of rabbitmq-topology.js or rabbitmq-bootstrap.ts with ./topology.
+
+Fail fast if multiple bootstraps are detected: add a guard that throws if a legacy bootstrap module is imported.
+
+2) Canonical Phase-0/1 topology (use everywhere)
+Exchanges (durable)
+
+payments.topic (type: topic) — command/event bus for payments.
+
+payments.dlq (type: direct) — dead-letter exchange for all payments queues.
+
+payments.events (type: topic) — fan-out of domain events (audit, analytics, projections).
+
+outbox.dispatch (type: direct) — only the outbox dispatcher publishes here; it then republished to domain exchanges (optional, if you use a two-hop dispatcher).
+
+Queues (all quorum)
+
+Use the same args on every queue to avoid redeclare conflicts:
+
+x-queue-type=quorum
+
+x-dead-letter-exchange=payments.dlq
+
+x-delivery-limit=6
+
+Queues:
+
+q.payments.validation
+Consumption: Validator
+Bindings (to payments.topic):
+
+payment.card.received
+
+payment.ach.received
+
+payment.wire.received
+
+q.payments.processing
+Consumption: Poster / payment pipeline
+Bindings (to payments.topic):
+
+payment.card.validated
+
+payment.ach.validated
+
+payment.wire.validated
+
+q.payments.events.audit
+Consumption: audit/analytics
+Bindings (to payments.events):
+
+payment.*.* (or narrow as needed)
+
+q.payments.dlq (quorum)
+Bindings (to payments.dlq):
+
+# (catch-all for DLQ inspection)
+
+Consumer settings:
+
+Manual acks, prefetch = CONFIG.PAYMENTS_PREFETCH (e.g., 32).
+
+Nack with requeue=false on non-retryable failures to push to DLQ.
+
+Publisher requirements:
+
+Confirm channel; mandatory headers: message_id, correlation_id, schema, traceparent.
+
+Publish only via outbox dispatcher.
+
+3) Why your pipeline stalled (root cause)
+
+Enhanced RMQ service imported the wrong topology module (legacy file).
+
+You then disabled topology application to avoid CloudAMQP redeclare conflicts.
+
+With topology off, no binding existed from payments.topic to the consumer queue for payment.*.validated.
+
+Outbox published; broker accepted; no queue was bound — message routed to nowhere; consumer never fired.
+
+4) Instant hotfix (no redeclare, no outage)
+
+Do this in the processing service startup only (until migration is complete):
+
+// Pseudocode at consumer bootstrap
+await channel.assertExchange('payments.topic', 'topic', { durable: true });
+// Create a new, versioned queue to avoid arg conflicts with existing queues:
+await channel.assertQueue('q.payments.processing.v2', {
+  durable: true,
+  arguments: {
+    'x-queue-type': 'quorum',
+    'x-dead-letter-exchange': 'payments.dlq',
+    'x-delivery-limit': 6
+  }
+});
+
+await channel.bindQueue('q.payments.processing.v2', 'payments.topic', 'payment.card.validated');
+await channel.bindQueue('q.payments.processing.v2', 'payments.topic', 'payment.ach.validated');
+await channel.bindQueue('q.payments.processing.v2', 'payments.topic', 'payment.wire.validated');
+
+await channel.prefetch(CONFIG.PAYMENTS_PREFETCH ?? 32);
+channel.consume('q.payments.processing.v2', handleMessage, { noAck: false });
+
+
+Do not change the outbox publisher; it should continue publishing to payments.topic with payment.*.validated.
+
+Start the processing service; the validated messages will now route correctly.
+
+This avoids touching existing queues that were created with different arguments.
+
+5) Safe migration to a single, declarative topology
+
+Never “disable topology application” in prod; reconcile instead with versioned names and a drain.
+
+Introduce versioned queues in topology.ts
+
+For each legacy queue that conflicts, define a new name with a suffix (e.g., .v2) and the canonical args.
+
+Bind both old and new queues temporarily (double-bind) so no messages are lost during the cutover.
+
+Cut consumers over
+
+Point consumers to the new .v2 queues.
+
+Leave old queues bound for 24h to drain any in-flight messages.
+
+Unbind and delete old
+
+After metrics show old queues are empty and no consumers, unbind from payments.topic, then delete the old queues.
+
+Lock in topology manager
+
+Re-enable topology.ts as the single place that declares exchanges/queues/bindings.
+
+Add a startup check: if any queue exists with wrong args under the expected name, fail fast with an actionable error that lists the diff (so no one silently runs half-configured).
+
+Ban ad-hoc declarations
+
+ESLint rule or code review check forbidding assertQueue/assertExchange/bindQueue outside server/messaging/.
+
+6) Dev vs prod “consolidated queues”
+
+It’s fine to use useConsolidatedQueues=true in development to bind multiple routing keys to a single dev queue (e.g., q.dev.payments.handlers).
+
+In production, set useConsolidatedQueues=false and keep one queue per responsibility as listed above. Consolidation hides hot spots and complicates scaling.
+
+7) Final deprecation list (delete/replace)
+
+Delete: rabbitmq-bootstrap.ts, rabbitmq-topology.js, any file that:
+
+Publishes without confirm channels.
+
+Declares queues/exchanges imperatively in business services.
+
+Auto-acks or acks before side effects commit.
+
+Replace all imports with: server/messaging/topology.ts and the enhanced RMQ service that:
+
+Uses confirm publishers.
+
+Creates only via the topology manager.
+
+Uses manual-ack consumers with prefetch and DLQ.
+
+8) Acceptance checklist (run this)
+
+Start all services with topology manager enabled (prod: non-consolidated; dev: consolidated OK).
+
+payments.topic exists, durable.
+
+q.payments.validation bound to payment.*.received.
+
+q.payments.processing(.v2) bound to payment.*.validated.
+
+Publish a test payment.wire.validated via outbox: message is consumed within SLO and posted.
+
+Force a handler error: message lands in q.payments.dlq.
+
+Confirm no service imports rabbitmq-bootstrap.ts or declares topology outside the manager.
+
+Follow this plan and you’ll resolve the stuck-message incident properly: you’ll get messages flowing now (hotfix), and you’ll end up with a clean, single-source topology that won’t regress the next time someone flips a flag or restarts CloudAMQP.
