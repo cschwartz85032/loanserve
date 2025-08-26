@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Pool } from '@neondatabase/serverless';
 import { RemittanceService } from './service.js';
+import { ReconciliationService } from './reconciliation.js';
 import { PgLedgerRepository } from '../db/ledger-repository.js';
 import { z } from 'zod';
 
@@ -24,6 +25,7 @@ export function createRemittanceRoutes(pool: Pool): Router {
   const router = Router();
   const ledgerRepo = new PgLedgerRepository(pool);
   const service = new RemittanceService(pool, ledgerRepo);
+  const reconService = new ReconciliationService(pool);
 
   // Contract endpoints
   router.post('/contracts', async (req, res) => {
@@ -161,6 +163,61 @@ export function createRemittanceRoutes(pool: Pool): Router {
     } catch (error) {
       console.error('Error generating report:', error);
       res.status(500).json({ error: 'Failed to generate report' });
+    }
+  });
+
+  // Reconciliation endpoints
+  router.post('/reconciliation/setup', async (req, res) => {
+    try {
+      await reconService.ensureTable();
+      res.json({ success: true, message: 'Reconciliation table created' });
+    } catch (error) {
+      console.error('Error setting up reconciliation:', error);
+      res.status(500).json({ error: 'Failed to setup reconciliation' });
+    }
+  });
+
+  router.post('/cycles/:cycleId/reconcile', async (req, res) => {
+    try {
+      const { cycleId } = req.params;
+      const userId = req.body.userId || 'system';
+      const snapshot = await reconService.generateReconciliation(cycleId, userId);
+      res.json({
+        success: true,
+        isBalanced: snapshot.is_balanced,
+        differences: {
+          investor: snapshot.diff_investor_minor,
+          servicer: snapshot.diff_servicer_minor,
+          total: snapshot.diff_total_minor
+        },
+        snapshot
+      });
+    } catch (error) {
+      console.error('Error generating reconciliation:', error);
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : 'Failed to reconcile' 
+      });
+    }
+  });
+
+  router.get('/cycles/:cycleId/reconciliation', async (req, res) => {
+    try {
+      const { cycleId } = req.params;
+      const latest = await reconService.getLatestReconciliation(cycleId);
+      res.json(latest);
+    } catch (error) {
+      console.error('Error fetching reconciliation:', error);
+      res.status(500).json({ error: 'Failed to fetch reconciliation' });
+    }
+  });
+
+  router.get('/reconciliation/unbalanced', async (req, res) => {
+    try {
+      const unbalanced = await reconService.getUnbalancedReconciliations();
+      res.json(unbalanced);
+    } catch (error) {
+      console.error('Error fetching unbalanced reconciliations:', error);
+      res.status(500).json({ error: 'Failed to fetch unbalanced reconciliations' });
     }
   });
 
