@@ -1,0 +1,199 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[dotenv@17.2.1] injecting env (4) from .env.local -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+[Twilio] Creating service instance...
+[Twilio] Checking configuration...
+[Twilio] Account SID: Present
+[Twilio] Auth Token: Present
+[Twilio] Phone Number: +12023017979
+[Twilio] Messaging Service SID: MG695e1b1cd14f6b2fb31fa6db23d8a05b
+[Twilio] ✓ Service configured successfully with phone: +12023017979
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Establishing connections...
+[INFO] Successfully loaded pdf2pic module
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+[INFO] Successfully loaded pdfjs-dist module
+[dotenv@17.2.1] injecting env (0) from .env.local -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+[Config] Loaded .env.local
+[Telemetry] Initializing observability...
+[Telemetry] Service: loanserve-pro
+[Telemetry] Version: 1.0.0
+[Telemetry] Environment: development
+[Migration] Starting database migrations...
+[RabbitMQ] Applying topology...
+[RabbitMQ] Applying topology...
+[RabbitMQ] Exchange declared: servicing.direct (direct)
+[RabbitMQ] Exchange declared: servicing.direct (direct)
+[RabbitMQ] Exchange declared: payments.topic (topic)
+[RabbitMQ] Exchange declared: payments.topic (topic)
+[RabbitMQ] Exchange declared: documents.direct (direct)
+[RabbitMQ] Exchange declared: documents.direct (direct)
+[RabbitMQ] Exchange declared: notifications.topic (topic)
+[RabbitMQ] Exchange declared: notifications.topic (topic)
+[RabbitMQ] Exchange declared: escrow.workflow (topic)
+[RabbitMQ] Exchange declared: escrow.workflow (topic)
+[RabbitMQ] Exchange declared: escrow.compensate (topic)
+[RabbitMQ] Exchange declared: escrow.compensate (topic)
+[RabbitMQ] Exchange declared: escrow.saga (topic)
+[RabbitMQ] Exchange declared: escrow.saga (topic)
+[RabbitMQ] Exchange declared: escrow.events (topic)
+[RabbitMQ] Exchange declared: escrow.events (topic)
+[RabbitMQ] Exchange declared: escrow.dlq (direct)
+[RabbitMQ] Exchange declared: escrow.dlq (direct)
+[RabbitMQ] Exchange declared: compliance.topic (topic)
+[RabbitMQ] Exchange declared: compliance.topic (topic)
+[RabbitMQ] Exchange declared: investor.direct (direct)
+[RabbitMQ] Exchange declared: investor.direct (direct)
+[RabbitMQ] Exchange declared: audit.topic (topic)
+[RabbitMQ] Exchange declared: audit.topic (topic)
+[RabbitMQ] Exchange declared: settlement.topic (topic)
+[RabbitMQ] Exchange declared: settlement.topic (topic)
+[RabbitMQ] Exchange declared: reconciliation.topic (topic)
+[RabbitMQ] Exchange declared: reconciliation.topic (topic)
+[RabbitMQ] Exchange declared: bank.topic (topic)
+[RabbitMQ] Exchange declared: bank.topic (topic)
+[RabbitMQ] Exchange declared: aml.topic (topic)
+[RabbitMQ] Exchange declared: aml.topic (topic)
+[RabbitMQ] Exchange declared: dlx.main (topic)
+[RabbitMQ] Exchange declared: dlx.main (topic)
+[RabbitMQ] Exchange declared: retry.5s (topic)
+[RabbitMQ] Exchange declared: retry.5s (topic)
+[RabbitMQ] Exchange declared: retry.30s (topic)
+[RabbitMQ] Exchange declared: retry.30s (topic)
+[RabbitMQ] Queue declared: servicing.daily.tasks.0
+[RabbitMQ] Queue declared: servicing.daily.tasks.0
+[RabbitMQ] Bound servicing.daily.tasks.0 to servicing.direct with key servicing.0.*
+[RabbitMQ] Bound servicing.daily.tasks.0 to servicing.direct with key servicing.0.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.1
+[RabbitMQ] Queue declared: servicing.daily.tasks.1
+[RabbitMQ] Bound servicing.daily.tasks.1 to servicing.direct with key servicing.1.*
+[RabbitMQ] Bound servicing.daily.tasks.1 to servicing.direct with key servicing.1.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.2
+[Migration] Error running migrations: error: type "collection_status" already exists
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async migrate (/home/runner/workspace/node_modules/src/neon-http/migrator.ts:45:5)
+    at async runMigrations (/home/runner/workspace/server/migrations.ts:13:5)
+    at async <anonymous> (/home/runner/workspace/server/index.ts:99:3) {
+  length: 97,
+  severity: 'ERROR',
+  code: '42710',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'typecmds.c',
+  line: '1167',
+  routine: 'DefineEnum'
+}
+[RabbitMQ] Queue declared: servicing.daily.tasks.2
+[RabbitMQ] Bound servicing.daily.tasks.2 to servicing.direct with key servicing.2.*
+[Consumers] Starting payment processing consumers...
+[Consumers] Waiting for RabbitMQ connection...
+[RabbitMQ] Bound servicing.daily.tasks.2 to servicing.direct with key servicing.2.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.3
+[RabbitMQ] Queue declared: servicing.daily.tasks.3
+[RabbitMQ] Bound servicing.daily.tasks.3 to servicing.direct with key servicing.3.*
+[RabbitMQ] Bound servicing.daily.tasks.3 to servicing.direct with key servicing.3.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.4
+[RabbitMQ] Queue declared: servicing.daily.tasks.4
+[RabbitMQ] Bound servicing.daily.tasks.4 to servicing.direct with key servicing.4.*
+[RabbitMQ] Bound servicing.daily.tasks.4 to servicing.direct with key servicing.4.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.5
+[RabbitMQ] Queue declared: servicing.daily.tasks.5
+[RabbitMQ] Bound servicing.daily.tasks.5 to servicing.direct with key servicing.5.*
+[RabbitMQ] Bound servicing.daily.tasks.5 to servicing.direct with key servicing.5.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.6
+[RabbitMQ] Queue declared: servicing.daily.tasks.6
+[RabbitMQ] Bound servicing.daily.tasks.6 to servicing.direct with key servicing.6.*
+[RabbitMQ] Bound servicing.daily.tasks.6 to servicing.direct with key servicing.6.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.7
+[RabbitMQ] Queue declared: servicing.daily.tasks.7
+[RabbitMQ] Bound servicing.daily.tasks.7 to servicing.direct with key servicing.7.*
+[RabbitMQ] Bound servicing.daily.tasks.7 to servicing.direct with key servicing.7.*
+[RabbitMQ] Queue declared: payments.validation
+[RabbitMQ] Queue declared: payments.validation
+[RabbitMQ] Bound payments.validation to payments.topic with key payment.*.received
+[RabbitMQ] Bound payments.validation to payments.topic with key payment.*.received
+[RabbitMQ] Queue declared: payments.processing
+[RabbitMQ] Queue declared: payments.processing
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.validated
+[RabbitMQ] Queue declared: payments.distribution
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.validated
+[RabbitMQ] Bound payments.distribution to payments.topic with key payment.*.processed
+[RabbitMQ] Queue declared: payments.distribution
+[RabbitMQ] Queue declared: payments.compliance
+[RabbitMQ] Bound payments.distribution to payments.topic with key payment.*.processed
+[RabbitMQ] Bound payments.compliance to payments.topic with key payment.*.compliance
+[RabbitMQ] Queue declared: payments.compliance
+[RabbitMQ] Queue declared: payments.reversal
+[RabbitMQ] Bound payments.compliance to payments.topic with key payment.*.compliance
+[RabbitMQ] Bound payments.reversal to payments.topic with key payment.*.reversal
+[RabbitMQ] Queue declared: payments.reversal
+[RabbitMQ] Queue declared: payments.returned
+[RabbitMQ] Bound payments.reversal to payments.topic with key payment.*.reversal
+[RabbitMQ] Bound payments.returned to payments.topic with key payment.*.returned
+[RabbitMQ] Queue declared: payments.returned
+[RabbitMQ] Queue declared: documents.analysis.request
+[RabbitMQ] Bound payments.returned to payments.topic with key payment.*.returned
+[RabbitMQ] Bound documents.analysis.request to documents.direct with key analyze
+[RabbitMQ] Queue declared: documents.analysis.request
+[RabbitMQ] Queue declared: notifications.email
+[RabbitMQ] Bound documents.analysis.request to documents.direct with key analyze
+[RabbitMQ] Bound notifications.email to notifications.topic with key notify.*.*.email
+[RabbitMQ] Queue declared: notifications.email
+[RabbitMQ] Queue declared: notifications.sms
+[RabbitMQ] Bound notifications.email to notifications.topic with key notify.*.*.email
+[RabbitMQ] Bound notifications.sms to notifications.topic with key notify.*.*.sms
+[RabbitMQ] Queue declared: notifications.sms
+[RabbitMQ] Queue declared: notifications.dashboard
+[RabbitMQ] Bound notifications.sms to notifications.topic with key notify.*.*.sms
+[RabbitMQ] Bound notifications.dashboard to notifications.topic with key notify.*.*.dashboard
+[RabbitMQ] Queue declared: notifications.dashboard
+[RabbitMQ] Queue declared: escrow.validate
+[RabbitMQ] Bound notifications.dashboard to notifications.topic with key notify.*.*.dashboard
+[RabbitMQ] Bound escrow.validate to escrow.workflow with key escrow.validate
+[RabbitMQ] Queue declared: escrow.validate
+[RabbitMQ] Queue declared: escrow.authorize
+[RabbitMQ] Bound escrow.validate to escrow.workflow with key escrow.validate
+[RabbitMQ] Bound escrow.authorize to escrow.workflow with key escrow.authorize
+[RabbitMQ] Queue declared: escrow.authorize
+[RabbitMQ] Queue declared: escrow.disburse
+[RabbitMQ] Bound escrow.authorize to escrow.workflow with key escrow.authorize
+[RabbitMQ] Bound escrow.disburse to escrow.workflow with key escrow.disburse
+[RabbitMQ] Queue declared: escrow.disburse
+[RabbitMQ] Queue declared: escrow.reconcile
+[RabbitMQ] Bound escrow.disburse to escrow.workflow with key escrow.disburse
+[RabbitMQ] Bound escrow.reconcile to escrow.workflow with key escrow.reconcile
+[RabbitMQ] Queue declared: escrow.reconcile
+[RabbitMQ] Queue declared: q.escrow.forecast
+[RabbitMQ] Bound escrow.reconcile to escrow.workflow with key escrow.reconcile
+[RabbitMQ] Bound q.escrow.forecast to escrow.saga with key forecast.request.v1
+[RabbitMQ] Queue declared: q.escrow.forecast
+[RabbitMQ] Queue declared: q.escrow.disburse.schedule
+[RabbitMQ] Bound q.escrow.forecast to escrow.saga with key forecast.request.v1
+[RabbitMQ] Bound q.escrow.disburse.schedule to escrow.saga with key disbursement.schedule.v1
+[RabbitMQ] Queue declared: q.escrow.disburse.schedule
+[RabbitMQ] Queue declared: q.escrow.disburse.post
+[RabbitMQ] Bound q.escrow.disburse.schedule to escrow.saga with key disbursement.schedule.v1
+[RabbitMQ] Bound q.escrow.disburse.post to escrow.saga with key disbursement.post.v1
+[RabbitMQ] Queue declared: q.escrow.disburse.post
+[RabbitMQ] Queue declared: q.escrow.analysis.run
+[RabbitMQ] Bound q.escrow.disburse.post to escrow.saga with key disbursement.post.v1
+[RabbitMQ] Bound q.escrow.analysis.run to escrow.saga with key analysis.run.v1
+[RabbitMQ] Queue declared: q.escrow.analysis.run
+[RabbitMQ] Queue declared: q.escrow.events.audit
+[RabbitMQ] Bound q.escrow.analysis.run to escrow.saga with key analysis.run.v1
+[RabbitMQ] Bound q.escrow.events.audit to escrow.events with key escrow.*
+[RabbitMQ] Queue declared: q.escrow.events.audit
+[RabbitMQ] Queue declared: q.escrow.dlq
