@@ -338,43 +338,13 @@ export class PaymentProcessingConsumer {
       this.processPayment.bind(this)
     );
 
-    // Hotfix: Create versioned queue to avoid argument conflicts
-    // This avoids touching existing queues that were created with different arguments
-    try {
-      const amqp = await import('amqplib');
-      const conn = await amqp.connect(process.env.CLOUDAMQP_URL || '');
-      const channel = await conn.createChannel();
-      
-      // Assert exchange (idempotent)
-      await channel.assertExchange('payments.topic', 'topic', { durable: true });
-      
-      // Create new versioned queue with canonical arguments
-      await channel.assertQueue('q.payments.processing.v2', {
-        durable: true,
-        arguments: {
-          'x-queue-type': 'quorum',
-          'x-dead-letter-exchange': 'payments.dlq',
-          'x-delivery-limit': 6
-        }
-      });
-      
-      // Bind all validated payment routing keys
-      await channel.bindQueue('q.payments.processing.v2', 'payments.topic', 'payment.card.validated');
-      await channel.bindQueue('q.payments.processing.v2', 'payments.topic', 'payment.ach.validated');
-      await channel.bindQueue('q.payments.processing.v2', 'payments.topic', 'payment.wire.validated');
-      
-      console.log('[Processing] Created and bound q.payments.processing.v2 with proper topology');
-      await channel.close();
-      await conn.close();
-    } catch (error) {
-      console.error('[Processing] Failed to setup queue:', error);
-      // Continue anyway - setup might already be complete
-    }
-
+    // Use the versioned queue name that will be created by topology
+    const queueName = 'q.payments.processing.v2';
+    
     await this.rabbitmq.consume(
       {
-        queue: 'q.payments.processing.v2',  // Use the new versioned queue
-        prefetch: 32,  // Increase prefetch for better throughput
+        queue: queueName,
+        prefetch: 32,  // Increased prefetch for better throughput
         consumerTag: 'payment-processing-consumer'
       },
       async (envelope: PaymentEnvelope<PaymentData>, msg) => {
@@ -393,6 +363,6 @@ export class PaymentProcessingConsumer {
       }
     );
 
-    console.log('[Processing] Payment processing consumer started on q.payments.processing.v2');
+    console.log('[Processing] Payment processing consumer started on', queueName);
   }
 }

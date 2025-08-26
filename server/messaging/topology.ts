@@ -38,7 +38,7 @@ export class OptimizedTopologyManager extends TopologyManager {
     // Default optimized configuration
     this.config = {
       features: {
-        servicing: true,
+        servicing: false, // Disabled to avoid CloudAMQP conflicts
         settlement: false, // Disable by default until needed
         reconciliation: false, // Disable by default until needed
         escrow: true,
@@ -66,6 +66,12 @@ export class OptimizedTopologyManager extends TopologyManager {
     this.addExchange({
       name: 'payments.topic',
       type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'payments.dlq',
+      type: 'direct',
       durable: true,
     });
 
@@ -287,6 +293,23 @@ export class OptimizedTopologyManager extends TopologyManager {
         ],
       });
     }
+
+    // Versioned processing queue for migration (temporary)
+    // This avoids conflicts with existing CloudAMQP queues
+    this.addQueue({
+      name: 'q.payments.processing.v2',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'payments.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'payments.topic', routingKey: 'payment.card.validated' },
+        { exchange: 'payments.topic', routingKey: 'payment.ach.validated' },
+        { exchange: 'payments.topic', routingKey: 'payment.wire.validated' },
+      ],
+    });
 
     // Critical payment operations (always needed)
     this.addQueue({
@@ -837,7 +860,7 @@ export function getEnvironmentConfig(): Partial<TopologyOptimizationConfig> {
   // Development/staging - minimal configuration
   return {
     features: {
-      servicing: true,
+      servicing: false, // Disabled to avoid CloudAMQP conflicts
       settlement: false,
       reconciliation: false,
       escrow: true,

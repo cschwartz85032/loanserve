@@ -1,0 +1,84 @@
+Exactly. Legacy problems are **symptoms**—not justifications for bypassing architecture. Letting them leak into the modernized system sabotages your clean design, reintroduces bugs you already solved, and teaches your team that cutting corners is acceptable when the old way "kind of works."
+
+Here's the hard truth:
+
+> Every time you expose `createChannel()` to "fix" a routing or binding issue, you're choosing short-term relief over long-term stability. You’re rebuilding a legacy mess inside a clean surface.
+
+---
+
+## 🛠️ Recommended Engineering Principle
+
+> **Legacy incompatibilities are not reasons to expose internal interfaces. They are triggers to build shims, apply migrations, or kill off the legacy components entirely.**
+
+---
+
+## ✅ Tactical response
+
+If your team encounters broken routing or disabled topology again, **do this instead of exposing `createChannel()`:**
+
+| Problem                                        | Proper Fix                                                                                    |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Queue exists with wrong args                   | Drop & re-declare with canonical `topology.ts` config (manual purge + rebind)                 |
+| Missing bindings (topology disabled)           | Use temporary helper: `topology.ensureBinding(queue, exchange, routingKey)`                   |
+| Outbox publishes to nowhere                    | Fix the binding in `topology.ts`. Hotfix with temporary helper if needed                      |
+| Consumer isn’t receiving                       | Check prefetch, acks, routing key → fix handler not infra                                     |
+| Engineer wants to "just test" with raw channel | Build a CLI dev tool with strict validation, **never** add `createChannel()` to prod services |
+
+---
+
+## 🧹 Long-term remediation
+
+1. **Audit all uses of raw channel methods**
+
+   * `grep -R "createChannel("`
+   * `grep -R "channel.publish("`
+   * `grep -R "assertQueue\\|assertExchange"`
+     Flag any usage outside `topology.ts` or `instrumented-rabbitmq`.
+
+2. **Remove legacy RabbitMQ bootstrap**
+
+   * Hard-delete `rabbitmq-bootstrap.ts`
+   * Remove all `import` statements referencing it
+   * Add a unit test or ESLint rule to prevent reintroduction
+
+3. **Prevent accidental exposure**
+
+   * If engineers really need access to channel internals, require an explicit “override gate” comment + justification block. For example:
+
+     ```ts
+     // LEGACY OVERRIDE — remove once topology v2 is fully applied
+     // This call temporarily applies a binding to legacy queues
+     ```
+
+4. **Run topology diff on startup**
+
+   * Script that compares `topology.ts` with the actual state in RabbitMQ (via `/api/queues`, `/api/bindings`)
+   * If there’s a mismatch in queue args, log and optionally fail startup in non-prod envs
+
+---
+
+## 🚫 What *not* to do
+
+* Don’t allow "just one place" to call `createChannel()`—that’s how every codebase starts rotting.
+* Don’t allow queue declarations outside topology.
+* Don’t bypass outbox because “it's just one publish.”
+* Don’t fix prod by disabling topology without a migration plan.
+* Don’t blame the enhanced service for a mismatch **it was built to prevent.**
+
+---
+
+## ✅ What to teach your engineers
+
+* If a message didn’t route: it’s a **binding issue**, not a channel issue.
+* If a queue doesn’t match args: it’s a **declaration issue**, not a topology bug.
+* If a message isn’t acked or received: it’s a **consumer config** issue, not a RabbitMQ failure.
+* If you need a fix, the **safe path is through the topology + outbox**, always.
+
+---
+
+Let’s put it simply:
+
+> “Legacy queues broke routing” is a valid bug.
+> “So we exposed createChannel()” is a failure of engineering discipline.
+
+Fix the queues. Don’t break the architecture.

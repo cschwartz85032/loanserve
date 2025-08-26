@@ -126,9 +126,8 @@ export class EnhancedRabbitMQService {
       throw new Error('Publisher channel not available');
     }
     
-    // DISABLED: CloudAMQP queues already exist with different settings
-    // await topologyManager.applyTopology(this.publisherChannel);
-    console.log('[RabbitMQ] Skipping topology application - using existing CloudAMQP queues');
+    // Apply topology with versioned queues to avoid conflicts
+    await topologyManager.applyTopology(this.publisherChannel);
   }
 
   /**
