@@ -190,7 +190,7 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
         const assigner = assignerResult[0]?.username || 'System';
         
         // Send task assignment notification
-        await notificationService.sendNotification({
+        const notificationResult = await notificationService.sendNotification({
           type: 'task_assignment',
           loanId,
           recipientEmail: assignee.email,
@@ -205,6 +205,16 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
             priority: priority || 'medium'
           }
         });
+        
+        // Log the notification to activity
+        if (notificationResult.success) {
+          await logActivity(loanId, userId, 'notification', {
+            description: `Task assignment notification sent to ${assignee.username}`,
+            taskId: task.id,
+            taskTitle: title,
+            documentId: notificationResult.docId
+          }, task.id);
+        }
       }
     }
     
