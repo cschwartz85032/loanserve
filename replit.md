@@ -1,108 +1,90 @@
 # Overview
 
-LoanServe Pro is a comprehensive mortgage loan servicing platform built with React and Express.js. It offers a full-featured loan portfolio management system for lenders, borrowers, investors, escrow officers, and legal professionals. The platform provides complete loan lifecycle management, including origination tracking, payment processing, document management, escrow account handling, compliance monitoring, comprehensive reporting, and investor management with ownership percentage tracking. A key capability is AI-powered document analysis for automated loan creation and data extraction from financial documents. The system also includes a robust Daily Servicing Cycle feature for automated loan processing, interest accrual, payment matching, fee assessment, and investor distribution calculations, designed for auditability and detailed logging.
+LoanServe Pro is a comprehensive enterprise mortgage loan servicing platform built with a modern full-stack architecture. The system manages the complete loan lifecycle including payment processing, escrow management, investor distributions, document management, and borrower communications. It features advanced document analysis capabilities using AI, real-time PDF processing, comprehensive audit trails, and a sophisticated permission system.
+
+The platform is designed for scalability and regulatory compliance, supporting multiple loan types, complex investor ownership structures, and automated servicing workflows. It integrates with external banking services and provides both web-based interfaces and API endpoints for loan management operations.
 
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
 
-When encountering database or field-related errors:
-1. **Check production database schema FIRST** - compare columns with development
-2. **Look for patterns** - intermittent failures usually mean data-dependent issues
-3. **Trust user instincts** - when user says "something else must be wrong", reconsider approach
-4. **Use diagnostic scripts** - run `node debug-db-schema.cjs [table] [search]` to quickly check columns
-5. **Avoid overcomplicating** - check simple causes (duplicate columns, mismatched schemas) before complex theories (build issues, caching)
-
-## Production Deployment Configuration (2025-08-22)
-Session handling has been updated to support production deployment:
-- **Session cookies** are automatically set to `secure: true` in production (HTTPS required)
-- **SESSION_SECRET** must be set in production environment variables
-- **Cookie configuration** uses `sameSite: 'lax'` for production to work with redirects
-- **Passport serialization** handles both numeric and string user IDs for future UUID migration
-- **Session destruction** properly clears cookies on logout
-- See `DEPLOYMENT.md` for complete deployment guide
-
-## RBAC Architecture Notes (2025-08-22)
-The RBAC system uses a **normalized structure** with proper foreign key relationships:
-- `permissions` table: Contains resources and permission levels (UUID IDs)
-- `role_permissions` table: Junction table with `role_id`, `permission_id`, and optional `scope` (composite primary key)
-- **Never use denormalized structure** with `resource` and `permission` strings in `role_permissions`
-- All role operations should join `role_permissions` with `permissions` table to get resource/level info
-- Migration 0009_user_management_system_fixed.sql is the authoritative source for the schema
-- **Legacy role enum removed** (2025-08-22): The `users.role` enum column has been completely removed via migration 0010
-- **Single role system**: All roles are now managed exclusively through the `user_roles` junction table
-
 # System Architecture
 
-## UI/UX Decisions
-The application features a modern, component-based UI designed for clarity and ease of use. Key UI/UX decisions include tab-based navigation for logical information grouping, a strict principle of displaying extracted or user-corrected data without assumed calculations, comprehensive contact management for all parties, and a detailed investor management system with ownership percentages and banking information. A dedicated fee management system, integrated PDF viewer, and a unified loan creation dialog supporting both AI analysis and manual entry are also core to the UI/UX. The Admin panel features a collapsible sidebar navigation for managing documents, escrow, users, and settings. The Settings page includes a three-tab interface for Security, Templates (email templates with rich text editor and merge fields), and Auto Notice (Word document templates for automated notices).
+## Frontend Architecture
+- **React/TypeScript SPA**: Built with Vite for development and production builds
+- **UI Framework**: Shadcn/ui components with Radix UI primitives and Tailwind CSS
+- **State Management**: TanStack Query for server state management and caching
+- **Form Handling**: React Hook Form with Zod validation resolvers
+- **PDF Rendering**: Custom PDF.js integration for document viewing with zoom, rotation, and multi-page support
+- **File Upload**: React Dropzone for drag-and-drop file handling
 
-## Technical Implementations
+## Backend Architecture
+- **Express.js Server**: RESTful API with TypeScript, ESM modules
+- **Database Layer**: 
+  - PostgreSQL with Drizzle ORM for type-safe database operations
+  - Neon serverless database provider (@neondatabase/serverless)
+  - Schema-first approach with shared types between frontend and backend
+- **Authentication**: Session-based authentication with custom session store
+- **Document Processing**: 
+  - PDF processing with pdf2pic for image conversion
+  - AI document analysis using X.AI Grok API
+  - Google Cloud Storage integration for file storage
+- **Message Queue**: RabbitMQ integration with topology management for async processing
+- **Observability**: OpenTelemetry instrumentation for tracing, metrics, and monitoring
 
-### Frontend
-- **Framework**: React 18 with TypeScript
-- **UI Framework**: Radix UI components with shadcn/ui
-- **State Management**: TanStack React Query
-- **Routing**: Wouter
-- **Styling**: Tailwind CSS
-- **Forms**: React Hook Form with Zod validation
-- **Authentication**: Context-based system
+## Database Design
+- **Core Entities**: Users, loans, borrowers, properties, payments, escrow accounts
+- **Document Management**: Hierarchical folder structure with file metadata and version tracking
+- **Audit System**: Comprehensive event logging with user attribution and timestamps
+- **Permission System**: Role-based access control (RBAC) with granular permissions
+- **Financial Data**: Precise decimal handling for monetary calculations with proper scaling
 
-### Backend
-- **Framework**: Express.js with TypeScript (RESTful API)
-- **Authentication**: Passport.js with local strategy and session-based authentication
-- **Validation**: Shared Zod schemas
+## Document Management System
+- **Hierarchical Organization**: Folder-based structure with parent-child relationships
+- **File Processing**: Multi-format support (PDF, images, documents) with OCR capabilities
+- **Version Control**: Document versioning with access logging
+- **AI Analysis**: Automated document classification and data extraction
+- **Secure Storage**: Cloud-based storage with hash verification and access controls
 
-### Database Layer
-- **Database**: PostgreSQL
-- **ORM**: Drizzle ORM
-- **Schema Management**: Drizzle Kit
-- **Migration System**: Forward-only, idempotent database migration system using `drizzle-orm migrate` for consistency across environments. Includes audit tables (`auth_events`, `login_attempts`, `user_ip_allowlist`, `system_settings`).
-- **Performance Optimization**: Extensive indexing on foreign keys and frequently queried columns for improved query performance.
+## Payment Processing Architecture
+- **Multi-Channel Support**: ACH, wire transfers, checks, cards, and manual payments
+- **Waterfall Allocation**: Configurable payment allocation rules (fees, interest, principal, escrow)
+- **Investor Distributions**: Pro-rata calculations with precise rounding and audit trails
+- **Escrow Management**: Automated disbursements with shortage detection and advance handling
+- **Exception Handling**: Comprehensive error handling with retry mechanisms and manual intervention workflows
 
-### AI Integration
-- **Document Analysis**: Utilizes Grok AI for extracting granular loan data from PDFs (e.g., borrower details, loan amounts, dates, trustee/beneficiary info, credit scores, escrow company details, servicing settings, address components, prepayment expiration dates).
-- **Data Flow**: Extracted data populates loan creation forms and the database.
-- **Error Handling**: Robust handling of AI responses, including streaming JSON and warnings against placeholder data.
-- **Document Linking**: AI-uploaded documents are stored and linked to loans.
-
-### File Upload and Storage
-- **File Upload Interface**: Uppy.js for drag-and-drop.
-- **File Storage**: Scalable cloud storage for documents.
-
-### User Management System
-An enterprise user management subsystem with Role-Based Access Control (RBAC), supporting predefined roles (admin, lender, borrower, investor, escrow_officer, legal, servicer) and granular permission levels (none, read, write, admin) across various resources. The system uses a **SINGLE ROLE SYSTEM** via `roles` and `user_roles` tables; the `users.role` enum field is deprecated. All role IDs are UUIDs. Features include a robust password policy, account lockout, non-restrictive IP tracking, and secure invitation/password reset flows. All actions are auditable.
-
-### System Design Choices
-- **Database Transactions**: Multi-table operations (loan creation, loan deletion, escrow disbursement) are managed atomically using database transactions to ensure data integrity.
-- **Session Management**: Enhanced session tracking for audit logging, properly tracking user_id, ip, and user_agent.
-- **Rate Limiting**: Implemented with auto-cleanup and a hard limit to prevent memory leaks.
-- **Payment Breakdown Display**: Principal and Interest are shown as distinct line items; zero-value lines are hidden; all fees (HOA, PMI, Servicing Fee, Other) are displayed when present.
-- **Date Handling**: Consistent use of UTC methods and `parseISO` to prevent timezone issues in date displays.
+## Testing Strategy
+- **Vitest Configuration**: Multiple test configurations for different scenarios
+- **Database Testing**: Isolated test database setup with proper cleanup
+- **Coverage Reporting**: Comprehensive test coverage with exclusions for generated code
+- **Integration Testing**: Full-stack testing with real database transactions
 
 # External Dependencies
 
-## Database Services
-- **Neon Database**: Serverless PostgreSQL.
-- **Drizzle Kit**: Database migration and schema management.
+## Core Infrastructure
+- **Database**: Neon PostgreSQL serverless database
+- **Cloud Storage**: Google Cloud Storage for document artifacts
+- **Message Broker**: CloudAMQP (RabbitMQ as a Service)
+- **CDN/Assets**: PDF.js worker from CDNJS
 
-## Authentication and Security
-- **Passport.js**: Authentication middleware.
-- **Express Session**: Session management.
-
-## Cloud Storage
-- **Google Cloud Storage**: Primary file storage.
-- **Uppy.js**: File upload interface.
-
-## AI Services
-- **Grok AI (via Groq API)**: Core AI engine for document analysis.
-
-## UI and Component Libraries
-- **Radix UI**: Accessible UI primitives.
-- **Tailwind CSS**: Utility-first CSS framework.
-- **Lucide React**: Icon library.
-- **pdfjs-dist**: PDF rendering.
-- **pdf2pic**: PDF page to image conversion.
+## AI/ML Services
+- **Document Analysis**: X.AI Grok API for intelligent document processing and classification
+- **OCR Processing**: Integrated PDF text extraction with fallback image processing
 
 ## Development Tools
-- **Vite**: Build tool and development server.
+- **Build System**: Vite with React plugin and TypeScript support
+- **Code Quality**: ESLint, TypeScript compiler, Prettier (implied)
+- **Database Migrations**: Drizzle Kit for schema management
+- **Process Management**: TSX for development server with hot reload
+
+## Monitoring and Observability
+- **Telemetry**: OpenTelemetry SDK with multiple exporters (Jaeger, Prometheus, OTLP)
+- **Logging**: Structured logging with request/response tracking
+- **Health Checks**: Application health monitoring endpoints
+- **Error Tracking**: Custom error handling with detailed logging
+
+## Security and Compliance
+- **Session Management**: Custom session store with PostgreSQL persistence
+- **Rate Limiting**: Built-in rate limiting for API endpoints
+- **Data Validation**: Comprehensive input validation and sanitization
+- **Audit Trails**: Complete activity logging for regulatory compliance
