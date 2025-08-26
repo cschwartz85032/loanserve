@@ -561,20 +561,18 @@ export class OptimizedTopologyManager extends TopologyManager {
         ],
       });
       
-      // Escrow DLQ
-      // SKIPPED: q.escrow.dlq already exists in CloudAMQP with different arguments
-      // This queue causes channel closure during topology application.
-      // Using the existing queue instead - proper queue migration needed.
-      // this.addQueue({
-      //   name: 'q.escrow.dlq',
-      //   durable: true,
-      //   arguments: {
-      //     // Different arguments than what's in CloudAMQP
-      //   },
-      //   bindings: [
-      //     { exchange: 'escrow.dlq', routingKey: '#' },
-      //   ],
-      // });
+      // Escrow DLQ - Versioned to avoid CloudAMQP conflicts
+      // CRITICAL: Never skip DLQ queues - they protect against pipeline failures
+      this.addQueue({
+        name: 'q.escrow.dlq.v2',
+        durable: true,
+        arguments: {
+          'x-message-ttl': 86400000, // 24 hours
+        },
+        bindings: [
+          { exchange: 'escrow.dlq', routingKey: '#' },
+        ],
+      });
       
       // Legacy escrow workflow queues (keep for backward compatibility)
       if (this.config.performance.useConsolidatedQueues) {

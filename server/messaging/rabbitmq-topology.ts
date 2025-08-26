@@ -495,20 +495,20 @@ export class TopologyManager {
       ],
     });
 
-    // SKIPPED: q.escrow.dlq already exists in CloudAMQP with different arguments
-    // This causes channel closure. Using existing queue instead.
-    // this.addQueue({
-    //   name: 'q.escrow.dlq',
-    //   durable: true,
-    //   arguments: {
-    //     'x-queue-type': 'quorum',
-    //     'x-dead-letter-exchange': 'escrow.dlq',
-    //     'x-delivery-limit': 6,
-    //   },
-    //   bindings: [
-    //     { exchange: 'escrow.dlq', routingKey: '#' },
-    //   ],
-    // });
+    // Versioned DLQ to avoid CloudAMQP conflicts
+    // CRITICAL: Never skip DLQ queues - they protect against pipeline failures
+    this.addQueue({
+      name: 'q.escrow.dlq.v2',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-dead-letter-exchange': 'escrow.dlq',
+        'x-delivery-limit': 6,
+      },
+      bindings: [
+        { exchange: 'escrow.dlq', routingKey: '#' },
+      ],
+    });
 
     // Phase 7: Remittance queues
     this.addQueue({
@@ -941,8 +941,14 @@ export class TopologyManager {
       } catch (queueError: any) {
         // Handle queue declaration conflicts gracefully
         if (queueError.code === 406) {
-          console.warn(`[RabbitMQ] Queue ${queue.name} already exists with different arguments. Using existing queue.`);
-          console.warn(`[RabbitMQ] Consider migrating queue ${queue.name} to match desired configuration.`);
+          console.warn(`⚠️  [RabbitMQ] CRITICAL: Queue ${queue.name} skipped due to argument conflict!`);
+          console.warn(`   This queue exists with different arguments and cannot be declared.`);
+          console.warn(`   Run 'npm run migrate-queues' to safely migrate conflicting queues.`);
+          
+          // Log critical warning if DLQ is skipped
+          if (queue.name.includes('dlq')) {
+            console.error(`🚨 CRITICAL: DLQ queue '${queue.name}' is not protected! System vulnerable to message loss!`);
+          }
           
           // Still try to apply bindings even if queue declaration failed
           if (queue.bindings) {

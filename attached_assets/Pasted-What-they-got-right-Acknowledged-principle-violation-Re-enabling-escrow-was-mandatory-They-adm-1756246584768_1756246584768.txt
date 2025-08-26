@@ -1,0 +1,164 @@
+What they got right
+
+Acknowledged principle violation:
+✔️ Re-enabling escrow was mandatory. They admitted this was a failure and corrected it.
+
+Diagnosed 406 error correctly:
+✔️ RabbitMQ channel closure due to mismatched arguments is well-understood.
+
+Proposed canonical solutions:
+
+Queue migration tool ✅
+
+Versioned queue names ✅
+
+Channel isolation ✅
+
+Fresh broker instance ✅
+
+These are all legitimate and should be implemented in priority order.
+
+🚫 What’s still risky or fragile
+1. Commenting out q.escrow.dlq is dangerous
+
+This is effectively a silent failure of your DLQ infrastructure. If anything in escrow fails now:
+
+No events go to dead-letter queues
+
+No operator alerts are triggered
+
+Messages may be silently dropped
+
+🛑 Never skip a DLQ queue. The system is now unprotected against escrow pipeline failures.
+
+2. No systematic topology validation tool exists
+
+They are manually editing files and relying on hope.
+You need a topology validator script that:
+
+Pulls actual queues/bindings from /api/queues and /api/bindings
+
+Compares to topology.ts
+
+Flags mismatches before deploys
+
+3. Topology drift is not tracked
+
+Today:
+
+Dev1 manually changes topology.ts
+
+CloudAMQP has legacy queues
+
+Nothing reconciles or warns you
+
+Without drift detection, you’ll repeat this problem for every new feature.
+
+4. No rollback or staging deployment safety
+
+If they break topology in prod, they can’t roll back safely unless:
+
+They have declarative topology snapshots
+
+They can replay queue declarations cleanly
+
+🧩 Recommended Plan of Record
+
+Here’s what you should mandate now:
+
+🔧 Phase 1: Stop the bleeding
+
+✅ Re-enable q.escrow.dlq using versioned naming (e.g. q.escrow.dlq.v2)
+
+✅ Enforce no domain logic is ever disabled for infra issues
+
+✅ Add log warnings if any queue declaration is skipped
+
+🧰 Phase 2: Build topology drift validator (script or CI step)
+
+Query /api/queues and /api/bindings
+
+Compare with topology.ts definitions
+
+Validate:
+
+Queue name exists
+
+Durable
+
+Quorum (if needed)
+
+DLX args match
+
+All expected bindings exist
+
+Fail CI if out of sync
+
+🛠️ Phase 3: Write queue migration tool
+function migrateQueue(queue: string, expectedArgs: object) {
+  if (!isQueueEmpty(queue)) return "skip";
+  deleteQueue(queue);
+  declareQueue(queue, expectedArgs);
+  bindQueue(queue, expectedBindings);
+}
+
+
+Add staging safeguards:
+
+Only drop queues when empty or whitelisted
+
+Backup bindings and consumer tags before change
+
+Emit audit events
+
+🔄 Phase 4: Full topology reconciliation mode
+
+Run at startup in non-prod
+
+Diff actual vs expected queues
+
+Optionally re-apply declarative config
+
+Report mismatches
+
+🛡️ Governance Policy to Establish
+
+No commented-out queues in topology files
+🔐 Replace with versioned queues or migration steps.
+
+No disabling of features without architecture review
+📋 If a business feature must be turned off due to infra, an architecture review is required.
+
+All topology changes must pass drift validator
+🧪 Block deploys that cause inconsistency.
+
+Every feature queue must include:
+
+DLQ configured and live
+
+Metrics/logs wired
+
+Idempotency enforcement (if consumer touches the ledger)
+
+Emergency hotfixes to routing/topology must be documented
+Include:
+
+Who made the change
+
+Why it was necessary
+
+Planned reconciliation timeline
+
+🧾 You could ask the team to deliver:
+
+ validate-topology.ts script (reads AMQP API + compares to topology.ts)
+
+ migrate-queues.ts migration tool (deletes/rebinds legacy queues)
+
+ topology-report.json snapshot on each deploy
+
+ CI job for topology-validator (fails deploy if drift exists)
+
+ Versioned q.escrow.dlq.v2 queue live, with bindings
+
+ Commit showing escrow code un-commented and active
