@@ -28,20 +28,22 @@ export class TwilioService {
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     this.fromNumber = process.env.TWILIO_PHONE_NUMBER;
 
+    console.log('[Twilio] Checking configuration...');
+    console.log('[Twilio] Account SID:', accountSid ? 'Present' : 'Missing');
+    console.log('[Twilio] Auth Token:', authToken ? 'Present' : 'Missing');  
+    console.log('[Twilio] Phone Number:', this.fromNumber || 'Missing');
+
     if (accountSid && authToken && this.fromNumber) {
       try {
         this.client = twilio(accountSid, authToken);
         this.isConfigured = true;
-        console.log('[Twilio] Service configured successfully');
+        console.log('[Twilio] ✓ Service configured successfully with phone:', this.fromNumber);
       } catch (error) {
         console.error('[Twilio] Failed to initialize:', error);
         this.isConfigured = false;
       }
     } else {
-      console.log('[Twilio] Not configured - missing credentials or phone number');
-      if (!accountSid) console.log('[Twilio] Missing TWILIO_ACCOUNT_SID');
-      if (!authToken) console.log('[Twilio] Missing TWILIO_AUTH_TOKEN');
-      if (!this.fromNumber) console.log('[Twilio] Missing TWILIO_PHONE_NUMBER');
+      console.log('[Twilio] ✗ Service not configured - missing credentials');
     }
   }
 
@@ -280,4 +282,5 @@ export class TwilioService {
 }
 
 // Export singleton instance
+console.log('[Twilio] Creating service instance...');
 export const twilioService = new TwilioService();

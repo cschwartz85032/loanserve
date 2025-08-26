@@ -6,6 +6,16 @@ import cors from "cors";
 import { initializeTelemetry, shutdownTelemetry } from './observability/telemetry';
 import { correlationIdMiddleware, correlationErrorHandler } from './middleware/correlation-id';
 import { startMetricsCollection, stopMetricsCollection } from './observability/metrics-collector';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+
+// Load .env.local if it exists for Twilio and other local configs
+const envLocalPath = path.join(process.cwd(), '.env.local');
+if (fs.existsSync(envLocalPath)) {
+  dotenv.config({ path: envLocalPath });
+  console.log('[Config] Loaded .env.local');
+}
 
 // Initialize telemetry before anything else
 initializeTelemetry();

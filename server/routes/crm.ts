@@ -35,6 +35,7 @@ import {
   FILE_UPLOAD_CONFIG
 } from '../config/constants';
 import { CRMNotificationService } from '../crm/notification-service';
+import { twilioService } from '../services/twilio-service';
 
 const router = Router();
 
@@ -769,6 +770,131 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
     
     res.status(500).json({ 
       error: 'Failed to send email', 
+      details: error.message || 'Unknown error'
+    });
+  }
+});
+
+// Send SMS message
+router.post('/loans/:loanId/sms', async (req, res) => {
+  try {
+    const loanId = parseInt(req.params.loanId);
+    const { to, message, type } = req.body;
+    const userId = (req as any).user?.id || 1;
+    
+    if (!to || !message) {
+      return res.status(400).json({ error: 'Phone number and message are required' });
+    }
+    
+    // Check if Twilio is configured
+    if (!twilioService.isReady()) {
+      return res.status(503).json({ 
+        error: 'SMS service not configured',
+        details: 'Twilio credentials are not properly set up'
+      });
+    }
+    
+    // Send SMS based on type
+    let result;
+    if (type === 'payment_reminder') {
+      // Get loan details for payment reminder
+      const loan = await db
+        .select()
+        .from(loans)
+        .where(eq(loans.id, loanId))
+        .limit(1);
+        
+      if (loan.length === 0) {
+        return res.status(404).json({ error: 'Loan not found' });
+      }
+      
+      const loanData = loan[0];
+      const nextPayment = loanData.paymentAmount || '0.00';
+      const dueDate = loanData.paymentDueDay ? `the ${loanData.paymentDueDay}th` : 'soon';
+      
+      result = await twilioService.sendPaymentReminder(
+        to,
+        loanId,
+        loanData.loanNumber,
+        nextPayment,
+        dueDate
+      );
+    } else if (type === 'late_notice') {
+      // Get loan details for late notice
+      const loan = await db
+        .select()
+        .from(loans)
+        .where(eq(loans.id, loanId))
+        .limit(1);
+        
+      if (loan.length === 0) {
+        return res.status(404).json({ error: 'Loan not found' });
+      }
+      
+      const loanData = loan[0];
+      const paymentAmount = loanData.paymentAmount || '0.00';
+      const daysLate = 10; // Would calculate from actual payment history
+      
+      result = await twilioService.sendLateNotice(
+        to,
+        loanId,
+        loanData.loanNumber,
+        paymentAmount,
+        daysLate
+      );
+    } else {
+      // Send custom SMS
+      result = await twilioService.sendSMS(to, message, loanId);
+      
+      // Also log to activity for custom SMS (Twilio service logs internally too)
+      if (result.success) {
+        await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.SMS, {
+          description: `SMS sent to ${to}`,
+          message: message,
+          messageId: result.messageId
+        });
+      }
+    }
+    
+    if (result.success) {
+      res.json({ 
+        success: true, 
+        messageId: result.messageId,
+        message: 'SMS sent successfully'
+      });
+    } else {
+      res.status(400).json({ 
+        success: false,
+        error: result.error || 'Failed to send SMS'
+      });
+    }
+  } catch (error: any) {
+    console.error('Error sending SMS:', error);
+    res.status(500).json({ 
+      error: 'Failed to send SMS', 
+      details: error.message || 'Unknown error'
+    });
+  }
+});
+
+// Get SMS status
+router.get('/sms/:messageId/status', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    
+    if (!twilioService.isReady()) {
+      return res.status(503).json({ 
+        error: 'SMS service not configured',
+        details: 'Twilio credentials are not properly set up'
+      });
+    }
+    
+    const result = await twilioService.getMessageStatus(messageId);
+    res.json(result);
+  } catch (error: any) {
+    console.error('Error getting SMS status:', error);
+    res.status(500).json({ 
+      error: 'Failed to get SMS status', 
       details: error.message || 'Unknown error'
     });
   }
