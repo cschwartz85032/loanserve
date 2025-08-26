@@ -10,7 +10,10 @@ const router = Router();
 
 // Middleware to check admin permissions
 const requireAdmin = async (req: any, res: any, next: any) => {
-  if (!req.user) {
+  // Get user ID from either req.user or session
+  const userId = req.user?.id || req.session?.passport?.user || req.session?.userId;
+  
+  if (!userId) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
@@ -20,7 +23,7 @@ const requireAdmin = async (req: any, res: any, next: any) => {
   })
   .from(userRoles)
   .innerJoin(roles, eq(userRoles.roleId, roles.id))
-  .where(eq(userRoles.userId, req.user.id));
+  .where(eq(userRoles.userId, userId));
 
   const hasAdminRole = userRoleRecords.some(r => r.roleName === 'admin');
   
@@ -68,7 +71,8 @@ router.put('/api/admin/rabbitmq/config', async (req, res) => {
       }
     }
 
-    await rabbitmqConfig.saveConfig(config, req.user?.id);
+    const userId = (req as any).user?.id || (req as any).session?.passport?.user || (req as any).session?.userId;
+    await rabbitmqConfig.saveConfig(config, userId);
     
     res.json({ 
       success: true,
@@ -85,7 +89,8 @@ router.put('/api/admin/rabbitmq/config', async (req, res) => {
 // Reset RabbitMQ configuration to defaults
 router.post('/api/admin/rabbitmq/config/reset', async (req, res) => {
   try {
-    await rabbitmqConfig.resetToDefaults(req.user?.id);
+    const userId = (req as any).user?.id || (req as any).session?.passport?.user || (req as any).session?.userId;
+    await rabbitmqConfig.resetToDefaults(userId);
     
     res.json({ 
       success: true,
