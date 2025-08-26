@@ -22,16 +22,19 @@ export class TwilioService {
   private client: any;
   private isConfigured: boolean = false;
   private fromNumber: string | undefined;
+  private messagingServiceSid: string | undefined;
 
   constructor() {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     this.fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    this.messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 
     console.log('[Twilio] Checking configuration...');
     console.log('[Twilio] Account SID:', accountSid ? 'Present' : 'Missing');
     console.log('[Twilio] Auth Token:', authToken ? 'Present' : 'Missing');  
     console.log('[Twilio] Phone Number:', this.fromNumber || 'Missing');
+    console.log('[Twilio] Messaging Service SID:', this.messagingServiceSid || 'Not configured');
 
     if (accountSid && authToken && this.fromNumber) {
       try {
@@ -69,12 +72,22 @@ export class TwilioService {
       // Format phone number if needed
       const formattedTo = this.formatPhoneNumber(to);
       
-      // Send SMS
-      const message = await this.client.messages.create({
+      // Send SMS using Messaging Service for A2P compliance, or fallback to phone number
+      const messageOptions: any = {
         body,
-        from: this.fromNumber,
         to: formattedTo
-      });
+      };
+      
+      // Use Messaging Service SID if configured (required for A2P compliance)
+      if (this.messagingServiceSid) {
+        messageOptions.messagingServiceSid = this.messagingServiceSid;
+        console.log('[Twilio] Using Messaging Service for A2P compliance');
+      } else {
+        messageOptions.from = this.fromNumber;
+        console.log('[Twilio] Warning: Not using Messaging Service - may have delivery issues');
+      }
+      
+      const message = await this.client.messages.create(messageOptions);
 
       // Log to CRM activity if loan ID provided
       if (loanId) {
