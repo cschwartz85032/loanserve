@@ -102,6 +102,27 @@ app.use((req, res, next) => {
   startMetricsCollection();
   console.log('[Server] Metrics collection started');
   
+  // Start CRM notification checks (run every hour)
+  try {
+    const { runCRMNotificationChecks } = await import('./crm/check-overdue-tasks');
+    
+    // Run immediately on startup
+    runCRMNotificationChecks().catch(err => 
+      console.error('[Server] CRM notification check error:', err)
+    );
+    
+    // Schedule to run every hour
+    setInterval(() => {
+      runCRMNotificationChecks().catch(err => 
+        console.error('[Server] CRM notification check error:', err)
+      );
+    }, 60 * 60 * 1000); // 1 hour
+    
+    console.log('[Server] CRM notification checks scheduled (hourly)');
+  } catch (error) {
+    console.error('[Server] Failed to start CRM notification checks:', error);
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler

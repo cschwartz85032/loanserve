@@ -34,6 +34,7 @@ import {
   EMAIL_CONFIG,
   FILE_UPLOAD_CONFIG
 } from '../config/constants';
+import { CRMNotificationService } from '../crm/notification-service';
 
 const router = Router();
 
@@ -41,6 +42,9 @@ const router = Router();
 if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
+
+// Initialize CRM Notification Service
+const notificationService = new CRMNotificationService();
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -167,6 +171,42 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
     await logActivity(loanId, userId, 'task', {
       description: `Created task: ${title}`
     }, task.id);
+    
+    // Send notification if task is assigned to someone
+    if (assignedTo && assignedTo !== userId) {
+      // Get assignee's email
+      const assigneeResult = await db
+        .select({ email: users.email, username: users.username })
+        .from(users)
+        .where(eq(users.id, assignedTo));
+      
+      if (assigneeResult.length > 0) {
+        const assignee = assigneeResult[0];
+        const assignerResult = await db
+          .select({ username: users.username })
+          .from(users)
+          .where(eq(users.id, userId));
+        
+        const assigner = assignerResult[0]?.username || 'System';
+        
+        // Send task assignment notification
+        await notificationService.sendNotification({
+          type: 'task_assignment',
+          loanId,
+          recipientEmail: assignee.email,
+          recipientName: assignee.username,
+          data: {
+            task: {
+              title,
+              description: description || 'No description provided'
+            },
+            assignedBy: assigner,
+            dueDate: dueDate || 'No due date',
+            priority: priority || 'medium'
+          }
+        });
+      }
+    }
     
     res.json(task);
   } catch (error) {
@@ -646,20 +686,47 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
       console.log('No attachments to add to email');
     }
 
-    // Send email
-    await sgMail.send(msg);
-
-    // Log activity with attachment info
-    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.EMAIL, {
-      description: `Email sent to ${to}`,
-      subject,
-      to,
-      cc: cc || null,
-      bcc: bcc || null,
-      attachmentCount: attachments.length
+    // Use notification service for better tracking and unified management
+    const notificationResult = await notificationService.sendNotification({
+      type: 'email_notification',
+      loanId,
+      recipientEmail: to,
+      recipientName: to,
+      data: {
+        subject,
+        content: body,
+        cc: cc || null,
+        bcc: bcc || null,
+        from: fromEmail
+      },
+      attachments: attachments.map(att => ({
+        content: att.content,
+        filename: att.filename,
+        type: att.type
+      }))
     });
 
-    res.json({ success: true, message: 'Email sent successfully', attachmentCount: attachments.length });
+    if (notificationResult.success) {
+      // Log activity with attachment info and document ID
+      await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.EMAIL, {
+        description: `Email sent to ${to}`,
+        subject,
+        to,
+        cc: cc || null,
+        bcc: bcc || null,
+        attachmentCount: attachments.length,
+        documentId: notificationResult.docId
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'Email sent successfully', 
+        attachmentCount: attachments.length,
+        documentId: notificationResult.docId 
+      });
+    } else {
+      throw new Error(notificationResult.error || 'Failed to send notification');
+    }
   } catch (error: any) {
     console.error('Error sending email:', error);
     
