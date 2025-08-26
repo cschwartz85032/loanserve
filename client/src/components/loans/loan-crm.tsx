@@ -2380,6 +2380,21 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
                         </Button>
                       </div>
                     )}
+                    
+                    {/* SMS Delivery Notice */}
+                    {createTextMutation.isSuccess && (
+                      <div className="text-xs bg-yellow-50 border border-yellow-200 rounded p-2 mt-2">
+                        <p className="font-medium text-yellow-800">⚠️ SMS Configuration Required</p>
+                        <p className="text-yellow-700 mt-1">
+                          SMS sent to provider but may not be delivered. Please check:
+                        </p>
+                        <ul className="list-disc list-inside text-yellow-700 mt-1 space-y-0.5">
+                          <li>Twilio phone number configuration</li>
+                          <li>A2P 10DLC registration status</li>
+                          <li>Recipient number verification</li>
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
               </TabsContent>
