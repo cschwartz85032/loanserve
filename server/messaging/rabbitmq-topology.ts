@@ -4,19 +4,6 @@
  */
 
 import amqp from 'amqplib';
-import { 
-  AUDIT_QUEUE,
-  SETTLEMENT_QUEUES,
-  RECONCILIATION_QUEUES,
-  COMPLIANCE_QUEUES,
-  PAYMENT_QUEUES,
-  ESCROW_QUEUES,
-  INVESTOR_QUEUES,
-  SERVICING_QUEUES,
-  DLQ_QUEUES,
-  BATCH_QUEUES,
-  ALL_CANONICAL_QUEUES
-} from './canonical-topology';
 
 export interface ExchangeDefinition {
   name: string;
@@ -670,8 +657,18 @@ export class TopologyManager {
       ],
     });
 
-    // Audit queue - using canonical configuration
-    this.addQueue(AUDIT_QUEUE);
+    // Audit queue
+    this.addQueue({
+      name: 'audit.events',
+      durable: true,
+      arguments: {
+        'x-queue-mode': 'lazy',
+        'x-max-length': 10000000, // 10 million events
+      },
+      bindings: [
+        { exchange: 'audit.topic', routingKey: 'audit.*' },
+      ],
+    });
 
     // Phase 3: Settlement queues
     this.addQueue({
