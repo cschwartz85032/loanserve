@@ -1,0 +1,89 @@
+You're right to surface this — the inconsistency across specs for audit.events queue is a critical issue, especially since this queue captures audit trails that must be reliable, durable, and scalable.
+
+Let's walk through a reconciliation of these specs and recommend a single canonical configuration based on your goals and operational realities.
+
+🧾 Summary of Competing Specs
+Source	x-queue-type	x-queue-mode	x-max-length	Notes
+Phase 3 Settlement	quorum	unspecified	500,000	High durability implied
+Clean Starter Kit	unspecified	lazy	unspecified	Lazy loading for memory savings
+Daily Servicing Cycle	unspecified	lazy	large	Also suggests RabbitMQ Streams
+Current Code	unspecified	lazy	10,000,000	Best matches Daily Cycle
+🧠 Design Considerations
+Factor	quorum queue	lazy queue
+Durability	Excellent: replicated across nodes	Durable but not replicated
+Ordering	Preserved	Preserved
+Availability	Reduced in cluster partitions	Available unless disk is full
+Performance	Slower (replication cost)	Faster, offloads cold messages to disk
+Scaling	Limited (no sharding)	Limited, but can be rotated and trimmed
+Best Use Case	Critical financial state changes	High-volume logs, cold-path audit trails
+🎯 Goal for audit.events
+
+This queue captures side-effect audit logs, not direct financial state transitions (those go to the ledger or transaction logs). Therefore, it needs to:
+
+Handle high throughput (event-heavy systems)
+
+Be durable, but not necessarily replicated
+
+Scale to tens of millions of messages
+
+Be cost-efficient in memory and disk usage
+
+Thus, the correct specification is:
+
+{
+  name: 'audit.events',
+  durable: true,
+  auto_delete: false,
+  arguments: {
+    "x-queue-mode": "lazy",
+    "x-max-length": 10000000
+  }
+}
+
+
+✅ Matches current implementation
+✅ Matches "lazy + large" from Daily Servicing Cycle
+✅ Avoids the resource overhead of quorum queues
+
+🛠 Recommendation
+1. Update specs to remove quorum
+
+In:
+
+Phase 3 Settlement doc: remove x-queue-type: quorum
+
+Any test topology snapshot: confirm x-queue-mode: lazy + large length
+
+2. Lock this config in a canonical-topology.ts
+
+Export a single config object:
+
+export const AUDIT_QUEUE = {
+  name: 'audit.events',
+  durable: true,
+  auto_delete: false,
+  arguments: {
+    "x-queue-mode": "lazy",
+    "x-max-length": 10000000
+  }
+};
+
+
+And import it wherever audit queues are declared — test files, infra scripts, topology sync.
+
+3. Document rationale inline
+// audit.events is a cold-path, append-only log stream.
+// We use lazy mode to reduce memory and set large max-length
+// to allow time-range based querying before rotation.
+// Not using quorum queues to avoid replication overhead.
+
+4. Optional: Add log warning if current queue doesn’t match spec
+🧪 Future Consideration
+
+If you reach sustained 100M+ messages or need replay from arbitrary offsets:
+
+Consider migrating audit.events to RabbitMQ Streams
+
+Or offload to Kafka/S3/EventStore
+
+But for now, the current implementation is correct.
