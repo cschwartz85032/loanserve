@@ -52,7 +52,20 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     // Dead letter exchange
     await ch.assertExchange("payments.dlq", "direct", { durable: true });
     
-    console.log('[RabbitMQ Bootstrap] Exchanges created');
+    // ========================================
+    // PHASE 3: ESCROW SUBSYSTEM EXCHANGES
+    // ========================================
+    
+    // Escrow saga exchange - topic routing for orchestration
+    await ch.assertExchange("escrow.saga", "topic", { durable: true });
+    
+    // Escrow events exchange - topic routing for escrow events
+    await ch.assertExchange("escrow.events", "topic", { durable: true });
+    
+    // Escrow dead letter exchange - direct routing for failed messages
+    await ch.assertExchange("escrow.dlq", "direct", { durable: true });
+    
+    console.log('[RabbitMQ Bootstrap] Exchanges created including escrow subsystem');
     
     // ========================================
     // DECLARE QUEUES
@@ -107,7 +120,46 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
       }
     });
     
-    console.log('[RabbitMQ Bootstrap] Queues created');
+    // ========================================
+    // PHASE 3: ESCROW SUBSYSTEM QUEUES
+    // ========================================
+    
+    // Escrow forecast queue
+    await ch.assertQueue("q.forecast", { 
+      durable: true,
+      arguments: {
+        "x-dead-letter-exchange": "escrow.dlq",
+        "x-dead-letter-routing-key": "forecast.failed"
+      }
+    });
+    
+    // Escrow disbursement scheduling queue
+    await ch.assertQueue("q.schedule.disbursement", { 
+      durable: true,
+      arguments: {
+        "x-dead-letter-exchange": "escrow.dlq",
+        "x-dead-letter-routing-key": "disbursement.failed"
+      }
+    });
+    
+    // Escrow analysis queue
+    await ch.assertQueue("q.escrow.analysis", { 
+      durable: true,
+      arguments: {
+        "x-dead-letter-exchange": "escrow.dlq",
+        "x-dead-letter-routing-key": "analysis.failed"
+      }
+    });
+    
+    // Escrow DLQ
+    await ch.assertQueue("q.escrow.dlq", { 
+      durable: true,
+      arguments: {
+        "x-message-ttl": 86400000 // 24 hours
+      }
+    });
+    
+    console.log('[RabbitMQ Bootstrap] Queues created including escrow subsystem');
     
     // ========================================
     // BIND QUEUES TO EXCHANGES
@@ -148,7 +200,26 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     // Bind DLQ
     await ch.bindQueue("q.dlq", "payments.dlq", "failed");
     
-    console.log('[RabbitMQ Bootstrap] Queue bindings created');
+    // ========================================
+    // PHASE 3: ESCROW SUBSYSTEM BINDINGS
+    // ========================================
+    
+    // Bind escrow forecast queue
+    await ch.bindQueue("q.forecast", "escrow.saga", "forecast.request");
+    await ch.bindQueue("q.forecast", "escrow.saga", "forecast.retry");
+    
+    // Bind escrow disbursement queue
+    await ch.bindQueue("q.schedule.disbursement", "escrow.saga", "disbursement.schedule");
+    await ch.bindQueue("q.schedule.disbursement", "escrow.saga", "disbursement.retry");
+    
+    // Bind escrow analysis queue
+    await ch.bindQueue("q.escrow.analysis", "escrow.saga", "analysis.request");
+    await ch.bindQueue("q.escrow.analysis", "escrow.saga", "analysis.retry");
+    
+    // Bind escrow DLQ - catch all failures
+    await ch.bindQueue("q.escrow.dlq", "escrow.dlq", "#");
+    
+    console.log('[RabbitMQ Bootstrap] Queue bindings created including escrow subsystem');
     
     // Store connection and channel
     connection = conn;

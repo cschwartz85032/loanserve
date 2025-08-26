@@ -145,6 +145,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const dlqRoutes = (await import('./routes/dlq-routes.js')).default;
   app.use('/api', dlqRoutes);
 
+  // Register Phase 3 Escrow Subsystem routes
+  const { escrowRoutes } = await import('./escrow/routes');
+  app.use('/api/escrow', escrowRoutes);
+  console.log('[Routes] Registered escrow subsystem routes');
+
   // Serve observability dashboard
   app.get('/observability', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'server/observability/dashboard-ui.html'));

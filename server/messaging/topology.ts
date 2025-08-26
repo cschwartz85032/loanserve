@@ -112,6 +112,31 @@ export class OptimizedTopologyManager extends TopologyManager {
         type: 'topic',
         durable: true,
       });
+      
+      // Add escrow saga and events exchanges for Phase 3
+      this.addExchange({
+        name: 'escrow.saga',
+        type: 'topic',
+        durable: true,
+      });
+      
+      this.addExchange({
+        name: 'escrow.events',
+        type: 'topic',
+        durable: true,
+      });
+      
+      this.addExchange({
+        name: 'escrow.compensate',
+        type: 'topic',
+        durable: true,
+      });
+      
+      this.addExchange({
+        name: 'escrow.dlq',
+        type: 'direct',
+        durable: true,
+      });
     }
 
     if (this.config.features.compliance || this.config.features.aml) {
@@ -369,6 +394,67 @@ export class OptimizedTopologyManager extends TopologyManager {
 
     // Escrow queues (conditional, consolidated)
     if (this.config.features.escrow) {
+      // Phase 3: Escrow Subsystem Queues
+      // These are the specific queues required by the escrow consumers
+      
+      // Escrow forecast queue
+      this.addQueue({
+        name: 'q.forecast',
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'escrow.dlq',
+          'x-dead-letter-routing-key': 'forecast.failed',
+        },
+        bindings: [
+          { exchange: 'escrow.saga', routingKey: 'forecast.request' },
+          { exchange: 'escrow.saga', routingKey: 'forecast.retry' },
+        ],
+      });
+      
+      // Escrow disbursement scheduling queue
+      this.addQueue({
+        name: 'q.schedule.disbursement',
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'escrow.dlq',
+          'x-dead-letter-routing-key': 'disbursement.failed',
+        },
+        bindings: [
+          { exchange: 'escrow.saga', routingKey: 'disbursement.schedule' },
+          { exchange: 'escrow.saga', routingKey: 'disbursement.retry' },
+        ],
+      });
+      
+      // Escrow analysis queue
+      this.addQueue({
+        name: 'q.escrow.analysis',
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'escrow.dlq',
+          'x-dead-letter-routing-key': 'analysis.failed',
+        },
+        bindings: [
+          { exchange: 'escrow.saga', routingKey: 'analysis.request' },
+          { exchange: 'escrow.saga', routingKey: 'analysis.retry' },
+        ],
+      });
+      
+      // Escrow DLQ
+      this.addQueue({
+        name: 'q.escrow.dlq',
+        durable: true,
+        arguments: {
+          'x-message-ttl': 86400000, // 24 hours
+        },
+        bindings: [
+          { exchange: 'escrow.dlq', routingKey: '#' },
+        ],
+      });
+      
+      // Legacy escrow workflow queues (keep for backward compatibility)
       if (this.config.performance.useConsolidatedQueues) {
         // Single escrow queue handles all escrow operations
         this.addQueue({
@@ -397,6 +483,18 @@ export class OptimizedTopologyManager extends TopologyManager {
         });
 
         this.addQueue({
+          name: 'escrow.authorize',
+          durable: true,
+          arguments: {
+            'x-queue-type': 'quorum',
+            'x-dead-letter-exchange': 'dlx.main',
+          },
+          bindings: [
+            { exchange: 'escrow.workflow', routingKey: 'escrow.authorize' },
+          ],
+        });
+
+        this.addQueue({
           name: 'escrow.disburse',
           durable: true,
           arguments: {
@@ -405,6 +503,18 @@ export class OptimizedTopologyManager extends TopologyManager {
           },
           bindings: [
             { exchange: 'escrow.workflow', routingKey: 'escrow.disburse' },
+          ],
+        });
+        
+        this.addQueue({
+          name: 'escrow.reconcile',
+          durable: true,
+          arguments: {
+            'x-queue-type': 'quorum',
+            'x-dead-letter-exchange': 'dlx.main',
+          },
+          bindings: [
+            { exchange: 'escrow.workflow', routingKey: 'escrow.reconcile' },
           ],
         });
       }

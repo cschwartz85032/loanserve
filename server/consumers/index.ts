@@ -14,6 +14,7 @@ import { PaymentReversalSaga } from './payment-reversal-saga';
 import { notificationsConsumer } from './notifications-consumer';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { getOutboxPublisher } from '../services/outbox-publisher';
+import { getEscrowManager } from '../escrow/escrow-manager';
 
 export async function startPaymentConsumers(): Promise<void> {
   console.log('[Consumers] Starting payment processing consumers...');
@@ -75,17 +76,25 @@ export async function startPaymentConsumers(): Promise<void> {
     // await notificationsConsumer.start();
     // console.log('[Consumers] Notifications consumer started');
 
+    // Start Phase 3: Escrow Subsystem
+    console.log('[Consumers] Starting escrow subsystem...');
+    const escrowManager = getEscrowManager();
+    await escrowManager.start();
+    console.log('[Consumers] Escrow subsystem started successfully');
+
     console.log('[Consumers] All payment processing consumers started successfully');
 
     // Graceful shutdown
     process.on('SIGINT', async () => {
-      console.log('[Consumers] Shutting down payment consumers...');
+      console.log('[Consumers] Shutting down consumers...');
+      await escrowManager.stop();
       await rabbitmq.shutdown();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
-      console.log('[Consumers] Shutting down payment consumers...');
+      console.log('[Consumers] Shutting down consumers...');
+      await escrowManager.stop();
       await rabbitmq.shutdown();
       process.exit(0);
     });
