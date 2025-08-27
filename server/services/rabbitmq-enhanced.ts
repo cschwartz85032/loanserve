@@ -140,13 +140,14 @@ export class EnhancedRabbitMQService {
         await adminChannel.close().catch(() => {});
       }
     } catch (error: any) {
-      // Fallback to publisher channel if admin channel fails
-      if (this.publisherChannel && error.code !== 406) {
-        console.log('[RabbitMQ] Retrying topology setup with publisher channel');
-        await topologyManager.applyTopology(this.publisherChannel);
-      } else {
-        throw error;
+      // Never retry topology on publisher channel - this causes channel failures
+      // Log the error and continue - topology conflicts will be handled by versioned queues
+      console.error('[RabbitMQ] Topology setup failed:', error.message);
+      if (error.code === 406) {
+        console.warn('[RabbitMQ] Queue argument conflict detected. Run npm run migrate-queues to fix.');
       }
+      // Don't throw - allow the service to continue with partial topology
+      // Critical queues will be created on-demand with correct arguments
     }
   }
 

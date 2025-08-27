@@ -431,7 +431,7 @@ export class TopologyManager {
 
     // Phase 3: Escrow saga queues
     this.addQueue({
-      name: 'q.escrow.forecast',
+      name: 'q.escrow.forecast.v2',
       durable: true,
       arguments: {
         'x-queue-type': 'quorum',
@@ -444,7 +444,7 @@ export class TopologyManager {
     });
 
     this.addQueue({
-      name: 'q.escrow.disburse.schedule',
+      name: 'q.escrow.disburse.schedule.v2',
       durable: true,
       arguments: {
         'x-queue-type': 'quorum',
@@ -457,7 +457,7 @@ export class TopologyManager {
     });
 
     this.addQueue({
-      name: 'q.escrow.disburse.post',
+      name: 'q.escrow.disburse.post.v2',
       durable: true,
       arguments: {
         'x-queue-type': 'quorum',
@@ -470,7 +470,7 @@ export class TopologyManager {
     });
 
     this.addQueue({
-      name: 'q.escrow.analysis.run',
+      name: 'q.escrow.analysis.run.v2',
       durable: true,
       arguments: {
         'x-queue-type': 'quorum',
@@ -483,7 +483,7 @@ export class TopologyManager {
     });
 
     this.addQueue({
-      name: 'q.escrow.events.audit',
+      name: 'q.escrow.events.audit.v2',
       durable: true,
       arguments: {
         'x-queue-type': 'quorum',
@@ -887,6 +887,24 @@ export class TopologyManager {
     this.queues.set(queue.name, queue);
   }
 
+
+  /**
+   * Create isolated admin channel for safe operations  
+   * CRITICAL: Always use isolated channels for topology operations
+   */
+  private async withAdminChannel<T>(
+    conn: amqp.Connection,
+    fn: (ch: amqp.ConfirmChannel) => Promise<T>
+  ): Promise<T> {
+    const ch = await conn.createConfirmChannel();
+    try {
+      return await fn(ch);
+    } finally {
+      try {
+        await ch.close();
+      } catch {}
+    }
+  }
 
   /**
    * Apply topology to a channel

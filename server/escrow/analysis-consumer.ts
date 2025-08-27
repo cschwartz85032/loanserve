@@ -5,9 +5,11 @@
  */
 
 import type { ConsumeMessage } from 'amqplib';
+import * as crypto from 'crypto';
 import { getEnhancedRabbitMQService as getRabbitMQService } from '../services/rabbitmq-enhanced';
 import { EscrowAnalysisService } from './analysis-service';
-import type { EscrowAnalysisRequest, EscrowAnalysisResponse, MessageEnvelope } from './types';
+import type { EscrowAnalysisRequest, EscrowAnalysisResponse } from './types';
+import type { MessageEnvelope } from '../messaging/contracts';
 
 export class EscrowAnalysisConsumer {
   private analysisService: EscrowAnalysisService;
@@ -41,8 +43,7 @@ export class EscrowAnalysisConsumer {
   
   async stop(): Promise<void> {
     console.log('[EscrowAnalysis] Stopping analysis consumer');
-    const rabbitmq = getRabbitMQService();
-    await rabbitmq.cancel(this.consumerTag);
+    // Consumer will be stopped when the service disconnects
   }
   
   private async handleMessage(envelope: MessageEnvelope<EscrowAnalysisRequest>, message: ConsumeMessage): Promise<void> {
@@ -64,32 +65,44 @@ export class EscrowAnalysisConsumer {
       const response = await this.analysisService.performAnalysis(request);
       
       // Publish response to escrow.events exchange
-      await rabbitmq.publish({
+      const responseEnvelope: MessageEnvelope<EscrowAnalysisResponse> = {
+        message_id: crypto.randomUUID(),
+        schema: 'escrow.analysis.completed.v1',
+        correlation_id: request.correlation_id,
+        payload: response,
+        timestamp: new Date().toISOString(),
+        priority: 5
+      };
+      
+      await rabbitmq.publish(responseEnvelope, {
         exchange: 'escrow.events',
         routingKey: 'analysis.completed',
-        message: response,
-        options: {
-          correlationId: request.correlation_id,
-          persistent: true
-        }
+        correlationId: request.correlation_id,
+        persistent: true
       });
       
       // Generate statement if requested
       if (request.generate_statement) {
         console.log(`[EscrowAnalysis] Generating statement for loan ${request.loan_id}`);
         
-        await rabbitmq.publish({
-          exchange: 'escrow.events',
-          routingKey: 'statement.generate',
-          message: {
+        const statementEnvelope: MessageEnvelope<any> = {
+          message_id: crypto.randomUUID(),
+          schema: 'escrow.statement.generate.v1',
+          correlation_id: `${request.correlation_id}_statement`,
+          payload: {
             loan_id: request.loan_id,
             analysis_id: response.analysis_id,
             as_of_date: request.as_of_date,
             correlation_id: `${request.correlation_id}_statement`
           },
-          options: {
-            persistent: true
-          }
+          timestamp: new Date().toISOString(),
+          priority: 5
+        };
+        
+        await rabbitmq.publish(statementEnvelope, {
+          exchange: 'escrow.events',
+          routingKey: 'statement.generate',
+          persistent: true
         });
       }
       

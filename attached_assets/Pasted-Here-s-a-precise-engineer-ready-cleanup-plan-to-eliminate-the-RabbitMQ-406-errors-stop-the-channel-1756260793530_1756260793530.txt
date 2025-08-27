@@ -1,0 +1,265 @@
+Here’s a precise, engineer-ready cleanup plan to eliminate the RabbitMQ 406 errors, stop the channel churn, and align runtime with a single canonical topology—without disabling any business features.
+
+Objective
+
+Resolve queue argument conflicts (e.g., q.escrow.analysis, q.forecast) that trigger PRECONDITION_FAILED and channel closures, restore reliable topology application, and prevent recurrence via migration + validation.
+
+Root Cause (from your logs)
+
+The broker already has queues declared with arguments that differ from what your topology applies.
+
+assertQueue against a differently-arg’d existing queue returns 406 and closes the channel.
+
+Topology code keeps using the same channel (publisher or shared), so one failure aborts further declarations/bindings.
+
+Subsequent binds fail (“Channel closed”), and consumers miss messages.
+
+Non-negotiable Principles
+
+Do not disable domain features (escrow, payments, forecast) due to infra drift. Fix the infra.
+
+No ad-hoc queue/exchange declarations in feature code. All declarations/bindings live in the topology manager.
+
+Never skip DLQs. If a queue conflicts, create a versioned queue (e.g., .v2) and migrate.
+
+Do not reuse publisher/consumer channels for topology operations.
+
+Part A — Immediate Containment (do this now)
+
+Goal: stop the blast radius while keeping services up.
+
+Isolate topology operations per entity
+Use a short-lived admin confirm channel for each declaration/binding so a 406 doesn’t kill the publisher/consumer channels.
+
+import amqplib, { ConfirmChannel, Connection } from 'amqplib';
+
+async function withAdminChannel<T>(conn: Connection, fn: (ch: ConfirmChannel) => Promise<T>): Promise<T> {
+  const ch = await conn.createConfirmChannel();
+  try { return await fn(ch); }
+  finally { try { await ch.close(); } catch {} }
+}
+
+
+Version conflicting queues immediately
+For any queue that 406’s (e.g., q.escrow.analysis, q.forecast):
+
+Declare q.escrow.analysis.v2 (canonical args).
+
+Bind .v2 with all required routing keys.
+
+Point consumers to .v2.
+
+Keep the old queue bound for 24–48 hours to drain; do not publish directly to queues, only to exchanges.
+
+Do not retry topology on publisher channel
+Remove any fallback that “retries topology with publisher channel.” Topology must never run on the publish channel.
+
+Log conflicts distinctly and continue
+On 406, log a structured warning including expected vs actual args, then continue to the next declaration on a fresh admin channel.
+
+Part B — Forensic Diff (powered by Management API)
+
+Goal: know exactly why a queue conflicts, with machine-readable evidence.
+
+Export live queue definitions and bindings:
+
+# Queues
+curl -su "$RMQ_USER:$RMQ_PASS" "https://$RMQ_HOST/api/queues/%2F" | jq '.[] | select(.name|test("^(q\\.|audit\\.|investor\\.|escrow\\.)")) | {name, durable, arguments}'
+# Bindings from exchanges you use
+for ex in payments.topic escrow.saga servicing.direct notifications.topic; do
+  curl -su "$RMQ_USER:$RMQ_PASS" "https://$RMQ_HOST/api/bindings/%2F/e/$ex" | jq '.[] | {source,destination,destination_type,routing_key,arguments}'
+done
+
+
+Normalize and diff with your topology.ts canonical spec:
+
+Sort and stringify arguments; treat absent vs null consistently.
+
+Flag differences: x-queue-type, DLX, delivery limits, lazy mode, max-length, etc.
+
+Produce a report (JSON) that lists, per queue:
+
+exists: true/false
+
+args_match: true/false
+
+diff: { expected: {...}, actual: {...} }
+
+messages, messages_unacknowledged (to decide if safe to drop)
+
+This report feeds the migration tool.
+
+Part C — Canonical Topology (enforce consistently)
+
+Use one spec. Examples (adjust names to your repo):
+
+Business queues (quorum + DLX + delivery cap):
+
+{
+  "durable": true,
+  "arguments": {
+    "x-queue-type": "quorum",
+    "x-dead-letter-exchange": "escrow.dlq",   // per domain DLX
+    "x-delivery-limit": 6
+  }
+}
+
+
+Audit queue (lazy + large max-length):
+
+{
+  "durable": true,
+  "arguments": {
+    "x-queue-mode": "lazy",
+    "x-max-length": 10000000
+  }
+}
+
+
+Bindings (examples):
+
+q.schedule.disbursement(.v2) ← escrow.saga keys: disbursement.schedule, disbursement.retry
+
+q.forecast(.v2) ← escrow.saga key: forecast.retry
+
+q.escrow.analysis(.v2) ← escrow.saga keys: analysis.start, analysis.retry
+
+Document these in one place (topology.ts) and never diverge.
+
+Part D — Migration Tool (safe replacement or versioning)
+
+Create scripts/migrate-queues.ts that:
+
+Reads the forensic diff JSON.
+
+For each conflicting queue:
+
+If empty (messages == 0 && messages_unacknowledged == 0), delete it and declare with canonical args under the same name; rebind.
+
+If not empty, declare <name>.v2 with canonical args; rebind .v2; move consumers to .v2; leave the old one to drain; delete later.
+
+Pseudocode:
+
+type QueueSpec = { name: string; args: Record<string, any>; bindings: { exchange: string; rk: string }[] };
+
+async function migrateQueue(spec: QueueSpec, live: LiveQueue) {
+  const differs = !deepEqual(normalize(live.arguments), normalize(spec.args));
+  if (!differs) return;
+
+  const empty = (live.messages === 0 && live.messages_unacknowledged === 0);
+  if (empty) {
+    await deleteQueue(live.name);
+    await declareQueue(spec.name, spec.args);
+    await bindAll(spec.name, spec.bindings);
+    log.info({ q: spec.name }, 'Re-declared with canonical args');
+  } else {
+    const v2 = `${spec.name}.v2`;
+    await declareQueue(v2, spec.args);
+    await bindAll(v2, spec.bindings);
+    log.warn({ q: spec.name, v2 }, 'Created .v2 due to arg mismatch and non-empty queue; cutover required');
+  }
+}
+
+
+Wire it to npm run migrate-queues.
+
+Part E — Topology Application (robust)
+
+Replace the monolithic “apply topology” with resilient building blocks:
+
+async function declareExchangeSafe(conn, name, type, opts) {
+  return withAdminChannel(conn, ch => ch.assertExchange(name, type, opts).catch(err => handleDeclErr('exchange', name, err)));
+}
+
+async function declareQueueSafe(conn, name, opts) {
+  return withAdminChannel(conn, async ch => {
+    try { await ch.assertQueue(name, opts); }
+    catch (err:any) {
+      if (err.code === 406) { log.warn({ name, opts }, 'Queue arg conflict; skipping'); return { conflict:true }; }
+      throw err;
+    }
+  });
+}
+
+async function bindQueueSafe(conn, q, ex, rk) {
+  return withAdminChannel(conn, ch => ch.bindQueue(q, ex, rk).catch(err => handleDeclErr('bind', `${q} -> ${ex}:${rk}`, err)));
+}
+
+
+Rules:
+
+Always continue after a conflict.
+
+Never run declarations on publisher/consumer channels.
+
+Log one concise line per entity (status=ok/conflict/error).
+
+Part F — CI/Pre-Deploy Guardrails
+
+Topology validator (CI job):
+
+Fails the build if any queue/exchange/binding in topology.ts differs from the broker’s state in staging.
+
+Output the same JSON diff used by the migration tool.
+
+Block “skip” PRs:
+
+Forbid commenting out declarations in topology to “make it work.”
+
+Require either a migration or a .v2 addition with a cutover plan.
+
+Post-deploy check:
+
+After each release, run validator against staging/prod and archive the diff.
+
+Part G — Cutover Checklist (per conflicting queue)
+
+Create .v2 with canonical args and bindings.
+
+Switch consumers to .v2.
+
+Verify old queue depth is zero for 24–48h.
+
+Unbind and delete old queue.
+
+Optionally rename .v2 back to the base name during a window, or keep versioned names if you prefer immutable infrastructure semantics.
+
+Part H — Acceptance Criteria (observable)
+
+No PRECONDITION_FAILED or IllegalOperationError: Channel closed during topology application.
+
+All domain queues exist with canonical args, and all bindings present.
+
+DLQs exist and receive messages when you force a handler error.
+
+Consumers on .v2 queues process events end-to-end (e.g., publish analysis.start and verify processing).
+
+CI validator returns “no drift” for staging and prod.
+
+Migration tool reports zero remaining conflicts.
+
+Appendix — What to do with the specific errors you posted
+
+q.escrow.analysis
+
+Declare q.escrow.analysis.v2 with canonical args (quorum, DLX, delivery-limit).
+
+Bind to escrow.saga with required keys (analysis.start, analysis.retry, etc.).
+
+Point escrow analysis consumers at .v2.
+
+After drain, delete the legacy q.escrow.analysis.
+
+q.forecast
+
+You already created q.forecast.v2 and bound to escrow.saga:forecast.retry.
+
+Verify all expected bindings exist; point consumers to .v2; drain and delete the legacy queue.
+
+“Retrying topology setup with publisher channel”
+
+Remove this behavior. Use admin channels only for declarations.
+
+Repeated reconnections
+
+These are side effects of 406 channel closures while on a shared channel. Once admin-channel isolation is in, reconnection storms will stop.
