@@ -143,7 +143,7 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     });
     
     // Escrow analysis queue
-    await ch.assertQueue("q.escrow.analysis", { 
+    await ch.assertQueue("q.escrow.analysis.v2", { 
       durable: true,
       arguments: {
         "x-dead-letter-exchange": "escrow.dlq",
@@ -213,8 +213,8 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     await ch.bindQueue("q.schedule.disbursement", "escrow.saga", "disbursement.retry");
     
     // Bind escrow analysis queue
-    await ch.bindQueue("q.escrow.analysis", "escrow.saga", "analysis.request");
-    await ch.bindQueue("q.escrow.analysis", "escrow.saga", "analysis.retry");
+    await ch.bindQueue("q.escrow.analysis.v2", "escrow.saga", "analysis.request");
+    await ch.bindQueue("q.escrow.analysis.v2", "escrow.saga", "analysis.retry");
     
     // Bind escrow DLQ - catch all failures
     await ch.bindQueue("q.escrow.dlq", "escrow.dlq", "#");

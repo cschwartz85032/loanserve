@@ -25,9 +25,9 @@ async function bindEscrowQueues() {
     console.log('[Escrow] Bindings created for q.schedule.disbursement');
     
     // Create bindings for analysis queue
-    await channel.bindQueue('q.escrow.analysis', 'escrow.saga', 'analysis.request');
-    await channel.bindQueue('q.escrow.analysis', 'escrow.saga', 'analysis.retry');
-    console.log('[Escrow] Bindings created for q.escrow.analysis');
+    await channel.bindQueue('q.escrow.analysis.v2', 'escrow.saga', 'analysis.request');
+    await channel.bindQueue('q.escrow.analysis.v2', 'escrow.saga', 'analysis.retry');
+    console.log('[Escrow] Bindings created for q.escrow.analysis.v2');
     
     console.log('[Escrow] All bindings created successfully!');
     

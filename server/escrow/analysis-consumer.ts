@@ -25,7 +25,7 @@ export class EscrowAnalysisConsumer {
     try {
       await rabbitmq.consume<EscrowAnalysisRequest>(
         {
-          queue: 'q.escrow.analysis',
+          queue: 'q.escrow.analysis.v2',
           prefetch: 5, // Lower prefetch for analysis operations
           consumerTag: this.consumerTag
         },

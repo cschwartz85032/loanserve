@@ -2726,3 +2726,219 @@ export const insertEscrowForecastSchema = createInsertSchema(escrowForecasts).om
 export type InsertEscrowForecast = z.infer<typeof insertEscrowForecastSchema>;
 export type EscrowForecast = typeof escrowForecasts.$inferSelect;
 
+// ========================================
+// Banking and Cash Management Tables
+// All monetary values in minor units (cents) as BIGINT
+// ========================================
+
+// Bank Accounts - Financial institution accounts
+export const bankAccounts = pgTable("bank_accounts", {
+  bankAcctId: uuid("bank_acct_id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  bankId: text("bank_id").notNull(), // Institution identifier
+  accountNumberMask: text("account_number_mask").notNull(), // Last 4 digits
+  accountNumberEncrypted: text("account_number_encrypted"), // Full encrypted account
+  routingNumber: text("routing_number").notNull(),
+  accountType: text("account_type").notNull(), // checking, savings, escrow
+  currency: text("currency").notNull().default('USD'),
+  glCashAccount: text("gl_cash_account").notNull(), // GL account code
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  activeIdx: index("bank_accounts_active_idx").on(t.active),
+  glAccountIdx: index("bank_accounts_gl_idx").on(t.glCashAccount)
+}));
+
+// Bank Transactions - Imported from bank statements
+export const bankTxn = pgTable("bank_txn", {
+  bankTxnId: uuid("bank_txn_id").primaryKey().defaultRandom(),
+  bankAcctId: uuid("bank_acct_id").references(() => bankAccounts.bankAcctId).notNull(),
+  stmtFileId: uuid("stmt_file_id"),
+  transactionDate: date("transaction_date").notNull(),
+  valueDate: date("value_date").notNull(),
+  postDate: date("post_date"),
+  amountMinor: bigint("amount_minor", { mode: 'bigint' }).notNull(), // Positive for credits, negative for debits
+  type: text("type").notNull(), // credit, debit
+  description: text("description").notNull(),
+  reference: text("reference"),
+  checkNumber: text("check_number"),
+  balanceMinor: bigint("balance_minor", { mode: 'bigint' }), // Running balance after transaction
+  status: text("status").notNull().default('unmatched'), // unmatched, matched, reconciled
+  matchedAt: timestamp("matched_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  bankAcctDateIdx: index("bank_txn_acct_date_idx").on(t.bankAcctId, t.transactionDate),
+  statusIdx: index("bank_txn_status_idx").on(t.status),
+  referenceIdx: index("bank_txn_reference_idx").on(t.reference)
+}));
+
+// Bank Statement Files - Track imported files
+export const bankStatementFiles = pgTable("bank_statement_files", {
+  stmtFileId: uuid("stmt_file_id").primaryKey().defaultRandom(),
+  bankAcctId: uuid("bank_acct_id").references(() => bankAccounts.bankAcctId).notNull(),
+  filename: text("filename").notNull(),
+  format: text("format").notNull(), // bai2, mt940, csv, ofx
+  fileHash: text("file_hash").notNull().unique(), // SHA256 for deduplication
+  statementDate: date("statement_date").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  openingBalanceMinor: bigint("opening_balance_minor", { mode: 'bigint' }).notNull(),
+  closingBalanceMinor: bigint("closing_balance_minor", { mode: 'bigint' }).notNull(),
+  transactionCount: integer("transaction_count").notNull(),
+  status: text("status").notNull().default('pending'), // pending, processing, completed, failed
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  errors: jsonb("errors"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  hashIdx: unique().on(t.fileHash),
+  bankAcctDateIdx: index("stmt_files_acct_date_idx").on(t.bankAcctId, t.statementDate)
+}));
+
+// ACH Batch - Groups of ACH transactions
+export const achBatch = pgTable("ach_batch", {
+  achBatchId: uuid("ach_batch_id").primaryKey().defaultRandom(),
+  bankAcctId: uuid("bank_acct_id").references(() => bankAccounts.bankAcctId).notNull(),
+  serviceClass: text("service_class").notNull(), // 200, 220, 225
+  companyId: text("company_id").notNull(),
+  companyName: text("company_name").notNull(),
+  effectiveEntryDate: date("effective_entry_date").notNull(),
+  totalEntries: integer("total_entries").notNull(),
+  totalAmountMinor: bigint("total_amount_minor", { mode: 'bigint' }).notNull(),
+  status: text("status").notNull().default('pending'), // pending, submitted, settled, failed
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  settledAt: timestamp("settled_at", { withTimezone: true }),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  statusIdx: index("ach_batch_status_idx").on(t.status),
+  effectiveDateIdx: index("ach_batch_date_idx").on(t.effectiveEntryDate)
+}));
+
+// ACH Entry - Individual ACH transactions
+export const achEntry = pgTable("ach_entry", {
+  achEntryId: uuid("ach_entry_id").primaryKey().defaultRandom(),
+  achBatchId: uuid("ach_batch_id").references(() => achBatch.achBatchId).notNull(),
+  loanId: integer("loan_id").references(() => loans.id),
+  txnCode: text("txn_code").notNull(), // 22, 27, 32, 37
+  rdfiRouting: text("rdfi_routing").notNull(),
+  ddaAccountMask: text("dda_account_mask").notNull(), // Last 4 digits
+  amountMinor: bigint("amount_minor", { mode: 'bigint' }).notNull(),
+  traceNumber: text("trace_number").notNull().unique(),
+  individualName: text("individual_name").notNull(),
+  addenda: text("addenda"),
+  status: text("status").notNull().default('pending'), // pending, sent, settled, returned
+  idempotencyKey: text("idempotency_key").unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  batchIdx: index("ach_entry_batch_idx").on(t.achBatchId),
+  loanIdx: index("ach_entry_loan_idx").on(t.loanId),
+  traceIdx: unique().on(t.traceNumber)
+}));
+
+// ACH Returns - Track returned ACH transactions
+export const achReturns = pgTable("ach_returns", {
+  achReturnId: uuid("ach_return_id").primaryKey().defaultRandom(),
+  achEntryId: uuid("ach_entry_id").references(() => achEntry.achEntryId).notNull(),
+  returnCode: text("return_code").notNull(), // R01, R02, etc.
+  returnReason: text("return_reason").notNull(),
+  returnDate: date("return_date").notNull(),
+  amountMinor: bigint("amount_minor", { mode: 'bigint' }).notNull(),
+  traceNumber: text("trace_number").notNull(),
+  processed: boolean("processed").notNull().default(false),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  entryIdx: index("ach_return_entry_idx").on(t.achEntryId),
+  processedIdx: index("ach_return_processed_idx").on(t.processed)
+}));
+
+// Cash Match Candidates - For reconciliation
+export const cashMatchCandidates = pgTable("cash_match_candidates", {
+  candidateId: uuid("candidate_id").primaryKey().defaultRandom(),
+  bankTxnId: uuid("bank_txn_id").references(() => bankTxn.bankTxnId).notNull(),
+  eventId: uuid("event_id").notNull(), // Reference to ledger event
+  score: integer("score").notNull(), // Confidence score 0-100
+  matchReason: text("match_reason").notNull(),
+  amountVarianceMinor: bigint("amount_variance_minor", { mode: 'bigint' }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  bankTxnIdx: index("match_candidate_txn_idx").on(t.bankTxnId),
+  scoreIdx: index("match_candidate_score_idx").on(t.score)
+}));
+
+// Reconciliation Exceptions - Unmatched transactions
+export const reconExceptions = pgTable("recon_exceptions", {
+  exceptionId: uuid("exception_id").primaryKey().defaultRandom(),
+  bankTxnId: uuid("bank_txn_id").references(() => bankTxn.bankTxnId),
+  category: text("category").notNull(), // ach_return, nsf, wire_recall, duplicate, dispute
+  subcategory: text("subcategory"),
+  severity: text("severity").notNull(), // low, medium, high, critical
+  state: text("state").notNull().default('open'), // open, pending, resolved, cancelled
+  assignedTo: integer("assigned_to").references(() => users.id),
+  aiRecommendation: jsonb("ai_recommendation"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  stateIdx: index("recon_exception_state_idx").on(t.state),
+  severityIdx: index("recon_exception_severity_idx").on(t.severity)
+}));
+
+// Export types for banking tables
+export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({
+  bankAcctId: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertBankAccount = z.infer<typeof insertBankAccountSchema>;
+export type BankAccount = typeof bankAccounts.$inferSelect;
+
+export const insertBankTxnSchema = createInsertSchema(bankTxn).omit({
+  bankTxnId: true,
+  createdAt: true
+});
+export type InsertBankTxn = z.infer<typeof insertBankTxnSchema>;
+export type BankTxn = typeof bankTxn.$inferSelect;
+
+export const insertBankStatementFileSchema = createInsertSchema(bankStatementFiles).omit({
+  stmtFileId: true,
+  createdAt: true
+});
+export type InsertBankStatementFile = z.infer<typeof insertBankStatementFileSchema>;
+export type BankStatementFile = typeof bankStatementFiles.$inferSelect;
+
+export const insertAchBatchSchema = createInsertSchema(achBatch).omit({
+  achBatchId: true,
+  createdAt: true
+});
+export type InsertAchBatch = z.infer<typeof insertAchBatchSchema>;
+export type AchBatch = typeof achBatch.$inferSelect;
+
+export const insertAchEntrySchema = createInsertSchema(achEntry).omit({
+  achEntryId: true,
+  createdAt: true
+});
+export type InsertAchEntry = z.infer<typeof insertAchEntrySchema>;
+export type AchEntry = typeof achEntry.$inferSelect;
+
+export const insertAchReturnSchema = createInsertSchema(achReturns).omit({
+  achReturnId: true,
+  createdAt: true
+});
+export type InsertAchReturn = z.infer<typeof insertAchReturnSchema>;
+export type AchReturn = typeof achReturns.$inferSelect;
+
+export const insertCashMatchCandidateSchema = createInsertSchema(cashMatchCandidates).omit({
+  candidateId: true,
+  createdAt: true
+});
+export type InsertCashMatchCandidate = z.infer<typeof insertCashMatchCandidateSchema>;
+export type CashMatchCandidate = typeof cashMatchCandidates.$inferSelect;
+
+export const insertReconExceptionSchema = createInsertSchema(reconExceptions).omit({
+  exceptionId: true,
+  createdAt: true
+});
+export type InsertReconException = z.infer<typeof insertReconExceptionSchema>;
+export type ReconException = typeof reconExceptions.$inferSelect;
+

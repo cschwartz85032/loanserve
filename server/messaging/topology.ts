@@ -548,9 +548,9 @@ export class OptimizedTopologyManager extends TopologyManager {
         ],
       });
       
-      // Escrow analysis queue
+      // Escrow analysis queue (versioned to avoid conflicts)
       this.addQueue({
-        name: 'q.escrow.analysis',
+        name: 'q.escrow.analysis.v2',
         durable: true,
         arguments: {
           'x-queue-type': 'quorum',

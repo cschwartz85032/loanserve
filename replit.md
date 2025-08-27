@@ -88,3 +88,40 @@ Preferred communication style: Simple, everyday language.
 - **Rate Limiting**: Built-in rate limiting for API endpoints
 - **Data Validation**: Comprehensive input validation and sanitization
 - **Audit Trails**: Complete activity logging for regulatory compliance
+
+# Recent Database Changes (January 2025)
+
+## Completed Database Remediation Steps
+
+### Added Double-Entry Ledger Tables
+- `general_ledger_events` - Transaction headers with event tracking
+- `general_ledger_entries` - Double-entry line items with BIGINT minor units
+- Replaces single-entry `loan_ledger` with proper accounting
+
+### Added Missing Core Tables
+- `loan_terms` - Time-bounded loan pricing and structural terms
+- `loan_balances` - Fast snapshot table for dashboard queries  
+- `escrow_forecasts` - Deterministic monthly projections
+
+### Added Banking/Cash Management Tables
+- `bank_accounts` - Financial institution accounts
+- `bank_txn` - Imported bank transactions (canonical, replaces bank_transactions)
+- `bank_statement_files` - Track imported statements with deduplication
+- `ach_batch`, `ach_entry`, `ach_returns` - ACH transaction management
+- `cash_match_candidates`, `recon_exceptions` - Reconciliation support
+
+### Key Principles Applied
+- All monetary values stored as BIGINT in minor units (cents)
+- Proper double-entry accounting with invariant checks
+- Append-only audit trail
+- UUID primary keys for new financial tables
+
+### Queue Versioning Strategy
+- Implemented versioned queues (.v2 suffix) to avoid CloudAMQP conflicts
+- Updated consumers to use new queue names (q.forecast.v2, q.schedule.disbursement.v2)
+- Created safe channel operations to prevent topology failures
+
+### Existing Tables Preserved
+- `audit_logs` (not audit_log) - Current audit system retained
+- `escrow_analysis`, `investor_positions`, `remittance_cycle` - Already exist in DB
+- Existing ID columns unchanged to avoid breaking migrations

@@ -48,14 +48,14 @@ async function createEscrowQueues() {
     console.log('[Escrow] Queue created: q.schedule.disbursement');
     
     // Analysis queue
-    await channel.assertQueue('q.escrow.analysis', {
+    await channel.assertQueue('q.escrow.analysis.v2', {
       durable: true,
       arguments: {
         'x-dead-letter-exchange': 'escrow.dlq',
         'x-dead-letter-routing-key': 'analysis.failed'
       }
     });
-    console.log('[Escrow] Queue created: q.escrow.analysis');
+    console.log('[Escrow] Queue created: q.escrow.analysis.v2');
     
     // Escrow DLQ
     await channel.assertQueue('q.escrow.dlq', {
@@ -77,9 +77,9 @@ async function createEscrowQueues() {
     await channel.bindQueue('q.schedule.disbursement', 'escrow.saga', 'disbursement.retry');
     console.log('[Escrow] Bindings created for q.schedule.disbursement');
     
-    await channel.bindQueue('q.escrow.analysis', 'escrow.saga', 'analysis.request');
-    await channel.bindQueue('q.escrow.analysis', 'escrow.saga', 'analysis.retry');
-    console.log('[Escrow] Bindings created for q.escrow.analysis');
+    await channel.bindQueue('q.escrow.analysis.v2', 'escrow.saga', 'analysis.request');
+    await channel.bindQueue('q.escrow.analysis.v2', 'escrow.saga', 'analysis.retry');
+    console.log('[Escrow] Bindings created for q.escrow.analysis.v2');
     
     await channel.bindQueue('q.escrow.dlq', 'escrow.dlq', '#');
     console.log('[Escrow] Bindings created for q.escrow.dlq');

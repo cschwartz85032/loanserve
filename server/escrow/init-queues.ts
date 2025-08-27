@@ -50,7 +50,7 @@ export async function initializeEscrowQueues(): Promise<void> {
         }
       },
       {
-        name: 'q.escrow.analysis',
+        name: 'q.escrow.analysis.v2',
         durable: true,
         arguments: {
           'x-dead-letter-exchange': 'escrow.dlq',
@@ -86,8 +86,8 @@ export async function initializeEscrowQueues(): Promise<void> {
       { queue: 'q.schedule.disbursement.v2', exchange: 'escrow.saga', routingKey: 'disbursement.retry' },
       
       // Analysis bindings
-      { queue: 'q.escrow.analysis', exchange: 'escrow.saga', routingKey: 'analysis.request' },
-      { queue: 'q.escrow.analysis', exchange: 'escrow.saga', routingKey: 'analysis.retry' },
+      { queue: 'q.escrow.analysis.v2', exchange: 'escrow.saga', routingKey: 'analysis.request' },
+      { queue: 'q.escrow.analysis.v2', exchange: 'escrow.saga', routingKey: 'analysis.retry' },
       
       // DLQ bindings
       { queue: 'q.escrow.dlq.v2', exchange: 'escrow.dlq', routingKey: '#' } // Catch all failures
