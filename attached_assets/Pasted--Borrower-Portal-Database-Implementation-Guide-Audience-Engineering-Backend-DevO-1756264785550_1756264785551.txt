@@ -1,0 +1,907 @@
+
+
+
+
+# Borrower Portal Database Implementation Guide
+
+**Audience:** Engineering (Backend + DevOps + DBA)
+**Purpose:** Step?by?step instructions to implement the database structures required for the Borrower Portal (v1.0 spec).
+
+---
+
+## 0) Assumptions
+
+* **DBMS:** PostgreSQL ? 14 (preferred for JSONB, row?level security, partitions).
+* **ORM:** Prisma/TypeORM/Sequelize depending on current stack. Examples below use PostgreSQL DDL.
+* **Conventions:**
+
+  * `snake_case` for tables and columns.
+  * `id` is `UUID` (v4) primary key unless otherwise specified.
+  * `created_at` and `updated_at` are `TIMESTAMPTZ` with default `now()`.
+  * Foreign keys use `ON DELETE CASCADE` unless sensitive (then `ON DELETE RESTRICT`).
+
+---
+
+## 1) Borrower Users
+
+**Purpose:** Map authenticated portal users to borrower entities.
+
+```sql
+CREATE TABLE borrower_users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  borrower_entity_id UUID NOT NULL REFERENCES borrower_entities(id) ON DELETE CASCADE,
+  email CITEXT NOT NULL UNIQUE,
+  phone VARCHAR(20),
+  password_hash TEXT NOT NULL,
+  mfa_enabled BOOLEAN DEFAULT FALSE,
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_borrower_users_entity ON borrower_users(borrower_entity_id);
+```
+
+---
+
+## 2) Loan ? Borrower Links
+
+**Purpose:** Relates loans to borrower entities, captures role and permissions.
+
+```sql
+CREATE TABLE loan_borrower_links (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  borrower_entity_id UUID NOT NULL REFERENCES borrower_entities(id) ON DELETE CASCADE,
+  role VARCHAR(20) NOT NULL CHECK (role IN ('primary','co','authorized')),
+  invited_user_id UUID REFERENCES borrower_users(id),
+  permissions JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE UNIQUE INDEX uniq_loan_borrower_role ON loan_borrower_links(loan_id, borrower_entity_id, role);
+```
+
+---
+
+## 3) Payment Methods
+
+**Purpose:** Vault references to processor tokens.
+
+```sql
+CREATE TABLE payment_methods (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  borrower_user_id UUID NOT NULL REFERENCES borrower_users(id) ON DELETE CASCADE,
+  processor_token TEXT NOT NULL,
+  type VARCHAR(20) NOT NULL CHECK (type IN ('ach','card')),
+  last4 VARCHAR(4),
+  brand VARCHAR(20),
+  exp_month SMALLINT,
+  exp_year SMALLINT,
+  name_on_account VARCHAR(100),
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_payment_methods_user ON payment_methods(borrower_user_id);
+```
+
+---
+
+## 4) Payments
+
+**Purpose:** Tracks borrower payments end?to?end.
+
+```sql
+CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  borrower_user_id UUID NOT NULL REFERENCES borrower_users(id) ON DELETE CASCADE,
+  amount_total NUMERIC(12,2) NOT NULL,
+  amount_to_principal NUMERIC(12,2) DEFAULT 0,
+  amount_to_interest NUMERIC(12,2) DEFAULT 0,
+  amount_to_escrow NUMERIC(12,2) DEFAULT 0,
+  amount_to_fees NUMERIC(12,2) DEFAULT 0,
+  method_id UUID REFERENCES payment_methods(id),
+  channel VARCHAR(20) NOT NULL CHECK (channel IN ('portal','autopay','phone')),
+  initiated_at TIMESTAMPTZ DEFAULT now(),
+  status VARCHAR(20) NOT NULL CHECK (status IN ('initiated','processing','posted','returned','void')),
+  posted_at TIMESTAMPTZ,
+  return_code VARCHAR(10),
+  idempotency_key UUID NOT NULL,
+  receipt_number VARCHAR(50) UNIQUE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_payments_loan ON payments(loan_id);
+CREATE INDEX idx_payments_user ON payments(borrower_user_id);
+```
+
+---
+
+## 5) Autopay Enrollments
+
+**Purpose:** Stores borrower autopay configurations.
+
+```sql
+CREATE TABLE autopay_enrollments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  borrower_user_id UUID NOT NULL REFERENCES borrower_users(id) ON DELETE CASCADE,
+  method_id UUID NOT NULL REFERENCES payment_methods(id),
+  mode VARCHAR(20) NOT NULL CHECK (mode IN ('amount_due','fixed')),
+  fixed_amount NUMERIC(12,2),
+  extra_principal NUMERIC(12,2),
+  day_of_month SMALLINT CHECK (day_of_month BETWEEN 1 AND 28),
+  pre_notify_days SMALLINT DEFAULT 3,
+  skip_threshold NUMERIC(12,2),
+  status VARCHAR(20) DEFAULT 'active',
+  next_run_at TIMESTAMPTZ,
+  consent_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+---
+
+## 6) Documents
+
+**Purpose:** Metadata for borrower and servicer docs.
+
+```sql
+CREATE TABLE documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  owner VARCHAR(20) NOT NULL CHECK (owner IN ('servicer','borrower')),
+  type VARCHAR(50),
+  title VARCHAR(200),
+  storage_key TEXT NOT NULL,
+  hash TEXT,
+  size BIGINT,
+  created_by UUID,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  visible_to_borrower BOOLEAN DEFAULT TRUE,
+  expires_at TIMESTAMPTZ
+);
+CREATE INDEX idx_documents_loan ON documents(loan_id);
+```
+
+---
+
+## 7) Messaging
+
+**Purpose:** Secure communication threads.
+
+```sql
+CREATE TABLE messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID REFERENCES loans(id) ON DELETE CASCADE,
+  subject VARCHAR(200),
+  category VARCHAR(50),
+  status VARCHAR(20) DEFAULT 'open',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE message_posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  author_id UUID REFERENCES borrower_users(id),
+  body TEXT NOT NULL,
+  attachments JSONB,
+  visibility VARCHAR(20) DEFAULT 'public',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+---
+
+## 8) Notices
+
+**Purpose:** Alerts and notifications.
+
+```sql
+CREATE TABLE notices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id UUID NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+  type VARCHAR(50) NOT NULL,
+  payload_json JSONB,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  read_at TIMESTAMPTZ,
+  delivery_channels VARCHAR(50)[]
+);
+```
+
+---
+
+## 9) Preferences
+
+**Purpose:** Borrower communication and statement preferences.
+
+```sql
+CREATE TABLE preferences (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  borrower_user_id UUID NOT NULL REFERENCES borrower_users(id) ON DELETE CASCADE,
+  notifications JSONB,
+  language VARCHAR(10) DEFAULT 'en',
+  statement_delivery VARCHAR(20) DEFAULT 'paperless',
+  paperless_consent BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+---
+
+## 10) Audits
+
+**Purpose:** Full change log for sensitive actions.
+
+```sql
+CREATE TABLE audits (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity VARCHAR(50) NOT NULL,
+  entity_id UUID NOT NULL,
+  actor_id UUID,
+  action VARCHAR(50) NOT NULL,
+  diff_json JSONB,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  ip INET,
+  device VARCHAR(100)
+);
+CREATE INDEX idx_audits_entity ON audits(entity, entity_id);
+```
+
+---
+
+## 11) Implementation Checklist
+
+1. Apply migrations in a new branch using Flyway/Liquibase.
+2. Run migrations against staging; validate with seed data.
+3. Integrate ORM models and generate types.
+4. Add unit tests for constraints (role enums, autopay day limits).
+5. Load test payments/transactions tables for performance.
+6. Enable partitioning for `payments` (monthly or by loan\_id) if >10M rows expected.
+7. Add RLS (Row Level Security) policies for `borrower_users` to ensure isolation.
+8. Set up backup schedule (daily full, hourly WAL). Retain 7y for compliance.
+9. Verify audit trail cannot be altered except by superadmin.
+10. Deploy with feature flags to match portal rollout.
+
+---
+
+## 12) Future Enhancements
+
+* Partition `documents` by year.
+* Add FTS (Full Text Search) index on `messages.body`.
+* Add event sourcing layer for disputes.
+* Encrypt sensitive PII columns (phone, email) with pgcrypto.
+
+
+
+
+
+
+
+# Borrower Portal Database Implementation Plan (PostgreSQL)
+
+**Owner:** Engineering · DeltaQuant Loan Servicing
+**Target DB:** PostgreSQL 15+ (UUID + RLS + JSONB + GENERATED IDENTITY)
+**Timezone:** America/Phoenix (store `timestamptz`; render with explicit TZ)
+
+> This guide is a step?by?step implementation runbook for all *new* database structures the Borrower Portal requires. It assumes existing core tables like `loans` and `borrower_entities` already exist. Execute in order, inside a single migration (or split by phases as noted). All DDL is idempotent.
+
+---
+
+## 0) Conventions & Prereqs
+
+* **Schema:** `servicing_portal` (all borrower?portal objects live here).
+* **Naming:** snake\_case; PK `id`; FK `<referenced>_id`; created/updated timestamps `created_at`/`updated_at` (defaults to `now()`).
+* **IDs:** `uuid` v4 via `gen_random_uuid()` (requires `pgcrypto`) or identity `bigint`—we use `uuid`.
+* **Money:** Use `numeric(18,2)` for currency amounts; per?diem as `numeric(18,6)`.
+* **Booleans:** Prefer explicit flags over tri?states.
+* **Soft delete:** Use `deleted_at timestamptz` where helpful (not widely needed in v1).
+* **RLS:** Enabled on borrower?visible tables; app sets `app.current_borrower_user_id` and `app.current_borrower_entity_id` GUCs.
+
+### 0.1 Enable Extensions
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS btree_gin;  -- composite GIN ops if needed
+```
+
+### 0.2 Create Schema
+
+```sql
+CREATE SCHEMA IF NOT EXISTS servicing_portal;
+```
+
+---
+
+## 1) Enumerated Types (or Lookup Tables)
+
+Using PostgreSQL enums for strong constraints and simple queries.
+
+```sql
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.payment_status AS ENUM ('initiated','processing','posted','returned','void');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.payment_channel AS ENUM ('portal','autopay','phone','mail');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.payment_method_type AS ENUM ('ach','debit_card','credit_card');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.autopay_mode AS ENUM ('amount_due','fixed');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.document_owner AS ENUM ('servicer','borrower');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.document_type AS ENUM (
+    'statement','form_1098','escrow_analysis','notice','legal','note','deed','rider','misc_upload'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.message_status AS ENUM ('open','waiting_on_borrower','resolved','closed');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.message_category AS ENUM ('payment','escrow','payoff','hardship','general','dispute');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE servicing_portal.notice_type AS ENUM (
+    'past_due','returned_payment','escrow_shortage','escrow_surplus','new_statement','insurance_lapse','maturity_approaching','rate_change','autopay_failure','document_posted'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+```
+
+---
+
+## 2) Core Tables
+
+> Foreign keys assume existing `public.loans(id uuid)` and `public.borrower_entities(id uuid)` and an auth map table (see §2.1).
+
+### 2.1 Borrower Users (portal identities ? borrower entities)
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.borrower_users (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  borrower_entity_id  uuid NOT NULL REFERENCES public.borrower_entities(id),
+  email               citext NOT NULL,
+  phone               text,
+  mfa_enabled         boolean NOT NULL DEFAULT false,
+  status              text NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_borrower_users_entity_email
+  ON servicing_portal.borrower_users (borrower_entity_id, email);
+```
+
+> **Note:** Passwords & auth are handled by the existing auth service; `borrower_users` maps identities into servicing context.
+
+### 2.2 Loan ? Borrower Links
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.loan_borrower_links (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id             uuid NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+  borrower_entity_id  uuid NOT NULL REFERENCES public.borrower_entities(id) ON DELETE CASCADE,
+  role                text NOT NULL CHECK (role IN ('primary','co','authorized')),
+  invited_user_id     uuid REFERENCES servicing_portal.borrower_users(id),
+  permissions         jsonb NOT NULL DEFAULT '{}'::jsonb, -- optional scoped overrides
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, borrower_entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_lbl_borrower ON servicing_portal.loan_borrower_links (borrower_entity_id);
+CREATE INDEX IF NOT EXISTS ix_lbl_loan     ON servicing_portal.loan_borrower_links (loan_id);
+```
+
+### 2.3 Payment Methods (tokenized by processor)
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.payment_methods (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  borrower_user_id    uuid NOT NULL REFERENCES servicing_portal.borrower_users(id) ON DELETE CASCADE,
+  type                servicing_portal.payment_method_type NOT NULL,
+  processor_token     text NOT NULL, -- vaulted token (no PAN/ABA stored)
+  last4               text NOT NULL,
+  brand               text,          -- e.g., 'visa', bank name for ACH
+  exp_month           smallint,      -- cards
+  exp_year            smallint,      -- cards
+  name_on_account     text,
+  status              text NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (borrower_user_id, processor_token)
+);
+
+CREATE INDEX IF NOT EXISTS ix_pm_user ON servicing_portal.payment_methods (borrower_user_id);
+```
+
+### 2.4 Payments
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.payments (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id              uuid NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+  borrower_user_id     uuid NOT NULL REFERENCES servicing_portal.borrower_users(id),
+  method_id            uuid REFERENCES servicing_portal.payment_methods(id),
+  channel              servicing_portal.payment_channel NOT NULL DEFAULT 'portal',
+  status               servicing_portal.payment_status NOT NULL DEFAULT 'initiated',
+  initiated_at         timestamptz NOT NULL DEFAULT now(),
+  posted_at            timestamptz,
+  amount_total         numeric(18,2) NOT NULL CHECK (amount_total > 0),
+  amount_to_principal  numeric(18,2) NOT NULL DEFAULT 0,
+  amount_to_interest   numeric(18,2) NOT NULL DEFAULT 0,
+  amount_to_escrow     numeric(18,2) NOT NULL DEFAULT 0,
+  amount_to_fees       numeric(18,2) NOT NULL DEFAULT 0,
+  return_code          text,      -- ACH return code e.g., R01; card chargeback code
+  memo                 text,
+  idempotency_key      text,      -- from client to avoid double charge
+  receipt_number       text,      -- human?readable receipt (e.g., YYMM?####)
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  CHECK (amount_to_principal + amount_to_interest + amount_to_escrow + amount_to_fees = amount_total)
+);
+
+CREATE INDEX IF NOT EXISTS ix_payments_loan_created ON servicing_portal.payments (loan_id, initiated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_idem_per_loan
+  ON servicing_portal.payments (loan_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_payments_status ON servicing_portal.payments (status);
+```
+
+### 2.5 Autopay Enrollments
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.autopay_enrollments (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id           uuid NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+  borrower_user_id  uuid NOT NULL REFERENCES servicing_portal.borrower_users(id) ON DELETE CASCADE,
+  method_id         uuid NOT NULL REFERENCES servicing_portal.payment_methods(id),
+  mode              servicing_portal.autopay_mode NOT NULL,
+  fixed_amount      numeric(18,2),              -- required when mode='fixed'
+  extra_principal   numeric(18,2) DEFAULT 0,    -- optional add?on
+  day_of_month      smallint,                   -- 1?28 for fixed mode
+  pre_notify_days   smallint NOT NULL DEFAULT 3,
+  skip_threshold    numeric(18,2),              -- skip if amount due exceeds
+  status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','cancelled')),
+  next_run_at       timestamptz,
+  consent_hash      text NOT NULL,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+
+-- One active enrollment per (loan) to avoid double drafts
+CREATE UNIQUE INDEX IF NOT EXISTS ux_autopay_active_per_loan
+  ON servicing_portal.autopay_enrollments (loan_id)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS ix_autopay_next_run ON servicing_portal.autopay_enrollments (next_run_at);
+```
+
+### 2.6 Documents (Borrower?visible & internal)
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.documents (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id            uuid REFERENCES public.loans(id) ON DELETE CASCADE,
+  owner              servicing_portal.document_owner NOT NULL,
+  type               servicing_portal.document_type NOT NULL,
+  title              text NOT NULL,
+  storage_key        text NOT NULL,  -- bucket/path or provider key
+  hash               text,           -- sha256 or similar for integrity
+  size               bigint,         -- bytes
+  visible_to_borrower boolean NOT NULL DEFAULT true,
+  expires_at         timestamptz,
+  created_by         uuid,           -- staff user id or borrower_user_id
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ix_docs_loan_type ON servicing_portal.documents (loan_id, type);
+CREATE INDEX IF NOT EXISTS ix_docs_created ON servicing_portal.documents (created_at DESC);
+```
+
+### 2.7 Messaging (Threads, Participants, Posts, Attachments)
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.message_threads (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id      uuid REFERENCES public.loans(id) ON DELETE SET NULL,
+  subject      text NOT NULL,
+  category     servicing_portal.message_category NOT NULL,
+  status       servicing_portal.message_status NOT NULL DEFAULT 'open',
+  created_by_borrower_user_id uuid REFERENCES servicing_portal.borrower_users(id),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS servicing_portal.message_participants (
+  thread_id    uuid NOT NULL REFERENCES servicing_portal.message_threads(id) ON DELETE CASCADE,
+  borrower_user_id uuid,        -- borrower?side participant
+  staff_user_id    uuid,        -- internal participant (FK to staff users table if available)
+  PRIMARY KEY (thread_id, borrower_user_id, staff_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS servicing_portal.message_posts (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id    uuid NOT NULL REFERENCES servicing_portal.message_threads(id) ON DELETE CASCADE,
+  author_borrower_user_id uuid,  -- exactly one of author_* is non?null
+  author_staff_user_id    uuid,
+  body         text NOT NULL,
+  is_internal  boolean NOT NULL DEFAULT false,  -- staff?only notes
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS servicing_portal.message_attachments (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id      uuid NOT NULL REFERENCES servicing_portal.message_posts(id) ON DELETE CASCADE,
+  document_id  uuid NOT NULL REFERENCES servicing_portal.documents(id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS ix_msg_thread_updated ON servicing_portal.message_threads (updated_at DESC);
+```
+
+### 2.8 Notices
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.notices (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id         uuid NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+  type            servicing_portal.notice_type NOT NULL,
+  payload_json    jsonb NOT NULL DEFAULT '{}'::jsonb,
+  delivery_channels text[] NOT NULL DEFAULT ARRAY['in_app'],
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  read_at         timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS ix_notices_unread ON servicing_portal.notices (loan_id) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS ix_notices_created ON servicing_portal.notices (created_at DESC);
+```
+
+### 2.9 Preferences (notification, paperless, language)
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.preferences (
+  borrower_user_id uuid PRIMARY KEY REFERENCES servicing_portal.borrower_users(id) ON DELETE CASCADE,
+  data             jsonb NOT NULL DEFAULT '{}'::jsonb, -- {"paperless":true, "channels":{"email":true,"sms":false}, "language":"en"}
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+```
+
+### 2.10 Audit Log (generic)
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.audits (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity      text NOT NULL,          -- table name
+  entity_id   uuid,                   -- affected primary key
+  actor_id    uuid,                   -- borrower_user_id or staff id
+  action      text NOT NULL CHECK (action IN ('insert','update','delete')),
+  diff_json   jsonb NOT NULL,         -- {old:..., new:...}
+  ip          inet,
+  device      text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ix_audit_entity ON servicing_portal.audits (entity, created_at DESC);
+```
+
+### 2.11 Escrow (read models to support portal)
+
+> If not already modeled elsewhere, add minimal read tables.
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.escrow_disbursements (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id     uuid NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+  payee_name  text,
+  category    text CHECK (category IN ('tax','insurance','other')),
+  amount      numeric(18,2) NOT NULL,
+  disbursed_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS servicing_portal.escrow_analyses (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id           uuid NOT NULL REFERENCES public.loans(id) ON DELETE CASCADE,
+  analysis_date     date NOT NULL,
+  current_balance   numeric(18,2) NOT NULL,
+  projected_shortage numeric(18,2) NOT NULL DEFAULT 0,
+  projected_surplus numeric(18,2) NOT NULL DEFAULT 0,
+  document_id       uuid REFERENCES servicing_portal.documents(id),
+  created_at        timestamptz NOT NULL DEFAULT now()
+);
+```
+
+---
+
+## 3) Row?Level Security (RLS)
+
+Enable RLS on borrower?visible tables and create policies driven by session GUCs:
+
+```sql
+ALTER TABLE servicing_portal.loan_borrower_links      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.payment_methods          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.payments                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.autopay_enrollments      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.documents                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.message_threads          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.message_posts            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.message_participants     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.message_attachments      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.notices                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE servicing_portal.preferences              ENABLE ROW LEVEL SECURITY;
+
+-- Helper: app sets these per request after auth
+-- SELECT set_config('app.current_borrower_user_id', '<uuid>', true);
+-- SELECT set_config('app.current_borrower_entity_id','<uuid>', true);
+
+-- Policy: borrower can see rows tied to their borrower_entity_id via links
+CREATE OR REPLACE VIEW servicing_portal.v_borrower_loans AS
+  SELECT loan_id FROM servicing_portal.loan_borrower_links
+  WHERE borrower_entity_id = current_setting('app.current_borrower_entity_id', true)::uuid;
+
+-- Example policy for payments
+CREATE POLICY IF NOT EXISTS p_payments_select ON servicing_portal.payments
+  FOR SELECT USING (
+    loan_id IN (SELECT loan_id FROM servicing_portal.v_borrower_loans)
+  );
+
+CREATE POLICY IF NOT EXISTS p_payments_insert ON servicing_portal.payments
+  FOR INSERT WITH CHECK (
+    loan_id IN (SELECT loan_id FROM servicing_portal.v_borrower_loans)
+    AND borrower_user_id = current_setting('app.current_borrower_user_id', true)::uuid
+  );
+
+-- Repeat analogous SELECT/INSERT/UPDATE policies for other tables tying by loan_id or borrower_user_id.
+```
+
+> **Note:** Staff/admin roles bypass RLS using a separate role with `BYPASSRLS` or by executing as owner functions.
+
+---
+
+## 4) Triggers & Functions
+
+### 4.1 Touch `updated_at`
+
+```sql
+CREATE OR REPLACE FUNCTION servicing_portal.fn_touch_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at := now();
+  RETURN NEW;
+END$$;
+
+CREATE TRIGGER trg_touch_updated_at
+  BEFORE UPDATE ON servicing_portal.borrower_users
+  FOR EACH ROW EXECUTE FUNCTION servicing_portal.fn_touch_updated_at();
+
+-- Apply to other tables with updated_at: payment_methods, payments, autopay_enrollments, message_threads, preferences
+```
+
+### 4.2 Audit Changes (generic)
+
+```sql
+CREATE OR REPLACE FUNCTION servicing_portal.fn_audit_changes() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  v_actor uuid := NULLIF(current_setting('app.current_borrower_user_id', true), '')::uuid;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO servicing_portal.audits(entity, entity_id, actor_id, action, diff_json)
+    VALUES (TG_TABLE_NAME, NEW.id, v_actor, 'insert', jsonb_build_object('new', to_jsonb(NEW)));
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO servicing_portal.audits(entity, entity_id, actor_id, action, diff_json)
+    VALUES (TG_TABLE_NAME, NEW.id, v_actor, 'update', jsonb_build_object('old', to_jsonb(OLD), 'new', to_jsonb(NEW)));
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO servicing_portal.audits(entity, entity_id, actor_id, action, diff_json)
+    VALUES (TG_TABLE_NAME, OLD.id, v_actor, 'delete', jsonb_build_object('old', to_jsonb(OLD)));
+    RETURN OLD;
+  END IF;
+END$$;
+
+-- Attach to sensitive tables
+CREATE TRIGGER trg_audit_payments
+  AFTER INSERT OR UPDATE OR DELETE ON servicing_portal.payments
+  FOR EACH ROW EXECUTE FUNCTION servicing_portal.fn_audit_changes();
+
+CREATE TRIGGER trg_audit_payment_methods
+  AFTER INSERT OR UPDATE OR DELETE ON servicing_portal.payment_methods
+  FOR EACH ROW EXECUTE FUNCTION servicing_portal.fn_audit_changes();
+
+CREATE TRIGGER trg_audit_preferences
+  AFTER INSERT OR UPDATE OR DELETE ON servicing_portal.preferences
+  FOR EACH ROW EXECUTE FUNCTION servicing_portal.fn_audit_changes();
+```
+
+### 4.3 Guard: Autopay — fixed amount requirements
+
+```sql
+CREATE OR REPLACE FUNCTION servicing_portal.fn_autopay_validate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.mode = 'fixed' AND (NEW.fixed_amount IS NULL OR NEW.day_of_month IS NULL) THEN
+    RAISE EXCEPTION 'fixed mode requires fixed_amount and day_of_month';
+  END IF;
+  RETURN NEW;
+END$$;
+
+CREATE TRIGGER trg_autopay_validate
+  BEFORE INSERT OR UPDATE ON servicing_portal.autopay_enrollments
+  FOR EACH ROW EXECUTE FUNCTION servicing_portal.fn_autopay_validate();
+```
+
+### 4.4 Payment allocation sum guard (defense in depth)
+
+(We already have a CHECK, but add a trigger to normalize rounding if needed.)
+
+```sql
+CREATE OR REPLACE FUNCTION servicing_portal.fn_payments_normalize() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  v_sum numeric(18,2);
+BEGIN
+  v_sum := COALESCE(NEW.amount_to_principal,0)+COALESCE(NEW.amount_to_interest,0)+COALESCE(NEW.amount_to_escrow,0)+COALESCE(NEW.amount_to_fees,0);
+  IF v_sum <> NEW.amount_total THEN
+    RAISE EXCEPTION 'allocation (%.2f) must equal amount_total (%.2f)', v_sum, NEW.amount_total;
+  END IF;
+  RETURN NEW;
+END$$;
+
+CREATE TRIGGER trg_payments_normalize
+  BEFORE INSERT OR UPDATE ON servicing_portal.payments
+  FOR EACH ROW EXECUTE FUNCTION servicing_portal.fn_payments_normalize();
+```
+
+---
+
+## 5) Helpful Views
+
+### 5.1 Borrower Dashboard Summary
+
+```sql
+CREATE OR REPLACE VIEW servicing_portal.v_dashboard_summary AS
+SELECT
+  l.id AS loan_id,
+  -- Replace with joins to your balances/due computation source
+  lb.principal_balance,
+  lb.escrow_balance,
+  lb.next_payment_due_date,
+  lb.amount_due,
+  (SELECT EXISTS (
+     SELECT 1 FROM servicing_portal.autopay_enrollments ae
+     WHERE ae.loan_id = l.id AND ae.status='active'
+   )) AS autopay_active
+FROM public.loans l
+JOIN public.loan_balances lb ON lb.loan_id = l.id; -- if you have such a table/view
+```
+
+### 5.2 Unread Notices per Loan
+
+```sql
+CREATE OR REPLACE VIEW servicing_portal.v_unread_notices AS
+SELECT loan_id, count(*) AS unread_count
+FROM servicing_portal.notices
+WHERE read_at IS NULL
+GROUP BY loan_id;
+```
+
+---
+
+## 6) Seeds & Reference Data
+
+Optionally seed document types, categories (enums already enforce). For demo/test, insert a sample borrower user, link, and document.
+
+```sql
+-- Example seed (adjust UUIDs to match fixtures)
+INSERT INTO servicing_portal.preferences(borrower_user_id, data)
+SELECT bu.id, '{"paperless":true,"channels":{"email":true,"sms":false},"language":"en"}'::jsonb
+FROM servicing_portal.borrower_users bu
+ON CONFLICT (borrower_user_id) DO NOTHING;
+```
+
+---
+
+## 7) Grants & Roles (minimal)
+
+> Adjust to your security model. Example: app role for the portal with RLS; admin role with full access.
+
+```sql
+-- CREATE ROLE portal_app NOINHERIT;
+-- GRANT USAGE ON SCHEMA servicing_portal TO portal_app;
+-- GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA servicing_portal TO portal_app;
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA servicing_portal GRANT SELECT, INSERT, UPDATE ON TABLES TO portal_app;
+```
+
+---
+
+## 8) Outbox (Optional, for event?driven)
+
+If you use an outbox pattern for domain events:
+
+```sql
+CREATE TABLE IF NOT EXISTS servicing_portal.event_outbox (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_type   text NOT NULL,
+  aggregate    text NOT NULL,  -- e.g., 'payment'
+  aggregate_id uuid NOT NULL,
+  payload      jsonb NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  processed_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS ix_outbox_unprocessed ON servicing_portal.event_outbox (processed_at) WHERE processed_at IS NULL;
+```
+
+---
+
+## 9) Migration Order (Runbook)
+
+1. **Extensions** (§0.1)
+2. **Schema** (§0.2)
+3. **Enums** (§1)
+4. **Core tables:** borrower\_users ? loan\_borrower\_links ? payment\_methods ? payments ? autopay\_enrollments ? documents ? messaging\* ? notices ? preferences ? audits ? escrow\_\* (§2)
+5. **RLS enable + policies** (§3)
+6. **Triggers & fns** (§4)
+7. **Views** (§5)
+8. **Grants** (§7)
+9. **Seeds** (§6)
+10. **Outbox (optional)** (§8)
+
+After each step, run smoke tests:
+
+* FK integrity (insert/select/delete).
+* RLS: attempt cross?tenant read should fail; own read should succeed.
+* Payments check/trigger enforcement.
+* Autopay active unique constraint.
+
+---
+
+## 10) Rollback Strategy
+
+* Create a companion down migration that drops views ? triggers/functions ? policies ? tables (reverse order) ? types.
+* **Caution:** Dropping enums requires no dependencies; consider leaving types in place if other migrations depend on them.
+* Always snapshot schema (`pg_dump -s`) before deployment.
+
+---
+
+## 11) Performance Index Checklist
+
+* Payments: `(loan_id, initiated_at DESC)` for history, `status` for queues.
+* Documents: `(loan_id, type)` and `created_at DESC`.
+* Notices: partial index where `read_at IS NULL`.
+* Autopay: `next_run_at` for scheduler scan + partial unique for active per loan.
+* Messaging: `message_threads.updated_at DESC` for inbox ordering.
+
+---
+
+## 12) Test Data Snippets (for local dev)
+
+```sql
+-- Create a dev borrower entity and user
+WITH be AS (
+  INSERT INTO public.borrower_entities(id, name)
+  VALUES (gen_random_uuid(), 'Dev Borrower') RETURNING id
+), bu AS (
+  INSERT INTO servicing_portal.borrower_users(id, borrower_entity_id, email)
+  SELECT gen_random_uuid(), be.id, 'dev.borrower@example.com' FROM be RETURNING id, borrower_entity_id
+)
+INSERT INTO servicing_portal.loan_borrower_links(loan_id, borrower_entity_id, role)
+SELECT l.id, (SELECT borrower_entity_id FROM bu), 'primary'
+FROM public.loans l LIMIT 1;
+```
+
+---
+
+## 13) Open Items (DB?level)
+
+* Confirm exact FK targets for staff users/auth identities.
+* Decide whether to partition `payments` by month if volume > \~10M rows/year.
+* Decide if `documents.created_by` should reference staff vs borrower users via two columns or a polymorphic helper.
+
+---
+
+**End of Plan** ?
