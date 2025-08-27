@@ -1,4 +1,5 @@
-import type { Express, Request, Response } from 'express';
+import type { Express, Response } from 'express';
+import type { Request } from 'express';
 import { db } from '../db.js';
 import { and, eq, desc, isNull, sql } from 'drizzle-orm';
 import {
@@ -22,6 +23,13 @@ import { loggers } from '../utils/logger.js';
 import { requireBorrower } from '../auth/middleware.js';
 
 const logger = loggers.api;
+
+// Extend Request type to include user
+declare module 'express' {
+  interface Request {
+    user?: any;
+  }
+}
 
 // Validation schemas
 const updateContactInfoSchema = z.object({
@@ -63,8 +71,8 @@ export function registerBorrowerRoutes(app: Express) {
           propertyAddress: properties.address,
           propertyCity: properties.city,
           propertyState: properties.state,
-          principalBalance: loanBalances.principalBalance,
-          escrowBalance: loanBalances.escrowBalance,
+          principalBalance: loanBalances.principalMinor,
+          escrowBalance: loanBalances.escrowMinor,
           nextPaymentDate: loans.nextPaymentDate,
           paymentAmount: loans.paymentAmount,
           status: loans.status,
@@ -83,7 +91,7 @@ export function registerBorrowerRoutes(app: Express) {
           id: payments.id,
           loanNumber: loans.loanNumber,
           receivedDate: payments.receivedDate,
-          totalAmount: payments.totalAmount,
+          totalAmount: payments.totalReceived,
           status: payments.status,
         })
         .from(payments)
@@ -211,10 +219,11 @@ export function registerBorrowerRoutes(app: Express) {
           principalAmount: payments.principalAmount,
           interestAmount: payments.interestAmount,
           escrowAmount: payments.escrowAmount,
-          feeAmount: payments.feeAmount,
-          totalAmount: payments.totalAmount,
+          lateFeeAmount: payments.lateFeeAmount,
+          otherFeeAmount: payments.otherFeeAmount,
+          totalAmount: payments.totalReceived,
           status: payments.status,
-          referenceNumber: payments.referenceNumber,
+          confirmationNumber: payments.confirmationNumber,
         })
         .from(payments)
         .where(eq(payments.loanId, loanId))
