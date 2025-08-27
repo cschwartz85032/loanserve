@@ -729,8 +729,7 @@ export class OptimizedTopologyManager extends TopologyManager {
       durable: true,
       arguments: {
         'x-queue-mode': 'lazy',
-        'x-max-length': 1000000, // Reduced from 10M to 1M
-        'x-message-ttl': 604800000, // 7 days TTL
+        'x-max-length': 10000000, // 10 million events - matching existing CloudAMQP config
       },
       bindings: [
         { exchange: 'audit.topic', routingKey: 'audit.*' },
