@@ -57,11 +57,11 @@ function Router() {
       <ProtectedRoute path="/mfa-settings" component={MfaSettings} />
       
       {/* Borrower Portal Routes */}
-      <ProtectedRoute path="/portal" component={BorrowerDashboard} />
-      <ProtectedRoute path="/portal/dashboard" component={BorrowerDashboard} />
-      <ProtectedRoute path="/portal/loans/:loanId" component={BorrowerLoanDetails} />
-      <ProtectedRoute path="/portal/loans/:loanId/pay" component={BorrowerMakePayment} />
-      <ProtectedRoute path="/portal/payment" component={BorrowerMakePayment} />
+      <ProtectedRoute path="/borrowerportal" component={BorrowerDashboard} />
+      <ProtectedRoute path="/borrowerportal/dashboard" component={BorrowerDashboard} />
+      <ProtectedRoute path="/borrowerportal/loans/:loanId" component={BorrowerLoanDetails} />
+      <ProtectedRoute path="/borrowerportal/loans/:loanId/pay" component={BorrowerMakePayment} />
+      <ProtectedRoute path="/borrowerportal/payment" component={BorrowerMakePayment} />
       
       <Route path="/auth" component={AuthPage} />
       <Route path="/activate" component={ActivatePage} />

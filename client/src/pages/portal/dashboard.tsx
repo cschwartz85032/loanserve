@@ -55,7 +55,7 @@ export function BorrowerDashboard() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-3xl font-bold">Welcome Back</h1>
         <Button asChild>
-          <Link href="/portal/payment">
+          <Link href="/borrowerportal/payment">
             <CreditCard className="mr-2 h-4 w-4" />
             Make a Payment
           </Link>
@@ -112,13 +112,13 @@ export function BorrowerDashboard() {
 
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="flex-1" asChild>
-                  <Link href={`/portal/loans/${loan.loanId}`}>
+                  <Link href={`/borrowerportal/loans/${loan.loanId}`}>
                     View Details
                     <ChevronRight className="ml-1 h-4 w-4" />
                   </Link>
                 </Button>
                 <Button size="sm" className="flex-1" asChild>
-                  <Link href={`/portal/loans/${loan.loanId}/pay`}>
+                  <Link href={`/borrowerportal/loans/${loan.loanId}/pay`}>
                     Pay Now
                   </Link>
                 </Button>
@@ -145,7 +145,7 @@ export function BorrowerDashboard() {
             <div className="flex justify-between items-center">
               <CardTitle className="text-xl">Recent Payments</CardTitle>
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/portal/payments">View All</Link>
+                <Link href="/borrowerportal/payments">View All</Link>
               </Button>
             </div>
           </CardHeader>
@@ -187,7 +187,7 @@ export function BorrowerDashboard() {
             <div className="flex justify-between items-center">
               <CardTitle className="text-xl">Notifications</CardTitle>
               <Button variant="ghost" size="sm" asChild>
-                <Link href="/portal/notices">View All</Link>
+                <Link href="/borrowerportal/notices">View All</Link>
               </Button>
             </div>
           </CardHeader>
@@ -230,25 +230,25 @@ export function BorrowerDashboard() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Button variant="outline" className="h-auto flex-col py-4" asChild>
-              <Link href="/portal/payment">
+              <Link href="/borrowerportal/payment">
                 <CreditCard className="h-6 w-6 mb-2" />
                 <span className="text-xs">Make Payment</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col py-4" asChild>
-              <Link href="/portal/payment-methods">
+              <Link href="/borrowerportal/payment-methods">
                 <DollarSign className="h-6 w-6 mb-2" />
                 <span className="text-xs">Payment Methods</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col py-4" asChild>
-              <Link href="/portal/documents">
+              <Link href="/borrowerportal/documents">
                 <FileText className="h-6 w-6 mb-2" />
                 <span className="text-xs">Documents</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col py-4" asChild>
-              <Link href="/portal/profile">
+              <Link href="/borrowerportal/profile">
                 <Bell className="h-6 w-6 mb-2" />
                 <span className="text-xs">Preferences</span>
               </Link>

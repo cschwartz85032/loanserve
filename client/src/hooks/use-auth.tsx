@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await new Promise(resolve => setTimeout(resolve, 100));
       // Navigate based on user role
       if (user.role === 'borrower') {
-        window.location.href = '/portal';
+        window.location.href = '/borrowerportal';
       } else {
         window.location.href = '/dashboard';
       }

@@ -54,7 +54,7 @@ export function BorrowerMakePayment() {
       });
 
       // Redirect to confirmation page or dashboard
-      setLocation('/portal/dashboard');
+      setLocation('/borrowerportal/dashboard');
     },
     onError: (error: any) => {
       toast({
@@ -140,7 +140,7 @@ export function BorrowerMakePayment() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link href={`/portal/loans/${loanId}`}>
+          <Link href={`/borrowerportal/loans/${loanId}`}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -270,7 +270,7 @@ export function BorrowerMakePayment() {
           )}
 
           <Button variant="outline" className="w-full" asChild>
-            <Link href="/portal/payment-methods">
+            <Link href="/borrowerportal/payment-methods">
               <CreditCard className="mr-2 h-4 w-4" />
               Manage Payment Methods
             </Link>

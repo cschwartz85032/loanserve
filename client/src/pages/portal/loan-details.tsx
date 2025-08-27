@@ -62,7 +62,7 @@ export function BorrowerLoanDetails() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="/portal/dashboard">
+            <Link href="/borrowerportal/dashboard">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
@@ -76,7 +76,7 @@ export function BorrowerLoanDetails() {
         </div>
         <div className="flex gap-2">
           <Button asChild>
-            <Link href={`/portal/loans/${loanId}/pay`}>
+            <Link href={`/borrowerportal/loans/${loanId}/pay`}>
               <CreditCard className="mr-2 h-4 w-4" />
               Make Payment
             </Link>
