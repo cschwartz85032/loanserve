@@ -134,13 +134,45 @@ export function setupAuth(app: Express) {
       if (!user) {
         return res.status(401).json({ error: "Invalid username or password" });
       }
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) {
           console.error('Login session error:', err);
           return res.status(500).json({ error: "Login failed" });
         }
+        
+        // Get user's roles from RBAC system
+        const { db } = await import('./db');
+        const { userRoles, roles } = await import('@shared/schema');
+        const { eq } = await import('drizzle-orm');
+        
+        const userRolesList = await db
+          .select({
+            roleId: roles.id,
+            roleName: roles.name,
+            roleDescription: roles.description
+          })
+          .from(userRoles)
+          .innerJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(eq(userRoles.userId, user.id));
+        
+        const roleNames = userRolesList.map(r => r.roleName);
+        
+        // Don't send password to client
+        const { password, ...userWithoutPassword } = user;
+        
+        // Include roles in the response
+        const userWithRoles = {
+          ...userWithoutPassword,
+          roles: userRolesList,
+          roleNames: roleNames,
+          // Add backward-compatible role field - prioritize borrower role
+          role: roleNames.includes('borrower') ? 'borrower' : 
+                roleNames.includes('admin') ? 'admin' : 
+                (roleNames[0] || 'user')
+        };
+        
         // Log successful login
-        console.log(`User ${user.username} logged in successfully`);
+        console.log(`User ${user.username} logged in successfully with role: ${userWithRoles.role}`);
         console.log('Session ID after login:', req.sessionID);
         console.log('Session data:', req.session);
         console.log('Response headers about to be sent');
@@ -151,7 +183,7 @@ export function setupAuth(app: Express) {
             console.error('Session save error:', saveErr);
           }
           console.log('Session saved, sending response');
-          return res.status(200).json(user);
+          return res.status(200).json(userWithRoles);
         });
       });
     })(req, res, next);
