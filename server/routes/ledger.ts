@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db';
-import { loanLedger, loans } from '@shared/schema';
+import { loanLedger, loans, generalLedgerEvents, generalLedgerEntries } from '@shared/schema';
 import { eq, desc, and, or } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { parse } from 'json2csv';
@@ -12,24 +12,183 @@ if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-// Get ledger entries for a loan
+// Get ledger entries for a loan - Now using double-entry accounting
 export async function getLoanLedger(req: Request, res: Response) {
   try {
     const { loanId } = req.params;
-    console.log('[Ledger] Fetching ledger for loan:', loanId);
+    console.log('[Ledger] Fetching double-entry ledger for loan:', loanId);
     
-    const entries = await db
-      .select()
-      .from(loanLedger)
-      .where(eq(loanLedger.loanId, parseInt(loanId)))
-      .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
+    // First check if we have double-entry data, otherwise fall back to old ledger
+    const events = await db
+      .select({
+        eventId: generalLedgerEvents.eventId,
+        eventDate: generalLedgerEvents.eventDate,
+        eventType: generalLedgerEvents.eventType,
+        description: generalLedgerEvents.description,
+        correlationId: generalLedgerEvents.correlationId,
+        metadata: generalLedgerEvents.metadata,
+        createdAt: generalLedgerEvents.createdAt
+      })
+      .from(generalLedgerEvents)
+      .where(eq(generalLedgerEvents.loanId, parseInt(loanId)))
+      .orderBy(desc(generalLedgerEvents.eventDate), desc(generalLedgerEvents.createdAt));
     
-    console.log('[Ledger] Found entries:', entries.length);
-    res.json(entries);
+    if (events.length > 0) {
+      // We have double-entry data - fetch all entries for these events
+      const eventIds = events.map(e => e.eventId);
+      const entriesData = await db
+        .select()
+        .from(generalLedgerEntries)
+        .where(sql`${generalLedgerEntries.eventId} = ANY(${eventIds})`)
+        .orderBy(generalLedgerEntries.accountCode);
+      
+      // Group entries by event and format for display
+      const entriesByEvent = entriesData.reduce((acc: any, entry: any) => {
+        if (!acc[entry.eventId]) {
+          acc[entry.eventId] = [];
+        }
+        acc[entry.eventId].push(entry);
+        return acc;
+      }, {});
+      
+      // Format for frontend display - convert each event into ledger rows
+      const formattedEntries: any[] = [];
+      let runningBalance = 0;
+      
+      // Process events in reverse to calculate running balance correctly
+      const reversedEvents = [...events].reverse();
+      
+      for (const event of reversedEvents) {
+        const eventEntries = entriesByEvent[event.eventId] || [];
+        
+        // Calculate net effect on loan balance
+        let netDebit = 0;
+        let netCredit = 0;
+        
+        for (const entry of eventEntries) {
+          const debitAmount = Number(entry.debitMinor) / 100;
+          const creditAmount = Number(entry.creditMinor) / 100;
+          
+          // For loan accounting perspective:
+          // Credits increase loan balance (disbursements, accruals)
+          // Debits decrease loan balance (payments, write-offs)
+          if (entry.accountCode.startsWith('LOAN')) {
+            netDebit += debitAmount;
+            netCredit += creditAmount;
+          }
+        }
+        
+        // Update running balance
+        runningBalance += netCredit - netDebit;
+        
+        // Create ledger display entries for each line item
+        for (const entry of eventEntries) {
+          const debitAmount = Number(entry.debitMinor) / 100;
+          const creditAmount = Number(entry.creditMinor) / 100;
+          
+          formattedEntries.push({
+            id: entry.entryId,
+            transactionDate: event.eventDate,
+            transactionId: event.correlationId || `EVT-${event.eventId.slice(0, 8)}`,
+            description: `${event.description} - ${entry.accountName}`,
+            transactionType: event.eventType,
+            category: entry.accountCode,
+            debitAmount: debitAmount > 0 ? debitAmount.toFixed(2) : null,
+            creditAmount: creditAmount > 0 ? creditAmount.toFixed(2) : null,
+            runningBalance: runningBalance.toFixed(2),
+            principalBalance: runningBalance.toFixed(2), // Simplified for now
+            interestBalance: '0.00', // Would need separate tracking
+            status: 'posted',
+            createdAt: event.createdAt,
+            accountCode: entry.accountCode,
+            accountName: entry.accountName,
+            memo: entry.memo
+          });
+        }
+      }
+      
+      // Reverse back to show most recent first
+      formattedEntries.reverse();
+      
+      console.log('[Ledger] Found double-entry events:', events.length, 'with entries:', formattedEntries.length);
+      res.json(formattedEntries);
+    } else {
+      // Fallback to old single-entry ledger if no double-entry data
+      console.log('[Ledger] No double-entry data found, falling back to single-entry ledger');
+      const entries = await db
+        .select()
+        .from(loanLedger)
+        .where(eq(loanLedger.loanId, parseInt(loanId)))
+        .orderBy(desc(loanLedger.transactionDate), desc(loanLedger.id));
+      
+      console.log('[Ledger] Found single-entry entries:', entries.length);
+      res.json(entries);
+    }
   } catch (error) {
     console.error('Error fetching loan ledger:', error);
     res.status(500).json({ error: 'Failed to fetch ledger entries' });
   }
+}
+
+// Helper function to create double-entry accounting records
+async function createDoubleEntryTransaction({
+  loanId,
+  eventType,
+  eventDate,
+  description,
+  entries,
+  correlationId,
+  metadata
+}: {
+  loanId: number;
+  eventType: string;
+  eventDate: Date;
+  description: string;
+  entries: Array<{ accountCode: string; accountName: string; debit: number; credit: number; memo?: string }>;
+  correlationId?: string;
+  metadata?: any;
+}) {
+  // Create the event header
+  const [event] = await db.insert(generalLedgerEvents).values({
+    loanId,
+    eventType,
+    eventDate,
+    effectiveDate: eventDate,
+    description,
+    correlationId: correlationId || `TXN-${Date.now()}`,
+    metadata
+  }).returning();
+  
+  // Create the double-entry line items
+  // Verify debits equal credits
+  let totalDebits = 0;
+  let totalCredits = 0;
+  
+  for (const entry of entries) {
+    totalDebits += entry.debit;
+    totalCredits += entry.credit;
+  }
+  
+  if (Math.abs(totalDebits - totalCredits) > 0.01) {
+    throw new Error(`Double-entry imbalance: Debits ${totalDebits} != Credits ${totalCredits}`);
+  }
+  
+  // Insert all entries
+  const ledgerEntries = [];
+  for (const entry of entries) {
+    const [ledgerEntry] = await db.insert(generalLedgerEntries).values({
+      eventId: event.eventId,
+      accountCode: entry.accountCode,
+      accountName: entry.accountName,
+      debitMinor: BigInt(Math.round(entry.debit * 100)),
+      creditMinor: BigInt(Math.round(entry.credit * 100)),
+      currency: 'USD',
+      memo: entry.memo
+    }).returning();
+    ledgerEntries.push(ledgerEntry);
+  }
+  
+  return { event, entries: ledgerEntries };
 }
 
 // Add a new ledger transaction
@@ -83,6 +242,47 @@ export async function addLedgerTransaction(req: Request, res: Response) {
     const approvalRequired = transaction.transactionType === 'reversal' || 
                             debit > 10000 || 
                             credit > 10000;
+    
+    // Create double-entry accounting records if payment type
+    if (transaction.transactionType === 'payment' && (debit > 0 || credit > 0)) {
+      try {
+        const paymentAmount = debit > 0 ? debit : credit;
+        
+        // For a payment, we typically:
+        // DEBIT: Cash account (asset increases)
+        // CREDIT: Loan Receivable (asset decreases)
+        await createDoubleEntryTransaction({
+          loanId: parseInt(loanId),
+          eventType: 'payment',
+          eventDate: new Date(transaction.transactionDate),
+          description: transaction.description || `Payment received`,
+          correlationId: transactionId,
+          entries: [
+            {
+              accountCode: 'CASH.PAYMENTS',
+              accountName: 'Cash - Customer Payments',
+              debit: paymentAmount,
+              credit: 0,
+              memo: 'Payment received from borrower'
+            },
+            {
+              accountCode: 'LOAN.PRINCIPAL',
+              accountName: 'Loan Principal Receivable',
+              debit: 0,
+              credit: paymentAmount,
+              memo: 'Principal reduction'
+            }
+          ],
+          metadata: {
+            paymentMethod: transaction.category,
+            notes: transaction.notes
+          }
+        });
+      } catch (error) {
+        console.error('Failed to create double-entry records:', error);
+        // Continue with single-entry for backward compatibility
+      }
+    }
     
     const [newEntry] = await db.insert(loanLedger).values({
       loanId: parseInt(loanId),
