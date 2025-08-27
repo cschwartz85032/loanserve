@@ -4,7 +4,7 @@
  */
 
 import { getEnhancedRabbitMQService } from './rabbitmq-enhanced.js';
-import { topologyManager } from '../messaging/rabbitmq-topology.js';
+import { topologyManager } from '../messaging/topology.js';
 
 export interface QueueMetrics {
   name: string;

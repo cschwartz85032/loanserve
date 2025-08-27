@@ -6,7 +6,7 @@ import { Router } from 'express';
 import { getEnhancedRabbitMQService, EnhancedRabbitMQService } from '../services/rabbitmq-enhanced.js';
 import { getMessageFactory } from '../messaging/message-factory.js';
 import { createIdempotentHandler } from '../messaging/idempotent-consumer.js';
-import { topologyManager } from '../messaging/rabbitmq-topology.js';
+import { topologyManager } from '../messaging/topology.js';
 import { MessagePriority } from '../../shared/messaging/envelope.js';
 
 const router = Router();

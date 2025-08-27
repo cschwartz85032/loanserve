@@ -4,7 +4,7 @@
  */
 
 import { getEnhancedRabbitMQService } from './rabbitmq-enhanced';
-import { topologyManager } from '../messaging/rabbitmq-topology';
+import { topologyManager } from '../messaging/topology';
 
 interface MetricSnapshot {
   timestamp: number;

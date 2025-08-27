@@ -887,15 +887,6 @@ export class TopologyManager {
     this.queues.set(queue.name, queue);
   }
 
-  /**
-   * Define all queues from canonical configuration
-   */
-  private defineQueuesFromCanonical(): void {
-    // Add all canonical queues
-    for (const queue of ALL_CANONICAL_QUEUES) {
-      this.addQueue(queue);
-    }
-  }
 
   /**
    * Apply topology to a channel
@@ -1001,13 +992,6 @@ export class TopologyManager {
   }
 
   /**
-   * Get all queue names
-   */
-  getQueueNames(): string[] {
-    return Array.from(this.queues.keys());
-  }
-
-  /**
    * Get topology statistics
    */
   getStats(): {
@@ -1038,6 +1022,3 @@ export class TopologyManager {
     };
   }
 }
-
-// Export singleton instance
-export const topologyManager = new TopologyManager();
