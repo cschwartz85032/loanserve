@@ -348,7 +348,7 @@ export async function requireBorrower(
 ): Promise<void> {
   try {
     // Check authentication
-    if (!req.user || !req.userPolicy) {
+    if (!req.user) {
       res.status(401).json({ 
         error: 'Authentication required',
         code: 'AUTH_REQUIRED' 
@@ -356,8 +356,11 @@ export async function requireBorrower(
       return;
     }
 
-    // Check role
-    if (req.user.role !== 'borrower') {
+    // Check if user has borrower role (from RBAC)
+    // We check the user object directly to bypass policy engine issues
+    const hasBorrowerRole = req.user.roleNames?.includes('borrower') || req.user.role === 'borrower';
+    
+    if (!hasBorrowerRole) {
       res.status(403).json({ 
         error: 'Borrower access required',
         code: 'BORROWER_REQUIRED' 

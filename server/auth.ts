@@ -254,8 +254,10 @@ export function setupAuth(app: Express) {
         ...userWithoutPassword,
         roles: userRolesList,
         roleNames: roleNames,
-        // Add a backward-compatible role field for admin detection
-        role: roleNames.includes('admin') ? 'admin' : (roleNames[0] || 'user')
+        // Add a backward-compatible role field - prioritize borrower role
+        role: roleNames.includes('borrower') ? 'borrower' : 
+              roleNames.includes('admin') ? 'admin' : 
+              (roleNames[0] || 'user')
       };
       
       res.json(userWithRoles);
