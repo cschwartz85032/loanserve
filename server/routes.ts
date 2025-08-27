@@ -432,8 +432,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Remove timestamp fields that are automatically managed
       const { createdAt, updatedAt, ...updateData } = req.body;
       
-      // Clean the data: convert empty strings to null for numeric/integer fields
-      const cleanedData = Object.entries(updateData).reduce((acc: any, [key, value]) => {
+      // Extract property-related fields that belong in properties table
+      const propertyFields: any = {};
+      const loanFields: any = {};
+      
+      // Separate property fields from loan fields
+      Object.entries(updateData).forEach(([key, value]) => {
+        if (key === 'parcelNumber') {
+          // Map parcelNumber to apn for properties table
+          propertyFields.apn = value;
+        } else if (key === 'legalDescription') {
+          propertyFields.legalDescription = value;
+        } else if (key === 'propertyValue') {
+          // Map propertyValue to currentValue for properties table
+          propertyFields.currentValue = value === '' ? null : value;
+        } else if (key === 'propertyAddress') {
+          propertyFields.address = value;
+        } else if (key === 'propertyCity') {
+          propertyFields.city = value;
+        } else if (key === 'propertyState') {
+          propertyFields.state = value;
+        } else if (key === 'propertyZip') {
+          propertyFields.zipCode = value;
+        } else if (key === 'propertyType') {
+          propertyFields.propertyType = value;
+        } else {
+          loanFields[key] = value;
+        }
+      });
+      
+      // Clean the loan data: convert empty strings to null for numeric/integer fields
+      const cleanedLoanData = Object.entries(loanFields).reduce((acc: any, [key, value]) => {
         // Integer fields that should be null instead of empty string
         const integerFields = ['gracePeriodDays', 'loanTerm', 'amortizationTerm', 'balloonMonths', 
                               'prepaymentPenaltyTerm', 'rateAdjustmentFrequency', 'yearBuilt', 
@@ -442,7 +471,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Numeric/decimal fields that should be null instead of empty string
         const numericFields = ['servicingFee', 'lateCharge', 'interestRate', 'margin', 
                               'rateCapInitial', 'rateCapPeriodic', 'rateCapLifetime', 'rateFloor',
-                              'balloonAmount', 'prepaymentPenaltyAmount', 'propertyValue',
+                              'balloonAmount', 'prepaymentPenaltyAmount',
                               'originalAmount', 'principalBalance', 'paymentAmount', 'monthlyEscrow',
                               'monthlyMI', 'originalLTV', 'currentLTV', 'combinedLTV',
                               'propertyTax', 'homeInsurance', 'pmi', 'otherMonthly',
@@ -463,7 +492,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return acc;
       }, {});
       
-      const loan = await storage.updateLoan(id, cleanedData);
+      // Update property if there are property fields to update
+      if (Object.keys(propertyFields).length > 0 && existingLoan.propertyId) {
+        await storage.updateProperty(existingLoan.propertyId, propertyFields);
+        console.log(`Updated property ${existingLoan.propertyId} with:`, propertyFields);
+      }
+      
+      // Update loan fields if there are any
+      let loan = existingLoan;
+      if (Object.keys(cleanedLoanData).length > 0) {
+        loan = await storage.updateLoan(id, cleanedLoanData);
+      }
       
       // Temporarily skip audit log until database schema is updated
       // await storage.createAuditLog({
