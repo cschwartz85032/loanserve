@@ -48,25 +48,46 @@ export async function loadUserPolicy(
       return next();
     }
 
-    // Load and cache user policy
-    const policy = await getCachedUserPolicy(userId);
-    req.userPolicy = policy;
+    // Load user data first to check for borrower role
+    const { db } = await import('../db');
+    const { users, userRoles, roles } = await import('@shared/schema');
+    const { eq } = await import('drizzle-orm');
     
-    // Also populate req.user for backward compatibility with admin routes
-    if (!req.user && userId) {
-      const { db } = await import('../db');
-      const { users } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    
+    if (user) {
+      // Check if user has borrower role
+      const userRolesList = await db
+        .select({
+          roleName: roles.name
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, userId));
       
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+      const roleNames = userRolesList.map(r => r.roleName);
       
-      if (user) {
-        (req as any).user = user;
+      // Attach user with roles to request
+      (req as any).user = {
+        ...user,
+        roleNames,
+        role: roleNames.includes('borrower') ? 'borrower' : 
+              roleNames.includes('admin') ? 'admin' : 
+              (roleNames[0] || 'user')
+      };
+      
+      // Skip policy loading for borrower users - they use simplified auth
+      if (roleNames.includes('borrower')) {
+        return next();
       }
+      
+      // For non-borrower users, load the full policy engine
+      const policy = await getCachedUserPolicy(userId);
+      req.userPolicy = policy;
     }
     
     next();
