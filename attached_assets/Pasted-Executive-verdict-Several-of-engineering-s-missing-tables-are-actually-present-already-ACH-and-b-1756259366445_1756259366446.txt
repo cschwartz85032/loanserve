@@ -1,0 +1,453 @@
+Executive verdict
+
+Several of engineering’s “missing tables” are actually present already (ACH and banking tables), while a few truly critical tables from the canonical model are still missing from both the DB and current Drizzle schema.
+
+There are multiple schema/code mismatches that will cause logic or numerical drift versus your Phase-1 design:
+
+Ledger design deviates from “append-only double-entry in minor units.”
+
+Mixed “bank_transactions” vs “bank_txn” models coexist.
+
+Decimal monetary columns are used where minor-unit integers are required.
+
+Some legacy tables overlap with new replacements and should be retired after dependency checks.
+
+What the evidence shows (grounded)
+
+ACH tables exist and are wired to loans/bank_account as FKs (so these are not “missing”):
+
+Primary/unique constraints for ach_batch, ach_entry, ach_return are present.
+
+FKs to bank_account/loans are present.
+
+Banking ingestion tables exist in two flavors, which is a red flag for duplication:
+
+bank_transactions (FK → bank_files).
+
+bank_txn (FK → bank_account).
+The code uses bank_txn and related reconciliation tables today (e.g., addBankTransaction, exceptions).
+
+Cash-management code paths are implemented and rely on those tables (notably ACH and reconciliation):
+
+ACH batch sealing, trace numbers, totals.
+
+ACH file generation logic, event publish.
+
+Reconciliation candidates and exceptions (cash_match_candidate, recon_exception) are used by repo methods.
+
+Both legacy and new audit tables exist at once:
+
+audit_log (legacy).
+
+audit_logs (new) with FKs to loans/users.
+
+The active Drizzle schema diverges from your Phase-1 ledger requirements:
+
+Current Drizzle defines a single “loan_ledger” table with decimal monetary columns and “running balances,” not a double-entry ledger_entry with minor-unit integers.
+Your design (“append-only double-entry… integers in minor units”) would require a ledger_event + ledger_entry model with integer minor units and invariant checks.
+
+Assessment of engineering’s plan (point-by-point)
+
+Engineering claim: “Missing critical tables: loan_terms, escrow_forecast, escrow_analysis, investor_positions, remittance_cycle, loan_balances.”
+
+loan_terms: I cannot find a CREATE TABLE for loan_terms in the dump; it also doesn’t appear in the shared Drizzle snippet. Treat as missing and required for accruals and schedule generation.
+
+escrow_forecast: Not visible in the dump; current code for Phase-3 will need it. Treat as missing.
+
+escrow_analysis: Present (heading appears in dump), so not missing; reconcile its exact columns before adding a parallel table.
+
+investor_positions: Present in the dump (heading appears). Schema likely differs from the proposal; align rather than duplicate.
+
+remittance_cycle: Present in the dump (heading appears). Don’t re-add; reconcile model with investor remittance logic.
+
+loan_balances: Not found. It’s optional if you compute views on top of the double-entry ledger; if you want snapshot performance, add it as a derived snapshot with clear provenance and backfill jobs.
+
+Engineering claim: “Legacy tables can be deleted (audit_log, document_template, escrow_disbursement, payment_ingestion, session, notice_template_v2, ledger_entries_legacy…).”
+
+audit_log vs audit_logs: Both exist; moving to audit_logs is consistent with your “immutable artifacts + audit” direction. Verify no readers before dropping audit_log.
+
+Other legacy names are not visible in the snippets I inspected; follow the same rule: prove no live code paths, then drop.
+
+Engineering claim: “Banking/ACH tables required.”
+
+Agreed, and they exist (ach_batch/entry/return; bank_statement_file; bank_txn; cash_match_candidate). See citations above. Align the one canonical bank transaction table and remove the duplicate.
+
+Biggest deviation from your Phase-1 design:
+
+Ledger: Drizzle’s loan_ledger is single-entry with decimals and mutable summaries. Your design requires an append-only double-entry with event headers, integer minor units, and invariant enforcement.
+
+Remediation plan (executable, no ambiguity)
+
+Freeze and inventory
+
+Generate a live dependency map of all tables referenced by runtime code (grep SQL + Drizzle imports, and introspect prepared statements at startup).
+
+Output: a CSV of table → code references; any table not referenced becomes a drop candidate after quarantine.
+
+Unify the banking model
+
+Choose bank_txn as the canonical table (matches repo methods and reconciliation). Migrate/retire bank_transactions by:
+
+Creating a view bank_transactions_vw that selects from bank_txn to keep any lingering readers alive.
+
+Backfill any missing columns into bank_txn if needed, then drop bank_transactions after a deprecation window. Evidence that both exist now:
+
+Keep bank_statement_file as the canonical file store for dedup by hash (already implemented in repo).
+
+Install the canonical, Phase-1 ledger
+
+Add tables:
+
+ledger_event(event_id UUID PK, loan_id, event_type, event_date, correlation_id, created_at)
+
+ledger_entry(entry_id UUID PK, event_id FK, account TEXT, debit_minor BIGINT, credit_minor BIGINT, currency, created_at)
+
+Enforce invariants via DB constraints + trigger:
+
+For each event_id, SUM(debit_minor) == SUM(credit_minor).
+
+No negative minor-unit values.
+
+Provide a compatibility view loan_ledger_vw to keep any UI queries alive during migration.
+
+Reason: Aligns with “append-only double-entry” and “integers in minor units.” Current Drizzle model conflicts.
+
+Fix money math everywhere
+
+Replace all DECIMAL money columns used for core accounting with BIGINT *_minor. Drizzle schema must expose Minor-typed fields consistently.
+
+In cash repo, all inserts already use amount_minor and BigInt casting—retain that standard.
+
+Add the actually missing canonical tables
+
+loan_terms (as engineering proposed), but align names with your domain (index, margin_bps, day_count, compounding, first_payment_date, term_months, etc.).
+
+escrow_forecast for deterministic monthly projections feeding escrow analysis.
+
+loan_balances only if you decide to keep a snapshot table; otherwise use materialized views over the double-entry ledger.
+
+Do not re-create tables that already exist
+
+escrow_analysis, investor_positions, remittance_cycle appear to exist—first diff their actual columns vs the proposal and evolve via migrations, do not create duplicates.
+
+Outcome: a single source of truth without parallel tables.
+
+Legacy cleanup with guardrails
+
+For pairs like audit_log vs audit_logs, create read-only compatibility views or redirectors, then drop legacy after a two-release window once dashboards/ETL confirm zero reads. Evidence of both:
+
+Repository/API alignment
+
+Ensure all server code uses the canonical tables and minor-unit integers:
+
+ACH: already uses amount_minor and BigInt; keep it.
+
+Reconciliation: keep cash_match_candidate and recon_exception (repo functions present).
+
+Replace any queries that read/write loan_ledger decimals with ledger_event/entry projections.
+
+Golden tests and migration validation
+
+Golden schedules for a fixed-rate loan with known PMT; verify ledger postings and balances reproduce exactly after the ledger migration.
+
+Round-trip escrow forecast → analysis → schedule adjustments; ensure idempotency.
+
+Documentation & DDL source of truth
+
+Move all DDL to versioned migrations (Drizzle).
+
+Generate a “schema contract” markdown from migrations on each build; discrepancies between DB and Drizzle fail CI.
+
+Answering the “plan vs design” directly
+
+Good in the plan
+
+Adding loan_terms and escrow_forecast is correct and necessary.
+
+Calling out banking/ACH tables as required is correct (though they already exist).
+
+Needs correction
+
+Do not create new tables that already exist (escrow_analysis, investor_positions, remittance_cycle). Diff and migrate instead.
+
+Replace the single-entry, decimal-based loan_ledger with a true double-entry, minor-unit ledger_event/ledger_entry pair to match your Phase-1 principle.
+
+Unify bank_txn vs bank_transactions; keep one, provide a temporary view for compatibility.
+
+If you want, I can turn the above into concrete Drizzle migrations and a checklist for CI that fails on any drift between schema and code.
+
+You said:
+Please provide detailed schemas for all of the missing tables
+ChatGPT said:
+Thought for 9s
+
+Great. Below are complete, production-grade schemas for the tables you flagged as “missing” in your Drizzle model. I include both PostgreSQL DDL and matching Drizzle definitions, with consistent naming, primary and foreign keys, unique constraints, minor-unit money, check constraints, and useful indexes. All timestamps are in UTC. All monetary values are integers in minor units unless noted. Date columns are “date” where wall-clock calendar semantics are intended.
+
+If any of these tables already exist in the database, treat the SQL as a migration target and reconcile with diffs rather than recreating.
+
+1) loan_terms
+
+Purpose: time-bounded loan pricing and structural terms for accruals, schedules, and payment calculation.
+
+PostgreSQL DDL
+CREATE TABLE loan_terms (
+  loan_terms_id       BIGSERIAL PRIMARY KEY,
+  loan_id             BIGINT NOT NULL REFERENCES loans(loan_id) ON DELETE CASCADE,
+  effective_from      DATE   NOT NULL,
+  effective_to        DATE   NULL,                      -- null means open-ended
+  interest_type       TEXT   NOT NULL,                  -- fixed, arm, io_fixed, etc.
+  index_name          TEXT   NULL,                      -- e.g., SOFR, Prime
+  index_margin_bps    INTEGER NULL CHECK (index_margin_bps >= 0),
+  nominal_rate_bps    INTEGER NOT NULL CHECK (nominal_rate_bps >= 0),
+  rate_cap_up_bps     INTEGER NULL CHECK (rate_cap_up_bps >= 0),
+  rate_cap_down_bps   INTEGER NULL CHECK (rate_cap_down_bps >= 0),
+  compounding         TEXT   NOT NULL,                  -- none, monthly, daily
+  day_count           TEXT   NOT NULL,                  -- 30E/360, ACT/360, ACT/365
+  first_payment_date  DATE   NULL,
+  term_months         INTEGER NULL CHECK (term_months >= 0),
+  interest_only_months INTEGER NULL CHECK (interest_only_months >= 0),
+  scheduled_payment_minor BIGINT NULL CHECK (scheduled_payment_minor >= 0),
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, effective_from),
+  CHECK (effective_to IS NULL OR effective_to >= effective_from)
+);
+
+-- Helpful index for point-in-time lookup of applicable terms
+CREATE INDEX loan_terms_loan_id_eff_from_idx ON loan_terms (loan_id, effective_from);
+
+Drizzle (TypeScript)
+export const loanTerms = pgTable('loan_terms', {
+  loanTermsId: bigserial('loan_terms_id').primaryKey(),
+  loanId: bigint('loan_id', { mode: 'number' }).notNull()
+    .references(() => loans.loanId, { onDelete: 'cascade' }),
+  effectiveFrom: date('effective_from').notNull(),
+  effectiveTo: date('effective_to'),
+  interestType: text('interest_type').notNull(),
+  indexName: text('index_name'),
+  indexMarginBps: integer('index_margin_bps'),
+  nominalRateBps: integer('nominal_rate_bps').notNull(),
+  rateCapUpBps: integer('rate_cap_up_bps'),
+  rateCapDownBps: integer('rate_cap_down_bps'),
+  compounding: text('compounding').notNull(),
+  dayCount: text('day_count').notNull(),
+  firstPaymentDate: date('first_payment_date'),
+  termMonths: integer('term_months'),
+  interestOnlyMonths: integer('interest_only_months'),
+  scheduledPaymentMinor: bigint('scheduled_payment_minor', { mode: 'bigint' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uniqPerStart: unique().on(t.loanId, t.effectiveFrom),
+  effFromIdx: index('loan_terms_loan_id_eff_from_idx').on(t.loanId, t.effectiveFrom),
+}));
+
+2) loan_balances
+
+Purpose: fast snapshot for dashboards and reports. Derived from the double-entry ledger. Never authoritative. Updated by a scheduled job or trigger after postings.
+
+PostgreSQL DDL
+CREATE TABLE loan_balances (
+  loan_id                 BIGINT PRIMARY KEY REFERENCES loans(loan_id) ON DELETE CASCADE,
+  principal_minor         BIGINT NOT NULL DEFAULT 0 CHECK (principal_minor >= 0),
+  interest_accrued_minor  BIGINT NOT NULL DEFAULT 0 CHECK (interest_accrued_minor >= 0),
+  escrow_minor            BIGINT NOT NULL DEFAULT 0 CHECK (escrow_minor >= 0),
+  late_fees_minor         BIGINT NOT NULL DEFAULT 0 CHECK (late_fees_minor >= 0),
+  total_paid_minor        BIGINT NOT NULL DEFAULT 0 CHECK (total_paid_minor >= 0),
+  last_payment_date       DATE,
+  last_payment_minor      BIGINT,
+  next_payment_due        DATE,
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX loan_balances_next_due_idx ON loan_balances (next_payment_due);
+
+Drizzle
+export const loanBalances = pgTable('loan_balances', {
+  loanId: bigint('loan_id', { mode: 'number' }).primaryKey()
+    .references(() => loans.loanId, { onDelete: 'cascade' }),
+  principalMinor: bigint('principal_minor', { mode: 'bigint' }).notNull().default(0n),
+  interestAccruedMinor: bigint('interest_accrued_minor', { mode: 'bigint' }).notNull().default(0n),
+  escrowMinor: bigint('escrow_minor', { mode: 'bigint' }).notNull().default(0n),
+  lateFeesMinor: bigint('late_fees_minor', { mode: 'bigint' }).notNull().default(0n),
+  totalPaidMinor: bigint('total_paid_minor', { mode: 'bigint' }).notNull().default(0n),
+  lastPaymentDate: date('last_payment_date'),
+  lastPaymentMinor: bigint('last_payment_minor', { mode: 'bigint' }),
+  nextPaymentDue: date('next_payment_due'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  nextDueIdx: index('loan_balances_next_due_idx').on(t.nextPaymentDue),
+}));
+
+3) escrow_forecast
+
+Purpose: forward 12-month escrow projection per escrow account, used by annual analysis and statement generation. Values are minor units.
+
+PostgreSQL DDL
+CREATE TABLE escrow_forecast (
+  escrow_forecast_id  BIGSERIAL PRIMARY KEY,
+  escrow_account_id   BIGINT NOT NULL REFERENCES escrow_accounts(escrow_account_id) ON DELETE CASCADE,
+  forecast_date       DATE   NOT NULL,                        -- calculation run date
+  month_start         DATE   NOT NULL,                        -- first day of forecast month
+  beginning_minor     BIGINT NOT NULL DEFAULT 0 CHECK (beginning_minor >= 0),
+  deposits_minor      BIGINT NOT NULL DEFAULT 0 CHECK (deposits_minor >= 0),
+  disbursements_minor BIGINT NOT NULL DEFAULT 0 CHECK (disbursements_minor >= 0),
+  ending_minor        BIGINT NOT NULL DEFAULT 0 CHECK (ending_minor >= 0),
+  cushion_target_minor BIGINT NOT NULL DEFAULT 0 CHECK (cushion_target_minor >= 0),
+  run_id              TEXT   NOT NULL,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (escrow_account_id, month_start, run_id)
+);
+
+CREATE INDEX escrow_forecast_account_month_idx ON escrow_forecast (escrow_account_id, month_start);
+
+Drizzle
+export const escrowForecast = pgTable('escrow_forecast', {
+  escrowForecastId: bigserial('escrow_forecast_id').primaryKey(),
+  escrowAccountId: bigint('escrow_account_id', { mode: 'number' }).notNull()
+    .references(() => escrowAccounts.escrowAccountId, { onDelete: 'cascade' }),
+  forecastDate: date('forecast_date').notNull(),
+  monthStart: date('month_start').notNull(),
+  beginningMinor: bigint('beginning_minor', { mode: 'bigint' }).notNull().default(0n),
+  depositsMinor: bigint('deposits_minor', { mode: 'bigint' }).notNull().default(0n),
+  disbursementsMinor: bigint('disbursements_minor', { mode: 'bigint' }).notNull().default(0n),
+  endingMinor: bigint('ending_minor', { mode: 'bigint' }).notNull().default(0n),
+  cushionTargetMinor: bigint('cushion_target_minor', { mode: 'bigint' }).notNull().default(0n),
+  runId: text('run_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uniqPerRun: unique().on(t.escrowAccountId, t.monthStart, t.runId),
+  acctMonthIdx: index('escrow_forecast_account_month_idx').on(t.escrowAccountId, t.monthStart),
+}));
+
+4) escrow_analysis (include only if missing in your Drizzle)
+
+Purpose: one row per analysis cycle per escrow account, recording shortage, surplus, and decisions. Values are minor units. This table is required by Phase 3 annual analysis.
+
+PostgreSQL DDL
+CREATE TABLE escrow_analysis (
+  escrow_analysis_id   BIGSERIAL PRIMARY KEY,
+  escrow_account_id    BIGINT NOT NULL REFERENCES escrow_accounts(escrow_account_id) ON DELETE CASCADE,
+  analysis_date        DATE   NOT NULL,
+  period_start         DATE   NOT NULL,
+  period_end           DATE   NOT NULL CHECK (period_end >= period_start),
+  projected_low_minor  BIGINT NOT NULL DEFAULT 0 CHECK (projected_low_minor >= 0),
+  shortage_minor       BIGINT NOT NULL DEFAULT 0 CHECK (shortage_minor >= 0),
+  surplus_minor        BIGINT NOT NULL DEFAULT 0 CHECK (surplus_minor >= 0),
+  deficiency_minor     BIGINT NOT NULL DEFAULT 0 CHECK (deficiency_minor >= 0),
+  cushion_cap_minor    BIGINT NOT NULL DEFAULT 0 CHECK (cushion_cap_minor >= 0),
+  policy_months_to_cure INTEGER NOT NULL DEFAULT 12 CHECK (policy_months_to_cure > 0),
+  statement_doc_id     UUID NULL,     -- FK to documents table if you store generated statements
+  run_id               TEXT NOT NULL,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (escrow_account_id, analysis_date, run_id)
+);
+
+CREATE INDEX escrow_analysis_acct_idx ON escrow_analysis (escrow_account_id, analysis_date);
+
+Drizzle
+export const escrowAnalysis = pgTable('escrow_analysis', {
+  escrowAnalysisId: bigserial('escrow_analysis_id').primaryKey(),
+  escrowAccountId: bigint('escrow_account_id', { mode: 'number' }).notNull()
+    .references(() => escrowAccounts.escrowAccountId, { onDelete: 'cascade' }),
+  analysisDate: date('analysis_date').notNull(),
+  periodStart: date('period_start').notNull(),
+  periodEnd: date('period_end').notNull(),
+  projectedLowMinor: bigint('projected_low_minor', { mode: 'bigint' }).notNull().default(0n),
+  shortageMinor: bigint('shortage_minor', { mode: 'bigint' }).notNull().default(0n),
+  surplusMinor: bigint('surplus_minor', { mode: 'bigint' }).notNull().default(0n),
+  deficiencyMinor: bigint('deficiency_minor', { mode: 'bigint' }).notNull().default(0n),
+  cushionCapMinor: bigint('cushion_cap_minor', { mode: 'bigint' }).notNull().default(0n),
+  policyMonthsToCure: integer('policy_months_to_cure').notNull().default(12),
+  statementDocId: uuid('statement_doc_id'),
+  runId: text('run_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uniqPerRun: unique().on(t.escrowAccountId, t.analysisDate, t.runId),
+  acctIdx: index('escrow_analysis_acct_idx').on(t.escrowAccountId, t.analysisDate),
+}));
+
+5) investor_positions (include only if missing in your Drizzle)
+
+Purpose: investor ownership and accrual snapshots per day and loan. Values in minor units where monetary.
+
+PostgreSQL DDL
+CREATE TABLE investor_positions (
+  investor_positions_id BIGSERIAL PRIMARY KEY,
+  investor_id           BIGINT NOT NULL REFERENCES investors(investor_id) ON DELETE CASCADE,
+  loan_id               BIGINT NOT NULL REFERENCES loans(loan_id) ON DELETE CASCADE,
+  position_date         DATE   NOT NULL,
+  ownership_ppm         INTEGER NOT NULL CHECK (ownership_ppm BETWEEN 0 AND 1000000),
+  principal_minor       BIGINT  NOT NULL DEFAULT 0 CHECK (principal_minor >= 0),
+  interest_accrued_minor BIGINT NOT NULL DEFAULT 0 CHECK (interest_accrued_minor >= 0),
+  version               INTEGER NOT NULL DEFAULT 1,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (investor_id, loan_id, position_date)
+);
+
+CREATE INDEX investor_positions_loan_date_idx ON investor_positions (loan_id, position_date);
+
+Drizzle
+export const investorPositions = pgTable('investor_positions', {
+  investorPositionsId: bigserial('investor_positions_id').primaryKey(),
+  investorId: bigint('investor_id', { mode: 'number' }).notNull()
+    .references(() => investors.investorId, { onDelete: 'cascade' }),
+  loanId: bigint('loan_id', { mode: 'number' }).notNull()
+    .references(() => loans.loanId, { onDelete: 'cascade' }),
+  positionDate: date('position_date').notNull(),
+  ownershipPpm: integer('ownership_ppm').notNull(), // parts-per-million to avoid float
+  principalMinor: bigint('principal_minor', { mode: 'bigint' }).notNull().default(0n),
+  interestAccruedMinor: bigint('interest_accrued_minor', { mode: 'bigint' }).notNull().default(0n),
+  version: integer('version').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uniqPerDay: unique().on(t.investorId, t.loanId, t.positionDate),
+  loanDateIdx: index('investor_positions_loan_date_idx').on(t.loanId, t.positionDate),
+}));
+
+6) remittance_cycle (include only if missing in your Drizzle)
+
+Purpose: investor remittance scheduling windows and state.
+
+PostgreSQL DDL
+CREATE TABLE remittance_cycle (
+  remittance_cycle_id BIGSERIAL PRIMARY KEY,
+  investor_id         BIGINT NOT NULL REFERENCES investors(investor_id) ON DELETE CASCADE,
+  cycle_code          TEXT   NOT NULL,        -- e.g., M01, M15, EOM
+  period_start        DATE   NOT NULL,
+  period_end          DATE   NOT NULL CHECK (period_end >= period_start),
+  due_date            DATE   NOT NULL,        -- when remittance is due out
+  status              TEXT   NOT NULL DEFAULT 'open', -- open, processing, remitted, closed
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (investor_id, period_start, period_end, cycle_code)
+);
+
+CREATE INDEX remittance_cycle_investor_due_idx ON remittance_cycle (investor_id, due_date);
+
+Drizzle
+export const remittanceCycle = pgTable('remittance_cycle', {
+  remittanceCycleId: bigserial('remittance_cycle_id').primaryKey(),
+  investorId: bigint('investor_id', { mode: 'number' }).notNull()
+    .references(() => investors.investorId, { onDelete: 'cascade' }),
+  cycleCode: text('cycle_code').notNull(),
+  periodStart: date('period_start').notNull(),
+  periodEnd: date('period_end').notNull(),
+  dueDate: date('due_date').notNull(),
+  status: text('status').notNull().default('open'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uniqCycle: unique().on(t.investorId, t.periodStart, t.periodEnd, t.cycleCode),
+  investorDueIdx: index('remittance_cycle_investor_due_idx').on(t.investorId, t.dueDate),
+}));
+
+Notes and integration guidance
+
+Money fields are BIGINT minor units everywhere. Replace any decimal money in service code with integer minor amounts before persistence.
+
+For snapshots (loan_balances, investor_positions), treat values as derived from the double-entry ledger. Never mutate ledger history to “fix” snapshots.
+
+For escrow, the annual analysis uses escrow_forecast plus policy parameters to compute shortage, surplus, and deficiency, then records the decision in escrow_analysis.
+
+For investor remittance, remittance_cycle anchors work windows and reporting. Tie exports and GL rollups to the cycle key and dates.
+
+Add migrations with backfills where needed. For example, initialize loan_balances from the current ledger by loan, and initialize investor_positions from ownership allocations and balances.
+
+If you paste your current schema.ts segment for these domains, I can convert the above to exact Drizzle migrations that will alter or create only what is missing and add data-safe backfill steps.

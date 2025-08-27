@@ -2485,6 +2485,131 @@ export const exceptionCases = pgTable("exception_cases", {
   stateSeverityIdx: index().on(t.state, t.severity)
 }));
 
+// ========================================
+// Double-Entry Ledger Tables (replacing single-entry loanLedger)
+// All monetary values in minor units (cents) as BIGINT
+// ========================================
+
+// General Ledger Events - Header for each accounting transaction
+export const generalLedgerEvents = pgTable("general_ledger_events", {
+  eventId: uuid("event_id").primaryKey().defaultRandom(),
+  loanId: integer("loan_id").references(() => loans.id, { onDelete: 'cascade' }).notNull(),
+  eventType: text("event_type").notNull(), // payment, disbursement, fee, adjustment, reversal, accrual
+  eventDate: date("event_date").notNull(),
+  effectiveDate: date("effective_date").notNull(),
+  correlationId: text("correlation_id"), // Link to external transaction
+  description: text("description").notNull(),
+  reversalOf: uuid("reversal_of").references(() => generalLedgerEvents.eventId),
+  metadata: jsonb("metadata"), // Additional context
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdBy: integer("created_by").references(() => users.id)
+}, (t) => ({
+  loanEventTypeIdx: index("gl_events_loan_type_idx").on(t.loanId, t.eventType),
+  eventDateIdx: index("gl_events_date_idx").on(t.eventDate),
+  correlationIdx: index("gl_events_correlation_idx").on(t.correlationId)
+}));
+
+// General Ledger Entries - Double-entry line items
+export const generalLedgerEntries = pgTable("general_ledger_entries", {
+  entryId: uuid("entry_id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id").references(() => generalLedgerEvents.eventId, { onDelete: 'cascade' }).notNull(),
+  accountCode: text("account_code").notNull(), // Chart of accounts code
+  accountName: text("account_name").notNull(), // Human-readable account name
+  debitMinor: bigint("debit_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  creditMinor: bigint("credit_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  currency: text("currency").notNull().default('USD'),
+  memo: text("memo"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  eventIdx: index("gl_entries_event_idx").on(t.eventId),
+  accountCodeIdx: index("gl_entries_account_idx").on(t.accountCode),
+  // Ensure debit = credit for each event (enforced via trigger in DB)
+}));
+
+// Loan Terms - Time-bounded pricing and structural terms
+export const loanTerms = pgTable("loan_terms", {
+  loanTermsId: serial("loan_terms_id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id, { onDelete: 'cascade' }).notNull(),
+  effectiveFrom: date("effective_from").notNull(),
+  effectiveTo: date("effective_to"), // null means open-ended
+  interestType: text("interest_type").notNull(), // fixed, arm, io_fixed, etc.
+  indexName: text("index_name"), // SOFR, Prime, etc.
+  indexMarginBps: integer("index_margin_bps"), // Basis points over index
+  nominalRateBps: integer("nominal_rate_bps").notNull(), // Current rate in basis points
+  rateCapUpBps: integer("rate_cap_up_bps"), // Maximum rate increase
+  rateCapDownBps: integer("rate_cap_down_bps"), // Maximum rate decrease
+  compounding: text("compounding").notNull(), // none, monthly, daily
+  dayCount: text("day_count").notNull(), // 30E/360, ACT/360, ACT/365
+  firstPaymentDate: date("first_payment_date"),
+  termMonths: integer("term_months"),
+  interestOnlyMonths: integer("interest_only_months"),
+  scheduledPaymentMinor: bigint("scheduled_payment_minor", { mode: 'bigint' }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  loanEffectiveIdx: unique().on(t.loanId, t.effectiveFrom),
+  effectiveFromIdx: index("loan_terms_loan_effective_idx").on(t.loanId, t.effectiveFrom)
+}));
+
+// Loan Balances - Fast snapshot for dashboards (derived from ledger)
+export const loanBalances = pgTable("loan_balances", {
+  loanId: integer("loan_id").primaryKey().references(() => loans.id, { onDelete: 'cascade' }),
+  principalMinor: bigint("principal_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  interestAccruedMinor: bigint("interest_accrued_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  escrowMinor: bigint("escrow_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  lateFeesMinor: bigint("late_fees_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  totalPaidMinor: bigint("total_paid_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  lastPaymentDate: date("last_payment_date"),
+  lastPaymentMinor: bigint("last_payment_minor", { mode: 'bigint' }),
+  nextPaymentDue: date("next_payment_due"),
+  delinquentDays: integer("delinquent_days").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  nextDueIdx: index("loan_balances_next_due_idx").on(t.nextPaymentDue),
+  delinquentIdx: index("loan_balances_delinquent_idx").on(t.delinquentDays)
+}));
+
+// Escrow Forecast - Deterministic monthly projections
+export const escrowForecasts = pgTable("escrow_forecasts", {
+  forecastId: serial("forecast_id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id, { onDelete: 'cascade' }).notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
+  asOfDate: date("as_of_date").notNull(),
+  forecastMonths: integer("forecast_months").notNull().default(12),
+  
+  // Current state
+  currentBalanceMinor: bigint("current_balance_minor", { mode: 'bigint' }).notNull(),
+  currentPaymentMinor: bigint("current_payment_minor", { mode: 'bigint' }).notNull(),
+  
+  // Projected totals (annual)
+  projectedDisbursementsMinor: bigint("projected_disbursements_minor", { mode: 'bigint' }).notNull(),
+  projectedCollectionsMinor: bigint("projected_collections_minor", { mode: 'bigint' }).notNull(),
+  projectedShortageMinor: bigint("projected_shortage_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  projectedSurplusMinor: bigint("projected_surplus_minor", { mode: 'bigint' }).notNull().default(BigInt(0)),
+  
+  // Recommended adjustments
+  recommendedPaymentMinor: bigint("recommended_payment_minor", { mode: 'bigint' }).notNull(),
+  cushionRequiredMinor: bigint("cushion_required_minor", { mode: 'bigint' }).notNull(),
+  
+  // Detailed projections (JSONB array of monthly projections)
+  monthlyProjections: jsonb("monthly_projections").notNull(), // Array of {month, disbursements, balance}
+  
+  // Analysis metadata
+  analysisVersion: text("analysis_version").notNull().default('1.0'),
+  assumptions: jsonb("assumptions"), // Rate assumptions, dates, etc.
+  warnings: jsonb("warnings"), // Array of warning messages
+  
+  status: text("status").notNull().default('draft'), // draft, approved, superseded
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  supersededBy: integer("superseded_by").references(() => escrowForecasts.forecastId),
+  
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+}, (t) => ({
+  loanAsOfIdx: unique().on(t.loanId, t.asOfDate, t.status),
+  statusIdx: index("escrow_forecasts_status_idx").on(t.status),
+  generatedAtIdx: index("escrow_forecasts_generated_idx").on(t.generatedAt)
+}));
+
 // Export types for new tables
 export const insertIdMappingSchema = createInsertSchema(idMappings).omit({
   uuid: true,
@@ -2561,4 +2686,43 @@ export const insertExceptionCaseSchema = createInsertSchema(exceptionCases).omit
 });
 export type InsertExceptionCase = z.infer<typeof insertExceptionCaseSchema>;
 export type ExceptionCase = typeof exceptionCases.$inferSelect;
+
+// Export types for new double-entry ledger tables
+export const insertGeneralLedgerEventSchema = createInsertSchema(generalLedgerEvents).omit({
+  eventId: true,
+  createdAt: true
+});
+export type InsertGeneralLedgerEvent = z.infer<typeof insertGeneralLedgerEventSchema>;
+export type GeneralLedgerEvent = typeof generalLedgerEvents.$inferSelect;
+
+export const insertGeneralLedgerEntrySchema = createInsertSchema(generalLedgerEntries).omit({
+  entryId: true,
+  createdAt: true
+});
+export type InsertGeneralLedgerEntry = z.infer<typeof insertGeneralLedgerEntrySchema>;
+export type GeneralLedgerEntry = typeof generalLedgerEntries.$inferSelect;
+
+// Export types for loan terms
+export const insertLoanTermsSchema = createInsertSchema(loanTerms).omit({
+  loanTermsId: true,
+  createdAt: true
+});
+export type InsertLoanTerms = z.infer<typeof insertLoanTermsSchema>;
+export type LoanTerms = typeof loanTerms.$inferSelect;
+
+// Export types for loan balances
+export const insertLoanBalancesSchema = createInsertSchema(loanBalances).omit({
+  updatedAt: true
+});
+export type InsertLoanBalances = z.infer<typeof insertLoanBalancesSchema>;
+export type LoanBalances = typeof loanBalances.$inferSelect;
+
+// Export types for escrow forecasts
+export const insertEscrowForecastSchema = createInsertSchema(escrowForecasts).omit({
+  forecastId: true,
+  generatedAt: true,
+  createdAt: true
+});
+export type InsertEscrowForecast = z.infer<typeof insertEscrowForecastSchema>;
+export type EscrowForecast = typeof escrowForecasts.$inferSelect;
 
