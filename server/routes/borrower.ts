@@ -223,7 +223,7 @@ export function registerBorrowerRoutes(app: Express) {
           otherFeeAmount: payments.otherFeeAmount,
           totalAmount: payments.totalReceived,
           status: payments.status,
-          confirmationNumber: payments.confirmationNumber,
+          confirmationNumber: payments.transactionId,
         })
         .from(payments)
         .where(eq(payments.loanId, loanId))
