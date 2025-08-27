@@ -992,6 +992,13 @@ export class TopologyManager {
   }
 
   /**
+   * Get all queue definitions
+   */
+  getQueues(): Map<string, QueueDefinition> {
+    return this.queues;
+  }
+
+  /**
    * Get topology statistics
    */
   getStats(): {

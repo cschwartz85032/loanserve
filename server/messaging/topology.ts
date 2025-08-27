@@ -516,14 +516,15 @@ export class OptimizedTopologyManager extends TopologyManager {
       // Phase 3: Escrow Subsystem Queues
       // These are the specific queues required by the escrow consumers
       
-      // Escrow forecast queue
+      // Escrow forecast queue (versioned to avoid conflicts)
       this.addQueue({
-        name: 'q.forecast',
+        name: 'q.forecast.v2',
         durable: true,
         arguments: {
           'x-queue-type': 'quorum',
           'x-dead-letter-exchange': 'escrow.dlq',
           'x-dead-letter-routing-key': 'forecast.failed',
+          'x-delivery-limit': 6
         },
         bindings: [
           { exchange: 'escrow.saga', routingKey: 'forecast.request' },
@@ -531,14 +532,15 @@ export class OptimizedTopologyManager extends TopologyManager {
         ],
       });
       
-      // Escrow disbursement scheduling queue
+      // Escrow disbursement scheduling queue (versioned to avoid conflicts)
       this.addQueue({
-        name: 'q.schedule.disbursement',
+        name: 'q.schedule.disbursement.v2',
         durable: true,
         arguments: {
           'x-queue-type': 'quorum',
           'x-dead-letter-exchange': 'escrow.dlq',
           'x-dead-letter-routing-key': 'disbursement.failed',
+          'x-delivery-limit': 6
         },
         bindings: [
           { exchange: 'escrow.saga', routingKey: 'disbursement.schedule' },

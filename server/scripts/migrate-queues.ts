@@ -167,6 +167,20 @@ class QueueMigrator {
     // List of known problematic queues that need migration
     const problematicQueues = [
       {
+        name: 'q.forecast',
+        newName: 'q.forecast.v2',
+        args: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'escrow.dlq',
+          'x-dead-letter-routing-key': 'forecast.failed',
+          'x-delivery-limit': 6,
+        },
+        bindings: [
+          { exchange: 'escrow.saga', routingKey: 'forecast.request' },
+          { exchange: 'escrow.saga', routingKey: 'forecast.retry' },
+        ],
+      },
+      {
         name: 'q.escrow.dlq',
         newName: 'q.escrow.dlq.v2',
         args: {

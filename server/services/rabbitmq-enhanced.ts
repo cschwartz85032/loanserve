@@ -119,15 +119,35 @@ export class EnhancedRabbitMQService {
   }
 
   /**
-   * Setup message topology
+   * Setup message topology with safe channel operations
    */
   private async setupTopology(): Promise<void> {
-    if (!this.publisherChannel) {
-      throw new Error('Publisher channel not available');
+    if (!this.publisherConnection) {
+      throw new Error('Publisher connection not available for topology setup');
     }
     
-    // Apply topology with versioned queues to avoid conflicts
-    await topologyManager.applyTopology(this.publisherChannel);
+    try {
+      // Create a dedicated admin channel for topology setup
+      // This prevents the main publisher channel from being closed on conflicts
+      const adminChannel = await this.publisherConnection.createConfirmChannel();
+      
+      try {
+        // Apply topology with versioned queues to avoid conflicts
+        await topologyManager.applyTopology(adminChannel);
+        console.log('[RabbitMQ] Topology setup complete using admin channel');
+      } finally {
+        // Always close the admin channel after use
+        await adminChannel.close().catch(() => {});
+      }
+    } catch (error: any) {
+      // Fallback to publisher channel if admin channel fails
+      if (this.publisherChannel && error.code !== 406) {
+        console.log('[RabbitMQ] Retrying topology setup with publisher channel');
+        await topologyManager.applyTopology(this.publisherChannel);
+      } else {
+        throw error;
+      }
+    }
   }
 
   /**

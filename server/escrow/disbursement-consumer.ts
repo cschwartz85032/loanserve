@@ -29,7 +29,7 @@ export class EscrowDisbursementConsumer {
     try {
       await rabbitmq.consume<EscrowDisbursementScheduleRequest>(
         {
-          queue: 'q.schedule.disbursement',
+          queue: 'q.schedule.disbursement.v2',
           prefetch: 10,
           consumerTag: this.consumerTag
         },

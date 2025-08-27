@@ -1,0 +1,315 @@
+Here is a concrete, engineer-ready plan to eliminate the 406 PRECONDITION_FAILED errors, get all bindings live, and prevent this class of outage from recurring. It includes immediate containment steps, permanent migration, exact topology rules, and drop-in code patterns for amqplib.
+
+Objective
+
+Resolve queue argument conflicts like:
+
+PRECONDITION_FAILED - Existing queue 'q.forecast' declared with other arguments
+
+
+without disabling any business feature, while moving the fleet to a single declarative topology that is safe, idempotent, and observable.
+
+Root cause
+
+CloudAMQP already has queues with arguments that differ from what topology.ts expects.
+
+Your topology code calls assertQueue with canonical args. When args differ, RabbitMQ closes the channel with 406, which stops subsequent declarations and bindings.
+
+Some services then start without the required bindings, so messages published to exchanges do not route to queues.
+
+Immediate containment
+
+Apply these steps today so services start and messages flow, while you prepare the migration.
+
+Use versioned queue names for any conflicting queue
+
+For each conflicting queue, define a new name with a .v2 suffix that uses the canonical arguments.
+
+Example: replace q.forecast with q.forecast.v2.
+
+Bind both old and new queues for a short window
+
+Keep existing bindings for the old queue.
+
+Add bindings for the new .v2 queue.
+
+Point consumers to .v2 queues only. Old queues remain bound to drain in-flight messages.
+
+Isolate declaration errors
+
+Perform declarations on a short-lived admin channel per queue. If one declaration throws 406, only that admin channel is lost. The publisher and consumer channels stay healthy.
+
+Do not skip DLQs or core queues
+
+Never comment out q.escrow.dlq or similar. If it conflicts, create q.escrow.dlq.v2 and bind it now.
+
+Canonical topology specification
+
+Use the same arguments everywhere to avoid drift.
+
+Queues: quorum for workloads that need delivery guarantees. Classic lazy for high volume cold-path audit logs.
+
+Business queues (payments, escrow, forecast processing, investor, etc):
+
+durable: true
+
+arguments:
+
+x-queue-type: quorum
+
+x-dead-letter-exchange: payments.dlq or domain DLX
+
+x-delivery-limit: 6 (or your policy)
+
+Audit queue:
+
+durable: true
+
+arguments:
+
+x-queue-mode: lazy
+
+x-max-length: 10000000
+
+Exchanges:
+
+payments.topic type topic, durable
+
+domain DLX type direct, durable
+
+payments.events type topic for audit fanout
+
+Bindings:
+
+q.payments.validation(.v2) ← payments.topic with payment.*.received
+
+q.payments.processing(.v2) ← payments.topic with payment.*.validated
+
+add your forecast and investor bindings similarly, keep routing keys stable
+
+Permanent fix
+A. Topology application with channel isolation and soft reconciliation
+
+Replace one big applyTopology on a shared channel with a per-entity admin channel pattern. Pseudocode:
+
+import amqplib from 'amqplib';
+
+async function withAdminChannel<T>(conn: amqplib.Connection, fn: (ch: amqplib.ConfirmChannel) => Promise<T>): Promise<T> {
+  const ch = await conn.createConfirmChannel();
+  try {
+    // small prefetch for admin ops is fine
+    return await fn(ch);
+  } finally {
+    try { await ch.close(); } catch {}
+  }
+}
+
+async function assertQueueSafe(conn: amqplib.Connection, q: { name: string; options: amqplib.Options.AssertQueue }) {
+  return withAdminChannel(conn, async ch => {
+    try {
+      await ch.assertQueue(q.name, q.options);
+      return { ok: true };
+    } catch (err: any) {
+      if (err?.code === 406) {
+        // log and continue, do not bring down the rest of topology
+        log.warn({ queue: q.name, err }, "Queue arg conflict, skipping declaration");
+        return { ok: false, conflict: true };
+      }
+      throw err;
+    }
+  });
+}
+
+async function bindQueueSafe(conn: amqplib.Connection, qName: string, ex: string, rk: string) {
+  return withAdminChannel(conn, async ch => {
+    try {
+      await ch.bindQueue(qName, ex, rk);
+      return { ok: true };
+    } catch (err: any) {
+      if (err?.code === 406) {
+        log.warn({ queue: qName, exchange: ex, rk }, "Bind failed due to prior channel close");
+        return { ok: false, conflict: true };
+      }
+      throw err;
+    }
+  });
+}
+
+
+Rules:
+
+Always continue applying remaining exchanges, queues, and bindings even if one queue conflicts.
+
+Emit a clear structured log for conflicts.
+
+Never disable topology. The validator in the next section will flag what is out of spec.
+
+B. Queue migration tool
+
+Create scripts/migrate-queues.ts that compares live broker state to your canonical topology.ts, and migrates empty conflicting queues to .v2 names.
+
+Steps per queue:
+
+Fetch live definition from RabbitMQ Management API /api/queues/{vhost}/{name}.
+
+Compare arguments to expected.
+
+If different and the queue is empty, delete the old queue, declare the new queue with canonical args, rebind.
+
+If not empty, create .v2 queue and bindings. Mark for later cutover.
+
+Pseudocode skeleton:
+
+type QueueSpec = { name: string; args: Record<string, any>; bindings: { exchange: string; rk: string }[] };
+
+async function migrateQueue(spec: QueueSpec) {
+  const live = await mgmt.getQueue(spec.name);
+  if (!live) {
+    await declare(spec.name, spec.args);
+    await bindAll(spec.name, spec.bindings);
+    return;
+  }
+  const argsDiffer = !deepEqual(normalizeArgs(live.arguments), normalizeArgs(spec.args));
+  if (!argsDiffer) return;
+
+  const empty = live.messages === 0 && live.messages_unacknowledged === 0;
+  if (empty) {
+    await deleteQueue(spec.name);
+    await declare(spec.name, spec.args);
+    await bindAll(spec.name, spec.bindings);
+  } else {
+    const v2 = `${spec.name}.v2`;
+    await declare(v2, spec.args);
+    await bindAll(v2, spec.bindings);
+    log.warn({ queue: spec.name, v2 }, "Args conflict and queue not empty, created .v2, cutover needed");
+  }
+}
+
+
+Ship it with npm run migrate-queues.
+
+C. Topology drift validator in CI
+
+Add scripts/validate-topology.ts. It fetches /api/queues and /api/bindings, compares with topology.ts, and fails CI if any queue or binding mismatches.
+
+Checks:
+
+Queue exists
+
+Durable is true
+
+Expected args match after normalization
+
+All expected bindings exist, no missing routingKey for domain queues
+
+DLQ routing present
+
+D. Cutover plan for each conflicting queue
+
+Create .v2 queue with canonical args and bindings.
+
+Move consumers to .v2.
+
+Leave old queue bound for 24 to 48 hours to drain.
+
+Verify zero depth and zero unacked on old queue.
+
+Unbind and delete old queue.
+
+Optionally rename .v2 back to base name during a maintenance window, or keep versioned naming as a permanent convention.
+
+Special case: q.forecast conflict
+
+Decision tree:
+
+If q.forecast is empty:
+
+Delete q.forecast.
+
+Declare q.forecast with canonical args.
+
+Bind to the correct exchanges with stable routing keys.
+
+Start consumers.
+
+If q.forecast is not empty:
+
+Declare q.forecast.v2 with canonical args.
+
+Bind q.forecast.v2 identically to q.forecast.
+
+Point forecast consumers at q.forecast.v2.
+
+Keep publishers unchanged if they publish to exchanges, not to queues.
+
+After drain, delete q.forecast.
+
+Optionally rename or just keep .v2.
+
+Never skip the queue, never delete a non-empty queue, never change publishers to publish directly to queues.
+
+Publisher and consumer hardening
+
+Publisher: always use a confirm channel. Retry NACKs with exponential backoff. Include headers message_id, correlation_id, content_type: application/json.
+
+Consumer: manual ack only after successful side effects. On permanent failure, nack with requeue=false so message goes to DLQ. Set prefetch from config, for example 32.
+
+Operational runbook
+
+Run validator to see drift
+
+npm run validate-topology
+
+
+For conflicts, run migration
+
+npm run migrate-queues
+
+
+Verify topology live
+
+RabbitMQ Management UI or:
+
+curl -u user:pass http://<host>:15672/api/queues | jq '.[].name'
+curl -u user:pass http://<host>:15672/api/bindings/source/%2F/payments.topic | jq '.[] | {destination, routing_key}'
+
+
+Confirm consumer health
+
+Check that q.payments.processing.v2 receives payment.*.validated
+
+Force a controlled handler error and verify message lands in the DLQ
+
+After 24 to 48 hours
+
+Delete drained legacy queues
+
+Optional rename back to base names if required
+
+Acceptance criteria
+
+Services start with topology manager enabled.
+
+No 406 errors in logs during topology application.
+
+All required queues exist with canonical args.
+
+All expected bindings exist and messages route correctly.
+
+DLQs exist and receive failed messages.
+
+Validator passes in CI and in staging.
+
+Migration tool reports no remaining conflicts.
+
+Forecast, escrow, payments pipelines process messages end to end.
+
+Notes on the error log you shared
+
+You see repeated:
+
+Channel closed by server: 406 PRECONDITION_FAILED - Existing queue 'q.forecast' declared with other arguments
+... OptimizedTopologyManager.applyTopology ...
+
+
+This confirms the exact pattern above. The per-entity admin channel and versioned queue approach remove the blast radius, restore message flow, and let you migrate to the canonical topology without disabling any feature.

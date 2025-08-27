@@ -30,19 +30,23 @@ export async function initializeEscrowQueues(): Promise<void> {
     // Declare queues with DLQ settings
     const queues = [
       {
-        name: 'q.forecast',
+        name: 'q.forecast.v2',
         durable: true,
         arguments: {
+          'x-queue-type': 'quorum',
           'x-dead-letter-exchange': 'escrow.dlq',
-          'x-dead-letter-routing-key': 'forecast.failed'
+          'x-dead-letter-routing-key': 'forecast.failed',
+          'x-delivery-limit': 6
         }
       },
       {
-        name: 'q.schedule.disbursement',
+        name: 'q.schedule.disbursement.v2',
         durable: true,
         arguments: {
+          'x-queue-type': 'quorum',
           'x-dead-letter-exchange': 'escrow.dlq',
-          'x-dead-letter-routing-key': 'disbursement.failed'
+          'x-dead-letter-routing-key': 'disbursement.failed',
+          'x-delivery-limit': 6
         }
       },
       {
@@ -54,9 +58,10 @@ export async function initializeEscrowQueues(): Promise<void> {
         }
       },
       {
-        name: 'q.escrow.dlq',
+        name: 'q.escrow.dlq.v2',
         durable: true,
         arguments: {
+          'x-queue-type': 'quorum',
           'x-message-ttl': 86400000 // 24 hours
         }
       }
@@ -73,19 +78,19 @@ export async function initializeEscrowQueues(): Promise<void> {
     // Create bindings
     const bindings = [
       // Forecast bindings
-      { queue: 'q.forecast', exchange: 'escrow.saga', routingKey: 'forecast.request' },
-      { queue: 'q.forecast', exchange: 'escrow.saga', routingKey: 'forecast.retry' },
+      { queue: 'q.forecast.v2', exchange: 'escrow.saga', routingKey: 'forecast.request' },
+      { queue: 'q.forecast.v2', exchange: 'escrow.saga', routingKey: 'forecast.retry' },
       
       // Disbursement bindings
-      { queue: 'q.schedule.disbursement', exchange: 'escrow.saga', routingKey: 'disbursement.schedule' },
-      { queue: 'q.schedule.disbursement', exchange: 'escrow.saga', routingKey: 'disbursement.retry' },
+      { queue: 'q.schedule.disbursement.v2', exchange: 'escrow.saga', routingKey: 'disbursement.schedule' },
+      { queue: 'q.schedule.disbursement.v2', exchange: 'escrow.saga', routingKey: 'disbursement.retry' },
       
       // Analysis bindings
       { queue: 'q.escrow.analysis', exchange: 'escrow.saga', routingKey: 'analysis.request' },
       { queue: 'q.escrow.analysis', exchange: 'escrow.saga', routingKey: 'analysis.retry' },
       
       // DLQ bindings
-      { queue: 'q.escrow.dlq', exchange: 'escrow.dlq', routingKey: '#' } // Catch all failures
+      { queue: 'q.escrow.dlq.v2', exchange: 'escrow.dlq', routingKey: '#' } // Catch all failures
     ];
     
     for (const binding of bindings) {

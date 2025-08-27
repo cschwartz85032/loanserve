@@ -25,7 +25,7 @@ export class EscrowForecastConsumer {
     try {
       await rabbitmq.consume<EscrowForecastRequest>(
         {
-          queue: 'q.forecast',
+          queue: 'q.forecast.v2',
           prefetch: 10,
           consumerTag: this.consumerTag
         },
