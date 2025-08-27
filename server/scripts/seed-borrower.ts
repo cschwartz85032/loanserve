@@ -133,7 +133,7 @@ async function seedBorrowerPortal() {
         .values({
           username: 'borrower',
           email: 'borrower@example.com',
-          password: '$argon2id$v=19$m=65536,t=3,p=4$tFYPBQvbO+8uxE0CwrXuJQ$2lLD+qnHUJKVvZvOZILrckB6qPvTaUEXMuXRPnBx7F0', // password: "password"
+          password: '$argon2id$v=19$m=65536,t=3,p=4$jXiXZBcJ2bwsOq640ZBEWg$HH3XOZqVz96uxG+xe84yOQPvEqESxitK8KjJMoP5ulE', // password: "password"
           firstName: 'John',
           lastName: 'Doe',
           role: 'borrower',
