@@ -67,7 +67,13 @@ export default function AuthPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Welcome Back</CardTitle>
-                  <CardDescription>Sign in to your LoanServe Pro account</CardDescription>
+                  <CardDescription>
+                    Sign in to your LoanServe Pro account
+                    <br />
+                    <span className="text-xs text-muted-foreground mt-1 block">
+                      Test credentials: Username: borrower, Password: password
+                    </span>
+                  </CardDescription>
                 </CardHeader>
                 <form onSubmit={handleLogin}>
                   <CardContent className="space-y-4">
@@ -76,6 +82,7 @@ export default function AuthPage() {
                       <Input
                         id="username"
                         type="text"
+                        placeholder="Enter username (e.g., borrower)"
                         value={loginData.username}
                         onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
                         required
