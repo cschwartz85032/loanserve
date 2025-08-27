@@ -23,6 +23,10 @@ export default function AuthPage() {
   });
 
   if (user) {
+    // Redirect based on user role
+    if (user.role === 'borrower') {
+      return <Redirect to="/portal" />;
+    }
     return <Redirect to="/" />;
   }
 

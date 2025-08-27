@@ -1,0 +1,170 @@
+Answers & Decisions
+1) Phasing & priority
+
+Yes—ship in phases. Recommended order (tracks our earlier spec + what creates borrower value fastest):
+
+Phase 1 (MVP):
+
+Auth → role-based redirect to borrower experience
+
+Dashboard + Loans (summary, terms)
+
+Payment history
+
+One-time ACH payments (fee disclosure, receipts)
+
+Account basics (view/update contact info, add ACH method)
+
+Notices (read-only feed)
+
+Phase 2:
+
+Documents (statements, 1098 if applicable; borrower uploads)
+
+Messaging (secure threads + attachments)
+
+Preferences (paperless, email/SMS toggles)
+
+Phase 3:
+
+Autopay (amount-due, fixed; pre-notify; pause/resume)
+
+Escrow page (balances, analysis PDF, shortage one-time pay)
+
+Phase 4:
+
+Payoff (real-time quote + PDF, wire instructions with fraud warning)
+
+Disputes intake
+
+Edge states (BK/attorney/default UX hardening)
+
+Cards as a secondary tender (behind a feature flag)
+
+2) Authentication integration
+
+You wrote: “Yes, use the existing auth system and roles… same login; if Role=Borrower, take them to borrower flow.”
+✅ Agreed. Engineering notes:
+
+Use the same /auth entry and existing MFA/password policy.
+
+On successful login, check RBAC claims:
+
+If Borrower, redirect to /portal (borrower dashboard).
+
+If staff or other roles, keep current routes.
+
+Ensure the JWT/session includes: roles, borrower_entity_id(s) (or fetchable), and a unique borrower_user_id.
+
+Guard all borrower APIs with Borrower role + ownership checks.
+
+3) UI/UX approach
+
+Routes: Use a separate namespace for clarity: /**portal**/* (not /**borrower**/*) so we can keep URL stable if we add non-borrower personas later.
+
+Components: Reuse shared primitives (tables, PDF viewer, form controls), but wrap with role-guards and borrower-specific copy.
+
+Design: Keep it consumer-friendly (simpler labels, prominent “Make a payment” CTA, clear cutoff times). We’ll carry the same design system, just lighter density.
+
+4) Database schema approach
+
+Keep borrower-facing tables in a dedicated schema (e.g., servicing_portal) for blast-radius control and RLS. Leave core system tables (e.g., loans, borrower_entities) in public.
+
+borrower_entities vs borrower_users:
+
+borrower_entities = legal party on the note (already exists).
+
+borrower_users = authenticated portal identities mapped to that entity.
+
+Important alignment: Because auth is centralized, do not store password_hash in borrower_users (the canvas “DB Implementation Guide” draft includes it). Instead, treat borrower_users as a mapping/profile table (email/phone, mfa flag, etc.) with passwords owned by your auth service.
+If you want, I’ll push a quick redline to that doc to drop password_hash and add RLS notes.
+
+5) Feature scope for V1 (lock this)
+
+Must-haves (Phase 1 MVP):
+
+✅ View loan balance/details
+
+✅ View payment history
+
+✅ Make one-time ACH payments (with receipts)
+
+✅ Update contact information (with step-up for sensitive changes)
+
+✅ Notices feed (read-only)
+
+Nice-to-have if capacity allows in Phase 1 (otherwise Phase 2):
+
+◻️ View/download documents (at least statements)
+
+◻️ Request payoff quote (non-real-time request; real-time moves to Phase 4)
+
+◻️ Secure messaging (could be read-only “Contact us” link in P1, full threads in P2)
+
+Defers:
+
+Autopay → Phase 3
+
+Real-time payoff → Phase 4
+
+Disputes intake → Phase 4
+
+6) Payment processing
+
+Processor: Use the existing payment processor and webhook paths for consistency.
+
+Flow: Keep the borrower flow simplified vs staff tooling:
+
+Quote → fee disclosure → confirm → pending receipt → webhook → posted receipt.
+
+Show explicit cutoff time in MST and “pending (ACH)” status until settlement.
+
+Tender types: Start with ACH only in MVP. Put debit/credit cards behind a feature flag (enable per product/portfolio later due to fees/chargebacks).
+
+Bank link: If Plaid is already integrated, great; otherwise, manual routing/account with micro-deposit fallback can be added later.
+
+Implementation game plan
+
+DB first, but scoped to Phase 1
+
+Create servicing_portal schema and only the tables needed for MVP:
+
+borrower_users (no password_hash), loan_borrower_links,
+
+payment_methods (ACH first), payments,
+
+preferences (minimal), notices,
+
+documents (metadata) optional in P1 if deferred.
+
+Add RLS policies keyed to borrower_user_id and borrower_entity_id; app sets GUCs per request.
+
+APIs
+
+/borrower/loans, /borrower/loans/:id/summary, /borrower/loans/:id/transactions
+
+/borrower/payment-methods (ACH add/list/remove)
+
+/borrower/loans/:id/payments (POST with idempotency)
+
+/borrower/me (profile GET/PATCH)
+
+/borrower/notices (list, mark read)
+
+(Optional P1) /borrower/documents
+
+Webhooks & receipts
+
+Wire processor webhooks → update payments.status, generate posted receipts, push a notice.
+
+UX
+
+/portal dashboard, /portal/loans/:id, /portal/payments
+
+Simple, mobile-friendly, prominent payment CTA, line-item breakdown.
+
+Security
+
+Step-up auth for method changes and PII updates.
+
+ACH auth text + consent hash stored on payment creation.

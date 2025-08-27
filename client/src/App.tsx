@@ -27,6 +27,11 @@ import ActivatePage from "@/pages/activate";
 import ActivateTestPage from "@/pages/activate-test";
 import NotFound from "@/pages/not-found";
 
+// Borrower Portal Pages
+import { BorrowerDashboard } from "@/pages/portal/dashboard";
+import { BorrowerLoanDetails } from "@/pages/portal/loan-details";
+import { BorrowerMakePayment } from "@/pages/portal/make-payment";
+
 function Router() {
   return (
     <Switch>
@@ -50,6 +55,14 @@ function Router() {
       <ProtectedRoute path="/users" component={Dashboard} />
       <ProtectedRoute path="/settings" component={Settings} />
       <ProtectedRoute path="/mfa-settings" component={MfaSettings} />
+      
+      {/* Borrower Portal Routes */}
+      <ProtectedRoute path="/portal" component={BorrowerDashboard} />
+      <ProtectedRoute path="/portal/dashboard" component={BorrowerDashboard} />
+      <ProtectedRoute path="/portal/loans/:loanId" component={BorrowerLoanDetails} />
+      <ProtectedRoute path="/portal/loans/:loanId/pay" component={BorrowerMakePayment} />
+      <ProtectedRoute path="/portal/payment" component={BorrowerMakePayment} />
+      
       <Route path="/auth" component={AuthPage} />
       <Route path="/activate" component={ActivatePage} />
       <Route path="/activate-test" component={ActivateTestPage} />

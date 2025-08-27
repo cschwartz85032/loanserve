@@ -60,8 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.setQueryData(["/api/user"], user);
       // Wait a moment for session to be established
       await new Promise(resolve => setTimeout(resolve, 100));
-      // Then navigate to dashboard
-      window.location.href = '/dashboard';
+      // Navigate based on user role
+      if (user.role === 'borrower') {
+        window.location.href = '/portal';
+      } else {
+        window.location.href = '/dashboard';
+      }
     },
     onError: (error: Error) => {
       toast({

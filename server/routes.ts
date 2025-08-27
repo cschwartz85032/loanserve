@@ -17,6 +17,7 @@ import { adminUsersRouter } from "./routes/admin-users";
 import { ipAllowlistRouter } from "./routes/ip-allowlist";
 import mfaRoutes from "./routes/mfa";
 import crmRoutes from "./routes/crm";
+import { registerBorrowerRoutes } from "./routes/borrower";
 import { settingsRouter } from "./routes/settings";
 import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { emailTemplatesRouter } from "./routes/email-templates";
@@ -112,6 +113,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register CRM routes
   app.use('/api', crmRoutes);
+
+  // Register Borrower Portal routes
+  registerBorrowerRoutes(app);
 
   // Register payment processing routes
   app.use('/api', paymentRoutes);

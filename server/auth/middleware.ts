@@ -339,6 +339,72 @@ export function requireRole(...roles: string[]) {
 }
 
 /**
+ * Require borrower role and load borrower details
+ */
+export async function requireBorrower(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    // Check authentication
+    if (!req.user || !req.userPolicy) {
+      res.status(401).json({ 
+        error: 'Authentication required',
+        code: 'AUTH_REQUIRED' 
+      });
+      return;
+    }
+
+    // Check role
+    if (req.user.role !== 'borrower') {
+      res.status(403).json({ 
+        error: 'Borrower access required',
+        code: 'BORROWER_REQUIRED' 
+      });
+      return;
+    }
+
+    // Load borrower details
+    const { db } = await import('../db');
+    const { borrowerUsers } = await import('@shared/schema');
+    const { eq } = await import('drizzle-orm');
+
+    const [borrowerUser] = await db
+      .select()
+      .from(borrowerUsers)
+      .where(eq(borrowerUsers.email, req.user.email))
+      .limit(1);
+
+    if (!borrowerUser) {
+      res.status(403).json({ 
+        error: 'Borrower profile not found',
+        code: 'BORROWER_PROFILE_NOT_FOUND' 
+      });
+      return;
+    }
+
+    // Attach borrower details to request
+    (req.user as any).borrowerUserId = borrowerUser.id;
+    (req.user as any).borrowerEntityId = borrowerUser.borrowerEntityId;
+
+    // Update last login
+    await db
+      .update(borrowerUsers)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(borrowerUsers.id, borrowerUser.id));
+
+    next();
+  } catch (error) {
+    console.error('Borrower auth middleware error:', error);
+    res.status(500).json({ 
+      error: 'Authentication check failed',
+      code: 'AUTH_CHECK_FAILED' 
+    });
+  }
+}
+
+/**
  * Clear user policy cache on logout or role change
  */
 export function clearUserPolicyCache(userId: number): void {

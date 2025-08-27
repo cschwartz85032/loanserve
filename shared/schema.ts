@@ -288,9 +288,6 @@ export const borrowerEntities = pgTable("borrower_entities", {
   mailingCountry: text("mailing_country").default('USA'),
   // Financial information
   creditScore: integer("credit_score"),
-  creditScoreEquifax: integer("credit_score_equifax"),
-  creditScoreExperian: integer("credit_score_experian"),
-  creditScoreTransunion: integer("credit_score_transunion"),
   monthlyIncome: decimal("monthly_income", { precision: 12, scale: 2 }),
   totalAssets: decimal("total_assets", { precision: 15, scale: 2 }),
   totalLiabilities: decimal("total_liabilities", { precision: 15, scale: 2 }),
@@ -2883,6 +2880,132 @@ export const reconExceptions = pgTable("recon_exceptions", {
   stateIdx: index("recon_exception_state_idx").on(t.state),
   severityIdx: index("recon_exception_severity_idx").on(t.severity)
 }));
+
+// ========================================
+// BORROWER PORTAL TABLES - Phase 1
+// ========================================
+
+// Borrower portal users - maps authenticated users to borrower entities
+export const borrowerUsers = pgTable("borrower_users", {
+  id: serial("id").primaryKey(),
+  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id).notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
+  status: text("status").default('active').notNull(), // active, disabled
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  emailIdx: index("borrower_users_email_idx").on(t.email),
+  entityIdx: index("borrower_users_entity_idx").on(t.borrowerEntityId),
+  uniqueEntityEmail: unique().on(t.borrowerEntityId, t.email)
+}));
+
+// Links loans to borrower entities with roles
+export const loanBorrowerLinks = pgTable("loan_borrower_links", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id).notNull(),
+  borrowerUserId: integer("borrower_user_id").references(() => borrowerUsers.id),
+  role: text("role").notNull(), // primary, co, authorized
+  permissions: jsonb("permissions"), // view_only, make_payments, full_access
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  loanIdx: index("loan_borrower_loan_idx").on(t.loanId),
+  entityIdx: index("loan_borrower_entity_idx").on(t.borrowerEntityId),
+  uniqueLoanBorrowerRole: unique().on(t.loanId, t.borrowerEntityId, t.role)
+}));
+
+// Payment methods for borrower portal
+export const borrowerPaymentMethods = pgTable("borrower_payment_methods", {
+  id: serial("id").primaryKey(),
+  borrowerUserId: integer("borrower_user_id").references(() => borrowerUsers.id).notNull(),
+  type: text("type").notNull(), // ach, card (ach only for Phase 1)
+  processorToken: text("processor_token").notNull(), // Encrypted processor reference
+  last4: text("last4"),
+  bankName: text("bank_name"),
+  accountType: text("account_type"), // checking, savings
+  nameOnAccount: text("name_on_account"),
+  status: text("status").default('active').notNull(), // active, deleted
+  isDefault: boolean("is_default").default(false),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  userIdx: index("payment_methods_user_idx").on(t.borrowerUserId)
+}));
+
+// Notices for borrowers
+export const borrowerNotices = pgTable("borrower_notices", {
+  id: serial("id").primaryKey(),
+  loanId: integer("loan_id").references(() => loans.id).notNull(),
+  borrowerUserId: integer("borrower_user_id").references(() => borrowerUsers.id),
+  type: text("type").notNull(), // past_due, payment_received, statement_ready, etc
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  payload: jsonb("payload"),
+  readAt: timestamp("read_at"),
+  deliveryChannels: text("delivery_channels").array(), // portal, email, sms
+  createdAt: timestamp("created_at").defaultNow().notNull()
+}, (t) => ({
+  loanIdx: index("notices_loan_idx").on(t.loanId),
+  userIdx: index("notices_user_idx").on(t.borrowerUserId),
+  unreadIdx: index("notices_unread_idx").on(t.readAt)
+}));
+
+// Borrower preferences
+export const borrowerPreferences = pgTable("borrower_preferences", {
+  id: serial("id").primaryKey(),
+  borrowerUserId: integer("borrower_user_id").references(() => borrowerUsers.id).notNull().unique(),
+  statementDelivery: text("statement_delivery").default('paperless'), // paperless, mail
+  paperlessConsent: boolean("paperless_consent").default(false),
+  emailNotifications: boolean("email_notifications").default(true),
+  smsNotifications: boolean("sms_notifications").default(false),
+  language: text("language").default('en'),
+  timezone: text("timezone").default('America/Phoenix'),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull()
+}, (t) => ({
+  userIdx: unique().on(t.borrowerUserId)
+}));
+
+// Export types for borrower portal tables
+export const insertBorrowerUserSchema = createInsertSchema(borrowerUsers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertBorrowerUser = z.infer<typeof insertBorrowerUserSchema>;
+export type BorrowerUser = typeof borrowerUsers.$inferSelect;
+
+export const insertLoanBorrowerLinkSchema = createInsertSchema(loanBorrowerLinks).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertLoanBorrowerLink = z.infer<typeof insertLoanBorrowerLinkSchema>;
+export type LoanBorrowerLink = typeof loanBorrowerLinks.$inferSelect;
+
+export const insertBorrowerPaymentMethodSchema = createInsertSchema(borrowerPaymentMethods).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertBorrowerPaymentMethod = z.infer<typeof insertBorrowerPaymentMethodSchema>;
+export type BorrowerPaymentMethod = typeof borrowerPaymentMethods.$inferSelect;
+
+export const insertBorrowerNoticeSchema = createInsertSchema(borrowerNotices).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertBorrowerNotice = z.infer<typeof insertBorrowerNoticeSchema>;
+export type BorrowerNotice = typeof borrowerNotices.$inferSelect;
+
+export const insertBorrowerPreferencesSchema = createInsertSchema(borrowerPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+export type InsertBorrowerPreferences = z.infer<typeof insertBorrowerPreferencesSchema>;
+export type BorrowerPreferences = typeof borrowerPreferences.$inferSelect;
 
 // Export types for banking tables
 export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({
