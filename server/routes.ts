@@ -128,6 +128,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Compliance routes (Phase 9)
   const complianceRoutes = await import('./routes/compliance');
   app.use(complianceRoutes.default);
+  
+  // Register Compliance Console routes (Phase 9)
+  const complianceConsoleRoutes = await import('./routes/compliance-console');
+  app.use('/api/compliance', complianceConsoleRoutes.default);
+  console.log('[Routes] Registered compliance console routes');
+  
   console.log('[Routes] Registered Column banking routes');
 
   // Register payment ingestion routes (Step 2)
