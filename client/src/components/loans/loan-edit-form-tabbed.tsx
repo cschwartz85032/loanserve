@@ -104,7 +104,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   });
   
   // Extract audit logs from response
-  const auditLogs = auditLogsResponse?.logs || [];
+  const auditLogs = auditLogsResponse || [];
 
   // Update form data when loan is loaded
   useEffect(() => {
