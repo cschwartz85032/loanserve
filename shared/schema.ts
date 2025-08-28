@@ -4174,6 +4174,7 @@ export const complianceAuditLog = pgTable("compliance_audit_log", {
   eventTsUtc: timestamp("event_ts_utc", { withTimezone: true }).notNull().defaultNow(),
   resourceType: text("resource_type").notNull(),  // 'loan','payment','notice','consent', ...
   resourceId: text("resource_id"),
+  loanId: integer("loan_id"),  // For loan-related events
   payloadJson: jsonb("payload_json").notNull(), // PII minimized
   payloadHash: text("payload_hash"),
   prevHash: text("prev_hash"),
@@ -4186,7 +4187,8 @@ export const complianceAuditLog = pgTable("compliance_audit_log", {
   correlationIdx: index("compliance_audit_correlation_idx").on(t.correlationId, t.eventTsUtc),
   accountIdx: index("compliance_audit_account_idx").on(t.accountId, t.eventTsUtc),
   eventIdx: index("compliance_audit_event_idx").on(t.eventType, t.eventTsUtc),
-  resourceIdx: index("compliance_audit_resource_idx").on(t.resourceType, t.resourceId)
+  resourceIdx: index("compliance_audit_resource_idx").on(t.resourceType, t.resourceId),
+  loanIdx: index("compliance_audit_loan_idx").on(t.loanId, t.eventTsUtc)
 }));
 
 // Consent records
