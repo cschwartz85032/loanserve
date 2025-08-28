@@ -27,10 +27,22 @@ const router = Router();
 // Get audit log entries
 router.get('/api/compliance/audit-log', async (req, res) => {
   try {
-    const { startDate, endDate, eventType, resourceType, limit = 100 } = req.query;
+    const { startDate, endDate, eventType, resourceType, entityId, entityType, limit = 100 } = req.query;
     
     // Apply filters
     const conditions = [];
+    
+    // Filter by loan ID if entityId is provided (for loan audit tab)
+    if (entityId) {
+      // For loans, filter by loan_id column
+      if (entityType === 'loan') {
+        conditions.push(eq(complianceAuditLog.loanId, Number(entityId)));
+      } else {
+        // For other entities, filter by resourceId
+        conditions.push(eq(complianceAuditLog.resourceId, String(entityId)));
+      }
+    }
+    
     if (startDate) {
       conditions.push(gte(complianceAuditLog.eventTsUtc, new Date(startDate as string)));
     }

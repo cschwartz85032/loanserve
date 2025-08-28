@@ -274,6 +274,7 @@ class ComplianceAuditService {
         eventTsUtc: new Date(),
         resourceType: data.resourceType,
         resourceId: String(data.resourceId || ''),
+        loanId: data.loanId || null,  // Include loan ID for loan-related events
         payloadHash,
         payloadJson,
         prevHash,

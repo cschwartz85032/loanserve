@@ -118,6 +118,7 @@ router.post('/loans/:loanId/crm/notes', asyncHandler(async (req, res) => {
     actorId: userId,
     resourceType: 'crm_note',
     resourceId: note.id,
+    loanId: loanId,  // Include loan ID so it appears in loan audit tab
     description: `Added CRM note to loan ${loanId}`,
     newValues: {
       noteId: note.id,
@@ -197,6 +198,7 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
       actorId: userId,
       resourceType: 'crm_task',
       resourceId: task.id,
+      loanId: loanId,  // Include loan ID so it appears in loan audit tab
       description: `Created task: ${title}`,
       newValues: {
         taskId: task.id,
@@ -1008,6 +1010,7 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       actorId: userId,
       resourceType: 'loan',
       resourceId: loanId,
+      loanId: loanId,  // Include loan ID so it appears in loan audit tab
       description: 'Updated contact information',
       newValues: {
         phones: phones || [],
