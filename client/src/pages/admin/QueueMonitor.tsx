@@ -111,34 +111,39 @@ function QueueMonitorContent() {
   const { toast } = useToast();
 
   // Fetch queue metrics
-  const { data: queues, refetch: refetchQueues } = useQuery<QueueMetrics[]>({
+  const { data: queuesResponse, refetch: refetchQueues } = useQuery<{ success: boolean; data: QueueMetrics[] }>({
     queryKey: ['/api/queue-monitor/queues'],
     refetchInterval: autoRefresh ? 5000 : false
   });
+  const queues = queuesResponse?.data || [];
 
   // Fetch health status
-  const { data: health } = useQuery<QueueHealth[]>({
+  const { data: healthResponse } = useQuery<{ success: boolean; data: QueueHealth[] }>({
     queryKey: ['/api/queue-monitor/health'],
     refetchInterval: autoRefresh ? 10000 : false
   });
+  const health = healthResponse?.data || [];
 
   // Fetch historical metrics
-  const { data: history } = useQuery<MetricsHistory>({
+  const { data: historyResponse } = useQuery<{ success: boolean; data: MetricsHistory }>({
     queryKey: ['/api/queue-monitor/history'],
     refetchInterval: autoRefresh ? 5000 : false
   });
+  const history = historyResponse?.data;
 
   // Fetch top queues
-  const { data: topQueues } = useQuery<TopQueue[]>({
+  const { data: topQueuesResponse } = useQuery<{ success: boolean; data: TopQueue[] }>({
     queryKey: ['/api/queue-monitor/top-queues'],
     refetchInterval: autoRefresh ? 5000 : false
   });
+  const topQueues = topQueuesResponse?.data || [];
 
   // Fetch processing rates
-  const { data: processingRates } = useQuery<ProcessingRates>({
+  const { data: processingRatesResponse } = useQuery<{ success: boolean; data: ProcessingRates }>({
     queryKey: ['/api/queue-monitor/processing-rates'],
     refetchInterval: autoRefresh ? 5000 : false
   });
+  const processingRates = processingRatesResponse?.data;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
