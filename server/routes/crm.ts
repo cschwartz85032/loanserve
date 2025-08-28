@@ -115,21 +115,23 @@ router.post('/loans/:loanId/crm/notes', asyncHandler(async (req, res) => {
   await complianceAudit.logEvent({
     eventType: COMPLIANCE_EVENTS.CRM.NOTE_ADDED,
     actorType: 'user',
-    actorId: userId?.toString(),
+    actorId: userId,
     resourceType: 'crm_note',
-    resourceId: note.id.toString(),
-    details: {
-      action: 'create_crm_note',
+    resourceId: note.id,
+    description: `Added CRM note to loan ${loanId}`,
+    newValues: {
       noteId: note.id,
       loanId,
+      content: content.substring(0, 100),
       isPrivate,
       mentionedUsers: mentionedUsers || [],
-      hasAttachments: (attachments || []).length > 0,
+      hasAttachments: (attachments || []).length > 0
+    },
+    metadata: {
+      loanId,
       userId
     },
-    newValues: note,
-    userId,
-    ipAddress: (req as any).ip,
+    ipAddr: (req as any).ip,
     userAgent: (req as any).headers?.['user-agent']
   });
   
@@ -192,22 +194,23 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
     await complianceAudit.logEvent({
       eventType: COMPLIANCE_EVENTS.CRM.TASK_CREATED,
       actorType: 'user',
-      actorId: userId?.toString(),
+      actorId: userId,
       resourceType: 'crm_task',
-      resourceId: task.id.toString(),
-      details: {
-        action: 'create_crm_task',
+      resourceId: task.id,
+      description: `Created task: ${title}`,
+      newValues: {
         taskId: task.id,
         loanId,
         title,
         assignedTo,
         priority: priority || 'medium',
-        dueDate,
+        dueDate
+      },
+      metadata: {
+        loanId,
         userId
       },
-      newValues: task,
-      userId,
-      ipAddress: (req as any).ip,
+      ipAddr: (req as any).ip,
       userAgent: (req as any).headers?.['user-agent']
     });
     
@@ -1002,21 +1005,20 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     await complianceAudit.logEvent({
       eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
       actorType: 'user',
-      actorId: userId?.toString(),
+      actorId: userId,
       resourceType: 'loan',
-      resourceId: loanId.toString(),
-      details: {
-        action: 'update_contact_info',
+      resourceId: loanId,
+      description: 'Updated contact information',
+      newValues: {
+        phones: phones || [],
+        emails: emails || [],
+        updateData
+      },
+      metadata: {
         loanId,
-        changes: {
-          phones: phones || [],
-          emails: emails || []
-        },
         userId
       },
-      newValues: updateData,
-      userId,
-      ipAddress: (req as any).ip,
+      ipAddr: (req as any).ip,
       userAgent: (req as any).headers?.['user-agent']
     });
 
