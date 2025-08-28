@@ -1,0 +1,370 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[dotenv@17.2.1] injecting env (4) from .env.local -- tip: ⚙️  enable debug logging with { debug: true }
+[Twilio] Creating service instance...
+[Twilio] Checking configuration...
+[Twilio] Account SID: Present
+[Twilio] Auth Token: Present
+[Twilio] Phone Number: +12023017979
+[Twilio] Messaging Service SID: MG695e1b1cd14f6b2fb31fa6db23d8a05b
+[Twilio] ✓ Service configured successfully with phone: +12023017979
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Establishing connections...
+[INFO] Successfully loaded pdf2pic module
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+[INFO] Successfully loaded pdfjs-dist module
+[dotenv@17.2.1] injecting env (0) from .env.local -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[Config] Loaded .env.local
+[Telemetry] Initializing observability...
+[Telemetry] Service: loanserve-pro
+[Telemetry] Version: 1.0.0
+[Telemetry] Environment: development
+[Migration] Starting database migrations...
+[Migration] Error running migrations: error: type "collection_status" already exists
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async migrate (/home/runner/workspace/node_modules/src/neon-http/migrator.ts:45:5)
+    at async runMigrations (/home/runner/workspace/server/migrations.ts:13:5)
+    at async <anonymous> (/home/runner/workspace/server/index.ts:100:3) {
+  length: 97,
+  severity: 'ERROR',
+  code: '42710',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'typecmds.c',
+  line: '1167',
+  routine: 'DefineEnum'
+}
+[Server] About to run startup validations...
+[SchemaValidator] Starting validation process...
+[SchemaValidator] Running startup validations...
+[SchemaValidator] Environment variables validated
+[SchemaValidator] Starting schema validation...
+[SchemaValidator] Schema validation warnings:
+  - Table 'accounts_chart' exists in database but not defined in schema
+  - Table 'ach_batch' exists in database but not defined in schema
+  - Table 'ach_entry' exists in database but not defined in schema
+  - Table 'ach_return' exists in database but not defined in schema
+  - Table 'ach_return_windows' exists in database but not defined in schema
+  - Table 'allocation_rules' exists in database but not defined in schema
+  - Table 'aml_screenings' exists in database but not defined in schema
+  - Table 'attorney' exists in database but not defined in schema
+  - Table 'audit_log' exists in database but not defined in schema
+  - Table 'audit_logs' exists in database but not defined in schema
+  - Table 'auth_events' exists in database but not defined in schema
+  - Table 'bank_account' exists in database but not defined in schema
+  - Table 'bank_files' exists in database but not defined in schema
+  - Table 'bank_statement_file' exists in database but not defined in schema
+  - Table 'bank_transactions' exists in database but not defined in schema
+  - Table 'bank_txn' exists in database but not defined in schema
+  - Table 'borrower_entities' exists in database but not defined in schema
+  - Table 'borrower_notices' exists in database but not defined in schema
+  - Table 'borrower_payment_methods' exists in database but not defined in schema
+  - Table 'borrower_preferences' exists in database but not defined in schema
+  - Table 'borrower_users' exists in database but not defined in schema
+  - Table 'cash_match_candidate' exists in database but not defined in schema
+  - Table 'collection_activities' exists in database but not defined in schema
+  - Table 'collection_case' exists in database but not defined in schema
+  - Table 'compliance_audit_log' exists in database but not defined in schema
+  - Table 'consumer_inbox' exists in database but not defined in schema
+  - Table 'crm_activity' exists in database but not defined in schema
+  - Table 'crm_appointments' exists in database but not defined in schema
+  - Table 'crm_calls' exists in database but not defined in schema
+  - Table 'crm_collaborators' exists in database but not defined in schema
+  - Table 'crm_deals' exists in database but not defined in schema
+  - Table 'crm_notes' exists in database but not defined in schema
+  - Table 'crm_tasks' exists in database but not defined in schema
+  - Table 'currency_codes' exists in database but not defined in schema
+  - Table 'dead_letter_messages' exists in database but not defined in schema
+  - Table 'deletion_receipt' exists in database but not defined in schema
+  - Table 'delinquency_current' exists in database but not defined in schema
+  - Table 'delinquency_snapshot' exists in database but not defined in schema
+  - Table 'document_artifact' exists in database but not defined in schema
+  - Table 'document_template' exists in database but not defined in schema
+  - Table 'document_templates' exists in database but not defined in schema
+  - Table 'documents' exists in database but not defined in schema
+  - Table 'email_template_folders' exists in database but not defined in schema
+  - Table 'email_templates' exists in database but not defined in schema
+  - Table 'escrow_accounts' exists in database but not defined in schema
+  - Table 'escrow_advances' exists in database but not defined in schema
+  - Table 'escrow_analysis' exists in database but not defined in schema
+  - Table 'escrow_analysis_item' exists in database but not defined in schema
+  - Table 'escrow_disbursement' exists in database but not defined in schema
+  - Table 'escrow_disbursement_payments' exists in database but not defined in schema
+  - Table 'escrow_disbursements' exists in database but not defined in schema
+  - Table 'escrow_forecast' exists in database but not defined in schema
+  - Table 'escrow_items' exists in database but not defined in schema
+  - Table 'escrow_ledger' exists in database but not defined in schema
+  - Table 'escrow_policy' exists in database but not defined in schema
+  - Table 'escrow_statement' exists in database but not defined in schema
+  - Table 'escrow_transactions' exists in database but not defined in schema
+  - Table 'exception_cases' exists in database but not defined in schema
+  - Table 'expected_settlements' exists in database but not defined in schema
+  - Table 'fee_policy' exists in database but not defined in schema
+  - Table 'fee_templates' exists in database but not defined in schema
+  - Table 'foreclosure_case' exists in database but not defined in schema
+  - Table 'foreclosure_event' exists in database but not defined in schema
+  - Table 'gateway_provider' exists in database but not defined in schema
+  - Table 'general_ledger_entries' exists in database but not defined in schema
+  - Table 'general_ledger_events' exists in database but not defined in schema
+  - Table 'guarantors' exists in database but not defined in schema
+  - Table 'idempotency_key' exists in database but not defined in schema
+  - Table 'inbox' exists in database but not defined in schema
+  - Table 'insurance_policies' exists in database but not defined in schema
+  - Table 'interest_accruals' exists in database but not defined in schema
+  - Table 'investor_contract' exists in database but not defined in schema
+  - Table 'investor_distributions' exists in database but not defined in schema
+  - Table 'investor_position_versions' exists in database but not defined in schema
+  - Table 'investor_positions' exists in database but not defined in schema
+  - Table 'investor_waterfall_rule' exists in database but not defined in schema
+  - Table 'investors' exists in database but not defined in schema
+  - Table 'irs_1098_records' exists in database but not defined in schema
+  - Table 'late_fee_assessment' exists in database but not defined in schema
+  - Table 'ledger_entries_legacy' exists in database but not defined in schema
+  - Table 'ledger_entry' exists in database but not defined in schema
+  - Table 'ledger_event' exists in database but not defined in schema
+  - Table 'legal_hold' exists in database but not defined in schema
+  - Table 'legal_proceedings' exists in database but not defined in schema
+  - Table 'lender_entity' exists in database but not defined in schema
+  - Table 'loan_accounting_config' exists in database but not defined in schema
+  - Table 'loan_balances' exists in database but not defined in schema
+  - Table 'loan_borrower_links' exists in database but not defined in schema
+  - Table 'loan_borrowers' exists in database but not defined in schema
+  - Table 'loan_fees' exists in database but not defined in schema
+  - Table 'loan_ledger' exists in database but not defined in schema
+  - Table 'loan_terms' exists in database but not defined in schema
+  - Table 'loans' exists in database but not defined in schema
+  - Table 'login_attempts' exists in database but not defined in schema
+  - Table 'message_metrics' exists in database but not defined in schema
+  - Table 'mfa_audit_log' exists in database but not defined in schema
+  - Table 'mfa_backup_codes' exists in database but not defined in schema
+  - Table 'mfa_challenges' exists in database but not defined in schema
+  - Table 'notice_schedule' exists in database but not defined in schema
+  - Table 'notice_template_v2' exists in database but not defined in schema
+  - Table 'notifications' exists in database but not defined in schema
+  - Table 'outbox' exists in database but not defined in schema
+  - Table 'outbox_events' exists in database but not defined in schema
+  - Table 'outbox_messages' exists in database but not defined in schema
+  - Table 'password_reset_tokens' exists in database but not defined in schema
+  - Table 'payees' exists in database but not defined in schema
+  - Table 'payment_artifacts' exists in database but not defined in schema
+  - Table 'payment_distributions' exists in database but not defined in schema
+  - Table 'payment_events' exists in database but not defined in schema
+  - Table 'payment_ingestion' exists in database but not defined in schema
+  - Table 'payment_ingestions' exists in database but not defined in schema
+  - Table 'payment_intake' exists in database but not defined in schema
+  - Table 'payment_ledger' exists in database but not defined in schema
+  - Table 'payment_posting' exists in database but not defined in schema
+  - Table 'payment_schedule' exists in database but not defined in schema
+  - Table 'payment_state_transitions' exists in database but not defined in schema
+  - Table 'payment_transactions' exists in database but not defined in schema
+  - Table 'payment_validation' exists in database but not defined in schema
+  - Table 'payments' exists in database but not defined in schema
+  - Table 'payments_inbox' exists in database but not defined in schema
+  - Table 'permissions' exists in database but not defined in schema
+  - Table 'plan_header' exists in database but not defined in schema
+  - Table 'plan_progress' exists in database but not defined in schema
+  - Table 'plan_schedule' exists in database but not defined in schema
+  - Table 'product_policy' exists in database but not defined in schema
+  - Table 'properties' exists in database but not defined in schema
+  - Table 'recon_exception' exists in database but not defined in schema
+  - Table 'reconciliation_exceptions' exists in database but not defined in schema
+  - Table 'reconciliation_matches' exists in database but not defined in schema
+  - Table 'reconciliations' exists in database but not defined in schema
+  - Table 'remittance_cycle' exists in database but not defined in schema
+  - Table 'remittance_export' exists in database but not defined in schema
+  - Table 'remittance_item' exists in database but not defined in schema
+  - Table 'remittance_recon_snapshot' exists in database but not defined in schema
+  - Table 'retention_policy' exists in database but not defined in schema
+  - Table 'role_permissions' exists in database but not defined in schema
+  - Table 'roles' exists in database but not defined in schema
+  - Table 'saga_states' exists in database but not defined in schema
+  - Table 'saga_step_history' exists in database but not defined in schema
+  - Table 'schedule_plan' exists in database but not defined in schema
+  - Table 'schedule_row' exists in database but not defined in schema
+  - Table 'servicing_events' exists in database but not defined in schema
+  - Table 'servicing_exceptions' exists in database but not defined in schema
+  - Table 'servicing_instructions' exists in database but not defined in schema
+  - Table 'servicing_runs' exists in database but not defined in schema
+  - Table 'session' exists in database but not defined in schema
+  - Table 'sessions' exists in database but not defined in schema
+  - Table 'settlement_windows' exists in database but not defined in schema
+  - Table 'system_alerts' exists in database but not defined in schema
+  - Table 'system_settings' exists in database but not defined in schema
+  - Table 'tasks' exists in database but not defined in schema
+  - Table 'user_ip_allowlist' exists in database but not defined in schema
+  - Table 'user_mfa_factors' exists in database but not defined in schema
+  - Table 'user_roles' exists in database but not defined in schema
+  - Table 'users' exists in database but not defined in schema
+[SchemaValidator] Startup validations complete
+[Server] Startup validations completed
+[Consumers] Starting payment processing consumers...
+[Consumers] Waiting for RabbitMQ connection...
+[RabbitMQ] Applying topology...
+[RabbitMQ] Exchange declared: servicing.direct (direct)
+[RabbitMQ] Exchange declared: payments.topic (topic)
+[RabbitMQ] Exchange declared: documents.direct (direct)
+[RabbitMQ] Exchange declared: notifications.topic (topic)
+[RabbitMQ] Exchange declared: escrow.workflow (topic)
+[RabbitMQ] Applying topology...
+[RabbitMQ] Exchange declared: escrow.compensate (topic)
+[RabbitMQ] Exchange declared: servicing.direct (direct)
+[RabbitMQ] Exchange declared: escrow.saga (topic)
+[RabbitMQ] Exchange declared: payments.topic (topic)
+[RabbitMQ] Exchange declared: escrow.events (topic)
+[RabbitMQ] Exchange declared: documents.direct (direct)
+[RabbitMQ] Exchange declared: escrow.dlq (direct)
+[RabbitMQ] Exchange declared: notifications.topic (topic)
+[RabbitMQ] Exchange declared: compliance.topic (topic)
+[RabbitMQ] Exchange declared: escrow.workflow (topic)
+[RabbitMQ] Exchange declared: investor.direct (direct)
+[RabbitMQ] Exchange declared: escrow.compensate (topic)
+[RabbitMQ] Exchange declared: audit.topic (topic)
+[RabbitMQ] Exchange declared: escrow.saga (topic)
+[RabbitMQ] Exchange declared: cash.events (topic)
+[RabbitMQ] Exchange declared: escrow.events (topic)
+[RabbitMQ] Exchange declared: remittance (topic)
+[RabbitMQ] Exchange declared: escrow.dlq (direct)
+[RabbitMQ] Exchange declared: remit.saga (topic)
+[RabbitMQ] Exchange declared: compliance.topic (topic)
+[RabbitMQ] Exchange declared: remit.events (topic)
+[RabbitMQ] Exchange declared: investor.direct (direct)
+[RabbitMQ] Exchange declared: remit.dlq (direct)
+[RabbitMQ] Exchange declared: audit.topic (topic)
+[RabbitMQ] Exchange declared: settlement.topic (topic)
+[RabbitMQ] Exchange declared: cash.events (topic)
+[RabbitMQ] Exchange declared: reconciliation.topic (topic)
+[RabbitMQ] Exchange declared: remittance (topic)
+[RabbitMQ] Exchange declared: bank.topic (topic)
+[RabbitMQ] Exchange declared: aml.topic (topic)
+[RabbitMQ] Exchange declared: remit.saga (topic)
+[RabbitMQ] Exchange declared: dlx.main (topic)
+[RabbitMQ] Exchange declared: remit.events (topic)
+[RabbitMQ] Exchange declared: retry.5s (topic)
+[RabbitMQ] Exchange declared: remit.dlq (direct)
+[RabbitMQ] Exchange declared: retry.30s (topic)
+[RabbitMQ] Exchange declared: settlement.topic (topic)
+[RabbitMQ] Exchange declared: payments.dlq (direct)
+[RabbitMQ] Exchange declared: reconciliation.topic (topic)
+[RabbitMQ] Queue declared: servicing.daily.tasks.0
+[RabbitMQ] Exchange declared: bank.topic (topic)
+[RabbitMQ] Bound servicing.daily.tasks.0 to servicing.direct with key servicing.0.*
+[RabbitMQ] Exchange declared: aml.topic (topic)
+[RabbitMQ] Queue declared: servicing.daily.tasks.1
+[RabbitMQ] Exchange declared: dlx.main (topic)
+[RabbitMQ] Bound servicing.daily.tasks.1 to servicing.direct with key servicing.1.*
+[RabbitMQ] Exchange declared: retry.5s (topic)
+[RabbitMQ] Queue declared: servicing.daily.tasks.2
+[RabbitMQ] Exchange declared: retry.30s (topic)
+[RabbitMQ] Bound servicing.daily.tasks.2 to servicing.direct with key servicing.2.*
+[RabbitMQ] Exchange declared: payments.dlq (direct)
+[RabbitMQ] Queue declared: servicing.daily.tasks.3
+[RabbitMQ] Queue declared: servicing.daily.tasks.0
+[RabbitMQ] Bound servicing.daily.tasks.3 to servicing.direct with key servicing.3.*
+[RabbitMQ] Bound servicing.daily.tasks.0 to servicing.direct with key servicing.0.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.4
+[RabbitMQ] Queue declared: servicing.daily.tasks.1
+[RabbitMQ] Bound servicing.daily.tasks.4 to servicing.direct with key servicing.4.*
+[RabbitMQ] Bound servicing.daily.tasks.1 to servicing.direct with key servicing.1.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.5
+[RabbitMQ] Queue declared: servicing.daily.tasks.2
+[RabbitMQ] Bound servicing.daily.tasks.5 to servicing.direct with key servicing.5.*
+[RabbitMQ] Bound servicing.daily.tasks.2 to servicing.direct with key servicing.2.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.6
+[RabbitMQ] Queue declared: servicing.daily.tasks.3
+[RabbitMQ] Bound servicing.daily.tasks.6 to servicing.direct with key servicing.6.*
+[RabbitMQ] Bound servicing.daily.tasks.3 to servicing.direct with key servicing.3.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.7
+[RabbitMQ] Queue declared: servicing.daily.tasks.4
+[RabbitMQ] Bound servicing.daily.tasks.7 to servicing.direct with key servicing.7.*
+[RabbitMQ] Bound servicing.daily.tasks.4 to servicing.direct with key servicing.4.*
+[RabbitMQ] Queue declared: payments.validation
+[RabbitMQ] Queue declared: servicing.daily.tasks.5
+[RabbitMQ] Bound payments.validation to payments.topic with key payment.*.received
+[RabbitMQ] Bound servicing.daily.tasks.5 to servicing.direct with key servicing.5.*
+[RabbitMQ] Queue declared: payments.processing
+[RabbitMQ] Queue declared: servicing.daily.tasks.6
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.validated
+[RabbitMQ] Bound servicing.daily.tasks.6 to servicing.direct with key servicing.6.*
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.process
+[RabbitMQ] Queue declared: servicing.daily.tasks.7
+[RabbitMQ] Queue declared: payments.distribution
+[RabbitMQ] Bound servicing.daily.tasks.7 to servicing.direct with key servicing.7.*
+[RabbitMQ] Bound payments.distribution to payments.topic with key payment.*.processed
+[RabbitMQ] Queue declared: payments.validation
+[RabbitMQ] Queue declared: payments.compliance
+[RabbitMQ] Bound payments.validation to payments.topic with key payment.*.received
+[RabbitMQ] Bound payments.compliance to payments.topic with key payment.*.compliance
+[RabbitMQ] Queue declared: payments.processing
+[RabbitMQ] Queue declared: payments.reversal
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.validated
+[RabbitMQ] Bound payments.reversal to payments.topic with key payment.*.reversal
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.process
+[RabbitMQ] Queue declared: payments.returned
+[RabbitMQ] Queue declared: payments.distribution
+[RabbitMQ] Bound payments.returned to payments.topic with key payment.*.returned
+[RabbitMQ] Bound payments.distribution to payments.topic with key payment.*.processed
+[RabbitMQ] Queue declared: documents.analysis.request
+[RabbitMQ] Queue declared: payments.compliance
+[RabbitMQ] Bound documents.analysis.request to documents.direct with key analyze
+[RabbitMQ] Bound payments.compliance to payments.topic with key payment.*.compliance
+[RabbitMQ] Queue declared: notifications.email
+[RabbitMQ] Queue declared: payments.reversal
+[RabbitMQ] Bound notifications.email to notifications.topic with key notify.*.*.email
+[RabbitMQ] Bound payments.reversal to payments.topic with key payment.*.reversal
+[RabbitMQ] Queue declared: notifications.sms
+[RabbitMQ] Queue declared: payments.returned
+[RabbitMQ] Bound notifications.sms to notifications.topic with key notify.*.*.sms
+[RabbitMQ] Bound payments.returned to payments.topic with key payment.*.returned
+[RabbitMQ] Queue declared: notifications.dashboard
+[RabbitMQ] Queue declared: documents.analysis.request
+[RabbitMQ] Bound notifications.dashboard to notifications.topic with key notify.*.*.dashboard
+[RabbitMQ] Bound documents.analysis.request to documents.direct with key analyze
+[RabbitMQ] Queue declared: escrow.validate
+[RabbitMQ] Queue declared: notifications.email
+[RabbitMQ] Bound escrow.validate to escrow.workflow with key escrow.validate
+[RabbitMQ] Queue declared: escrow.authorize
+[RabbitMQ] Bound notifications.email to notifications.topic with key notify.*.*.email
+[RabbitMQ] Bound escrow.authorize to escrow.workflow with key escrow.authorize
+[RabbitMQ] Queue declared: notifications.sms
+[RabbitMQ] Queue declared: escrow.disburse
+[RabbitMQ] Bound notifications.sms to notifications.topic with key notify.*.*.sms
+[RabbitMQ] Bound escrow.disburse to escrow.workflow with key escrow.disburse
+[RabbitMQ] Queue declared: notifications.dashboard
+[RabbitMQ] Queue declared: escrow.reconcile
+[RabbitMQ] Bound notifications.dashboard to notifications.topic with key notify.*.*.dashboard
+[RabbitMQ] Bound escrow.reconcile to escrow.workflow with key escrow.reconcile
+[RabbitMQ] Queue declared: escrow.validate
+[RabbitMQ] Queue declared: q.escrow.forecast.v2
+[RabbitMQ] Bound escrow.validate to escrow.workflow with key escrow.validate
+[RabbitMQ] Bound q.escrow.forecast.v2 to escrow.saga with key forecast.request.v1
+[RabbitMQ] Queue declared: escrow.authorize
+[RabbitMQ] Queue declared: q.escrow.disburse.schedule.v2
+[RabbitMQ] Bound escrow.authorize to escrow.workflow with key escrow.authorize
+[RabbitMQ] Bound q.escrow.disburse.schedule.v2 to escrow.saga with key disbursement.schedule.v1
+[RabbitMQ] Queue declared: escrow.disburse
+[RabbitMQ] Queue declared: q.escrow.disburse.post.v2
+[RabbitMQ] Bound escrow.disburse to escrow.workflow with key escrow.disburse
+[RabbitMQ] Bound q.escrow.disburse.post.v2 to escrow.saga with key disbursement.post.v1
+[RabbitMQ] Queue declared: escrow.reconcile
+[RabbitMQ] Queue declared: q.escrow.analysis.run.v2
+[RabbitMQ] Bound escrow.reconcile to escrow.workflow with key escrow.reconcile
+[RabbitMQ] Bound q.escrow.analysis.run.v2 to escrow.saga with key analysis.run.v1
+[RabbitMQ] Queue declared: q.escrow.forecast.v2
+[RabbitMQ] Queue declared: q.escrow.events.audit.v2
+[RabbitMQ] Bound q.escrow.forecast.v2 to escrow.saga with key forecast.request.v1
+[RabbitMQ] Bound q.escrow.events.audit.v2 to escrow.events with key escrow.*
+[RabbitMQ] Queue declared: q.escrow.disburse.schedule.v2
+[RabbitMQ] Queue declared: q.escrow.dlq.v2
