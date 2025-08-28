@@ -1,0 +1,1200 @@
+PHASE 9
+
+
+
+Non-Negotiables:
+
+No gaps. If info is missing, state assumptions (with confidence level) and proceed.
+
+No fabrication of client data (examples must be clearly labeled).
+
+Every section must be actionable with copy-pasteable artifacts:
+
+Database schemas (DDL) + migration scripts.
+
+RabbitMQ exchanges/queues/bindings + DLQ + policies + code stubs.
+
+OpenAPI 3.1 endpoints.
+
+Rules (timing windows, retention) as data, never hardcoded.
+
+Workers for timers, retention, audit-pack generation.
+
+UX copy (emails/notices) WCAG 2.2 AA compliant.
+
+Security & privacy controls (encryption, RBAC/ABAC, DPIA triggers).
+
+Monitoring & alerts (Prometheus).
+
+Acceptance tests (Gherkin + pytest).
+
+Use [AI] extensively where appropriate and mark inline. Always provide a deterministic fallback path.
+
+Parameterize timing windows and retention. Never hardcode.
+
+Audit pack must reproduce balance history & artifacts exactly and provide verification hashes.
+
+Scope (from Phase-9 charter):
+
+Immutable audit log of all CRUD and financial events, linked via correlation IDs.
+
+Retention & purging schedules with immutable deletion receipts.
+
+Consent & communication preferences handling.
+
+Time-based process checks (notice windows) – parameterized.
+
+Acceptance: Audit pack generation reproduces balance history & artifacts for any account.
+
+
+
+B) Architecture (editable high-level)
+flowchart LR
+  subgraph Clients
+    UIs[Borrower/Lender/Admin UIs]
+    Ext[External Systems (eSign, Print/Mail, KMS/DMS)]
+  end
+
+  API[Compliance API (OpenAPI 3.1; JWT/RBAC/ABAC)]
+  DB[(PostgreSQL: Compliance/Audit)]
+  OBJ[(Object Store/DMS, WORM)]
+  MQ[(RabbitMQ Quorum Queues)]
+  JOBS[[Workers: Timers / Retention / AuditPack / PDF Render]]
+  AI[[ [AI] Services: Anomaly, DocClass, Consent NLP, Timing Risk, PII Redactor ]]
+
+  UIs --> API
+  Ext --> API
+  API <--> DB
+  API <--> OBJ
+  API --> MQ
+  MQ --> JOBS
+  JOBS --> DB
+  JOBS --> OBJ
+  AI --> API
+  AI --> JOBS
+
+C) Database Schema & Migrations (PostgreSQL; append-only audit + hash-chain)
+
+Put in db/sql/V1__phase9_core.sql. Assumptions: PostgreSQL ?14, pgcrypto available (confidence: high).
+
+-- V1__phase9_core.sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 1) Immutable audit log (append-only with hash chain)
+CREATE TABLE IF NOT EXISTS audit_log (
+  id                BIGSERIAL PRIMARY KEY,
+  correlation_id    UUID NOT NULL,
+  account_id        UUID,
+  actor_type        TEXT NOT NULL CHECK (actor_type IN ('user','system','integration')),
+  actor_id          TEXT,
+  event_type        TEXT NOT NULL,  -- 'CRUD.CREATE','FIN.POST','NOTICE.SENT', etc.
+  event_ts_utc      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resource_type     TEXT NOT NULL,  -- 'loan','payment','notice','consent', ...
+  resource_id       TEXT,
+  payload_json      JSONB NOT NULL, -- PII minimized (see redaction policy)
+  payload_hash      TEXT GENERATED ALWAYS AS (encode(digest(payload_json::text, 'sha256'),'hex')) STORED,
+  prev_hash         TEXT,
+  record_hash       TEXT,
+  ip_addr           INET,
+  user_agent        TEXT,
+  geo               JSONB,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_correlation ON audit_log(correlation_id, event_ts_utc);
+CREATE INDEX IF NOT EXISTS idx_audit_account    ON audit_log(account_id, event_ts_utc);
+CREATE INDEX IF NOT EXISTS idx_audit_event      ON audit_log(event_type, event_ts_utc);
+CREATE INDEX IF NOT EXISTS idx_audit_resource   ON audit_log(resource_type, resource_id);
+
+CREATE OR REPLACE FUNCTION audit_log_set_hash_chain()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE prev TEXT;
+BEGIN
+  SELECT record_hash INTO prev
+  FROM audit_log
+  WHERE correlation_id = NEW.correlation_id
+  ORDER BY event_ts_utc DESC, id DESC
+  LIMIT 1;
+
+  NEW.prev_hash := prev;
+
+  NEW.record_hash := encode(
+    digest(
+      NEW.correlation_id::text || '|' ||
+      NEW.event_ts_utc::text   || '|' ||
+      NEW.payload_hash         || '|' ||
+      COALESCE(NEW.prev_hash,''),
+      'sha256'
+    ),
+  'hex');
+
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_audit_hash ON audit_log;
+CREATE TRIGGER trg_audit_hash
+BEFORE INSERT ON audit_log
+FOR EACH ROW EXECUTE FUNCTION audit_log_set_hash_chain();
+
+CREATE OR REPLACE FUNCTION forbid_audit_mutations()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'audit_log is append-only';
+END $$;
+
+DROP TRIGGER IF EXISTS trg_audit_block_u ON audit_log;
+DROP TRIGGER IF EXISTS trg_audit_block_d ON audit_log;
+CREATE TRIGGER trg_audit_block_u BEFORE UPDATE ON audit_log
+FOR EACH ROW EXECUTE FUNCTION forbid_audit_mutations();
+CREATE TRIGGER trg_audit_block_d BEFORE DELETE ON audit_log
+FOR EACH ROW EXECUTE FUNCTION forbid_audit_mutations();
+
+-- 2) Consent records
+CREATE TABLE IF NOT EXISTS consent_record (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_id        UUID NOT NULL,
+  purpose           TEXT NOT NULL,       -- 'emarketing','esign','privacy', etc.
+  scope             TEXT NOT NULL,       -- 'loan:read','email:marketing', ...
+  status            TEXT NOT NULL CHECK (status IN ('granted','revoked')),
+  channel           TEXT NOT NULL CHECK (channel IN ('web','email','sms','paper','ivr')),
+  version           TEXT NOT NULL,       -- doc/policy version or hash
+  evidence_uri      TEXT,                -- WORM link
+  locale            TEXT DEFAULT 'en-US',
+  ts_granted_utc    TIMESTAMPTZ,
+  ts_revoked_utc    TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_consent_subject ON consent_record(subject_id, purpose);
+
+-- 3) Communication preferences (granular)
+CREATE TABLE IF NOT EXISTS communication_preference (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_id        UUID NOT NULL,
+  channel           TEXT NOT NULL CHECK (channel IN ('email','sms','phone','push','mail')),
+  topic             TEXT NOT NULL,       -- 'billing','collections','marketing','privacy'
+  allowed           BOOLEAN NOT NULL DEFAULT TRUE,
+  frequency         TEXT CHECK (frequency IN ('immediate','daily','weekly','monthly')),
+  last_updated_by   TEXT NOT NULL,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pref ON communication_preference(subject_id, channel, topic);
+
+-- 4) Retention policies (config as data)
+CREATE TABLE IF NOT EXISTS retention_policy (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  data_class         TEXT NOT NULL,   -- 'PII.ID','FIN.TXN','DOC.APPRAISAL', ...
+  jurisdiction       TEXT NOT NULL,   -- 'US','EU','CA', ...
+  min_retention_days INT NOT NULL,
+  max_retention_days INT,
+  legal_hold_allowed BOOLEAN NOT NULL DEFAULT TRUE,
+  policy_version     TEXT NOT NULL,
+  notes              TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ret_pol ON retention_policy(data_class, jurisdiction, policy_version);
+
+-- 4a) Legal hold (gap-closer)
+CREATE TABLE IF NOT EXISTS legal_hold (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scope_type        TEXT NOT NULL CHECK (scope_type IN ('artifact','account','subject')),
+  scope_id          TEXT NOT NULL,
+  reason            TEXT NOT NULL,
+  imposed_by        TEXT NOT NULL,
+  active            BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  released_at       TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_legal_hold_scope ON legal_hold(scope_type, scope_id) WHERE active;
+
+-- 5) Process timers (parameterized notice windows)
+CREATE TABLE IF NOT EXISTS process_timer (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  timer_code        TEXT NOT NULL,   -- 'NOTICE.ADVERSE.ACTION','NOTICE.PRIVACY.ANNUAL', ...
+  jurisdiction      TEXT NOT NULL,
+  window_hours_min  INT NOT NULL,
+  window_hours_max  INT NOT NULL,
+  grace_hours       INT DEFAULT 0,
+  version           TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_timer ON process_timer(timer_code, jurisdiction, version);
+
+-- 6) Deletion receipts (immutable)
+CREATE TABLE IF NOT EXISTS deletion_receipt (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_id        UUID,
+  data_class        TEXT NOT NULL,
+  payload_summary   JSONB NOT NULL,
+  deleted_at_utc    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  evidence_uri      TEXT,
+  responsible_actor TEXT NOT NULL,
+  record_hash       TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 7) Notice delivery log
+CREATE TABLE IF NOT EXISTS notice_delivery_log (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id        UUID,
+  subject_id        UUID,
+  notice_code       TEXT NOT NULL,     -- 'PRIVACY.ANNUAL','ESCROW.ANALYSIS', ...
+  delivery_channel  TEXT NOT NULL,     -- 'email','mail','portal'
+  delivery_status   TEXT NOT NULL CHECK (delivery_status IN ('queued','sent','failed','opened','returned')),
+  scheduled_for     TIMESTAMPTZ NOT NULL,
+  sent_at           TIMESTAMPTZ,
+  failure_reason    TEXT,
+  correlation_id    UUID NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_notice_account ON notice_delivery_log(account_id, notice_code, scheduled_for);
+
+-- 8) Account ledger for balance replay
+CREATE TABLE IF NOT EXISTS account_balance_ledger (
+  id                BIGSERIAL PRIMARY KEY,
+  account_id        UUID NOT NULL,
+  posting_ts_utc    TIMESTAMPTZ NOT NULL,
+  amount_cents      BIGINT NOT NULL,
+  currency          CHAR(3) NOT NULL DEFAULT 'USD',
+  txn_type          TEXT NOT NULL CHECK (txn_type IN ('debit','credit')),
+  description       TEXT,
+  external_ref      TEXT,
+  correlation_id    UUID NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_acct_ledger ON account_balance_ledger(account_id, posting_ts_utc);
+
+-- 9) Artifact registry (WORM links)
+CREATE TABLE IF NOT EXISTS artifact (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  account_id        UUID,
+  subject_id        UUID,
+  artifact_code     TEXT NOT NULL, -- 'DISCLOSURE.TILA','APPRAISAL','PRIVACY.NOTICE'
+  uri               TEXT NOT NULL, -- object store URL / DMS ID
+  sha256            TEXT NOT NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 10) DSAR requests (gap-closer)
+CREATE TABLE IF NOT EXISTS data_subject_request (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_id        UUID NOT NULL,
+  type              TEXT NOT NULL CHECK (type IN ('access','deletion','correction')),
+  status            TEXT NOT NULL CHECK (status IN ('received','in_progress','completed','rejected')),
+  submitted_via     TEXT NOT NULL CHECK (submitted_via IN ('portal','email','mail')),
+  opened_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  due_at            TIMESTAMPTZ NOT NULL,
+  closed_at         TIMESTAMPTZ,
+  details_json      JSONB,
+  case_ref          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dsar_subject ON data_subject_request(subject_id, status);
+
+
+Seed (optional) — db/sql/V1_1__phase9_seed.sql
+
+INSERT INTO retention_policy (data_class, jurisdiction, min_retention_days, policy_version)
+VALUES ('FIN.TXN','US',2555,'2025.09.01')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO process_timer (timer_code, jurisdiction, window_hours_min, window_hours_max, grace_hours, version)
+VALUES ('NOTICE.PRIVACY.ANNUAL','US',0,8760,168,'2025.09.01')
+ON CONFLICT DO NOTHING;
+
+D) RabbitMQ Requirements (Exchanges, Queues, Bindings, Policies, Code)
+D1) Management Import — infra/rabbitmq/topology.json
+{
+  "rabbit_version": "3.x",
+  "vhosts": [{"name": "/"}],
+  "exchanges": [
+    {"name": "audit.events.v1", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {}},
+    {"name": "compliance.timers.v1", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {}},
+    {"name": "retention.jobs.v1", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {}},
+    {"name": "dlx.compliance.v1", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {}}
+  ],
+  "queues": [
+    {
+      "name": "q.audit-writer",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx.compliance.v1",
+        "x-message-ttl": 1209600000
+      }
+    },
+    {
+      "name": "q.ai-anomaly-detector",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx.compliance.v1"
+      }
+    },
+    {
+      "name": "q.compliance-timer-worker",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx.compliance.v1"
+      }
+    },
+    {
+      "name": "q.retention-worker",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "dlx.compliance.v1"
+      }
+    },
+    {
+      "name": "q.dlq.compliance.v1",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
+    }
+  ],
+  "bindings": [
+    {"source": "audit.events.v1", "vhost": "/", "destination": "q.audit-writer", "destination_type": "queue", "routing_key": "audit.*", "arguments": {}},
+    {"source": "audit.events.v1", "vhost": "/", "destination": "q.ai-anomaly-detector", "destination_type": "queue", "routing_key": "audit.*", "arguments": {}},
+    {"source": "compliance.timers.v1", "vhost": "/", "destination": "q.compliance-timer-worker", "destination_type": "queue", "routing_key": "timer.*", "arguments": {}},
+    {"source": "retention.jobs.v1", "vhost": "/", "destination": "q.retention-worker", "destination_type": "queue", "routing_key": "retention.*", "arguments": {}},
+    {"source": "dlx.compliance.v1", "vhost": "/", "destination": "q.dlq.compliance.v1", "destination_type": "queue", "routing_key": "#", "arguments": {}}
+  ],
+  "policies": [
+    {
+      "vhost": "/",
+      "name": "quorum-default",
+      "pattern": "^(q\\.audit-writer|q\\.ai-anomaly-detector|q\\.compliance-timer-worker|q\\.retention-worker|q\\.dlq\\.compliance\\.v1)$",
+      "apply-to": "queues",
+      "definition": { "queue-mode": "default", "ha-mode": "quorum", "delivery-limit": 5 },
+      "priority": 0
+    },
+    {
+      "vhost": "/",
+      "name": "sac-audit-writer",
+      "pattern": "^q\\.audit-writer$",
+      "apply-to": "queues",
+      "definition": { "single-active-consumer": true },
+      "priority": 10
+    }
+  ]
+}
+
+
+Routing keys
+
+Audit: audit.crud.*, audit.fin.*, audit.notice.*
+
+Timers: timer.notice.* (e.g., timer.notice.privacy_annual)
+
+Retention: retention.purge.* (e.g., retention.purge.artifact)
+
+D2) Event Envelope Schema (idempotency; gap-closer)
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ComplianceEvent",
+  "type": "object",
+  "required": ["id","routingKey","correlationId","occurredAt","payload"],
+  "properties": {
+    "id": {"type":"string","format":"uuid"},
+    "routingKey": {"type":"string"},
+    "correlationId": {"type":"string","format":"uuid"},
+    "occurredAt": {"type":"string","format":"date-time"},
+    "payload": {"type":"object"}
+  }
+}
+
+D3) Publisher/Consumer Stubs
+
+Node/TS publisher — src/mq/publishAudit.ts
+
+import amqp from 'amqplib';
+const url = process.env.AMQP_URL!;
+const EXCHANGE = 'audit.events.v1';
+
+export async function publishAudit(event: any, routingKey = 'audit.fin.post') {
+  const conn = await amqp.connect(url);
+  const ch = await conn.createChannel();
+  await ch.assertExchange(EXCHANGE, 'topic', { durable: true });
+
+  ch.publish(EXCHANGE, routingKey, Buffer.from(JSON.stringify(event)), {
+    contentType: 'application/json',
+    deliveryMode: 2,
+    messageId: event.id,
+    timestamp: Date.now(),
+    headers: { correlation_id: event.correlationId }
+  });
+
+  await ch.close();
+  await conn.close();
+}
+
+
+Node/TS consumer (timers) — workers/timersConsumer.ts
+
+import amqp from 'amqplib';
+const url = process.env.AMQP_URL!;
+const QUEUE = 'q.compliance-timer-worker';
+
+async function main() {
+  const conn = await amqp.connect(url);
+  const ch = await conn.createChannel();
+  await ch.prefetch(Number(process.env.PREFETCH_TIMER || 16));
+
+  await ch.consume(QUEUE, async (msg) => {
+    if (!msg) return;
+    try {
+      const event = JSON.parse(msg.content.toString());
+      // TODO: schedule/send notices, write audit rows, etc.
+      ch.ack(msg);
+    } catch (e) {
+      ch.nack(msg, false, false); // to DLX after delivery-limit
+    }
+  }, { noAck: false });
+}
+main().catch(e => { console.error(e); process.exit(1); });
+
+
+Python consumer (retention) — workers/retention_consumer.py
+
+import json, os, pika
+AMQP_URL = os.environ['AMQP_URL']; QUEUE = 'q.retention-worker'
+
+def on_msg(ch, method, properties, body):
+    try:
+        evt = json.loads(body.decode())
+        # TODO: delete artifact in DMS/OBJ, insert deletion_receipt, log audit...
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception:
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+
+params = pika.URLParameters(AMQP_URL)
+conn = pika.BlockingConnection(params)
+ch = conn.channel()
+ch.basic_qos(prefetch_count=int(os.getenv('PREFETCH_RETENTION', '32')))
+ch.basic_consume(queue=QUEUE, on_message_callback=on_msg, auto_ack=False)
+ch.start_consuming()
+
+
+Worker env — ops/workers.env.yaml
+
+env:
+  AMQP_URL: "amqps://user:pass@host/vhost"
+  PREFETCH_TIMER: 16
+  PREFETCH_RETENTION: 32
+
+
+Monitoring — ops/monitoring.yaml
+
+metrics:
+  - name: rabbitmq_queue_messages_ready{queue="q.compliance-timer-worker"}
+  - name: rabbitmq_queue_consumer_utilisation{queue="q.audit-writer"}
+  - name: compliance_dlq_increase
+  - name: audit_log_ingest_latency_ms
+  - name: ai_anomaly_score_avg  # [AI]
+alerts:
+  - name: DLQSpikes
+    expr: rate(compliance_dlq_increase[10m]) > 5
+    for: 10m
+    severity: page
+  - name: TimerBacklog
+    expr: rabbitmq_queue_messages_ready{queue="q.compliance-timer-worker"} > 1000
+    for: 15m
+    severity: page
+
+E) OpenAPI 3.1 — Compliance API (api/openapi.yaml)
+openapi: 3.1.0
+info:
+  title: LoanServe Compliance API
+  version: 1.0.0
+servers:
+  - url: https://api.loanserve.com/compliance
+security:
+  - BearerAuth: []
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AuditSearchRequest:
+      type: object
+      properties:
+        correlationId: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        resourceType: { type: string }
+        eventType: { type: string }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        limit: { type: integer, default: 100 }
+    AuditRecord:
+      type: object
+      properties:
+        id: { type: integer }
+        correlationId: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        eventType: { type: string }
+        eventTsUtc: { type: string, format: date-time }
+        resourceType: { type: string }
+        resourceId: { type: string }
+        payloadJson: { type: object }
+        recordHash: { type: string }
+        prevHash: { type: string }
+    ConsentRequest:
+      type: object
+      required: [subjectId, purpose, scope, channel, version, evidenceUri]
+      properties:
+        subjectId: { type: string, format: uuid }
+        purpose: { type: string }
+        scope: { type: string }
+        channel: { type: string, enum: [web,email,sms,paper,ivr] }
+        version: { type: string }
+        evidenceUri: { type: string }
+        locale: { type: string, default: "en-US" }
+    Preference:
+      type: object
+      required: [subjectId,channel,topic,allowed]
+      properties:
+        subjectId: { type: string, format: uuid }
+        channel: { type: string, enum: [email,sms,phone,push,mail] }
+        topic: { type: string }
+        allowed: { type: boolean }
+        frequency: { type: string, enum: [immediate,daily,weekly,monthly] }
+    DSAR:
+      type: object
+      required: [subjectId, type, submittedVia]
+      properties:
+        subjectId: { type: string, format: uuid }
+        type: { type: string, enum: [access,deletion,correction] }
+        submittedVia: { type: string, enum: [portal,email,mail] }
+        details: { type: object }
+    AuditPack:
+      type: object
+      properties:
+        accountId: { type: string, format: uuid }
+        generatedAt: { type: string, format: date-time }
+        balanceReplay: { type: array, items: { type: object } }
+        artifacts: { type: array, items: { type: object } }
+        verification:
+          type: object
+          properties:
+            packHash: { type: string }
+            entries: { type: array, items: { type: object } }
+
+paths:
+  /audit/logs/search:
+    post:
+      summary: Search audit logs
+      operationId: searchAuditLogs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuditSearchRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditRecord' }
+
+  /audit/logs/replay:
+    get:
+      summary: Replay audit chain by correlationId
+      parameters:
+        - in: query
+          name: correlationId
+          schema: { type: string, format: uuid }
+          required: true
+      responses:
+        '200':
+          description: Validity and sequence
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chainValid: { type: boolean }
+                  records:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditRecord' }
+
+  /compliance/consent:
+    post:
+      summary: Record consent (grant)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConsentRequest' }
+      responses: { '201': { description: Created } }
+
+  /compliance/consent/revoke:
+    post:
+      summary: Revoke consent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId, purpose, scope, channel, version]
+              properties:
+                subjectId: { type: string, format: uuid }
+                purpose: { type: string }
+                scope: { type: string }
+                channel: { type: string }
+                version: { type: string }
+      responses: { '200': { description: OK } }
+
+  /compliance/preferences:
+    put:
+      summary: Upsert communication preference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Preference' }
+      responses: { '200': { description: OK } }
+
+  /compliance/dsar:
+    post:
+      summary: Open a DSAR case
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DSAR' }
+      responses: { '201': { description: Created } }
+
+  /compliance/auditpack/{accountId}:
+    get:
+      summary: Generate audit pack for account
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Audit pack
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditPack' }
+
+F) Rules as Data (schemas + examples)
+
+Schema — rules/schema.json
+
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Compliance Rules",
+  "type": "object",
+  "properties": {
+    "timers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["timerCode","jurisdiction","windowHoursMin","windowHoursMax","version"],
+        "properties": {
+          "timerCode": { "type": "string" },
+          "jurisdiction": { "type": "string" },
+          "windowHoursMin": { "type": "integer", "minimum": 0 },
+          "windowHoursMax": { "type": "integer", "minimum": 0 },
+          "graceHours": { "type": "integer", "minimum": 0, "default": 0 },
+          "version": { "type": "string" }
+        }
+      }
+    },
+    "retention": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["dataClass","jurisdiction","minRetentionDays","policyVersion"],
+        "properties": {
+          "dataClass": { "type": "string" },
+          "jurisdiction": { "type": "string" },
+          "minRetentionDays": { "type": "integer", "minimum": 0 },
+          "maxRetentionDays": { "type": ["integer","null"] },
+          "legalHoldAllowed": { "type": "boolean", "default": true },
+          "policyVersion": { "type": "string" }
+        }
+      }
+    }
+  },
+  "required": ["timers","retention"]
+}
+
+
+Example — rules/rules.yaml
+
+timers:
+  - timerCode: NOTICE.PRIVACY.ANNUAL
+    jurisdiction: US
+    windowHoursMin: 0
+    windowHoursMax: 8760
+    graceHours: 168
+    version: "2025.09.01"
+  - timerCode: NOTICE.ADVERSE.ACTION
+    jurisdiction: US
+    windowHoursMin: 0
+    windowHoursMax: 720
+    graceHours: 24
+    version: "2025.09.01"
+
+retention:
+  - dataClass: PII.ID
+    jurisdiction: US
+    minRetentionDays: 2555
+    maxRetentionDays: null
+    legalHoldAllowed: true
+    policyVersion: "2025.09.01"
+  - dataClass: FIN.TXN
+    jurisdiction: US
+    minRetentionDays: 2555
+    policyVersion: "2025.09.01"
+  - dataClass: DOC.APPRAISAL
+    jurisdiction: US
+    minRetentionDays: 2555
+    policyVersion: "2025.09.01"
+
+G) Workers & Services — Implementation Stubs
+
+Timers worker (TypeScript) — workers/timers.ts
+
+import { loadRules, getDueNotices, scheduleSend, logAudit } from '../lib';
+
+export async function runTimersTick(now: Date) {
+  const rules = await loadRules(); // YAML validated by JSON Schema
+  const due = await getDueNotices(now, rules);
+  for (const n of due) {
+    await scheduleSend(n); // publish to 'compliance.timers.v1' with routing key 'timer.notice.<code>'
+    await logAudit({
+      event_type: 'NOTICE.QUEUED',
+      resource_type: 'notice',
+      resource_id: n.noticeId,
+      correlation_id: n.correlationId,
+      payload_json: n
+    });
+  }
+}
+setInterval(() => runTimersTick(new Date()), 30000);
+
+
+Retention job (Python) — workers/retention.py
+
+import json, hashlib, datetime as dt
+from db import query, insert
+
+# [AI] Optional: auto-classify artifacts into data_class when missing (doc_classification)
+def hash_receipt(payload: dict) -> str:
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+def run_retention(now=None):
+    now = now or dt.datetime.utcnow()
+    sql = """
+    SELECT a.*
+    FROM artifact a
+    JOIN retention_policy p
+      ON p.data_class = a.artifact_code
+    WHERE a.created_at < (NOW() - (p.min_retention_days || ' days')::interval)
+      AND NOT EXISTS (
+        SELECT 1 FROM legal_hold h
+        WHERE h.active = TRUE AND (
+            (h.scope_type='artifact' AND h.scope_id::uuid = a.id) OR
+            (h.scope_type='account'  AND h.scope_id::uuid = a.account_id) OR
+            (h.scope_type='subject'  AND h.scope_id::uuid = a.subject_id)
+        )
+      )
+    """
+    candidates = query(sql)
+    for c in candidates:
+        # TODO: delete from WORM-compatible DMS/OBJ; capture tombstone URI
+        receipt = {"artifactId": str(c['id']), "dataClass": c['artifact_code'], "deletedAt": now.isoformat()}
+        insert(
+          "INSERT INTO deletion_receipt(id, data_class, payload_summary, responsible_actor, record_hash) "
+          "VALUES (gen_random_uuid(), $1, $2::jsonb, 'system.retention', $3)",
+          [c['artifact_code'], json.dumps(receipt), hash_receipt(receipt)]
+        )
+
+
+Audit pack service (Python) — services/audit_pack.py
+
+import json, hashlib, datetime as dt
+from db import query
+def sha256(s): return hashlib.sha256(s.encode()).hexdigest()
+
+def fetch_ledger(account_id):
+    return query("""SELECT posting_ts_utc, amount_cents, txn_type, description, correlation_id
+                    FROM account_balance_ledger
+                    WHERE account_id=$1
+                    ORDER BY posting_ts_utc ASC""", [account_id])
+
+def replay_balance(entries):
+    bal = 0; replay = []
+    for e in entries:
+        bal += e['amount_cents'] if e['txn_type'] == 'credit' else -e['amount_cents']
+        replay.append({**e, "running_balance_cents": bal})
+    return replay
+
+def artifacts(account_id):
+    return query("""SELECT artifact_code, uri, sha256, created_at
+                    FROM artifact WHERE account_id=$1 ORDER BY created_at ASC""", [account_id])
+
+def audit_chain_valid(correlation_id):
+    recs = query("""SELECT payload_hash, prev_hash, record_hash, event_ts_utc
+                    FROM audit_log WHERE correlation_id=$1
+                    ORDER BY event_ts_utc ASC, id ASC""", [correlation_id])
+    prev = None
+    for r in recs:
+        expected = sha256(f"{correlation_id}|{r['event_ts_utc']}|{r['payload_hash']}|{prev or ''}")
+        if expected != r['record_hash']: return False
+        prev = r['record_hash']
+    return True
+
+def generate_pack(account_id):
+    led = fetch_ledger(account_id)
+    replay = replay_balance(led)
+    arts = artifacts(account_id)
+    verification = {
+        "packHash": sha256(json.dumps({"replay":replay,"artifacts":arts}, sort_keys=True)),
+        "entries": [{"sha256": a["sha256"], "uri": a["uri"]} for a in arts]
+    }
+    return {
+        "accountId": str(account_id),
+        "generatedAt": dt.datetime.utcnow().isoformat(),
+        "balanceReplay": replay,
+        "artifacts": arts,
+        "verification": verification
+    }
+
+
+Audit pack PDF renderer (Node/TS) — workers/auditpack_pdf.ts (gap-closer)
+
+// Renders JSON pack to PDF and writes to WORM store; stores artifact 'AUDIT.PACK.PDF'
+import { createPdf } from '../lib/pdf'; // implement w/ headless chromium or pdfkit
+import { putObject } from '../lib/obj';
+import { sha256 } from '../lib/hash';
+import { db } from '../lib/db';
+
+export async function renderAuditPackPdf(pack: any, accountId: string) {
+  const pdfBuffer = await createPdf(pack); // layout: cover, balance table, artifacts list, hashes
+  const digest = sha256(pdfBuffer);
+  const uri = await putObject(`auditpacks/${accountId}/${pack.generatedAt}.pdf`, pdfBuffer, { contentType: 'application/pdf', worm: true });
+  await db.query(
+    `INSERT INTO artifact(id, account_id, artifact_code, uri, sha256)
+     VALUES (gen_random_uuid(), $1, 'AUDIT.PACK.PDF', $2, $3)`,
+    [accountId, uri, digest]
+  );
+  return { uri, sha256: digest };
+}
+
+H) [AI] Components (guardrailed; deterministic fallbacks)
+ai_services:
+  anomaly_detection:  # [AI]
+    purpose: Detect tampering/suspicious audit or financial sequences
+    inputs: [event_type, payload_json, correlation_id, actor_type, event_ts_utc]
+    features: [rolling_event_rate_1h, sequence_entropy, amount_zscore, actor_profile_deviation]
+    model: "xgboost-anom-v1"
+    thresholds: { warn: 0.7, block: 0.9 }
+    actions: [on_warn: create_case, on_block: raise_alert_and_dlq]
+    fallback: "rules: if >=5 failures in 10m then alert"
+  doc_classification:  # [AI]
+    purpose: Classify uploaded artifacts into retention data_class
+    model: "bert-doccls-v2"
+    confidence_threshold: 0.8
+    fallback: "regex filename/source + manual queue"
+  consent_nlp:  # [AI]
+    purpose: Parse natural-language consents from emails/pdfs into structured preferences
+    pii_redaction: true
+    model: "spacy-nlp-consent-v1"
+    fallback: "require web form if parse_confidence < 0.75"
+  timing_risk_predictor:  # [AI]
+    purpose: Predict risk of missing notice windows
+    features: [backlog_depth, send_latency_p50, channel_failure_rate]
+    model: "rf-timing-risk-v1"
+    actions: [auto_prioritize_queue, suggest_alt_channel]
+    fallback: "deterministic SLA thresholds"
+  pii_redactor:  # [AI]
+    purpose: Redact payload_json fields before audit logging when PII detected
+    model: "regex+ner ensemble"
+    actions: [mask:ssn,last4; hash:email,phone]
+    fallback: "static field allow/deny lists"
+
+I) UX Copy Deck (WCAG 2.2 AA; i18n-ready)
+
+copy/copy.yaml
+
+copy:
+  privacy_notice_annual_title: "Your Annual Privacy Notice"
+  privacy_notice_annual_body: >
+    We value your privacy. This notice explains how we collect, use, and share your information.
+    To manage your preferences, visit {portal_link} or call {support_phone}.
+  consent_granted_title: "Consent Recorded"
+  consent_granted_body: >
+    You granted consent for {purpose} via {channel} on {timestamp}.
+    Reference: {evidence_ref}. You may change this anytime in Settings.
+  consent_revoked_title: "Consent Revoked"
+  consent_revoked_body: >
+    Your consent for {purpose} was revoked on {timestamp}. We will honor this change immediately.
+  deletion_receipt_title: "We Completed Your Deletion Request"
+  deletion_receipt_body: >
+    We deleted the data associated with {data_class}. Receipt: {receipt_id}.
+    Some records may be retained where legally required.
+  dsar_opened_title: "Your Request Has Been Received"
+  dsar_opened_body: >
+    We opened your {type} request on {timestamp}. Case reference: {case_ref}. We will respond by {due_at}.
+  accessibility_footer: >
+    Need assistance? We can provide notices in large print, braille, or audio upon request.
+
+
+Email (MJML/Handlebars) — copy/email_notice.mjml
+
+<mjml>
+  <mj-body>
+    <mj-section>
+      <mj-column>
+        <mj-text font-size="18px" font-weight="bold">{{title}}</mj-text>
+        <mj-text>{{body}}</mj-text>
+        <mj-button href="{{cta_url}}">{{cta_label}}</mj-button>
+        <mj-text font-size="12px">{{accessibility_footer}}</mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>
+
+J) Acceptance Tests
+
+Gherkin — tests/acceptance/compliance_phase9.feature
+
+Feature: Compliance Phase 9 Acceptance
+
+  Background:
+    Given a test account "ACC-123" with historical ledger entries
+    And artifacts linked to the account
+    And timers and retention policies loaded from rules.yaml
+
+  Scenario: Audit pack reproduces balance history and artifacts
+    When I call GET /compliance/auditpack/ACC-123
+    Then the response status is 200
+    And "balanceReplay" recomputes to the known ending balance
+    And "artifacts" includes an item with code "PRIVACY.NOTICE"
+    And "verification.packHash" equals the locally recomputed hash
+
+  Scenario: Notice timing windows are parameterized
+    Given NOTICE.PRIVACY.ANNUAL windowHoursMax is 8760
+    When I schedule a notice past the window
+    Then an alert is raised and the job is rejected
+
+  Scenario: Retention purge emits deletion receipt
+    Given an artifact older than minRetentionDays with no legal hold
+    When the retention worker runs
+    Then the artifact is removed from storage
+    And a deletion_receipt row is created with a record_hash
+
+  Scenario: Consent lifecycle is immutable and transparent
+    When I POST /compliance/consent to grant and revoke for subject S
+    Then audit_log contains CREATE and REVOKE events with a valid hash chain
+
+  Scenario: DSAR SLA is tracked and enforced
+    When I POST /compliance/dsar with type "access"
+    Then a data_subject_request row exists with status "received"
+    And the due_at is within 45 days of opened_at
+
+
+pytest — tests/test_audit_pack.py
+
+import json, hashlib
+def sha256(s): return hashlib.sha256(s.encode()).hexdigest()
+
+def test_audit_pack(api_client, seeded_account):
+    res = api_client.get(f"/compliance/auditpack/{seeded_account.id}")
+    assert res.status_code == 200
+    body = res.json()
+    recomputed = sha256(json.dumps({
+        "replay": body["balanceReplay"],
+        "artifacts": body["artifacts"]
+    }, sort_keys=True))
+    assert body["verification"]["packHash"] == recomputed
+
+
+Postman skeleton — tests/postman.collection.json
+
+{
+  "info": { "name": "Compliance Phase 9", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "item": [
+    { "name": "Search Audit Logs", "request": { "method": "POST", "url": "{{base}}/audit/logs/search", "body": { "mode":"raw", "raw": "{\"limit\":10}" } } },
+    { "name": "Generate Audit Pack", "request": { "method": "GET", "url": "{{base}}/compliance/auditpack/{{accountId}}" } },
+    { "name": "Open DSAR", "request": { "method": "POST", "url": "{{base}}/compliance/dsar", "body": { "mode":"raw", "raw": "{\"subjectId\":\"{{subjectId}}\",\"type\":\"access\",\"submittedVia\":\"portal\"}" } } }
+  ]
+}
+
+K) Monitoring & SLAs (Prometheus)
+
+Service metrics & alerts — ops/prometheus_alerts.yaml
+
+metrics:
+  - name: compliance_notice_queue_depth
+  - name: audit_log_ingest_latency_ms
+  - name: audit_chain_verification_failures_total
+  - name: retention_purges_total
+  - name: dsar_open_cases_total
+  - name: ai_anomaly_score_avg  # [AI]
+alerts:
+  - name: HighNoticeBacklog
+    expr: compliance_notice_queue_depth > 1000
+    for: 15m
+    severity: page
+  - name: AuditChainFailures
+    expr: increase(audit_chain_verification_failures_total[10m]) > 0
+    for: 0m
+    severity: page
+  - name: RetentionWorkerStalled
+    expr: increase(retention_purges_total[24h]) == 0
+    for: 24h
+    severity: ticket
+  - name: DSARApproachingSLA
+    expr: dsar_open_cases_total > 0  # refine w/ labels 'days_to_due<7'
+    for: 0m
+    severity: ticket
+
+L) Security & Privacy Controls (implementation checklist)
+
+security/privacy.yaml
+
+security_controls:
+  encryption:
+    at_rest: "AES-256 (DB); tablespace encryption; KMS-managed keys; WORM for artifacts"
+    in_transit: "TLS 1.2+"
+  access:
+    model: "RBAC + ABAC (role, jurisdiction, data_class)"
+    admin_actions_audited: true
+  data_minimization:
+    pii_masking: "column-level + API response filtering; [AI] pii_redactor before audit logging"
+  secrets:
+    storage: "Vault/KMS"
+    rotation_days: 90
+  privacy:
+    dpo_contact: "dpo@loanserve.com"
+    dpias_required: ["new [AI] models on PII", "cross-border transfers", "profiling impacts"]
+  subject_rights:
+    channels: ["portal", "email", "mail"]
+    SLAs_days: { access: 45, deletion: 45, correction: 30 }
+  vendor_controls:
+    dpa_signed: true
+    subprocessor_register: maintained
+  logging:
+    pii_filtering: true
+    retention_alignment: "logs follow non-PII retention unless linked to cases"
+  key_management:
+    rotation_policy: "AES keys rotated yearly; JWT signing keys qtrly"
+
+M) Error Contracts (api/errors.yaml)
+errors:
+  - code: COM-001
+    http: 400
+    message: "Invalid parameter(s)"
+  - code: COM-002
+    http: 404
+    message: "Not found"
+  - code: COM-003
+    http: 409
+    message: "Immutable resource"
+  - code: COM-004
+    http: 422
+    message: "Policy violation"
+  - code: COM-005
+    http: 503
+    message: "Compliance service unavailable"
+
+N) CI Gates (ops/ci.yaml)
+ci_checks:
+  - name: "DB migrations lint"
+  - name: "OpenAPI lint (spectral)"
+  - name: "Rules YAML validates against schema.json"
+  - name: "pytest min coverage 80% (services/audit_pack, workers/*)"
+  - name: "Secrets scan"
+  - name: "Static analysis ensures [AI] fallbacks present"
+  - name: "License & 3P notices up to date"
+
+O) Implementation Guidance (How to fill in)
+
+Schemas: Extend for local regs; do not remove hash/immutable fields.
+
+Rules: Only change rules.yaml; bump version each change.
+
+[AI]: Always log model score + decision + fallback path.
+
+Copy: Keep placeholders like {portal_link}; provide translations in separate locale files.
+
+Tests: Add investor-specific notices & escrow analysis timing cases.
+
+RabbitMQ: Use quorum queues + DLX; enable single-active-consumer where per-account ordering is critical.
+
+Idempotency: Each message includes messageId + correlation_id; dedupe in a short-TTL store (e.g., Redis set).
+
+Jurisdiction routing: Derive from property state/investor; store on account; join in timers.
+
+P) Acceptance Criteria (explicit)
+
+Audit Pack
+
+GET /compliance/auditpack/{accountId} returns a pack whose balanceReplay recomputes the known ending balance and whose verification.packHash equals a locally computed hash; a PDF artifact is rendered and stored in WORM with SHA-256.
+
+Immutable Audit Log
+
+Inserts produce valid record_hash chains per correlation_id. Updates/deletes blocked at DB.
+
+Retention & Purging
+
+Purge honors retention_policy and active legal_hold; each deletion produces a deletion_receipt with record_hash.
+
+Consent & Preferences
+
+Grant/revoke creates auditable entries; revocation is effective immediately across channels; preferences are granular and enforceable.
+
+Time-Based Checks
+
+All notice windows sourced from process_timer/rules.yaml; alerts fire for late/at-risk jobs. [AI] predictor may reorder queues or suggest alternate channels.
+
+DSAR
+
+DSARs open with due dates (45 days access/deletion; 30 days correction); SLA monitored and alertable.
+
+Q) Suggested Repo Layout
+/api/openapi.yaml
+/api/errors.yaml
+/copy/copy.yaml
+/copy/email_notice.mjml
+/db/sql/V1__phase9_core.sql
+/db/sql/V1_1__phase9_seed.sql
+/infra/rabbitmq/topology.json
+/ops/ci.yaml
+/ops/monitoring.yaml
+/rules/schema.json
+/rules/rules.yaml
+/security/privacy.yaml
+/services/audit_pack.py
+/tests/acceptance/compliance_phase9.feature
+/tests/postman.collection.json
+/tests/test_audit_pack.py
+/workers/retention.py
+/workers/retention_consumer.py
+/workers/timers.ts
+/workers/auditpack_pdf.ts
+/workers/timersConsumer.ts
+/src/mq/publishAudit.ts
