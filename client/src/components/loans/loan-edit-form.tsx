@@ -13,6 +13,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { apiRequest } from "@/lib/queryClient";
 import { Loader2, Calculator, DollarSign, Home, Calendar, FileText, Download, Eye, Trash2, Users, ClipboardList, History, Settings } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { LoanCRM } from "./loan-crm";
@@ -96,6 +97,19 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         credentials: 'include'
       });
       if (!response.ok) throw new Error('Failed to fetch documents');
+      return response.json();
+    },
+    enabled: !!loanId
+  });
+
+  // Fetch compliance audit logs for this loan
+  const { data: auditLogs } = useQuery({
+    queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }],
+    queryFn: async () => {
+      const response = await fetch(`/api/compliance/audit-log?entityType=loan&entityId=${loanId}&limit=50`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch audit logs');
       return response.json();
     },
     enabled: !!loanId
@@ -381,6 +395,92 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         {/* CRM Tab */}
         <TabsContent value="crm" className="mt-6">
           <LoanCRM loanId={parseInt(loanId)} />
+        </TabsContent>
+
+        {/* Documents Tab */}
+        <TabsContent value="documents" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Document Management</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8 text-muted-foreground">
+                Document management features coming soon
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Accounting Tab */}
+        <TabsContent value="accounting" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Accounting Ledger</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8 text-muted-foreground">
+                Accounting features coming soon
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Audit Trail Tab - Using Phase 9 Compliance Infrastructure */}
+        <TabsContent value="audit" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Compliance Audit Trail
+              </CardTitle>
+              <CardDescription>
+                Complete immutable history of all changes made to this loan using Phase 9 compliance infrastructure
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {auditLogs && auditLogs.logs && auditLogs.logs.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>User</TableHead>
+                      <TableHead>Action</TableHead>
+                      <TableHead>Entity Type</TableHead>
+                      <TableHead>Details</TableHead>
+                      <TableHead>IP Address</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {auditLogs.logs.map((log: any) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="font-mono text-xs">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </TableCell>
+                        <TableCell>{log.userId || 'System'}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{log.eventType}</Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {log.entityType}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {log.eventDescription || 'N/A'}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {log.ipAddress || 'N/A'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No compliance audit history available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
       

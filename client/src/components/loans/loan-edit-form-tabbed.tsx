@@ -90,18 +90,21 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     enabled: !!loanId
   });
 
-  // Fetch audit logs for this loan
-  const { data: auditLogs } = useQuery({
-    queryKey: [`/api/audit-logs`, { loanId }],
+  // Fetch compliance audit logs for this loan - Phase 9 Infrastructure
+  const { data: auditLogsResponse } = useQuery({
+    queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }],
     queryFn: async () => {
-      const response = await fetch(`/api/audit-logs?loanId=${loanId}`, {
+      const response = await fetch(`/api/compliance/audit-log?entityType=loan&entityId=${loanId}&limit=50`, {
         credentials: 'include'
       });
-      if (!response.ok) throw new Error('Failed to fetch audit logs');
+      if (!response.ok) throw new Error('Failed to fetch compliance audit logs');
       return response.json();
     },
     enabled: !!loanId
   });
+  
+  // Extract audit logs from response
+  const auditLogs = auditLogsResponse?.logs || [];
 
   // Update form data when loan is loaded
   useEffect(() => {
@@ -544,16 +547,16 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
           <LoanAccountingLedger loanId={loanId} loanAmount={parseFloat(formData.loanAmount) || 0} />
         </TabsContent>
 
-        {/* Audit Trail Tab */}
+        {/* Audit Trail Tab - Phase 9 Compliance Infrastructure */}
         <TabsContent value="audit" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <History className="h-5 w-5" />
-                Audit Trail
+                Compliance Audit Trail
               </CardTitle>
               <CardDescription>
-                Complete history of all changes made to this loan
+                Complete immutable history of all changes made to this loan using Phase 9 compliance infrastructure
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -564,19 +567,29 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                       <TableHead>Date</TableHead>
                       <TableHead>User</TableHead>
                       <TableHead>Action</TableHead>
+                      <TableHead>Entity Type</TableHead>
                       <TableHead>Details</TableHead>
+                      <TableHead>IP Address</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {auditLogs.map((log: any) => (
                       <TableRow key={log.id}>
-                        <TableCell>{new Date(log.createdAt).toLocaleString()}</TableCell>
-                        <TableCell>{log.userName || 'System'}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </TableCell>
+                        <TableCell>{log.userId || 'System'}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{log.action}</Badge>
+                          <Badge variant="outline">{log.eventType}</Badge>
                         </TableCell>
                         <TableCell className="text-sm text-gray-600">
-                          {log.details}
+                          {log.entityType}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {log.eventDescription || 'N/A'}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {log.ipAddress || 'N/A'}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -585,7 +598,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
               ) : (
                 <div className="text-center py-8 text-gray-500">
                   <History className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>No audit history available</p>
+                  <p>No compliance audit history available</p>
                 </div>
               )}
             </CardContent>
