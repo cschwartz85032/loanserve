@@ -998,6 +998,28 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       }
     });
 
+    // Log compliance audit
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'loan',
+      resourceId: loanId.toString(),
+      details: {
+        action: 'update_contact_info',
+        loanId,
+        changes: {
+          phones: phones || [],
+          emails: emails || []
+        },
+        userId
+      },
+      newValues: updateData,
+      userId,
+      ipAddress: (req as any).ip,
+      userAgent: (req as any).headers?.['user-agent']
+    });
+
     // Fetch and return the updated loan
     const [updatedLoan] = await db.select()
       .from(loans)
