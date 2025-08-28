@@ -1,1136 +1,4196 @@
-import { pgTable, pgEnum, serial, text, integer, decimal, date, boolean, timestamp, jsonb, index, unique, varchar, check, bigint, real, uniqueIndex, uuid} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import {
+  pgTable,
+  text,
+  timestamp,
+  integer,
+  serial,
+  boolean,
+  jsonb,
+  json,
+  decimal,
+  uuid,
+  varchar,
+  date,
+  index,
+  pgEnum,
+  uniqueIndex,
+  time,
+  primaryKey,
+  unique,
+  bigint,
+} from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
-// Enums
-export const userRoleEnum = pgEnum("user_role", ["admin", "lender", "servicer", "investor", "borrower"]);
-export const loanStatusEnum = pgEnum("loan_status", ["active", "defaulted", "paid_off", "reo", "forbearance", "modification", "bankruptcy"]);
-export const paymentStatusEnum = pgEnum("payment_status", ["pending", "applied", "reversed", "failed", "nsf"]);
-export const paymentChannelEnum = pgEnum("payment_channel", ["ach", "wire", "check", "money_order", "payoff", "cash"]);
-export const propertyTypeEnum = pgEnum("property_type", ["single_family", "condo", "townhouse", "multi_family", "commercial", "land", "manufactured", "other"]);
-export const documentTypeEnum = pgEnum("document_type", ["application", "note", "mortgage", "appraisal", "title", "insurance", "income", "tax_return", "bank_statement", "correspondence", "servicing", "legal", "other"]);
-export const documentStatusEnum = pgEnum("document_status", ["pending", "processing", "complete", "failed", "error"]);
-export const occupancyTypeEnum = pgEnum("occupancy_type", ["owner_occupied", "second_home", "investment"]);
-export const loanTypeEnum = pgEnum("loan_type", ["conventional", "fha", "va", "usda", "jumbo", "portfolio", "hard_money", "other"]);
-export const loanPurposeEnum = pgEnum("loan_purpose", ["purchase", "refinance", "cash_out_refi", "construction", "rehabilitation", "other"]);
+// ========================================
+// ENUMS - Comprehensive status and type enumerations
+// ========================================
 
-// Tables
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  email: text("email").notNull().unique(),
-  password: text("password").notNull(),
-  role: userRoleEnum("role").notNull().default("borrower"),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  company: text("company"),
-  phone: text("phone"),
-  isActive: boolean("is_active").default(true).notNull(),
-  totpSecret: text("totp_secret"),
-  totpEnabled: boolean("totp_enabled").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  lastLoginAt: timestamp("last_login_at"),
-  failedLoginAttempts: integer("failed_login_attempts").default(0).notNull(),
-  lockedUntil: timestamp("locked_until")
-}, (t) => ({
-  emailIdx: index("users_email_idx").on(t.email),
-  roleIdx: index("users_role_idx").on(t.role),
-  activeIdx: index("users_active_idx").on(t.isActive)
-}));
+export const userRoleEnum = pgEnum("user_role", [
+  "lender",
+  "borrower",
+  "investor",
+  "escrow_officer",
+  "legal",
+  "servicer",
+  "admin",
+]);
 
-export const permissions = pgTable("permissions", {
-  id: serial("id").primaryKey(),
-  resource: text("resource").notNull(),
-  action: text("action").notNull(),
-  description: text("description"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  uniquePermission: unique().on(t.resource, t.action),
-  resourceIdx: index("permissions_resource_idx").on(t.resource)
-}));
+export const loanStatusEnum = pgEnum("loan_status", [
+  "application",
+  "underwriting",
+  "approved",
+  "active",
+  "current",
+  "delinquent",
+  "default",
+  "forbearance",
+  "modification",
+  "foreclosure",
+  "reo",
+  "closed",
+  "paid_off",
+  "charged_off",
+]);
 
-export const rolePermissions = pgTable("role_permissions", {
-  id: serial("id").primaryKey(),
-  role: userRoleEnum("role").notNull(),
-  permissionId: integer("permission_id").references(() => permissions.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  uniqueRolePermission: unique().on(t.role, t.permissionId),
-  roleIdx: index("role_permissions_role_idx").on(t.role)
-}));
+export const loanTypeEnum = pgEnum("loan_type", [
+  "conventional",
+  "fha",
+  "va",
+  "usda",
+  "jumbo",
+  "portfolio",
+  "hard_money",
+  "bridge",
+  "construction",
+  "commercial",
+  "reverse_mortgage",
+]);
 
-// Policy rules - for permission enforcement
-export const policyRules = pgTable("policy_rules", {
-  id: serial("id").primaryKey(),
-  resource: text("resource").notNull(),
-  action: text("action").notNull(),
-  condition: jsonb("condition").notNull(), // JSON expression for rule evaluation
-  effect: text("effect").notNull(), // 'allow' or 'deny'
-  priority: integer("priority").default(0).notNull(),
-  description: text("description"),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  resourceActionIdx: index("policy_rules_resource_action_idx").on(t.resource, t.action),
-  activeIdx: index("policy_rules_active_idx").on(t.isActive),
-  priorityIdx: index("policy_rules_priority_idx").on(t.priority)
-}));
+export const propertyTypeEnum = pgEnum("property_type", [
+  "single_family",
+  "condo",
+  "townhouse",
+  "multi_family",
+  "manufactured",
+  "commercial",
+  "land",
+  "mixed_use",
+]);
 
-export const userPermissionOverrides = pgTable("user_permission_overrides", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  permissionId: integer("permission_id").references(() => permissions.id).notNull(),
-  grant: boolean("grant").notNull(), // true = grant, false = revoke
-  expiresAt: timestamp("expires_at"),
-  reason: text("reason"),
-  grantedBy: integer("granted_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  uniqueUserPermission: unique().on(t.userId, t.permissionId),
-  userIdx: index("overrides_user_idx").on(t.userId),
-  expiresIdx: index("overrides_expires_idx").on(t.expiresAt)
-}));
+export const entityTypeEnum = pgEnum("entity_type", [
+  "individual",
+  "corporation",
+  "llc",
+  "partnership",
+  "trust",
+  "estate",
+  "government",
+]);
 
-export const sessions = pgTable("sessions", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at").notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  tokenIdx: index("sessions_token_idx").on(t.token),
-  userIdx: index("sessions_user_idx").on(t.userId),
-  expiresIdx: index("sessions_expires_idx").on(t.expiresAt)
-}));
+export const paymentStatusEnum = pgEnum("payment_status", [
+  "scheduled",
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "reversed",
+  "partial",
+  "late",
+  "nsf",
+  "waived",
+]);
 
-export const lenders = pgTable("lenders", {
+export const documentCategoryEnum = pgEnum("document_category", [
+  "loan_application",
+  "loan_agreement",
+  "promissory_note",
+  "deed_of_trust",
+  "mortgage",
+  "security_agreement",
+  "ucc_filing",
+  "assignment",
+  "modification",
+  "forbearance_agreement",
+  "insurance_policy",
+  "tax_document",
+  "escrow_statement",
+  "title_report",
+  "appraisal",
+  "inspection",
+  "financial_statement",
+  "income_verification",
+  "closing_disclosure",
+  "settlement_statement",
+  "reconveyance",
+  "release",
+  "legal_notice",
+  "correspondence",
+  "servicing_transfer",
+  "compliance",
+  "other",
+]);
+
+export const transactionTypeEnum = pgEnum("transaction_type", [
+  "deposit",
+  "withdrawal",
+  "transfer",
+  "payment_principal",
+  "payment_interest",
+  "payment_escrow",
+  "payment_fee",
+  "payment_late_fee",
+  "insurance_premium",
+  "property_tax",
+  "hoa_fee",
+  "disbursement",
+  "adjustment",
+  "refund",
+]);
+
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "payment_due",
+  "payment_received",
+  "payment_failed",
+  "payment_late",
+  "document_required",
+  "document_received",
+  "escrow_shortage",
+  "escrow_surplus",
+  "escrow_analysis",
+  "insurance_expiring",
+  "tax_due",
+  "rate_change",
+  "maturity_approaching",
+  "system",
+  "legal",
+  "compliance",
+]);
+
+export const priorityEnum = pgEnum("priority", [
+  "low",
+  "medium",
+  "high",
+  "urgent",
+  "critical",
+]);
+
+export const frequencyEnum = pgEnum("frequency", [
+  "once",
+  "daily",
+  "weekly",
+  "bi_weekly",
+  "semi_monthly",
+  "monthly",
+  "quarterly",
+  "semi_annual",
+  "annual",
+]);
+
+export const disbursementTypeEnum = pgEnum("disbursement_type", [
+  "taxes",
+  "insurance",
+  "hoa",
+  "other",
+]);
+
+export const paymentMethodEnum = pgEnum("payment_method", [
+  "check",
+  "ach",
+  "wire",
+  "cash",
+  "credit_card",
+  "online",
+]);
+
+// For outbound disbursements only (check, ACH, wire)
+export const disbursementPaymentMethodEnum = pgEnum(
+  "disbursement_payment_method",
+  ["check", "ach", "wire"],
+);
+
+export const disbursementStatusEnum = pgEnum("disbursement_status", [
+  "active",
+  "on_hold",
+  "suspended",
+  "cancelled",
+  "completed",
+  "terminated", // For historical records that are no longer active (e.g., old insurance policies)
+]);
+
+export const collectionStatusEnum = pgEnum("collection_status", [
+  "current",
+  "contact_made",
+  "promise_to_pay",
+  "arrangement_made",
+  "broken_promise",
+  "skip_trace",
+  "legal_review",
+  "foreclosure_initiated",
+  "charge_off_pending",
+]);
+
+// ========================================
+// CORE TABLES
+// ========================================
+
+// Users table - System users with role-based access
+export const users = pgTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    username: text("username").unique().notNull(),
+    password: text("password").notNull(),
+    email: text("email").unique().notNull(),
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name").notNull(),
+    middleName: text("middle_name"),
+    // role field removed - using RBAC system with user_roles junction table instead
+    phone: text("phone"),
+    mobilePhone: text("mobile_phone"),
+    fax: text("fax"),
+    address: text("address"),
+    address2: text("address_2"),
+    city: text("city"),
+    state: text("state"),
+    zipCode: text("zip_code"),
+    country: text("country").default("USA"),
+    dateOfBirth: date("date_of_birth"),
+    ssn: text("ssn"), // Encrypted
+    employerName: text("employer_name"),
+    employerPhone: text("employer_phone"),
+    jobTitle: text("job_title"),
+    yearsEmployed: integer("years_employed"),
+    monthlyIncome: decimal("monthly_income", { precision: 12, scale: 2 }),
+    isActive: boolean("is_active").default(true).notNull(),
+    emailVerified: boolean("email_verified").default(false).notNull(),
+    twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
+    mfaEnabled: boolean("mfa_enabled").default(false),
+    mfaRequired: boolean("mfa_required").default(false),
+    require_mfa_for_sensitive: boolean("require_mfa_for_sensitive").default(
+      true,
+    ),
+    profileImage: text("profile_image"),
+    preferences: jsonb("preferences"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    lastLogin: timestamp("last_login"),
+    failedLoginAttempts: integer("failed_login_attempts").default(0),
+    lockedUntil: timestamp("locked_until"),
+  },
+  (table) => {
+    return {
+      emailIdx: index("user_email_idx").on(table.email),
+      // roleIdx removed - using RBAC system with user_roles junction table instead
+      activeIdx: index("user_active_idx").on(table.isActive),
+    };
+  },
+);
+
+// Borrower Entities - Can be individuals or companies
+export const borrowerEntities = pgTable(
+  "borrower_entities",
+  {
+    id: serial("id").primaryKey(),
+    entityType: entityTypeEnum("entity_type").notNull(),
+    // Individual fields
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    middleName: text("middle_name"),
+    suffix: text("suffix"),
+    dateOfBirth: date("date_of_birth"),
+    ssn: text("ssn"), // Encrypted
+    // Entity fields
+    entityName: text("entity_name"),
+    ein: text("ein"), // Employer Identification Number
+    formationDate: date("formation_date"),
+    formationState: text("formation_state"),
+    // Common fields
+    email: text("email"),
+    phone: text("phone"),
+    mobilePhone: text("mobile_phone"),
+    fax: text("fax"),
+    website: text("website"),
+    // Address
+    mailingAddress: text("mailing_address"),
+    mailingAddress2: text("mailing_address_2"),
+    mailingCity: text("mailing_city"),
+    mailingState: text("mailing_state"),
+    mailingZip: text("mailing_zip"),
+    mailingCountry: text("mailing_country").default("USA"),
+    // Financial information
+    creditScore: integer("credit_score"),
+    monthlyIncome: decimal("monthly_income", { precision: 12, scale: 2 }),
+    totalAssets: decimal("total_assets", { precision: 15, scale: 2 }),
+    totalLiabilities: decimal("total_liabilities", { precision: 15, scale: 2 }),
+    // Status
+    isActive: boolean("is_active").default(true).notNull(),
+    verificationStatus: text("verification_status").default("pending"),
+    verificationDate: timestamp("verification_date"),
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      entityTypeIdx: index("borrower_entity_type_idx").on(table.entityType),
+      emailIdx: index("borrower_email_idx").on(table.email),
+      ssnIdx: index("borrower_ssn_idx").on(table.ssn),
+      einIdx: index("borrower_ein_idx").on(table.ein),
+    };
+  },
+);
+
+// Properties - Real estate collateral
+export const properties = pgTable(
+  "properties",
+  {
+    id: serial("id").primaryKey(),
+    propertyType: propertyTypeEnum("property_type").notNull(),
+    // Address
+    address: text("address").notNull(),
+    address2: text("address_2"),
+    city: text("city").notNull(),
+    state: text("state").notNull(),
+    zipCode: text("zip_code").notNull(),
+    county: text("county"),
+    country: text("country").default("USA"),
+    // Legal description
+    legalDescription: text("legal_description"),
+    apn: text("apn"), // Assessor's Parcel Number
+    lotNumber: text("lot_number"),
+    blockNumber: text("block_number"),
+    subdivision: text("subdivision"),
+    // Property details
+    yearBuilt: integer("year_built"),
+    squareFeet: integer("square_feet"),
+    lotSize: decimal("lot_size", { precision: 10, scale: 2 }),
+    bedrooms: integer("bedrooms"),
+    bathrooms: decimal("bathrooms", { precision: 3, scale: 1 }),
+    stories: integer("stories"),
+    garage: boolean("garage").default(false),
+    garageSpaces: integer("garage_spaces"),
+    pool: boolean("pool").default(false),
+    // Valuation
+    purchasePrice: decimal("purchase_price", { precision: 15, scale: 2 }),
+    purchaseDate: date("purchase_date"),
+    originalAppraisalValue: decimal("original_appraisal_value", {
+      precision: 15,
+      scale: 2,
+    }),
+    originalAppraisalDate: date("original_appraisal_date"),
+    currentValue: decimal("current_value", { precision: 15, scale: 2 }),
+    currentValueDate: date("current_value_date"),
+    currentValueSource: text("current_value_source"),
+    // Tax and insurance
+    annualPropertyTax: decimal("annual_property_tax", {
+      precision: 10,
+      scale: 2,
+    }),
+    annualInsurance: decimal("annual_insurance", { precision: 10, scale: 2 }),
+    annualHOA: decimal("annual_hoa", { precision: 10, scale: 2 }),
+    taxId: text("tax_id"),
+    // Status
+    occupancyStatus: text("occupancy_status"), // 'owner_occupied', 'rental', 'second_home', 'vacant'
+    rentalIncome: decimal("rental_income", { precision: 10, scale: 2 }),
+    primaryResidence: boolean("primary_residence").default(false),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      apnIdx: index("property_apn_idx").on(table.apn),
+      addressIdx: index("property_address_idx").on(
+        table.address,
+        table.city,
+        table.state,
+      ),
+      typeIdx: index("property_type_idx").on(table.propertyType),
+    };
+  },
+);
+
+// Loans - Main loan records
+export const loans = pgTable(
+  "loans",
+  {
+    id: serial("id").primaryKey(),
+    loanNumber: text("loan_number").unique().notNull(),
+    loanType: loanTypeEnum("loan_type").notNull(),
+    loanPurpose: text("loan_purpose"), // 'purchase', 'refinance', 'cash_out', 'construction'
+    // Parties
+    lenderId: integer("lender_id").references(() => users.id),
+    servicerId: integer("servicer_id").references(() => users.id),
+    investorId: integer("investor_id").references(() => users.id),
+    // Property
+    propertyId: integer("property_id")
+      .references(() => properties.id)
+      .notNull(),
+    // Loan terms
+    originalAmount: decimal("original_amount", {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    principalBalance: decimal("principal_balance", {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    interestRate: decimal("interest_rate", {
+      precision: 6,
+      scale: 4,
+    }).notNull(),
+    rateType: text("rate_type").notNull(), // 'fixed', 'variable', 'adjustable'
+    indexType: text("index_type"), // 'SOFR', 'prime', 'LIBOR'
+    margin: decimal("margin", { precision: 6, scale: 4 }),
+    rateAdjustmentFrequency: integer("rate_adjustment_frequency"), // months
+    rateCapInitial: decimal("rate_cap_initial", { precision: 6, scale: 4 }),
+    rateCapPeriodic: decimal("rate_cap_periodic", { precision: 6, scale: 4 }),
+    rateCapLifetime: decimal("rate_cap_lifetime", { precision: 6, scale: 4 }),
+    rateFloor: decimal("rate_floor", { precision: 6, scale: 4 }),
+    // Terms
+    loanTerm: integer("loan_term").notNull(), // months
+    amortizationTerm: integer("amortization_term"), // months
+    balloonMonths: integer("balloon_months"),
+    balloonAmount: decimal("balloon_amount", { precision: 15, scale: 2 }),
+    prepaymentPenalty: boolean("prepayment_penalty").default(false),
+    prepaymentPenaltyTerm: integer("prepayment_penalty_term"), // months
+    prepaymentPenaltyAmount: decimal("prepayment_penalty_amount", {
+      precision: 10,
+      scale: 2,
+    }),
+    prepaymentExpirationDate: date("prepayment_expiration_date"),
+    // Dates
+    applicationDate: date("application_date"),
+    approvalDate: date("approval_date"),
+    fundingDate: date("funding_date"),
+    firstPaymentDate: date("first_payment_date"),
+    maturityDate: date("maturity_date").notNull(),
+    nextPaymentDate: date("next_payment_date"),
+    lastPaymentDate: date("last_payment_date"),
+    // Payment information
+    paymentFrequency: frequencyEnum("payment_frequency")
+      .default("monthly")
+      .notNull(),
+    paymentAmount: decimal("payment_amount", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+    principalAndInterest: decimal("principal_and_interest", {
+      precision: 10,
+      scale: 2,
+    }),
+    monthlyEscrow: decimal("monthly_escrow", { precision: 10, scale: 2 }),
+    monthlyMI: decimal("monthly_mi", { precision: 10, scale: 2 }),
+    paymentDueDay: integer("payment_due_day"), // Day of month (1-31)
+    // LTV and Insurance
+    originalLTV: decimal("original_ltv", { precision: 5, scale: 2 }),
+    currentLTV: decimal("current_ltv", { precision: 5, scale: 2 }),
+    combinedLTV: decimal("combined_ltv", { precision: 5, scale: 2 }),
+    miRequired: boolean("mi_required").default(false),
+    miProvider: text("mi_provider"),
+    miCertificateNumber: text("mi_certificate_number"),
+    // Escrow
+    escrowRequired: boolean("escrow_required").default(false),
+    escrowWaived: boolean("escrow_waived").default(false),
+    // Status
+    status: loanStatusEnum("status").notNull(),
+    statusDate: timestamp("status_date").defaultNow().notNull(),
+    statusReason: text("status_reason"),
+    delinquentDays: integer("delinquent_days").default(0),
+    timesDelinquent30: integer("times_delinquent_30").default(0),
+    timesDelinquent60: integer("times_delinquent_60").default(0),
+    timesDelinquent90: integer("times_delinquent_90").default(0),
+    foreclosureDate: date("foreclosure_date"),
+    saleDate: date("sale_date"),
+    // Servicing - single field with type toggle (like late charge)
+    servicingFee: decimal("servicing_fee", { precision: 10, scale: 2 }),
+    servicingFeeType: text("servicing_fee_type")
+      .notNull()
+      .default("percentage"), // 'amount' or 'percentage' - indicates how to interpret servicingFee
+    lateCharge: decimal("late_charge", { precision: 10, scale: 2 }),
+    lateChargeType: text("late_charge_type").notNull().default("percentage"), // 'fixed' or 'percentage' - explicitly named
+    feePayer: text("fee_payer"), // 'B', 'S', 'SP'
+    gracePeriodDays: integer("grace_period_days"),
+    investorLoanNumber: text("investor_loan_number"),
+    poolNumber: text("pool_number"),
+    // Compliance
+    hmda: boolean("hmda").default(false),
+    hoepa: boolean("hoepa").default(false),
+    qm: boolean("qm").default(false), // Qualified Mortgage
+    // Borrower Information (basic contact info stored in loan for quick access)
+    borrowerName: text("borrower_name"),
+    borrowerCompanyName: text("borrower_company_name"),
+    borrowerEmail: text("borrower_email"),
+    borrowerPhone: text("borrower_phone"),
+    borrowerMobile: text("borrower_mobile"),
+    borrowerPhoto: text("borrower_photo"),
+    // Borrower mailing address (separate from property address)
+    borrowerAddress: text("borrower_address"),
+    borrowerCity: text("borrower_city"),
+    borrowerState: text("borrower_state"),
+    borrowerZip: text("borrower_zip"),
+    // Enhanced AI-extracted fields
+    borrowerSSN: text("borrower_ssn"),
+    borrowerIncome: decimal("borrower_income", { precision: 15, scale: 2 }),
+    // Credit scores for borrower
+    creditScoreEquifax: integer("credit_score_equifax"),
+    creditScoreExperian: integer("credit_score_experian"),
+    creditScoreTransunion: integer("credit_score_transunion"),
+    // Co-Borrower information
+    coBorrowerName: text("co_borrower_name"),
+    coBorrowerCompanyName: text("co_borrower_company_name"),
+    coBorrowerEmail: text("co_borrower_email"),
+    coBorrowerPhone: text("co_borrower_phone"),
+    coBorrowerAddress: text("co_borrower_address"),
+    coBorrowerCity: text("co_borrower_city"),
+    coBorrowerState: text("co_borrower_state"),
+    coBorrowerZip: text("co_borrower_zip"),
+    coBorrowerSSN: text("co_borrower_ssn"),
+    coBorrowerIncome: decimal("co_borrower_income", {
+      precision: 15,
+      scale: 2,
+    }),
+    coBorrowerCreditScoreEquifax: integer("co_borrower_credit_score_equifax"),
+    coBorrowerCreditScoreExperian: integer("co_borrower_credit_score_experian"),
+    coBorrowerCreditScoreTransunion: integer(
+      "co_borrower_credit_score_transunion",
+    ),
+    // Trustee information
+    trusteeName: text("trustee_name"),
+    trusteeCompanyName: text("trustee_company_name"),
+    trusteePhone: text("trustee_phone"),
+    trusteeEmail: text("trustee_email"),
+    trusteeStreetAddress: text("trustee_street_address"),
+    trusteeCity: text("trustee_city"),
+    trusteeState: text("trustee_state"),
+    trusteeZipCode: text("trustee_zip_code"),
+    // Beneficiary information
+    beneficiaryName: text("beneficiary_name"),
+    beneficiaryCompanyName: text("beneficiary_company_name"),
+    beneficiaryPhone: text("beneficiary_phone"),
+    beneficiaryEmail: text("beneficiary_email"),
+    beneficiaryStreetAddress: text("beneficiary_street_address"),
+    beneficiaryCity: text("beneficiary_city"),
+    beneficiaryState: text("beneficiary_state"),
+    beneficiaryZipCode: text("beneficiary_zip_code"),
+    // Escrow company information
+    escrowCompanyName: text("escrow_company_name"),
+    escrowNumber: text("escrow_number"),
+    escrowCompanyPhone: text("escrow_company_phone"),
+    escrowCompanyEmail: text("escrow_company_email"),
+    escrowCompanyStreetAddress: text("escrow_company_street_address"),
+    escrowCompanyCity: text("escrow_company_city"),
+    escrowCompanyState: text("escrow_company_state"),
+    escrowCompanyZipCode: text("escrow_company_zip_code"),
+    loanDocuments: jsonb("loan_documents"),
+    defaultConditions: jsonb("default_conditions"),
+    insuranceRequirements: jsonb("insurance_requirements"),
+    crossDefaultParties: jsonb("cross_default_parties"),
+    closingCosts: decimal("closing_costs", { precision: 15, scale: 2 }),
+    downPayment: decimal("down_payment", { precision: 15, scale: 2 }),
+    // Insurance and Tax fields (for temporary storage during creation)
+    hazardInsurance: decimal("hazard_insurance", { precision: 10, scale: 2 }),
+    propertyTaxes: decimal("property_taxes", { precision: 10, scale: 2 }),
+    hoaFees: decimal("hoa_fees", { precision: 10, scale: 2 }),
+    pmiAmount: decimal("pmi_amount", { precision: 10, scale: 2 }),
+    // servicingFee removed - using servicingFeeRate/servicingFeeAmount instead
+    // Additional payment fields for UI compatibility
+    propertyTax: decimal("property_tax", { precision: 10, scale: 2 }),
+    homeInsurance: decimal("home_insurance", { precision: 10, scale: 2 }),
+    pmi: decimal("pmi", { precision: 10, scale: 2 }),
+    otherMonthly: decimal("other_monthly", { precision: 10, scale: 2 }),
+    // Additional fields
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanNumberIdx: uniqueIndex("loan_number_idx").on(table.loanNumber),
+      statusIdx: index("loan_status_idx").on(table.status),
+      propertyIdx: index("loan_property_idx").on(table.propertyId),
+      maturityIdx: index("loan_maturity_idx").on(table.maturityDate),
+      nextPaymentIdx: index("loan_next_payment_idx").on(table.nextPaymentDate),
+    };
+  },
+);
+
+// Loan Borrowers - Many-to-many relationship
+export const loanBorrowers = pgTable(
+  "loan_borrowers",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    borrowerId: integer("borrower_id")
+      .references(() => borrowerEntities.id)
+      .notNull(),
+    borrowerType: text("borrower_type").notNull(), // 'primary', 'co_borrower', 'guarantor'
+    ownershipPercentage: decimal("ownership_percentage", {
+      precision: 8,
+      scale: 6,
+    }), // Aligned with investors table for precise splits
+    signingAuthority: boolean("signing_authority").default(true),
+    liabilityPercentage: decimal("liability_percentage", {
+      precision: 5,
+      scale: 2,
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanBorrowerIdx: uniqueIndex("loan_borrower_idx").on(
+        table.loanId,
+        table.borrowerId,
+      ),
+      loanIdx: index("loan_borrowers_loan_idx").on(table.loanId),
+      borrowerIdx: index("loan_borrowers_borrower_idx").on(table.borrowerId),
+    };
+  },
+);
+
+// Guarantors - Additional security for loans
+export const guarantors = pgTable(
+  "guarantors",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    guarantorEntityId: integer("guarantor_entity_id")
+      .references(() => borrowerEntities.id)
+      .notNull(),
+    guaranteeAmount: decimal("guarantee_amount", { precision: 15, scale: 2 }),
+    guaranteePercentage: decimal("guarantee_percentage", {
+      precision: 5,
+      scale: 2,
+    }),
+    guaranteeType: text("guarantee_type"), // 'full', 'limited', 'payment', 'collection'
+    startDate: date("start_date"),
+    endDate: date("end_date"),
+    isActive: boolean("is_active").default(true),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("guarantor_loan_idx").on(table.loanId),
+      entityIdx: index("guarantor_entity_idx").on(table.guarantorEntityId),
+    };
+  },
+);
+
+// ========================================
+// INVESTOR TABLES
+// ========================================
+
+// Investors - Track ownership percentages and banking information
+export const investors = pgTable(
+  "investors",
+  {
+    id: serial("id").primaryKey(),
+    investorId: text("investor_id").unique().notNull(), // Unique investor identifier
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+
+    // Investor details
+    entityType: entityTypeEnum("entity_type").notNull(), // 'individual' or 'entity'
+    name: text("name").notNull(), // Individual or entity name
+    contactName: text("contact_name"), // Contact person if entity
+    ssnOrEin: text("ssn_or_ein"), // SSN for individuals or EIN for entities
+    email: text("email"),
+    phone: text("phone"),
+
+    // Address
+    streetAddress: text("street_address"),
+    city: text("city"),
+    state: text("state"),
+    zipCode: text("zip_code"),
+
+    // Banking information
+    bankName: text("bank_name"),
+    bankStreetAddress: text("bank_street_address"),
+    bankCity: text("bank_city"),
+    bankState: text("bank_state"),
+    bankZipCode: text("bank_zip_code"),
+    accountNumber: text("account_number"), // Encrypted
+    routingNumber: text("routing_number"),
+    accountType: text("account_type"), // 'checking', 'savings'
+
+    // Ownership
+    ownershipPercentage: decimal("ownership_percentage", {
+      precision: 8,
+      scale: 6,
+    }).notNull(), // 0.000000 to 99.999999 for precise splits
+    investmentAmount: decimal("investment_amount", { precision: 15, scale: 2 }),
+    investmentDate: date("investment_date"),
+
+    // Status
+    isActive: boolean("is_active").default(true).notNull(),
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("investor_loan_idx").on(table.loanId),
+      investorIdIdx: uniqueIndex("investor_id_idx").on(table.investorId),
+      activeIdx: index("investor_active_idx").on(table.isActive),
+    };
+  },
+);
+
+// ========================================
+// PAYMENT TABLES
+// ========================================
+
+// Payment Schedule - Pre-calculated payment schedule
+export const paymentSchedule = pgTable(
+  "payment_schedule",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    paymentNumber: integer("payment_number").notNull(),
+    dueDate: date("due_date").notNull(),
+    principalAmount: decimal("principal_amount", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+    interestAmount: decimal("interest_amount", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+    escrowAmount: decimal("escrow_amount", { precision: 10, scale: 2 }),
+    miAmount: decimal("mi_amount", { precision: 10, scale: 2 }),
+    totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+    principalBalance: decimal("principal_balance", {
+      precision: 15,
+      scale: 2,
+    }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanPaymentIdx: uniqueIndex("schedule_loan_payment_idx").on(
+        table.loanId,
+        table.paymentNumber,
+      ),
+      dueDateIdx: index("schedule_due_date_idx").on(table.dueDate),
+    };
+  },
+);
+
+// Payments - Actual payment records
+export const payments = pgTable(
+  "payments",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    scheduleId: integer("schedule_id").references(() => paymentSchedule.id),
+    paymentNumber: integer("payment_number"),
+    // Dates
+    dueDate: date("due_date"),
+    receivedDate: timestamp("received_date"),
+    effectiveDate: date("effective_date").notNull(),
+    // Amounts
+    scheduledAmount: decimal("scheduled_amount", { precision: 10, scale: 2 }),
+    totalReceived: decimal("total_received", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+    principalAmount: decimal("principal_amount", { precision: 10, scale: 2 }),
+    interestAmount: decimal("interest_amount", { precision: 10, scale: 2 }),
+    escrowAmount: decimal("escrow_amount", { precision: 10, scale: 2 }),
+    miAmount: decimal("mi_amount", { precision: 10, scale: 2 }),
+    lateFeeAmount: decimal("late_fee_amount", { precision: 8, scale: 2 }),
+    otherFeeAmount: decimal("other_fee_amount", { precision: 8, scale: 2 }),
+    // Payment details
+    paymentMethod: text("payment_method"), // 'check', 'ach', 'wire', 'cash', 'credit_card'
+    checkNumber: text("check_number"),
+    transactionId: text("transaction_id"),
+    confirmationNumber: text("confirmation_number"),
+    // Status
+    status: paymentStatusEnum("status").notNull(),
+    nsfCount: integer("nsf_count").default(0),
+    reversalReason: text("reversal_reason"),
+    // Processing
+    processedBy: integer("processed_by").references(() => users.id),
+    processedDate: timestamp("processed_date"),
+    batchId: text("batch_id"),
+    // Column Bank Integration
+    columnTransferId: varchar("column_transfer_id", { length: 100 }),
+    columnAccountId: text("column_account_id"),
+    columnEventLastSeen: text("column_event_last_seen"),
+    columnWebhookId: varchar("column_webhook_id", { length: 100 }),
+    // Source and Idempotency
+    sourceChannel: text("source_channel"), // 'manual', 'ach', 'wire', 'api', 'column'
+    idempotencyKey: varchar("idempotency_key", { length: 256 }).unique(),
+    // Suspense and Reconciliation
+    suspenseAmount: decimal("suspense_amount", { precision: 18, scale: 2 })
+      .default("0")
+      .notNull(),
+    reconciledAt: timestamp("reconciled_at"),
+    reconciledBy: integer("reconciled_by").references(() => users.id),
+    // AI Processing
+    aiProcessed: boolean("ai_processed").default(false),
+    aiConfidenceScore: decimal("ai_confidence_score", {
+      precision: 3,
+      scale: 2,
+    }),
+    aiSuggestedAllocation: jsonb("ai_suggested_allocation"),
+    // Additional
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("payment_loan_idx").on(table.loanId),
+      dueDateIdx: index("payment_due_date_idx").on(table.dueDate),
+      effectiveDateIdx: index("payment_effective_date_idx").on(
+        table.effectiveDate,
+      ),
+      statusIdx: index("payment_status_idx").on(table.status),
+      batchIdx: index("payment_batch_idx").on(table.batchId),
+      columnTransferIdx: index("payments_column_transfer_idx").on(
+        table.columnTransferId,
+      ),
+    };
+  },
+);
+
+// ========================================
+// ESCROW TABLES
+// ========================================
+
+// Escrow Accounts
+export const escrowAccounts = pgTable(
+  "escrow_accounts",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .unique()
+      .notNull(),
+    accountNumber: text("account_number").unique().notNull(),
+    // Balances
+    currentBalance: decimal("current_balance", { precision: 12, scale: 2 })
+      .default("0")
+      .notNull(),
+    availableBalance: decimal("available_balance", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    pendingDeposits: decimal("pending_deposits", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    pendingDisbursements: decimal("pending_disbursements", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    // Requirements
+    monthlyPayment: decimal("monthly_payment", {
+      precision: 10,
+      scale: 2,
+    }).default("0"),
+    minimumBalance: decimal("minimum_balance", {
+      precision: 10,
+      scale: 2,
+    }).default("0"),
+    cushionAmount: decimal("cushion_amount", {
+      precision: 10,
+      scale: 2,
+    }).default("0"),
+    targetBalance: decimal("target_balance", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    // Analysis
+    projectedLowestBalance: decimal("projected_lowest_balance", {
+      precision: 12,
+      scale: 2,
+    }),
+    projectedLowestMonth: text("projected_lowest_month"),
+    shortageAmount: decimal("shortage_amount", {
+      precision: 10,
+      scale: 2,
+    }).default("0"),
+    surplusAmount: decimal("surplus_amount", {
+      precision: 10,
+      scale: 2,
+    }).default("0"),
+    shortageSpreadMonths: integer("shortage_spread_months"),
+    // Analysis dates
+    lastAnalysisDate: date("last_analysis_date"),
+    nextAnalysisDate: date("next_analysis_date"),
+    analysisEffectiveDate: date("analysis_effective_date"),
+    // Status
+    isActive: boolean("is_active").default(true).notNull(),
+    waived: boolean("waived").default(false),
+    waivedDate: date("waived_date"),
+    waivedBy: integer("waived_by").references(() => users.id),
+    waivedReason: text("waived_reason"),
+    // Additional
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      accountNumberIdx: uniqueIndex("escrow_account_number_idx").on(
+        table.accountNumber,
+      ),
+      loanIdx: uniqueIndex("escrow_loan_idx").on(table.loanId),
+      activeIdx: index("escrow_active_idx").on(table.isActive),
+    };
+  },
+);
+
+// Escrow Disbursements - Enhanced escrow payment management
+export const escrowDisbursements = pgTable(
+  "escrow_disbursements",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    escrowAccountId: integer("escrow_account_id")
+      .references(() => escrowAccounts.id)
+      .notNull(),
+
+    // Disbursement classification
+    disbursementType: disbursementTypeEnum("disbursement_type").notNull(),
+    description: text("description").notNull(),
+    category: text("category"), // subcategory within type
+
+    // Payee information
+    payeeName: text("payee_name").notNull(),
+    payeeContactName: text("payee_contact_name"),
+    payeePhone: text("payee_phone"),
+    payeeEmail: text("payee_email"),
+    payeeFax: text("payee_fax"),
+
+    // Payee address
+    payeeStreetAddress: text("payee_street_address"),
+    payeeCity: text("payee_city"),
+    payeeState: text("payee_state"),
+    payeeZipCode: text("payee_zip_code"),
+
+    // Type-specific fields
+    parcelNumber: text("parcel_number"), // For property taxes
+
+    // Insurance-specific fields
+    policyNumber: text("policy_number"), // For insurance
+    insuredName: text("insured_name"), // Name of the insured party
+    insuranceCompanyName: text("insurance_company_name"), // Insurance company name
+    policyDescription: text("policy_description"), // Type of insurance (Hazard, Flood, etc.)
+    policyExpirationDate: date("policy_expiration_date"), // Policy expiration date
+    coverageAmount: decimal("coverage_amount", { precision: 12, scale: 2 }), // Coverage amount in dollars
+
+    // Insurance property information
+    insurancePropertyAddress: text("insurance_property_address"), // Property covered by insurance
+    insurancePropertyCity: text("insurance_property_city"),
+    insurancePropertyState: text("insurance_property_state"),
+    insurancePropertyZipCode: text("insurance_property_zip_code"),
+
+    // Insurance agent information
+    agentName: text("agent_name"), // Insurance agent's name
+    agentBusinessAddress: text("agent_business_address"), // Agent's business address
+    agentCity: text("agent_city"),
+    agentState: text("agent_state"),
+    agentZipCode: text("agent_zip_code"),
+    agentPhone: text("agent_phone"), // Agent's phone number
+    agentFax: text("agent_fax"), // Agent's fax number
+    agentEmail: text("agent_email"), // Agent's email
+
+    // Insurance document reference
+    insuranceDocumentId: integer("insurance_document_id").references(
+      () => documents.id,
+    ), // Link to uploaded insurance document
+    insuranceTracking: boolean("insurance_tracking").default(true), // Active insurance tracking status
+
+    // Payment method and banking information
+    paymentMethod: disbursementPaymentMethodEnum("payment_method")
+      .notNull()
+      .default("check"),
+    bankAccountNumber: text("bank_account_number"), // Encrypted - replaces accountNumber
+    achRoutingNumber: text("ach_routing_number"),
+    wireRoutingNumber: text("wire_routing_number"),
+    accountType: text("account_type"), // 'checking', 'savings'
+    bankName: text("bank_name"),
+    wireInstructions: text("wire_instructions"),
+
+    // Remittance information
+    remittanceAddress: text("remittance_address"),
+    remittanceCity: text("remittance_city"),
+    remittanceState: text("remittance_state"),
+    remittanceZipCode: text("remittance_zip_code"),
+    accountNumber: text("account_number"), // For taxes - property tax account number
+    referenceNumber: text("reference_number"),
+
+    // Recurrence pattern
+    frequency: frequencyEnum("frequency").notNull(),
+    monthlyAmount: decimal("monthly_amount", { precision: 10, scale: 2 }),
+    annualAmount: decimal("annual_amount", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+    paymentAmount: decimal("payment_amount", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+
+    // Due dates and scheduling
+    firstDueDate: date("first_due_date"),
+    nextDueDate: date("next_due_date").notNull(),
+    lastPaidDate: date("last_paid_date"),
+    specificDueDates: jsonb("specific_due_dates"), // For taxes with specific bi-annual dates
+
+    // Status and holds
+    status: disbursementStatusEnum("status").notNull().default("active"),
+    isOnHold: boolean("is_on_hold").default(false).notNull(),
+    holdReason: text("hold_reason"),
+    holdRequestedBy: text("hold_requested_by"),
+    holdDate: timestamp("hold_date"),
+
+    // Auto-pay settings
+    autoPayEnabled: boolean("auto_pay_enabled").default(true),
+    daysBeforeDue: integer("days_before_due").default(10), // How many days before due date to pay
+
+    // Additional tracking
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("escrow_disb_loan_idx").on(table.loanId),
+      accountIdx: index("escrow_disb_account_idx").on(table.escrowAccountId),
+      typeIdx: index("escrow_disb_type_idx").on(table.disbursementType),
+      nextDueIdx: index("escrow_disb_next_due_idx").on(table.nextDueDate),
+      statusIdx: index("escrow_disb_status_idx").on(table.status),
+      holdIdx: index("escrow_disb_hold_idx").on(table.isOnHold),
+    };
+  },
+);
+
+// Escrow Disbursement Payments - Track actual payments made
+export const escrowDisbursementPayments = pgTable(
+  "escrow_disbursement_payments",
+  {
+    id: serial("id").primaryKey(),
+    disbursementId: integer("disbursement_id")
+      .references(() => escrowDisbursements.id)
+      .notNull(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    ledgerEntryId: integer("ledger_entry_id"), // References accounting ledger entry
+
+    // Payment details
+    paymentDate: timestamp("payment_date").notNull(),
+    dueDate: date("due_date").notNull(),
+    amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+
+    // Payment method used
+    paymentMethod: paymentMethodEnum("payment_method").notNull(),
+    checkNumber: text("check_number"),
+    wireConfirmation: text("wire_confirmation"),
+    achTransactionId: text("ach_transaction_id"),
+
+    // Status
+    status: paymentStatusEnum("status").notNull().default("scheduled"),
+    confirmationNumber: text("confirmation_number"),
+
+    // Processing
+    processedBy: integer("processed_by").references(() => users.id),
+    processedDate: timestamp("processed_date"),
+
+    // Additional
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      disbursementIdx: index("escrow_payment_disbursement_idx").on(
+        table.disbursementId,
+      ),
+      loanIdx: index("escrow_payment_loan_idx").on(table.loanId),
+      dueDateIdx: index("escrow_payment_due_date_idx").on(table.dueDate),
+      statusIdx: index("escrow_payment_status_idx").on(table.status),
+    };
+  },
+);
+
+// Escrow Transactions
+export const escrowTransactions = pgTable(
+  "escrow_transactions",
+  {
+    id: serial("id").primaryKey(),
+    escrowAccountId: integer("escrow_account_id")
+      .references(() => escrowAccounts.id)
+      .notNull(),
+    escrowItemId: integer("escrow_item_id"), // References escrow item
+    // Transaction details
+    transactionDate: timestamp("transaction_date").notNull(),
+    effectiveDate: date("effective_date").notNull(),
+    transactionType: transactionTypeEnum("transaction_type").notNull(),
+    amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+    runningBalance: decimal("running_balance", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    // Payment details
+    payeeId: integer("payee_id").references(() => payees.id),
+    checkNumber: text("check_number"),
+    wireConfirmation: text("wire_confirmation"),
+    referenceNumber: text("reference_number"),
+    // Source
+    paymentId: integer("payment_id").references(() => payments.id),
+    // Processing
+    processedBy: integer("processed_by").references(() => users.id),
+    approvedBy: integer("approved_by").references(() => users.id),
+    batchId: text("batch_id"),
+    // Additional
+    description: text("description").notNull(),
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      accountIdx: index("escrow_trans_account_idx").on(table.escrowAccountId),
+      dateIdx: index("escrow_trans_date_idx").on(table.transactionDate),
+      typeIdx: index("escrow_trans_type_idx").on(table.transactionType),
+    };
+  },
+);
+
+// Payees
+export const payees = pgTable(
+  "payees",
+  {
+    id: serial("id").primaryKey(),
+    payeeType: text("payee_type").notNull(), // 'tax_authority', 'insurance_company', 'hoa', 'utility', 'other'
+    name: text("name").notNull(),
+    // Contact
+    contactName: text("contact_name"),
+    phone: text("phone"),
+    fax: text("fax"),
+    email: text("email"),
+    website: text("website"),
+    // Address
+    address: text("address"),
+    address2: text("address_2"),
+    city: text("city"),
+    state: text("state"),
+    zipCode: text("zip_code"),
+    country: text("country").default("USA"),
+    // Payment information
+    paymentMethod: text("payment_method"), // 'check', 'ach', 'wire'
+    accountNumber: text("account_number"),
+    routingNumber: text("routing_number"),
+    wireInstructions: text("wire_instructions"),
+    // Tax specific
+    taxAuthority: boolean("tax_authority").default(false),
+    taxDistrict: text("tax_district"),
+    // Insurance specific
+    naicCode: text("naic_code"),
+    // Status
+    isActive: boolean("is_active").default(true).notNull(),
+    isPreferred: boolean("is_preferred").default(false),
+    // Additional
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      nameIdx: index("payee_name_idx").on(table.name),
+      typeIdx: index("payee_type_idx").on(table.payeeType),
+      activeIdx: index("payee_active_idx").on(table.isActive),
+    };
+  },
+);
+
+// ========================================
+// DOCUMENT TABLES
+// ========================================
+
+// Documents
+export const documents = pgTable(
+  "documents",
+  {
+    id: serial("id").primaryKey(),
+    // References
+    loanId: integer("loan_id").references(() => loans.id),
+    borrowerId: integer("borrower_id").references(() => borrowerEntities.id),
+    propertyId: integer("property_id").references(() => properties.id),
+    // Document details
+    category: documentCategoryEnum("category").notNull(),
+    documentType: text("document_type"),
+    title: text("title").notNull(),
+    description: text("description"),
+    // File information
+    fileName: text("file_name").notNull(),
+    fileSize: integer("file_size"),
+    mimeType: text("mime_type"),
+    storageUrl: text("storage_url").notNull(),
+    thumbnailUrl: text("thumbnail_url"),
+    // Document metadata
+    documentDate: date("document_date"),
+    recordedDate: date("recorded_date"),
+    expirationDate: date("expiration_date"),
+    // Recording information
+    recordingNumber: text("recording_number"),
+    bookNumber: text("book_number"),
+    pageNumber: text("page_number"),
+    instrumentNumber: text("instrument_number"),
+    // Security and access
+    isPublic: boolean("is_public").default(false).notNull(),
+    isConfidential: boolean("is_confidential").default(false),
+    requiresSignature: boolean("requires_signature").default(false),
+    isSigned: boolean("is_signed").default(false),
+    // Version control
+    version: integer("version").default(1).notNull(),
+    parentDocumentId: integer("parent_document_id").references(
+      () => documents.id,
+    ),
+    isCurrentVersion: boolean("is_current_version").default(true),
+    // User tracking
+    uploadedBy: integer("uploaded_by")
+      .references(() => users.id)
+      .notNull(),
+    lastAccessedBy: integer("last_accessed_by").references(() => users.id),
+    lastAccessedAt: timestamp("last_accessed_at"),
+    // Status
+    isActive: boolean("is_active").default(true).notNull(),
+    archivedDate: timestamp("archived_date"),
+    archivedBy: integer("archived_by").references(() => users.id),
+    // Additional
+    tags: text("tags").array(),
+    notes: text("notes"), // Store AI extraction JSON or other notes
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("document_loan_idx").on(table.loanId),
+      borrowerIdx: index("document_borrower_idx").on(table.borrowerId),
+      categoryIdx: index("document_category_idx").on(table.category),
+      uploadedByIdx: index("document_uploaded_by_idx").on(table.uploadedBy),
+      documentDateIdx: index("document_date_idx").on(table.documentDate),
+    };
+  },
+);
+
+// Document Templates
+export const documentTemplates = pgTable("document_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  contactName: text("contact_name"),
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
-  address: text("address"),
-  city: text("city"),
-  state: text("state"),
-  zipCode: text("zip_code"),
-  website: text("website"),
-  taxId: text("tax_id"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  nameIdx: index("lenders_name_idx").on(t.name)
-}));
-
-export const servicers = pgTable("servicers", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  contactName: text("contact_name"),
-  contactEmail: text("contact_email"),
-  contactPhone: text("contact_phone"),
-  address: text("address"),
-  city: text("city"),
-  state: text("state"),
-  zipCode: text("zip_code"),
-  website: text("website"),
-  taxId: text("tax_id"),
-  servicingFeeRate: decimal("servicing_fee_rate", { precision: 5, scale: 4 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  nameIdx: index("servicers_name_idx").on(t.name)
-}));
-
-// Borrower Entities - represents actual borrowers
-export const borrowerEntities = pgTable("borrower_entities", {
-  id: serial("id").primaryKey(),
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
-  email: text("email"),
-  phone: text("phone"),
-  ssn: text("ssn"),
-  dateOfBirth: date("date_of_birth"),
-  address: text("address"),
-  city: text("city"),
-  state: text("state"),
-  zipCode: text("zip_code"),
-  creditScore: integer("credit_score"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  nameIdx: index("borrower_entities_name_idx").on(t.firstName, t.lastName),
-  emailIdx: index("borrower_entities_email_idx").on(t.email)
-}));
-
-// Properties - real estate properties
-export const properties = pgTable("properties", {
-  id: serial("id").primaryKey(),
-  propertyType: propertyTypeEnum("property_type").notNull(),
-  // Address
-  address: text("address").notNull(),
-  address2: text("address_2"),
-  city: text("city").notNull(),
-  state: text("state").notNull(),
-  zipCode: text("zip_code").notNull(),
-  county: text("county"),
-  country: text("country").default('USA'),
-  // Legal description
-  legalDescription: text("legal_description"),
-  apn: text("apn"), // Assessor's Parcel Number
-  lotNumber: text("lot_number"),
-  blockNumber: text("block_number"),
-  subdivision: text("subdivision"),
-  // Property details
-  yearBuilt: integer("year_built"),
-  squareFeet: integer("square_feet"),
-  lotSize: decimal("lot_size", { precision: 10, scale: 2 }),
-  bedrooms: integer("bedrooms"),
-  bathrooms: decimal("bathrooms", { precision: 3, scale: 1 }),
-  stories: integer("stories"),
-  garageSpaces: integer("garage_spaces"),
-  hasHoa: boolean("has_hoa").default(false),
-  hoaFee: decimal("hoa_fee", { precision: 10, scale: 2 }),
-  // Valuation
-  purchasePrice: decimal("purchase_price", { precision: 15, scale: 2 }),
-  purchaseDate: date("purchase_date"),
-  originalAppraisalValue: decimal("original_appraisal_value", { precision: 15, scale: 2 }),
-  originalAppraisalDate: date("original_appraisal_date"),
-  currentValue: decimal("current_value", { precision: 15, scale: 2 }),
-  currentValueDate: date("current_value_date"),
-  currentValueSource: text("current_value_source"),
-  // Tax and insurance
-  annualPropertyTax: decimal("annual_property_tax", { precision: 10, scale: 2 }),
-  annualInsurance: decimal("annual_insurance", { precision: 10, scale: 2 }),
-  floodZone: text("flood_zone"),
-  floodInsuranceRequired: boolean("flood_insurance_required").default(false),
-  // Occupancy
-  occupancyType: occupancyTypeEnum("occupancy_type"),
-  rentalIncome: decimal("rental_income", { precision: 10, scale: 2 }),
-  // Meta
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  addressIdx: index("properties_address_idx").on(t.address, t.city, t.state),
-  apnIdx: index("properties_apn_idx").on(t.apn)
-}));
-
-export const loans = pgTable("loans", {
-  id: serial("id").primaryKey(),
-  loanNumber: text("loan_number").notNull(),
-  // Core relationships
-  lenderId: integer("lender_id").references(() => lenders.id),
-  servicerId: integer("servicer_id").references(() => servicers.id),
-  investorId: integer("investor_id").references(() => users.id),
-  // Property
-  propertyId: integer("property_id").references(() => properties.id).notNull(),
-  // Loan terms
-  originalAmount: decimal("original_amount", { precision: 15, scale: 2 }).notNull(),
-  principalBalance: decimal("principal_balance", { precision: 15, scale: 2 }).notNull(),
-  interestRate: decimal("interest_rate", { precision: 6, scale: 4 }).notNull(),
-  loanTerm: integer("loan_term").notNull(), // months
-  loanType: loanTypeEnum("loan_type").notNull(),
-  loanPurpose: loanPurposeEnum("loan_purpose"),
-  originationDate: date("origination_date").notNull(),
-  firstPaymentDate: date("first_payment_date").notNull(),
-  maturityDate: date("maturity_date").notNull(),
-  paymentDay: integer("payment_day").notNull(), // day of month (1-31)
-  // Payment details
-  paymentAmount: decimal("payment_amount", { precision: 10, scale: 2 }).notNull(),
-  escrowAmount: decimal("escrow_amount", { precision: 10, scale: 2 }),
-  currentInterestRate: decimal("current_interest_rate", { precision: 6, scale: 4 }),
-  nextPaymentDueDate: date("next_payment_due_date"),
-  lastPaymentDate: date("last_payment_date"),
-  lastPaymentAmount: decimal("last_payment_amount", { precision: 10, scale: 2 }),
-  // Status
-  status: loanStatusEnum("status").notNull().default("active"),
-  currentDaysDelinquent: integer("current_days_delinquent").default(0).notNull(),
-  timesThirtyDaysLate: integer("times_thirty_days_late").default(0).notNull(),
-  timesSixtyDaysLate: integer("times_sixty_days_late").default(0).notNull(),
-  timesNinetyDaysLate: integer("times_ninety_days_late").default(0).notNull(),
-  // Servicing fees and charges
-  servicingFee: decimal("servicing_fee", { precision: 10, scale: 2 }),
-  lateFeeAmount: decimal("late_fee_amount", { precision: 10, scale: 2 }),
-  nsfFeeAmount: decimal("nsf_fee_amount", { precision: 10, scale: 2 }),
-  // Loan features
-  hasEscrow: boolean("has_escrow").default(true).notNull(),
-  hasPmi: boolean("has_pmi").default(false).notNull(),
-  pmiAmount: decimal("pmi_amount", { precision: 10, scale: 2 }),
-  isAdjustableRate: boolean("is_adjustable_rate").default(false).notNull(),
-  rateAdjustmentFrequency: integer("rate_adjustment_frequency"), // months
-  rateCapInitial: decimal("rate_cap_initial", { precision: 6, scale: 4 }),
-  rateCapPeriodic: decimal("rate_cap_periodic", { precision: 6, scale: 4 }),
-  rateCapLifetime: decimal("rate_cap_lifetime", { precision: 6, scale: 4 }),
-  rateFloor: decimal("rate_floor", { precision: 6, scale: 4 }),
-  indexName: text("index_name"),
-  margin: decimal("margin", { precision: 6, scale: 4 }),
-  // Prepayment
-  hasPrepaymentPenalty: boolean("has_prepayment_penalty").default(false).notNull(),
-  prepaymentPenaltyEndDate: date("prepayment_penalty_end_date"),
-  prepaymentPenaltyAmount: decimal("prepayment_penalty_amount", { precision: 10, scale: 2 }),
-  // Metadata
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  importedFrom: text("imported_from"),
-  externalId: text("external_id"),
-  notes: text("notes"),
-  tags: text("tags")
-}, (t) => ({
-  loanNumberIdx: uniqueIndex("loan_number_idx").on(table.loanNumber),
-  statusIdx: index("loan_status_idx").on(table.status),
-  propertyIdx: index("loan_property_idx").on(table.propertyId),
-  maturityIdx: index("loan_maturity_idx").on(table.maturityDate),
-  servicerIdx: index("loan_servicer_idx").on(table.servicerId),
-  nextPaymentIdx: index("loan_next_payment_idx").on(table.nextPaymentDueDate),
-  delinquentIdx: index("loan_delinquent_idx").on(table.currentDaysDelinquent)
-}));
-
-// Loan Borrowers - junction table for many-to-many relationship
-export const loanBorrowers = pgTable("loan_borrowers", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id).notNull(),
-  isPrimary: boolean("is_primary").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("loan_borrowers_loan_idx").on(t.loanId),
-  borrowerIdx: index("loan_borrowers_borrower_idx").on(t.borrowerEntityId),
-  uniqueLoanBorrower: unique().on(t.loanId, t.borrowerEntityId)
-}));
-
-export const investors = pgTable("investors", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  investorId: text("investor_id").notNull(),
-  investorName: text("investor_name").notNull(),
-  ownershipPercentage: decimal("ownership_percentage", { precision: 5, scale: 2 }).notNull(),
-  purchaseDate: date("purchase_date"),
-  purchasePrice: decimal("purchase_price", { precision: 15, scale: 2 }),
-  servicingRightsPurchased: boolean("servicing_rights_purchased").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("investors_loan_idx").on(t.loanId),
-  investorIdx: index("investors_investor_idx").on(t.investorId)
-}));
-
-export const payments = pgTable("payments", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  paymentDate: date("payment_date").notNull(),
-  effectiveDate: date("effective_date").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  principalAmount: decimal("principal_amount", { precision: 10, scale: 2 }).notNull(),
-  interestAmount: decimal("interest_amount", { precision: 10, scale: 2 }).notNull(),
-  escrowAmount: decimal("escrow_amount", { precision: 10, scale: 2 }),
-  feesAmount: decimal("fees_amount", { precision: 10, scale: 2 }),
-  lateChargesAmount: decimal("late_charges_amount", { precision: 10, scale: 2 }),
-  status: paymentStatusEnum("status").notNull().default("pending"),
-  channel: paymentChannelEnum("channel").notNull(),
-  referenceNumber: text("reference_number"),
-  notes: text("notes"),
-  reversedAt: timestamp("reversed_at"),
-  reversalReason: text("reversal_reason"),
-  processedBy: integer("processed_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("payments_loan_idx").on(t.loanId),
-  dateIdx: index("payments_date_idx").on(t.paymentDate),
-  statusIdx: index("payments_status_idx").on(t.status),
-  referenceIdx: index("payments_reference_idx").on(t.referenceNumber)
-}));
-
-export const escrowAccounts = pgTable("escrow_accounts", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  currentBalance: decimal("current_balance", { precision: 10, scale: 2 }).notNull().default('0'),
-  targetBalance: decimal("target_balance", { precision: 10, scale: 2 }),
-  // Annual amounts
-  propertyTaxAmount: decimal("property_tax_amount", { precision: 10, scale: 2 }),
-  homeownersInsuranceAmount: decimal("homeowners_insurance_amount", { precision: 10, scale: 2 }),
-  mortgageInsuranceAmount: decimal("mortgage_insurance_amount", { precision: 10, scale: 2 }),
-  floodInsuranceAmount: decimal("flood_insurance_amount", { precision: 10, scale: 2 }),
-  otherAmount1: decimal("other_amount_1", { precision: 10, scale: 2 }),
-  otherAmount1Description: text("other_amount_1_description"),
-  // Disbursement info
-  nextPropertyTaxDueDate: date("next_property_tax_due_date"),
-  nextInsuranceDueDate: date("next_insurance_due_date"),
-  lastAnalysisDate: date("last_analysis_date"),
-  nextAnalysisDate: date("next_analysis_date"),
-  // Status
-  hasShortage: boolean("has_shortage").default(false).notNull(),
-  shortageAmount: decimal("shortage_amount", { precision: 10, scale: 2 }),
-  hasSurplus: boolean("has_surplus").default(false).notNull(),
-  surplusAmount: decimal("surplus_amount", { precision: 10, scale: 2 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: uniqueIndex("escrow_accounts_loan_idx").on(t.loanId)
-}));
-
-export const escrowTransactions = pgTable("escrow_transactions", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  escrowAccountId: integer("escrow_account_id").references(() => escrowAccounts.id).notNull(),
-  transactionDate: date("transaction_date").notNull(),
-  effectiveDate: date("effective_date").notNull(),
-  type: text("type").notNull(), // "deposit", "disbursement", "adjustment"
-  category: text("category").notNull(), // "property_tax", "insurance", "pmi", "other"
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  balance: decimal("balance", { precision: 10, scale: 2 }).notNull(),
-  payee: text("payee"),
-  referenceNumber: text("reference_number"),
+  category: documentCategoryEnum("category").notNull(),
   description: text("description"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  accountIdx: index("escrow_transactions_account_idx").on(t.escrowAccountId),
-  dateIdx: index("escrow_transactions_date_idx").on(t.transactionDate),
-  typeIdx: index("escrow_transactions_type_idx").on(t.type)
-}));
-
-export const documents = pgTable("documents", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id),
-  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id),
-  documentType: documentTypeEnum("document_type").notNull(),
-  fileName: text("file_name").notNull(),
-  mimeType: text("mime_type").notNull(),
-  fileSize: integer("file_size").notNull(),
-  storageKey: text("storage_key").notNull(),
-  storageUrl: text("storage_url"),
-  status: documentStatusEnum("status").notNull().default("pending"),
-  uploadedBy: integer("uploaded_by").references(() => users.id),
-  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
-  metadata: jsonb("metadata"),
-  extractedText: text("extracted_text"),
-  aiAnalysis: jsonb("ai_analysis"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("documents_loan_idx").on(t.loanId),
-  borrowerIdx: index("documents_borrower_idx").on(t.borrowerEntityId),
-  typeIdx: index("documents_type_idx").on(t.documentType),
-  uploadedAtIdx: index("documents_uploaded_at_idx").on(t.uploadedAt)
-}));
-
-export const paymentSchedule = pgTable("payment_schedule", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  dueDate: date("due_date").notNull(),
-  paymentNumber: integer("payment_number").notNull(),
-  principalAmount: decimal("principal_amount", { precision: 10, scale: 2 }).notNull(),
-  interestAmount: decimal("interest_amount", { precision: 10, scale: 2 }).notNull(),
-  escrowAmount: decimal("escrow_amount", { precision: 10, scale: 2 }),
-  pmiAmount: decimal("pmi_amount", { precision: 10, scale: 2 }),
-  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
-  beginningBalance: decimal("beginning_balance", { precision: 15, scale: 2 }).notNull(),
-  endingBalance: decimal("ending_balance", { precision: 15, scale: 2 }).notNull(),
-  isPaid: boolean("is_paid").default(false).notNull(),
-  paidDate: date("paid_date"),
-  paidAmount: decimal("paid_amount", { precision: 10, scale: 2 }),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("schedule_loan_idx").on(t.loanId),
-  dueDateIdx: index("schedule_due_date_idx").on(t.dueDate),
-  loanDueDateIdx: uniqueIndex("schedule_loan_due_date_idx").on(t.loanId, t.dueDate)
-}));
-
-// Audit logs - automatically created by triggers
-export const auditLogs = pgTable("audit_logs", {
-  id: serial("id").primaryKey(),
-  tableName: text("table_name").notNull(),
-  recordId: integer("record_id"),
-  action: text("action").notNull(), // INSERT, UPDATE, DELETE
-  userId: integer("user_id").references(() => users.id),
-  changes: jsonb("changes"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  tableIdx: index("audit_logs_table_idx").on(t.tableName),
-  recordIdx: index("audit_logs_record_idx").on(t.recordId),
-  userIdx: index("audit_logs_user_idx").on(t.userId),
-  createdAtIdx: index("audit_logs_created_at_idx").on(t.createdAt)
-}));
-
-// Notes and comments
-export const notes = pgTable("notes", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id),
-  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  noteType: text("note_type").notNull(), // "general", "collection", "servicing", "investor", etc.
-  content: text("content").notNull(),
-  isPrivate: boolean("is_private").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("notes_loan_idx").on(t.loanId),
-  borrowerIdx: index("notes_borrower_idx").on(t.borrowerEntityId),
-  userIdx: index("notes_user_idx").on(t.userId),
-  typeIdx: index("notes_type_idx").on(t.noteType),
-  createdAtIdx: index("notes_created_at_idx").on(t.createdAt)
-}));
-
-// Tasks and workflows
-export const tasks = pgTable("tasks", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id),
-  assignedTo: integer("assigned_to").references(() => users.id),
-  createdBy: integer("created_by").references(() => users.id).notNull(),
-  taskType: text("task_type").notNull(), // "review", "collection_call", "document_request", etc.
-  title: text("title").notNull(),
-  description: text("description"),
-  priority: text("priority").notNull().default("medium"), // "low", "medium", "high", "urgent"
-  status: text("status").notNull().default("pending"), // "pending", "in_progress", "completed", "cancelled"
-  dueDate: date("due_date"),
-  completedAt: timestamp("completed_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("tasks_loan_idx").on(t.loanId),
-  assignedToIdx: index("tasks_assigned_to_idx").on(t.assignedTo),
-  statusIdx: index("tasks_status_idx").on(t.status),
-  dueDateIdx: index("tasks_due_date_idx").on(t.dueDate)
-}));
-
-// Escrow disbursements
-export const escrowDisbursements = pgTable("escrow_disbursements", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  escrowAccountId: integer("escrow_account_id").references(() => escrowAccounts.id).notNull(),
-  disbursementType: text("disbursement_type").notNull(), // "property_tax", "insurance", "pmi", etc.
-  payee: text("payee").notNull(),
-  accountNumber: text("account_number"),
-  scheduledDate: date("scheduled_date").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  status: text("status").notNull().default("scheduled"), // "scheduled", "pending", "processed", "failed"
-  processedDate: date("processed_date"),
-  checkNumber: text("check_number"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("disbursements_loan_idx").on(t.loanId),
-  scheduledDateIdx: index("disbursements_scheduled_date_idx").on(t.scheduledDate),
-  statusIdx: index("disbursements_status_idx").on(t.status)
-}));
-
-// Collection activities
-export const collectionActivities = pgTable("collection_activities", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  activityType: text("activity_type").notNull(), // "call", "letter", "email", "text", "visit", etc.
-  activityDate: timestamp("activity_date").notNull(),
-  contactedPerson: text("contacted_person"),
-  outcome: text("outcome"), // "promised_payment", "left_message", "no_answer", etc.
-  promisedPaymentDate: date("promised_payment_date"),
-  promisedPaymentAmount: decimal("promised_payment_amount", { precision: 10, scale: 2 }),
-  notes: text("notes"),
-  nextActionDate: date("next_action_date"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("collection_activities_loan_idx").on(t.loanId),
-  dateIdx: index("collection_activities_date_idx").on(t.activityDate),
-  userIdx: index("collection_activities_user_idx").on(t.userId)
-}));
-
-// Reporting snapshots
-export const loanSnapshots = pgTable("loan_snapshots", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  snapshotDate: date("snapshot_date").notNull(),
-  principalBalance: decimal("principal_balance", { precision: 15, scale: 2 }).notNull(),
-  interestRate: decimal("interest_rate", { precision: 6, scale: 4 }).notNull(),
-  paymentAmount: decimal("payment_amount", { precision: 10, scale: 2 }).notNull(),
-  status: loanStatusEnum("status").notNull(),
-  daysDelinquent: integer("days_delinquent").notNull(),
-  lastPaymentDate: date("last_payment_date"),
-  lastPaymentAmount: decimal("last_payment_amount", { precision: 10, scale: 2 }),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanDateIdx: uniqueIndex("snapshots_loan_date_idx").on(t.loanId, t.snapshotDate),
-  dateIdx: index("snapshots_date_idx").on(t.snapshotDate)
-}));
-
-// CRM Related Tables
-export const crmContacts = pgTable("crm_contacts", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id),
-  borrowerId: integer("borrower_id").references(() => borrowerEntities.id),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  email: text("email"),
-  phone: text("phone"),
-  role: text("role"), // "borrower", "co-borrower", "attorney", "realtor", etc.
-  isPrimary: boolean("is_primary").default(false),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("crm_contacts_loan_idx").on(t.loanId),
-  borrowerIdx: index("crm_contacts_borrower_idx").on(t.borrowerId),
-  emailIdx: index("crm_contacts_email_idx").on(t.email)
-}));
-
-export const crmActivities = pgTable("crm_activities", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id),
-  contactId: integer("contact_id").references(() => crmContacts.id),
-  userId: integer("user_id").references(() => users.id),
-  activityType: text("activity_type").notNull(), // "call", "email", "note", "meeting", "task"
-  subject: text("subject"),
-  description: text("description"),
-  outcome: text("outcome"),
-  scheduledAt: timestamp("scheduled_at"),
-  completedAt: timestamp("completed_at"),
-  duration: integer("duration"), // in minutes
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("crm_activities_loan_idx").on(t.loanId),
-  contactIdx: index("crm_activities_contact_idx").on(t.contactId),
-  userIdx: index("crm_activities_user_idx").on(t.userId),
-  typeIdx: index("crm_activities_type_idx").on(t.activityType),
-  scheduledIdx: index("crm_activities_scheduled_idx").on(t.scheduledAt)
-}));
-
-// Payment Allocations - track how payments are distributed
-export const paymentAllocations = pgTable("payment_allocations", {
-  id: serial("id").primaryKey(),
-  paymentId: integer("payment_id").references(() => payments.id).notNull(),
-  allocationType: text("allocation_type").notNull(), // "principal", "interest", "escrow", "late_fee", etc.
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  paymentIdx: index("allocations_payment_idx").on(t.paymentId),
-  typeIdx: index("allocations_type_idx").on(t.allocationType)
-}));
-
-// Investor positions - track ownership percentages
-export const investorPositions = pgTable("investor_positions", {
-  id: serial("id").primaryKey(),
-  investorId: text("investor_id").notNull(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  ownershipPercentage: decimal("ownership_percentage", { precision: 6, scale: 4 }).notNull(),
-  effectiveDate: date("effective_date").notNull(),
-  expirationDate: date("expiration_date"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  investorLoanIdx: index("positions_investor_loan_idx").on(t.investorId, t.loanId),
-  effectiveDateIdx: index("positions_effective_date_idx").on(t.effectiveDate)
-}));
-
-// Escrow disbursement payments - track actual payments made
-export const escrowDisbursementPayments = pgTable("escrow_disbursement_payments", {
-  id: serial("id").primaryKey(),
-  disbursementId: integer("disbursement_id").references(() => escrowDisbursements.id).notNull(),
-  paymentMethod: text("payment_method").notNull(), // "check", "ach", "wire"
-  paymentReference: text("payment_reference"),
-  paymentDate: date("payment_date").notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  status: text("status").notNull(), // "pending", "cleared", "returned"
-  clearedDate: date("cleared_date"),
-  returnReason: text("return_reason"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  disbursementIdx: index("disbursement_payments_disbursement_idx").on(t.disbursementId),
-  statusIdx: index("disbursement_payments_status_idx").on(t.status)
-}));
-
-// Escrow analysis records
-export const escrowAnalysis = pgTable("escrow_analysis", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  analysisDate: date("analysis_date").notNull(),
-  analysisType: text("analysis_type").notNull(), // "annual", "short_year", "manual"
-  projectedLowPoint: decimal("projected_low_point", { precision: 10, scale: 2 }),
-  projectedLowPointMonth: text("projected_low_point_month"),
-  requiredCushion: decimal("required_cushion", { precision: 10, scale: 2 }),
-  shortage: decimal("shortage", { precision: 10, scale: 2 }),
-  surplus: decimal("surplus", { precision: 10, scale: 2 }),
-  newMonthlyPayment: decimal("new_monthly_payment", { precision: 10, scale: 2 }),
-  effectiveDate: date("effective_date"),
-  shortageSpreadMonths: integer("shortage_spread_months"),
+  templateContent: text("template_content"),
+  templateUrl: text("template_url"),
+  variables: jsonb("variables"), // List of merge fields
+  isActive: boolean("is_active").default(true),
   createdBy: integer("created_by").references(() => users.id),
-  approvedBy: integer("approved_by").references(() => users.id),
-  approvedAt: timestamp("approved_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("escrow_analysis_loan_idx").on(t.loanId),
-  dateIdx: index("escrow_analysis_date_idx").on(t.analysisDate)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ========================================
+// SERVICING AND COLLECTIONS
+// ========================================
+
+// Servicing Instructions
+export const servicingInstructions = pgTable(
+  "servicing_instructions",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    instructionType: text("instruction_type").notNull(), // 'payment', 'escrow', 'collection', 'reporting'
+    priority: priorityEnum("priority").default("medium"),
+    effectiveDate: date("effective_date").notNull(),
+    expirationDate: date("expiration_date"),
+    instructions: text("instructions").notNull(),
+    isActive: boolean("is_active").default(true),
+    createdBy: integer("created_by").references(() => users.id),
+    approvedBy: integer("approved_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("servicing_loan_idx").on(table.loanId),
+      typeIdx: index("servicing_type_idx").on(table.instructionType),
+      activeIdx: index("servicing_active_idx").on(table.isActive),
+    };
+  },
+);
+
+// Collection Activities
+export const collectionActivities = pgTable(
+  "collection_activities",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    activityDate: timestamp("activity_date").defaultNow().notNull(),
+    activityType: text("activity_type").notNull(), // 'call', 'letter', 'email', 'visit', 'legal'
+    status: collectionStatusEnum("status").notNull(),
+    contactMethod: text("contact_method"),
+    contactPerson: text("contact_person"),
+    phoneNumber: text("phone_number"),
+    promiseDate: date("promise_date"),
+    promiseAmount: decimal("promise_amount", { precision: 10, scale: 2 }),
+    result: text("result"),
+    nextActionDate: date("next_action_date"),
+    nextAction: text("next_action"),
+    notes: text("notes").notNull(),
+    performedBy: integer("performed_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("collection_loan_idx").on(table.loanId),
+      dateIdx: index("collection_date_idx").on(table.activityDate),
+      statusIdx: index("collection_status_idx").on(table.status),
+    };
+  },
+);
+
+// ========================================
+// LEGAL AND COMPLIANCE
+// ========================================
+
+// Legal Proceedings
+export const legalProceedings = pgTable(
+  "legal_proceedings",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    proceedingType: text("proceeding_type").notNull(), // 'foreclosure', 'bankruptcy', 'litigation', 'eviction'
+    caseNumber: text("case_number"),
+    courtName: text("court_name"),
+    filingDate: date("filing_date"),
+    attorneyName: text("attorney_name"),
+    attorneyFirm: text("attorney_firm"),
+    attorneyPhone: text("attorney_phone"),
+    attorneyEmail: text("attorney_email"),
+    status: text("status").notNull(),
+    statusDate: date("status_date"),
+    saleDate: date("sale_date"),
+    redemptionDeadline: date("redemption_deadline"),
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("legal_loan_idx").on(table.loanId),
+      typeIdx: index("legal_type_idx").on(table.proceedingType),
+      caseIdx: index("legal_case_idx").on(table.caseNumber),
+    };
+  },
+);
+
+// Fee Templates (Default fee schedules for lenders)
+export const feeTemplates = pgTable(
+  "fee_templates",
+  {
+    id: serial("id").primaryKey(),
+    lenderId: integer("lender_id")
+      .references(() => users.id)
+      .notNull(),
+    templateName: text("template_name").notNull(),
+    description: text("description"),
+    isDefault: boolean("is_default").default(false),
+    fees: jsonb("fees").notNull(), // Array of fee definitions
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      lenderIdx: index("fee_template_lender_idx").on(table.lenderId),
+      defaultIdx: index("fee_template_default_idx").on(table.isDefault),
+    };
+  },
+);
+
+// Loan Ledger (Complete accounting ledger for all loan transactions)
+export const loanLedger = pgTable(
+  "loan_ledger",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    transactionDate: timestamp("transaction_date").notNull(),
+    transactionId: text("transaction_id").notNull().unique(),
+    description: text("description").notNull(),
+    transactionType: text("transaction_type").notNull(), // 'principal', 'interest', 'fee', 'payment', 'escrow', 'penalty', 'reversal'
+    category: text("category"), // 'origination', 'servicing', 'late_fee', 'nsf', 'modification', 'payoff', 'recording', etc.
+    debitAmount: decimal("debit_amount", { precision: 12, scale: 2 }),
+    creditAmount: decimal("credit_amount", { precision: 12, scale: 2 }),
+    runningBalance: decimal("running_balance", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    principalBalance: decimal("principal_balance", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    interestBalance: decimal("interest_balance", {
+      precision: 12,
+      scale: 2,
+    }).default("0"),
+    status: text("status").notNull().default("posted"), // 'pending', 'posted', 'pending_approval', 'reversed'
+    reversalOf: integer("reversal_of").references(() => loanLedger.id),
+    reversedBy: integer("reversed_by").references(() => loanLedger.id),
+    approvalRequired: boolean("approval_required").default(false),
+    approvedBy: integer("approved_by").references(() => users.id),
+    approvalDate: timestamp("approval_date"),
+    approvalNotes: text("approval_notes"),
+    createdBy: integer("created_by").references(() => users.id),
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("ledger_loan_idx").on(table.loanId),
+      dateIdx: index("ledger_date_idx").on(table.transactionDate),
+      statusIdx: index("ledger_status_idx").on(table.status),
+      typeIdx: index("ledger_type_idx").on(table.transactionType),
+    };
+  },
+);
+
+// Loan Fees (Fees applied to specific loans)
+export const loanFees = pgTable(
+  "loan_fees",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    feeType: text("fee_type").notNull(), // 'origination', 'servicing', 'late', 'nsf', 'modification', 'payoff', 'recording', etc.
+    feeName: text("fee_name").notNull(),
+    feeAmount: decimal("fee_amount", { precision: 10, scale: 2 }).notNull(),
+    feePercentage: decimal("fee_percentage", { precision: 5, scale: 3 }), // For percentage-based fees
+    frequency: text("frequency"), // 'one-time', 'monthly', 'quarterly', 'annual'
+    chargeDate: date("charge_date"),
+    dueDate: date("due_date"),
+    paidDate: date("paid_date"),
+    waived: boolean("waived").default(false),
+    waivedBy: integer("waived_by").references(() => users.id),
+    waivedReason: text("waived_reason"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("loan_fee_loan_idx").on(table.loanId),
+      typeIdx: index("loan_fee_type_idx").on(table.feeType),
+      dueDateIdx: index("loan_fee_due_date_idx").on(table.dueDate),
+    };
+  },
+);
+
+// Insurance Policies
+export const insurancePolicies = pgTable(
+  "insurance_policies",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id").references(() => loans.id),
+    propertyId: integer("property_id")
+      .references(() => properties.id)
+      .notNull(),
+    policyType: text("policy_type").notNull(), // 'hazard', 'flood', 'earthquake', 'wind', 'liability'
+    insuranceCompany: text("insurance_company").notNull(),
+    policyNumber: text("policy_number").notNull(),
+    effectiveDate: date("effective_date").notNull(),
+    expirationDate: date("expiration_date").notNull(),
+    coverageAmount: decimal("coverage_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    deductible: decimal("deductible", { precision: 10, scale: 2 }),
+    annualPremium: decimal("annual_premium", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+    agentName: text("agent_name"),
+    agentPhone: text("agent_phone"),
+    agentEmail: text("agent_email"),
+    isEscrowPaid: boolean("is_escrow_paid").default(false),
+    isActive: boolean("is_active").default(true),
+    lastVerifiedDate: date("last_verified_date"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("insurance_loan_idx").on(table.loanId),
+      propertyIdx: index("insurance_property_idx").on(table.propertyId),
+      policyNumberIdx: index("insurance_policy_number_idx").on(
+        table.policyNumber,
+      ),
+      expirationIdx: index("insurance_expiration_idx").on(table.expirationDate),
+    };
+  },
+);
+
+// ========================================
+// SYSTEM TABLES
+// ========================================
+
+// Audit Log
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    loanId: integer("loan_id").references(() => loans.id),
+    entityType: text("entity_type").notNull(),
+    entityId: integer("entity_id").notNull(),
+    action: text("action").notNull(), // 'create', 'update', 'delete', 'view', 'export'
+    previousValues: jsonb("previous_values"),
+    newValues: jsonb("new_values"),
+    changedFields: text("changed_fields").array(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    sessionId: text("session_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      userIdx: index("audit_user_idx").on(table.userId),
+      entityIdx: index("audit_entity_idx").on(table.entityType, table.entityId),
+      createdAtIdx: index("audit_created_at_idx").on(table.createdAt),
+    };
+  },
+);
+
+// Notifications
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .references(() => users.id)
+      .notNull(),
+    type: notificationTypeEnum("type").notNull(),
+    priority: priorityEnum("priority").default("medium").notNull(),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    relatedEntityType: text("related_entity_type"),
+    relatedEntityId: integer("related_entity_id"),
+    actionUrl: text("action_url"),
+    isRead: boolean("is_read").default(false).notNull(),
+    readAt: timestamp("read_at"),
+    isArchived: boolean("is_archived").default(false),
+    archivedAt: timestamp("archived_at"),
+    scheduledFor: timestamp("scheduled_for"),
+    sentAt: timestamp("sent_at"),
+    emailSent: boolean("email_sent").default(false),
+    smsSent: boolean("sms_sent").default(false),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      userIdx: index("notification_user_idx").on(table.userId),
+      readIdx: index("notification_is_read_idx").on(table.isRead),
+      typeIdx: index("notification_type_idx").on(table.type),
+      createdAtIdx: index("notification_created_idx").on(table.createdAt),
+    };
+  },
+);
+
+// Tasks/Workflows
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    description: text("description"),
+    taskType: text("task_type").notNull(), // 'review', 'approval', 'processing', 'verification'
+    priority: priorityEnum("priority").default("medium"),
+    status: text("status").notNull(), // 'pending', 'in_progress', 'completed', 'cancelled'
+    // References
+    loanId: integer("loan_id").references(() => loans.id),
+    relatedEntityType: text("related_entity_type"),
+    relatedEntityId: integer("related_entity_id"),
+    // Assignment
+    assignedTo: integer("assigned_to").references(() => users.id),
+    assignedBy: integer("assigned_by").references(() => users.id),
+    assignedDate: timestamp("assigned_date"),
+    // Dates
+    dueDate: timestamp("due_date"),
+    startedDate: timestamp("started_date"),
+    completedDate: timestamp("completed_date"),
+    // Additional
+    notes: text("notes"),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      assignedToIdx: index("task_assigned_to_idx").on(table.assignedTo),
+      statusIdx: index("task_status_idx").on(table.status),
+      dueDateIdx: index("task_due_date_idx").on(table.dueDate),
+      loanIdx: index("task_loan_idx").on(table.loanId),
+    };
+  },
+);
+
+// System Settings
+export const systemSettings = pgTable(
+  "system_settings",
+  {
+    id: serial("id").primaryKey(),
+    category: text("category").notNull(),
+    key: text("key").notNull(),
+    value: jsonb("value").notNull(),
+    description: text("description"),
+    isEditable: boolean("is_editable").default(true),
+    updatedBy: integer("updated_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      categoryKeyIdx: uniqueIndex("settings_category_key_idx").on(
+        table.category,
+        table.key,
+      ),
+    };
+  },
+);
+
+// Notice Templates
+export const noticeTemplates = pgTable(
+  "notice_templates",
+  {
+    id: serial("id").primaryKey(),
+    category: text("category").notNull(), // 'late', 'insurance', 'nsf', 'payoff', 'hud', 'arm', 'other'
+    subcategory: text("subcategory"), // 'balloon', 'beneficiary', 'reinstate', 'gtm', etc.
+    name: text("name").notNull(),
+    description: text("description"),
+    filename: text("filename"),
+    fileUrl: text("file_url"),
+    fileSize: integer("file_size"),
+    mimeType: text("mime_type"),
+    isActive: boolean("is_active").default(true),
+    uploadedBy: integer("uploaded_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      categoryIdx: index("notice_template_category_idx").on(table.category),
+      categorySubcategoryIdx: index("notice_template_cat_subcat_idx").on(
+        table.category,
+        table.subcategory,
+      ),
+    };
+  },
+);
+
+// Notice Settings
+export const noticeSettings = pgTable(
+  "notice_settings",
+  {
+    id: serial("id").primaryKey(),
+    category: text("category").notNull(), // 'late', 'nsf', 'payoff', etc.
+    settingKey: text("setting_key").notNull(),
+    settingValue: jsonb("setting_value").notNull(),
+    description: text("description"),
+    updatedBy: integer("updated_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      categoryKeyIdx: uniqueIndex("notice_settings_category_key_idx").on(
+        table.category,
+        table.settingKey,
+      ),
+    };
+  },
+);
+
+// ========================================
+// DEFINE RELATIONSHIPS
+// ========================================
+
+// Users Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  loansAsLender: many(loans),
+  loansAsServicer: many(loans),
+  documentsUploaded: many(documents),
+  notifications: many(notifications),
+  auditLogs: many(auditLogs),
+  tasks: many(tasks),
 }));
 
-// Add Email Template System Tables
+// Loan Relations
+export const loansRelations = relations(loans, ({ one, many }) => ({
+  property: one(properties, {
+    fields: [loans.propertyId],
+    references: [properties.id],
+  }),
+  lender: one(users, {
+    fields: [loans.lenderId],
+    references: [users.id],
+  }),
+  servicer: one(users, {
+    fields: [loans.servicerId],
+    references: [users.id],
+  }),
+  investor: one(users, {
+    fields: [loans.investorId],
+    references: [users.id],
+  }),
+  borrowers: many(loanBorrowers),
+  guarantors: many(guarantors),
+  payments: many(payments),
+  paymentSchedule: many(paymentSchedule),
+  documents: many(documents),
+  escrowAccount: one(escrowAccounts),
+  servicingInstructions: many(servicingInstructions),
+  collectionActivities: many(collectionActivities),
+  legalProceedings: many(legalProceedings),
+  insurancePolicies: many(insurancePolicies),
+  tasks: many(tasks),
+}));
+
+// Other relations remain largely the same but updated with new tables...
+
+// ========================================
+// CREATE INSERT SCHEMAS AND TYPES
+// ========================================
+
+// User Management System Tables
+
+// User status enum
+export const userStatusEnum = pgEnum("user_status", [
+  "invited",
+  "active",
+  "locked",
+  "suspended",
+  "disabled",
+]);
+
+// Permission level enum
+export const permissionLevelEnum = pgEnum("permission_level", [
+  "none",
+  "read",
+  "write",
+  "admin",
+]);
+
+// Login outcome enum
+export const loginOutcomeEnum = pgEnum("login_outcome", [
+  "succeeded",
+  "failed",
+  "locked",
+]);
+
+// Roles table
+export const roles = pgTable("roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// User roles junction table
+export const userRoles = pgTable(
+  "user_roles",
+  {
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).defaultNow(),
+    assignedBy: integer("assigned_by").references(() => users.id),
+  },
+  (table) => {
+    return {
+      userIdx: index("idx_user_roles_user_id").on(table.userId),
+      roleIdx: index("idx_user_roles_role_id").on(table.roleId),
+      pk: primaryKey({ columns: [table.userId, table.roleId] }),
+    };
+  },
+);
+
+// Permissions table
+export const permissions = pgTable(
+  "permissions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    resource: text("resource").notNull(),
+    level: permissionLevelEnum("level").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => {
+    return {
+      uniqueResourceLevel: uniqueIndex("unique_resource_level").on(
+        table.resource,
+        table.level,
+      ),
+    };
+  },
+);
+
+// Role permissions table (normalized structure matching migration)
+export const rolePermissions = pgTable(
+  "role_permissions",
+  {
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+    permissionId: uuid("permission_id")
+      .notNull()
+      .references(() => permissions.id, { onDelete: "cascade" }),
+    scope: jsonb("scope"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => {
+    return {
+      roleIdx: index("idx_role_permissions_role_id").on(table.roleId),
+      pk: primaryKey({ columns: [table.roleId, table.permissionId] }),
+    };
+  },
+);
+
+// User IP allowlist table
+export const userIpAllowlist = pgTable(
+  "user_ip_allowlist",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ipAddress: text("ip_address").notNull(),
+    description: text("description"),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    useCount: integer("use_count").default(0),
+    cidr: text("cidr"),
+    label: text("label"),
+  },
+  (table) => {
+    return {
+      activeIdx: index("idx_user_ip_allowlist_user_id").on(table.userId),
+    };
+  },
+);
+
+// Auth events table (audit log)
+export const authEvents = pgTable(
+  "auth_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    actorUserId: integer("actor_user_id").references(() => users.id),
+    targetUserId: integer("target_user_id").references(() => users.id),
+    eventType: text("event_type").notNull(),
+    ip: text("ip"), // Using text for inet type
+    userAgent: text("user_agent"),
+    details: jsonb("details").notNull().default({}),
+    eventKey: text("event_key").unique(),
+  },
+  (table) => {
+    return {
+      occurredAtIdx: index("idx_auth_events_occurred_at").on(table.occurredAt),
+      actorIdx: index("idx_auth_events_actor_user_id").on(table.actorUserId),
+      targetIdx: index("idx_auth_events_target_user_id").on(table.targetUserId),
+      eventTypeIdx: index("idx_auth_events_event_type").on(table.eventType),
+    };
+  },
+);
+
+// Login attempts table
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    emailAttempted: text("email_attempted"),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    ip: text("ip"), // Using text for inet type
+    userAgent: text("user_agent"),
+    outcome: loginOutcomeEnum("outcome").notNull(),
+    reason: text("reason"),
+  },
+  (table) => {
+    return {
+      userIdx: index("idx_login_attempts_user_id").on(table.userId),
+      attemptedAtIdx: index("idx_login_attempts_attempted_at").on(
+        table.attemptedAt,
+      ),
+      ipIdx: index("idx_login_attempts_ip").on(table.ip),
+    };
+  },
+);
+
+// Password reset tokens table
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => {
+    return {
+      uniqueUserToken: uniqueIndex("unique_user_token").on(
+        table.userId,
+        table.tokenHash,
+      ),
+      userIdx: index("idx_password_reset_tokens_user_id").on(table.userId),
+      expiresIdx: index("idx_password_reset_tokens_expires_at").on(
+        table.expiresAt,
+      ),
+    };
+  },
+);
+
+// Sessions table (proper audit-enabled structure matching migration 0009)
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sid: varchar("sid", { length: 255 }).unique(), // Express session ID
+    sess: json("sess").notNull(), // Session data
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    ip: text("ip"), // Using text for inet type
+    userAgent: text("user_agent"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokeReason: text("revoke_reason"),
+    expire: timestamp("expire", { precision: 6 }).notNull(), // For express-session compatibility
+  },
+  (table) => {
+    return {
+      userIdx: index("idx_sessions_user_id").on(table.userId),
+      lastSeenIdx: index("idx_sessions_last_seen_at").on(table.lastSeenAt),
+      sidIdx: uniqueIndex("idx_sessions_sid").on(table.sid),
+      expireIdx: index("idx_sessions_expire").on(table.expire),
+    };
+  },
+);
+
+// CRM Tables
+// CRM Notes table
+export const crmNotes = pgTable(
+  "crm_notes",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    content: text("content").notNull(),
+    isPrivate: boolean("is_private").default(false),
+    mentionedUsers: jsonb("mentioned_users").default([]),
+    attachments: jsonb("attachments").default([]),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("crm_notes_loan_idx").on(table.loanId),
+      userIdx: index("crm_notes_user_idx").on(table.userId),
+      createdAtIdx: index("crm_notes_created_at_idx").on(table.createdAt),
+    };
+  },
+);
+
+// CRM Tasks table
+export const crmTasks = pgTable(
+  "crm_tasks",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    assignedTo: integer("assigned_to").references(() => users.id),
+    title: text("title").notNull(),
+    description: text("description"),
+    status: text("status").notNull().default("pending"), // pending, in_progress, completed, cancelled
+    priority: text("priority").default("medium"), // low, medium, high, urgent
+    dueDate: timestamp("due_date"),
+    completedAt: timestamp("completed_at"),
+    tags: jsonb("tags").default([]),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("crm_tasks_loan_idx").on(table.loanId),
+      assignedToIdx: index("crm_tasks_assigned_to_idx").on(table.assignedTo),
+      statusIdx: index("crm_tasks_status_idx").on(table.status),
+      dueDateIdx: index("crm_tasks_due_date_idx").on(table.dueDate),
+    };
+  },
+);
+
+// CRM Appointments table
+export const crmAppointments = pgTable(
+  "crm_appointments",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    title: text("title").notNull(),
+    description: text("description"),
+    location: text("location"),
+    startTime: timestamp("start_time").notNull(),
+    endTime: timestamp("end_time").notNull(),
+    attendees: jsonb("attendees").default([]),
+    reminderMinutes: integer("reminder_minutes").default(15),
+    status: text("status").default("scheduled"), // scheduled, completed, cancelled, rescheduled
+    meetingLink: text("meeting_link"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("crm_appointments_loan_idx").on(table.loanId),
+      startTimeIdx: index("crm_appointments_start_time_idx").on(
+        table.startTime,
+      ),
+      statusIdx: index("crm_appointments_status_idx").on(table.status),
+    };
+  },
+);
+
+// CRM Calls table
+export const crmCalls = pgTable(
+  "crm_calls",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    contactName: text("contact_name").notNull(),
+    contactPhone: text("contact_phone").notNull(),
+    direction: text("direction").notNull(), // inbound, outbound
+    status: text("status").notNull(), // completed, missed, voicemail, scheduled
+    duration: integer("duration"), // in seconds
+    outcome: text("outcome"),
+    notes: text("notes"),
+    scheduledFor: timestamp("scheduled_for"),
+    completedAt: timestamp("completed_at"),
+    recordingUrl: text("recording_url"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("crm_calls_loan_idx").on(table.loanId),
+      userIdx: index("crm_calls_user_idx").on(table.userId),
+      statusIdx: index("crm_calls_status_idx").on(table.status),
+      scheduledForIdx: index("crm_calls_scheduled_for_idx").on(
+        table.scheduledFor,
+      ),
+    };
+  },
+);
+
+// CRM Activity table (timeline)
+export const crmActivity = pgTable(
+  "crm_activity",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    activityType: text("activity_type").notNull(), // note, task, call, appointment, email, document, status_change
+    activityData: jsonb("activity_data").notNull(),
+    relatedId: integer("related_id"), // ID of related record (note_id, task_id, etc.)
+    isSystem: boolean("is_system").default(false), // System-generated vs user action
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("crm_activity_loan_idx").on(table.loanId),
+      userIdx: index("crm_activity_user_idx").on(table.userId),
+      typeIdx: index("crm_activity_type_idx").on(table.activityType),
+      createdAtIdx: index("crm_activity_created_at_idx").on(table.createdAt),
+    };
+  },
+);
+
+// CRM Collaborators table
+export const crmCollaborators = pgTable(
+  "crm_collaborators",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    role: text("role").notNull(), // viewer, editor, manager
+    permissions: jsonb("permissions").default({}),
+    addedBy: integer("added_by")
+      .notNull()
+      .references(() => users.id),
+    addedAt: timestamp("added_at").defaultNow().notNull(),
+    lastActivityAt: timestamp("last_activity_at"),
+  },
+  (table) => {
+    return {
+      loanUserIdx: uniqueIndex("crm_collaborators_loan_user_idx").on(
+        table.loanId,
+        table.userId,
+      ),
+      loanIdx: index("crm_collaborators_loan_idx").on(table.loanId),
+      userIdx: index("crm_collaborators_user_idx").on(table.userId),
+    };
+  },
+);
+
+// CRM Deals table
+export const crmDeals = pgTable(
+  "crm_deals",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    value: decimal("value", { precision: 12, scale: 2 }),
+    stage: text("stage").notNull(), // prospecting, qualification, proposal, negotiation, closed_won, closed_lost
+    probability: integer("probability").default(0), // 0-100
+    expectedCloseDate: date("expected_close_date"),
+    actualCloseDate: date("actual_close_date"),
+    lostReason: text("lost_reason"),
+    notes: text("notes"),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    assignedTo: integer("assigned_to").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      loanIdx: index("crm_deals_loan_idx").on(table.loanId),
+      stageIdx: index("crm_deals_stage_idx").on(table.stage),
+      assignedToIdx: index("crm_deals_assigned_to_idx").on(table.assignedTo),
+    };
+  },
+);
+
+// Core schemas
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertBorrowerEntitySchema = createInsertSchema(
+  borrowerEntities,
+).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertPropertySchema = createInsertSchema(properties).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// User Management System Schemas and Types
+export const insertRoleSchema = createInsertSchema(roles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertUserRoleSchema = createInsertSchema(userRoles).omit({
+  assignedAt: true,
+});
+export const insertPermissionSchema = createInsertSchema(permissions).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertRolePermissionSchema = createInsertSchema(
+  rolePermissions,
+).omit({ createdAt: true });
+export const insertUserIpAllowlistSchema = createInsertSchema(
+  userIpAllowlist,
+).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertAuthEventSchema = createInsertSchema(authEvents).omit({
+  id: true,
+  occurredAt: true,
+});
+export const insertLoginAttemptSchema = createInsertSchema(loginAttempts).omit({
+  id: true,
+  attemptedAt: true,
+});
+export const insertPasswordResetTokenSchema = createInsertSchema(
+  passwordResetTokens,
+).omit({ id: true, createdAt: true });
+export const insertSessionSchema = createInsertSchema(sessions).omit({
+  id: true,
+  createdAt: true,
+  lastSeenAt: true,
+});
+
+// User Management System Types
+export type Role = typeof roles.$inferSelect;
+export type InsertRole = z.infer<typeof insertRoleSchema>;
+export type UserRole = typeof userRoles.$inferSelect;
+export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+export type UserIpAllowlist = typeof userIpAllowlist.$inferSelect;
+export type InsertUserIpAllowlist = z.infer<typeof insertUserIpAllowlistSchema>;
+export type AuthEvent = typeof authEvents.$inferSelect;
+export type InsertAuthEvent = z.infer<typeof insertAuthEventSchema>;
+export type LoginAttempt = typeof loginAttempts.$inferSelect;
+export type InsertLoginAttempt = z.infer<typeof insertLoginAttemptSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+export type InsertPasswordResetToken = z.infer<
+  typeof insertPasswordResetTokenSchema
+>;
+export type Session = typeof sessions.$inferSelect;
+export type InsertSession = z.infer<typeof insertSessionSchema>;
+export const insertLoanSchema = createInsertSchema(loans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertLoanBorrowerSchema = createInsertSchema(loanBorrowers).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertGuarantorSchema = createInsertSchema(guarantors).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertInvestorSchema = createInsertSchema(investors).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Payment schemas
+export const insertPaymentScheduleSchema = createInsertSchema(
+  paymentSchedule,
+).omit({ id: true, createdAt: true });
+export const insertPaymentSchema = createInsertSchema(payments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Escrow schemas
+export const insertEscrowAccountSchema = createInsertSchema(
+  escrowAccounts,
+).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertEscrowDisbursementSchema = createInsertSchema(
+  escrowDisbursements,
+)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    paymentMethod: z.enum(["check", "ach", "wire"]),
+  });
+export const insertEscrowDisbursementPaymentSchema = createInsertSchema(
+  escrowDisbursementPayments,
+).omit({ id: true, createdAt: true });
+export const insertEscrowTransactionSchema = createInsertSchema(
+  escrowTransactions,
+).omit({ id: true, createdAt: true });
+export const insertPayeeSchema = createInsertSchema(payees).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Document schemas
+export const insertDocumentSchema = createInsertSchema(documents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertDocumentTemplateSchema = createInsertSchema(
+  documentTemplates,
+).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Servicing schemas
+export const insertServicingInstructionSchema = createInsertSchema(
+  servicingInstructions,
+).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCollectionActivitySchema = createInsertSchema(
+  collectionActivities,
+).omit({ id: true, createdAt: true });
+
+// Legal schemas
+export const insertLegalProceedingSchema = createInsertSchema(
+  legalProceedings,
+).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Fee schemas
+export const insertFeeTemplateSchema = createInsertSchema(feeTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertLoanFeeSchema = createInsertSchema(loanFees).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Ledger schemas
+export const insertLoanLedgerSchema = createInsertSchema(loanLedger).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Insurance schemas
+export const insertInsurancePolicySchema = createInsertSchema(
+  insurancePolicies,
+).omit({ id: true, createdAt: true, updatedAt: true });
+
+// System schemas
+export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertTaskSchema = createInsertSchema(tasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertSystemSettingSchema = createInsertSchema(
+  systemSettings,
+).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Type exports
+export type User = typeof users.$inferSelect;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type BorrowerEntity = typeof borrowerEntities.$inferSelect;
+export type InsertBorrowerEntity = z.infer<typeof insertBorrowerEntitySchema>;
+export type Property = typeof properties.$inferSelect;
+export type InsertProperty = z.infer<typeof insertPropertySchema>;
+export type Loan = typeof loans.$inferSelect;
+export type InsertLoan = z.infer<typeof insertLoanSchema>;
+export type LoanBorrower = typeof loanBorrowers.$inferSelect;
+export type InsertLoanBorrower = z.infer<typeof insertLoanBorrowerSchema>;
+export type Guarantor = typeof guarantors.$inferSelect;
+export type InsertGuarantor = z.infer<typeof insertGuarantorSchema>;
+export type Investor = typeof investors.$inferSelect;
+export type InsertInvestor = z.infer<typeof insertInvestorSchema>;
+export type PaymentSchedule = typeof paymentSchedule.$inferSelect;
+export type InsertPaymentSchedule = z.infer<typeof insertPaymentScheduleSchema>;
+export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type EscrowAccount = typeof escrowAccounts.$inferSelect;
+export type InsertEscrowAccount = z.infer<typeof insertEscrowAccountSchema>;
+export type EscrowDisbursement = typeof escrowDisbursements.$inferSelect;
+export type InsertEscrowDisbursement = z.infer<
+  typeof insertEscrowDisbursementSchema
+>;
+export type EscrowDisbursementPayment =
+  typeof escrowDisbursementPayments.$inferSelect;
+export type InsertEscrowDisbursementPayment = z.infer<
+  typeof insertEscrowDisbursementPaymentSchema
+>;
+export type EscrowTransaction = typeof escrowTransactions.$inferSelect;
+export type InsertEscrowTransaction = z.infer<
+  typeof insertEscrowTransactionSchema
+>;
+export type Payee = typeof payees.$inferSelect;
+export type InsertPayee = z.infer<typeof insertPayeeSchema>;
+export type Document = typeof documents.$inferSelect;
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type DocumentTemplate = typeof documentTemplates.$inferSelect;
+export type InsertDocumentTemplate = z.infer<
+  typeof insertDocumentTemplateSchema
+>;
+export type ServicingInstruction = typeof servicingInstructions.$inferSelect;
+export type InsertServicingInstruction = z.infer<
+  typeof insertServicingInstructionSchema
+>;
+export type CollectionActivity = typeof collectionActivities.$inferSelect;
+export type InsertCollectionActivity = z.infer<
+  typeof insertCollectionActivitySchema
+>;
+export type LegalProceeding = typeof legalProceedings.$inferSelect;
+export type InsertLegalProceeding = z.infer<typeof insertLegalProceedingSchema>;
+export type FeeTemplate = typeof feeTemplates.$inferSelect;
+export type InsertFeeTemplate = z.infer<typeof insertFeeTemplateSchema>;
+export type LoanFee = typeof loanFees.$inferSelect;
+export type InsertLoanFee = z.infer<typeof insertLoanFeeSchema>;
+export type LoanLedger = typeof loanLedger.$inferSelect;
+export type InsertLoanLedger = z.infer<typeof insertLoanLedgerSchema>;
+export type InsurancePolicy = typeof insurancePolicies.$inferSelect;
+export type InsertInsurancePolicy = z.infer<typeof insertInsurancePolicySchema>;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Task = typeof tasks.$inferSelect;
+export type InsertTask = z.infer<typeof insertTaskSchema>;
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+
+// For backward compatibility, keep the original named exports
+export type EscrowPayment = EscrowTransaction;
+export type InsertEscrowPayment = InsertEscrowTransaction;
+export const escrowPayments = escrowTransactions;
+export const insertEscrowPaymentSchema = insertEscrowTransactionSchema;
+
+// ========================================
+// SERVICING CYCLE TABLES
+// ========================================
+
+// Servicing run tracking
+export const servicingRuns = pgTable("servicing_runs", {
+  id: serial("id").primaryKey(),
+  runId: text("run_id").notNull().unique(),
+  valuationDate: date("valuation_date").notNull(),
+  startTime: timestamp("start_time").notNull().defaultNow(),
+  endTime: timestamp("end_time"),
+  status: text("status", {
+    enum: ["pending", "running", "completed", "failed", "cancelled"],
+  })
+    .notNull()
+    .default("pending"),
+  loansProcessed: integer("loans_processed").notNull().default(0),
+  totalLoans: integer("total_loans").notNull().default(0),
+  eventsCreated: integer("events_created").notNull().default(0),
+  exceptionsCreated: integer("exceptions_created").notNull().default(0),
+  totalDisbursedBeneficiary: decimal("total_disbursed_beneficiary", {
+    precision: 12,
+    scale: 2,
+  }).default("0.00"),
+  totalDisbursedInvestors: decimal("total_disbursed_investors", {
+    precision: 12,
+    scale: 2,
+  }).default("0.00"),
+  reconciliationStatus: text("reconciliation_status", {
+    enum: ["pending", "balanced", "imbalanced"],
+  }).default("pending"),
+  inputHash: text("input_hash"),
+  errors: text("errors").array(),
+  dryRun: boolean("dry_run").notNull().default(false),
+  loanIds: text("loan_ids").array(),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Servicing events
+export const servicingEvents = pgTable(
+  "servicing_events",
+  {
+    id: serial("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => servicingRuns.runId),
+    eventKey: text("event_key").notNull(),
+    eventType: text("event_type").notNull(), // interest_accrual, assess_due, late_fee, post_payment, distribute_investors, etc.
+    loanId: integer("loan_id").references(() => loans.id),
+    timestamp: timestamp("timestamp").notNull().defaultNow(),
+    valuationDate: date("valuation_date").notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }),
+    principal: decimal("principal", { precision: 12, scale: 2 }),
+    interest: decimal("interest", { precision: 12, scale: 2 }),
+    escrow: decimal("escrow", { precision: 12, scale: 2 }),
+    fees: decimal("fees", { precision: 12, scale: 2 }),
+    details: jsonb("details").notNull().default("{}"),
+    status: text("status", { enum: ["success", "failed", "pending"] })
+      .notNull()
+      .default("pending"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueEventKey: uniqueIndex("unique_event_key").on(
+      table.valuationDate,
+      table.eventKey,
+    ),
+    loanIdIdx: index("servicing_events_loan_id_idx").on(table.loanId),
+    runIdIdx: index("servicing_events_run_id_idx").on(table.runId),
+    eventTypeIdx: index("servicing_events_type_idx").on(table.eventType),
+  }),
+);
+
+// Servicing exceptions queue
+export const servicingExceptions = pgTable(
+  "servicing_exceptions",
+  {
+    id: serial("id").primaryKey(),
+    runId: text("run_id").references(() => servicingRuns.runId),
+    loanId: integer("loan_id").references(() => loans.id),
+    severity: text("severity", {
+      enum: ["low", "medium", "high", "critical"],
+    }).notNull(),
+    type: text("type").notNull(), // insufficient_escrow, missing_payment, data_anomaly, etc.
+    message: text("message").notNull(),
+    suggestedAction: text("suggested_action"),
+    dueDate: date("due_date"),
+    status: text("status", { enum: ["open", "resolved", "escalated"] })
+      .notNull()
+      .default("open"),
+    resolvedBy: integer("resolved_by").references(() => users.id),
+    resolvedAt: timestamp("resolved_at"),
+    resolutionNotes: text("resolution_notes"),
+    metadata: jsonb("metadata").default("{}"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    loanIdIdx: index("servicing_exceptions_loan_id_idx").on(table.loanId),
+    statusIdx: index("servicing_exceptions_status_idx").on(table.status),
+    severityIdx: index("servicing_exceptions_severity_idx").on(table.severity),
+  }),
+);
+
+// Payment inbox for unprocessed payments
+export const paymentsInbox = pgTable(
+  "payments_inbox",
+  {
+    id: serial("id").primaryKey(),
+    referenceNumber: text("reference_number").unique(),
+    valueDate: date("value_date").notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    borrowerId: integer("borrower_id").references(() => borrowerEntities.id),
+    loanId: integer("loan_id").references(() => loans.id),
+    matchedBy: text("matched_by"), // loan_id_memo, borrower_id, reference_number, etc.
+    matchConfidence: decimal("match_confidence", { precision: 3, scale: 2 }), // 0.00 to 1.00
+    status: text("status", {
+      enum: ["unmatched", "matched", "processed", "suspense", "rejected"],
+    })
+      .notNull()
+      .default("unmatched"),
+    processedAt: timestamp("processed_at"),
+    processedByRunId: text("processed_by_run_id").references(
+      () => servicingRuns.runId,
+    ),
+    metadata: jsonb("metadata").default("{}"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    loanIdIdx: index("payments_inbox_loan_id_idx").on(table.loanId),
+    statusIdx: index("payments_inbox_status_idx").on(table.status),
+    valueDateIdx: index("payments_inbox_value_date_idx").on(table.valueDate),
+  }),
+);
+
+// Interest accrual tracking
+export const interestAccruals = pgTable(
+  "interest_accruals",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id),
+    accrualDate: date("accrual_date").notNull(),
+    fromDate: date("from_date").notNull(),
+    toDate: date("to_date").notNull(),
+    dayCount: integer("day_count").notNull(),
+    dayCountConvention: text("day_count_convention").notNull(), // ACT/365, 30/360, etc.
+    interestRate: decimal("interest_rate", {
+      precision: 8,
+      scale: 4,
+    }).notNull(),
+    principalBalance: decimal("principal_balance", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    dailyRate: decimal("daily_rate", { precision: 12, scale: 10 }).notNull(),
+    accruedAmount: decimal("accrued_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    runId: text("run_id").references(() => servicingRuns.runId),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueAccrual: uniqueIndex("unique_accrual").on(
+      table.loanId,
+      table.accrualDate,
+    ),
+    loanIdIdx: index("interest_accruals_loan_id_idx").on(table.loanId),
+  }),
+);
+
+// Investor distribution tracking
+export const investorDistributions = pgTable(
+  "investor_distributions",
+  {
+    id: serial("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => servicingRuns.runId),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id),
+    investorId: integer("investor_id")
+      .notNull()
+      .references(() => investors.id),
+    distributionDate: date("distribution_date").notNull(),
+    ownershipPercentage: decimal("ownership_percentage", {
+      precision: 8,
+      scale: 6,
+    }).notNull(),
+    grossAmount: decimal("gross_amount", { precision: 12, scale: 2 }).notNull(),
+    principalAmount: decimal("principal_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    interestAmount: decimal("interest_amount", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    feesAmount: decimal("fees_amount", { precision: 12, scale: 2 }).notNull(),
+    netAmount: decimal("net_amount", { precision: 12, scale: 2 }).notNull(),
+    roundingAdjustment: decimal("rounding_adjustment", {
+      precision: 6,
+      scale: 4,
+    }).default("0.00"),
+    status: text("status", { enum: ["pending", "processed", "paid", "failed"] })
+      .notNull()
+      .default("pending"),
+    paidAt: timestamp("paid_at"),
+    metadata: jsonb("metadata").default("{}"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    loanInvestorIdx: index("investor_distributions_loan_investor_idx").on(
+      table.loanId,
+      table.investorId,
+    ),
+    runIdIdx: index("investor_distributions_run_id_idx").on(table.runId),
+  }),
+);
+
+// Escrow advance tracking
+export const escrowAdvances = pgTable(
+  "escrow_advances",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .notNull()
+      .references(() => loans.id),
+    escrowAccountId: integer("escrow_account_id").references(
+      () => escrowAccounts.id,
+    ),
+    advanceDate: date("advance_date").notNull(),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    reason: text("reason").notNull(),
+    repaymentMonths: integer("repayment_months").notNull().default(12),
+    monthlyRepayment: decimal("monthly_repayment", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    outstandingBalance: decimal("outstanding_balance", {
+      precision: 12,
+      scale: 2,
+    }).notNull(),
+    status: text("status", { enum: ["active", "paid", "written_off"] })
+      .notNull()
+      .default("active"),
+    paidOffDate: date("paid_off_date"),
+    runId: text("run_id").references(() => servicingRuns.runId),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    loanIdIdx: index("escrow_advances_loan_id_idx").on(table.loanId),
+    statusIdx: index("escrow_advances_status_idx").on(table.status),
+  }),
+);
+
+// ========================================
+// MFA TABLES - Multi-Factor Authentication
+// ========================================
+
+// MFA factors for users (TOTP, SMS, etc.)
+export const userMfaFactors = pgTable(
+  "user_mfa_factors",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    factorType: text("factor_type", {
+      enum: ["totp", "sms", "email"],
+    }).notNull(),
+    factorName: text("factor_name").notNull(), // e.g., "iPhone Authenticator"
+    // TOTP specific fields
+    totpSecret: text("totp_secret"), // Encrypted at rest
+    totpIssuer: text("totp_issuer").default("LoanServe Pro"),
+    totpAlgorithm: text("totp_algorithm").default("SHA1"),
+    totpDigits: integer("totp_digits").default(6),
+    totpPeriod: integer("totp_period").default(30), // Time step in seconds
+    // SMS/Email specific fields
+    phoneNumber: text("phone_number"),
+    emailAddress: text("email_address"),
+    // Verification status
+    verified: boolean("verified").default(false).notNull(),
+    verifiedAt: timestamp("verified_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    // Device trust
+    trustedDevices: jsonb("trusted_devices").default("[]"), // Array of trusted device fingerprints
+    // Metadata
+    enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
+    enrolledIp: text("enrolled_ip"),
+    enrolledUserAgent: text("enrolled_user_agent"),
+    isActive: boolean("is_active").default(true).notNull(),
+    metadata: jsonb("metadata").default("{}"),
+  },
+  (table) => ({
+    userIdIdx: index("user_mfa_factors_user_id_idx").on(table.userId),
+    factorTypeIdx: index("user_mfa_factors_factor_type_idx").on(
+      table.factorType,
+    ),
+    activeIdx: index("user_mfa_factors_active_idx").on(table.isActive),
+  }),
+);
+
+// MFA backup codes
+export const mfaBackupCodes = pgTable(
+  "mfa_backup_codes",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(), // Hashed backup code
+    usedAt: timestamp("used_at"),
+    usedIp: text("used_ip"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    expiresAt: timestamp("expires_at"),
+  },
+  (table) => ({
+    userIdIdx: index("mfa_backup_codes_user_id_idx").on(table.userId),
+    codeHashIdx: uniqueIndex("mfa_backup_codes_code_hash_idx").on(
+      table.codeHash,
+    ),
+  }),
+);
+
+// MFA challenges (pending MFA verifications)
+export const mfaChallenges = pgTable(
+  "mfa_challenges",
+  {
+    id: serial("id").primaryKey(),
+    challengeId: text("challenge_id").notNull().unique(), // UUID for challenge
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    sessionId: text("session_id"), // Session that initiated the challenge
+    factorId: integer("factor_id").references(() => userMfaFactors.id),
+    challengeType: text("challenge_type", {
+      enum: ["login", "step_up", "enrollment"],
+    }).notNull(),
+    // Challenge details
+    action: text("action"), // What action requires MFA (e.g., 'transfer_funds', 'change_password')
+    requiredFactors: integer("required_factors").default(1), // Number of factors required
+    completedFactors: integer("completed_factors").default(0),
+    // Rate limiting
+    attempts: integer("attempts").default(0),
+    maxAttempts: integer("max_attempts").default(5),
+    lastAttemptAt: timestamp("last_attempt_at"),
+    lockedUntil: timestamp("locked_until"),
+    // Status
+    status: text("status", {
+      enum: ["pending", "verified", "failed", "expired"],
+    })
+      .notNull()
+      .default("pending"),
+    verifiedAt: timestamp("verified_at"),
+    // Metadata
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    deviceFingerprint: text("device_fingerprint"),
+    metadata: jsonb("metadata").default("{}"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    expiresAt: timestamp("expires_at").notNull(), // Challenge expiry (usually 5-10 minutes)
+  },
+  (table) => ({
+    challengeIdIdx: uniqueIndex("mfa_challenges_challenge_id_idx").on(
+      table.challengeId,
+    ),
+    userIdIdx: index("mfa_challenges_user_id_idx").on(table.userId),
+    statusIdx: index("mfa_challenges_status_idx").on(table.status),
+    expiresAtIdx: index("mfa_challenges_expires_at_idx").on(table.expiresAt),
+  }),
+);
+
+// MFA audit log for tracking all MFA events
+export const mfaAuditLog = pgTable(
+  "mfa_audit_log",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    factorId: integer("factor_id").references(() => userMfaFactors.id),
+    challengeId: text("challenge_id").references(
+      () => mfaChallenges.challengeId,
+    ),
+    eventType: text("event_type").notNull(), // enrolled, verified, failed, disabled, backup_used, etc.
+    eventDetails: jsonb("event_details").default("{}"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    deviceFingerprint: text("device_fingerprint"),
+    success: boolean("success").notNull(),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdIdx: index("mfa_audit_log_user_id_idx").on(table.userId),
+    eventTypeIdx: index("mfa_audit_log_event_type_idx").on(table.eventType),
+    createdAtIdx: index("mfa_audit_log_created_at_idx").on(table.createdAt),
+  }),
+);
+
+// Create insert schemas for servicing cycle tables
+export const insertServicingRunSchema = createInsertSchema(servicingRuns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertServicingRun = z.infer<typeof insertServicingRunSchema>;
+export type ServicingRun = typeof servicingRuns.$inferSelect;
+
+export const insertServicingEventSchema = createInsertSchema(
+  servicingEvents,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertServicingEvent = z.infer<typeof insertServicingEventSchema>;
+export type ServicingEvent = typeof servicingEvents.$inferSelect;
+
+export const insertServicingExceptionSchema = createInsertSchema(
+  servicingExceptions,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertServicingException = z.infer<
+  typeof insertServicingExceptionSchema
+>;
+export type ServicingException = typeof servicingExceptions.$inferSelect;
+
+export const insertPaymentInboxSchema = createInsertSchema(paymentsInbox).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPaymentInbox = z.infer<typeof insertPaymentInboxSchema>;
+export type PaymentInbox = typeof paymentsInbox.$inferSelect;
+
+export const insertInterestAccrualSchema = createInsertSchema(
+  interestAccruals,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertInterestAccrual = z.infer<typeof insertInterestAccrualSchema>;
+export type InterestAccrual = typeof interestAccruals.$inferSelect;
+
+export const insertInvestorDistributionSchema = createInsertSchema(
+  investorDistributions,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertInvestorDistribution = z.infer<
+  typeof insertInvestorDistributionSchema
+>;
+export type InvestorDistribution = typeof investorDistributions.$inferSelect;
+
+export const insertEscrowAdvanceSchema = createInsertSchema(
+  escrowAdvances,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertEscrowAdvance = z.infer<typeof insertEscrowAdvanceSchema>;
+export type EscrowAdvance = typeof escrowAdvances.$inferSelect;
+
+// MFA schemas
+export const insertUserMfaFactorSchema = createInsertSchema(
+  userMfaFactors,
+).omit({
+  id: true,
+  enrolledAt: true,
+});
+export type InsertUserMfaFactor = z.infer<typeof insertUserMfaFactorSchema>;
+export type UserMfaFactor = typeof userMfaFactors.$inferSelect;
+
+export const insertMfaBackupCodeSchema = createInsertSchema(
+  mfaBackupCodes,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertMfaBackupCode = z.infer<typeof insertMfaBackupCodeSchema>;
+export type MfaBackupCode = typeof mfaBackupCodes.$inferSelect;
+
+export const insertMfaChallengeSchema = createInsertSchema(mfaChallenges).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertMfaChallenge = z.infer<typeof insertMfaChallengeSchema>;
+export type MfaChallenge = typeof mfaChallenges.$inferSelect;
+
+export const insertMfaAuditLogSchema = createInsertSchema(mfaAuditLog).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertMfaAuditLog = z.infer<typeof insertMfaAuditLogSchema>;
+export type MfaAuditLog = typeof mfaAuditLog.$inferSelect;
+
+// Email Template Folders for organizing email templates
 export const emailTemplateFolders = pgTable("email_template_folders", {
   id: serial("id").primaryKey(),
-  name: text("name").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
   parentId: integer("parent_id").references(() => emailTemplateFolders.id),
-  description: text("description"),
   createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  parentIdx: index("email_template_folders_parent_idx").on(t.parentId),
-  nameIdx: index("email_template_folders_name_idx").on(t.name)
-}));
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
+export const insertEmailTemplateFolderSchema = createInsertSchema(
+  emailTemplateFolders,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertEmailTemplateFolder = z.infer<
+  typeof insertEmailTemplateFolderSchema
+>;
+export type EmailTemplateFolder = typeof emailTemplateFolders.$inferSelect;
+
+// Email Templates for storing email templates (also used for SMS)
 export const emailTemplates = pgTable("email_templates", {
   id: serial("id").primaryKey(),
   folderId: integer("folder_id").references(() => emailTemplateFolders.id),
-  name: text("name").notNull(),
-  subject: text("subject").notNull(),
-  body: text("body").notNull(),
-  category: text("category"), // "collection", "servicing", "investor", etc.
-  variables: jsonb("variables"), // List of variables used in template
-  attachments: jsonb("attachments"), // Default attachments configuration
-  isActive: boolean("is_active").default(true).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  templateKey: varchar("template_key", { length: 100 }).unique(), // Unique key for template identification
+  subject: text("subject"),
+  body: text("body"),
+  format: varchar("format", { length: 20 }).default("markdown"), // 'markdown', 'html', 'text'
+  flags: jsonb("flags"), // Store template flags like include_fdCPA_if_applicable
+  trigger: jsonb("trigger"), // Store trigger conditions
+  tokens: jsonb("tokens"), // Available merge fields for this template
+  isShared: boolean("is_shared").default(false),
+  isActive: boolean("is_active").default(true),
   createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  folderIdx: index("email_templates_folder_idx").on(t.folderId),
-  categoryIdx: index("email_templates_category_idx").on(t.category),
-  activeIdx: index("email_templates_active_idx").on(t.isActive),
-  nameIdx: index("email_templates_name_idx").on(t.name)
-}));
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-export const smsTemplates = pgTable("sms_templates", {
-  id: serial("id").primaryKey(),
-  folderId: integer("folder_id").references(() => emailTemplateFolders.id),
-  name: text("name").notNull(),
-  content: text("content").notNull(),
-  category: text("category"), // "collection", "reminder", "alert", etc.
-  variables: jsonb("variables"), // List of variables used in template
-  isActive: boolean("is_active").default(true).notNull(),
-  createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  folderIdx: index("sms_templates_folder_idx").on(t.folderId),
-  categoryIdx: index("sms_templates_category_idx").on(t.category),
-  activeIdx: index("sms_templates_active_idx").on(t.isActive),
-  nameIdx: index("sms_templates_name_idx").on(t.name)
-}));
-
-// Document folders for hierarchical organization
-export const documentFolders = pgTable("document_folders", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id),
-  parentId: integer("parent_id").references(() => documentFolders.id),
-  name: text("name").notNull(),
-  path: text("path").notNull(), // Full path for easier querying
-  createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("document_folders_loan_idx").on(t.loanId),
-  parentIdx: index("document_folders_parent_idx").on(t.parentId),
-  pathIdx: index("document_folders_path_idx").on(t.path)
-}));
-
-// Update documents table to include folder reference
-export const documentsV2 = pgTable("documents_v2", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id),
-  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id),
-  folderId: integer("folder_id").references(() => documentFolders.id),
-  documentType: documentTypeEnum("document_type").notNull(),
-  fileName: text("file_name").notNull(),
-  mimeType: text("mime_type").notNull(),
-  fileSize: integer("file_size").notNull(),
-  storageKey: text("storage_key").notNull(),
-  storageUrl: text("storage_url"),
-  status: documentStatusEnum("status").notNull().default("pending"),
-  uploadedBy: integer("uploaded_by").references(() => users.id),
-  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
-  metadata: jsonb("metadata"),
-  extractedText: text("extracted_text"),
-  aiAnalysis: jsonb("ai_analysis"),
-  fileHash: text("file_hash"), // SHA256 hash for deduplication
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("documents_v2_loan_idx").on(t.loanId),
-  borrowerIdx: index("documents_v2_borrower_idx").on(t.borrowerEntityId),
-  folderIdx: index("documents_v2_folder_idx").on(t.folderId),
-  typeIdx: index("documents_v2_type_idx").on(t.documentType),
-  uploadedAtIdx: index("documents_v2_uploaded_at_idx").on(t.uploadedAt),
-  hashIdx: index("documents_v2_hash_idx").on(t.fileHash)
-}));
-
-// Document access logs
-export const documentAccessLogs = pgTable("document_access_logs", {
-  id: serial("id").primaryKey(),
-  documentId: integer("document_id").references(() => documentsV2.id).notNull(),
-  userId: integer("user_id").references(() => users.id).notNull(),
-  action: text("action").notNull(), // "view", "download", "print", "email"
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  documentIdx: index("doc_access_document_idx").on(t.documentId),
-  userIdx: index("doc_access_user_idx").on(t.userId),
-  actionIdx: index("doc_access_action_idx").on(t.action)
-}));
-
-// ================================================================================
-// NEW ADDITIONS FOR Q2 2025 - DOUBLE-ENTRY LEDGER, CASH MANAGEMENT, AND BANKING
-// ================================================================================
-
-// General ledger events (transaction headers)
-export const generalLedgerEvents = pgTable("general_ledger_events", {
-  eventId: uuid("event_id").primaryKey().defaultRandom(),
-  eventTimestamp: timestamp("event_timestamp", { withTimezone: true }).notNull().defaultNow(),
-  eventType: text("event_type").notNull(), // payment, disbursement, adjustment, fee, etc.
-  businessDate: date("business_date").notNull(),
-  sourceSystem: text("source_system").notNull(), // servicing, cash_mgmt, escrow, etc.
-  sourceId: text("source_id"), // Reference to source record
-  description: text("description").notNull(),
-  reversalOfEventId: uuid("reversal_of_event_id").references(() => generalLedgerEvents.eventId),
-  isReversed: boolean("is_reversed").notNull().default(false),
-  userId: integer("user_id").references(() => users.id),
-  approvedBy: integer("approved_by").references(() => users.id),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  timestampIdx: index("gl_events_timestamp_idx").on(t.eventTimestamp),
-  businessDateIdx: index("gl_events_business_date_idx").on(t.businessDate),
-  eventTypeIdx: index("gl_events_type_idx").on(t.eventType),
-  sourceIdx: index("gl_events_source_idx").on(t.sourceSystem, t.sourceId)
-}));
-
-// General ledger entries (double-entry line items)
-export const generalLedgerEntries = pgTable("general_ledger_entries", {
-  entryId: uuid("entry_id").primaryKey().defaultRandom(),
-  eventId: uuid("event_id").references(() => generalLedgerEvents.eventId).notNull(),
-  accountCode: text("account_code").notNull(), // Chart of accounts code
-  accountName: text("account_name").notNull(),
-  debitAmountMinor: bigint("debit_amount_minor", { mode: 'bigint' }).notNull().default(0n),
-  creditAmountMinor: bigint("credit_amount_minor", { mode: 'bigint' }).notNull().default(0n),
-  currency: text("currency").notNull().default('USD'),
-  loanId: integer("loan_id").references(() => loans.id),
-  entityType: text("entity_type"), // loan, investor, vendor, etc.
-  entityId: text("entity_id"), // Reference to specific entity
-  memo: text("memo"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  eventIdx: index("gl_entries_event_idx").on(t.eventId),
-  accountIdx: index("gl_entries_account_idx").on(t.accountCode),
-  loanIdx: index("gl_entries_loan_idx").on(t.loanId),
-  entityIdx: index("gl_entries_entity_idx").on(t.entityType, t.entityId),
-  check('gl_entry_single_amount', sql`(debit_amount_minor = 0 OR credit_amount_minor = 0)`)
-}));
-
-// Loan terms (replaces inline fields in loans table for proper history)
-export const loanTerms = pgTable("loan_terms", {
-  termId: uuid("term_id").primaryKey().defaultRandom(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  effectiveDate: date("effective_date").notNull(),
-  expirationDate: date("expiration_date"),
-  interestRatePercent: decimal("interest_rate_percent", { precision: 8, scale: 5 }).notNull(),
-  piPaymentMinor: bigint("pi_payment_minor", { mode: 'bigint' }).notNull(),
-  escrowPaymentMinor: bigint("escrow_payment_minor", { mode: 'bigint' }),
-  totalPaymentMinor: bigint("total_payment_minor", { mode: 'bigint' }).notNull(),
-  lateFeeDays: integer("late_fee_days").notNull().default(15),
-  lateFeeMinor: bigint("late_fee_minor", { mode: 'bigint' }).notNull(),
-  lateFeePercent: decimal("late_fee_percent", { precision: 5, scale: 3 }),
-  prepaymentPenaltyEndDate: date("prepayment_penalty_end_date"),
-  prepaymentPenaltyPercent: decimal("prepayment_penalty_percent", { precision: 5, scale: 3 }),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("loan_terms_loan_idx").on(t.loanId),
-  effectiveIdx: index("loan_terms_effective_idx").on(t.effectiveDate),
-  activeIdx: index("loan_terms_active_idx").on(t.isActive).where(sql`is_active = true`)
-}));
-
-// Loan balances snapshot table (for performance)
-export const loanBalances = pgTable("loan_balances", {
-  loanId: integer("loan_id").primaryKey().references(() => loans.id),
-  currentPrincipalMinor: bigint("current_principal_minor", { mode: 'bigint' }).notNull(),
-  currentEscrowMinor: bigint("current_escrow_minor", { mode: 'bigint' }).notNull().default(0n),
-  suspenseMinor: bigint("suspense_minor", { mode: 'bigint' }).notNull().default(0n),
-  currentDueMinor: bigint("current_due_minor", { mode: 'bigint' }).notNull().default(0n),
-  totalFeesMinor: bigint("total_fees_minor", { mode: 'bigint' }).notNull().default(0n),
-  lastPaymentDate: date("last_payment_date"),
-  lastPaymentAmountMinor: bigint("last_payment_amount_minor", { mode: 'bigint' }),
-  nextDueDate: date("next_due_date"),
-  daysDelinquent: integer("days_delinquent").notNull().default(0),
-  delinquentAmountMinor: bigint("delinquent_amount_minor", { mode: 'bigint' }).notNull().default(0n),
-  payoffGoodThroughDate: date("payoff_good_through_date"),
-  payoffAmountMinor: bigint("payoff_amount_minor", { mode: 'bigint' }),
-  lastUpdated: timestamp("last_updated", { withTimezone: true }).notNull().defaultNow()
-}, (t) => ({
-  nextDueIdx: index("loan_balances_next_due_idx").on(t.nextDueDate),
-  delinquentIdx: index("loan_balances_delinquent_idx").on(t.daysDelinquent)
-}));
-
-// Escrow forecasts table
-export const escrowForecasts = pgTable("escrow_forecasts", {
-  forecastId: uuid("forecast_id").primaryKey().defaultRandom(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  monthDate: date("month_date").notNull(),
-  beginningBalanceMinor: bigint("beginning_balance_minor", { mode: 'bigint' }).notNull(),
-  escrowPaymentMinor: bigint("escrow_payment_minor", { mode: 'bigint' }).notNull(),
-  taxDisbursementMinor: bigint("tax_disbursement_minor", { mode: 'bigint' }).notNull().default(0n),
-  insuranceDisbursementMinor: bigint("insurance_disbursement_minor", { mode: 'bigint' }).notNull().default(0n),
-  pmiDisbursementMinor: bigint("pmi_disbursement_minor", { mode: 'bigint' }).notNull().default(0n),
-  otherDisbursementMinor: bigint("other_disbursement_minor", { mode: 'bigint' }).notNull().default(0n),
-  endingBalanceMinor: bigint("ending_balance_minor", { mode: 'bigint' }).notNull(),
-  minimumBalanceMinor: bigint("minimum_balance_minor", { mode: 'bigint' }).notNull(),
-  surplusDeficitMinor: bigint("surplus_deficit_minor", { mode: 'bigint' }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  loanMonthIdx: unique().on(t.loanId, t.monthDate),
-  monthIdx: index("escrow_forecasts_month_idx").on(t.monthDate)
-}));
-
-// Remittance cycle configuration
-export const remittanceCycle = pgTable("remittance_cycle", {
-  cycleId: uuid("cycle_id").primaryKey().defaultRandom(),
-  investorId: text("investor_id").notNull(),
-  cycleCode: text("cycle_code").notNull(), // MONTHLY, DAILY, etc.
-  description: text("description"),
-  cutoffDayOfMonth: integer("cutoff_day_of_month"), // For monthly cycles
-  remitDayOfMonth: integer("remit_day_of_month"), // For monthly cycles
-  cutoffTime: text("cutoff_time").notNull().default('17:00'), // HH:MM format
-  timezone: text("timezone").notNull().default('America/New_York'),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  investorIdx: index("remittance_cycle_investor_idx").on(t.investorId),
-  activeIdx: index("remittance_cycle_active_idx").on(t.isActive)
-}));
-
-// Migrate audit_log to use proper event sourcing pattern
-export const auditLog = pgTable("audit_log", {
-  eventId: varchar("event_id", { length: 36 }).primaryKey().notNull(),
-  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-  actor: text("actor").notNull(),
-  action: text("action").notNull(),
-  objectKind: text("object_kind").notNull(),
-  objectId: text("object_id").notNull(),
-  payload: jsonb("payload"),
-  prevHash: varchar("prev_hash", { length: 64 }),
-  currHash: varchar("curr_hash", { length: 64 })
-}, (t) => ({
-  occurredAtIdx: index("audit_log_occurred_at_idx").on(t.occurredAt),
-  objectIdx: index("audit_log_object_idx").on(t.objectKind, t.objectId)
-}));
+export const insertEmailTemplateSchema = createInsertSchema(
+  emailTemplates,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
 
 // ========================================
-// CASH MANAGEMENT AND BANKING TABLES
+// NEW UUID-BASED PAYMENT PIPELINE TABLES
+// Per 25-Step Implementation Specification
+// ========================================
+
+// ID Mapping Bridge - Maps between serial IDs (legacy) and UUIDs (new)
+export const idMappings = pgTable(
+  "id_mappings",
+  {
+    uuid: varchar("uuid", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    entityType: varchar("entity_type", { length: 50 }).notNull(), // 'loan', 'payment', 'user', etc.
+    serialId: integer("serial_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueMapping: unique().on(t.entityType, t.serialId),
+    serialIdx: index().on(t.serialId),
+  }),
+);
+
+// Payment Ingestions - Idempotent ingress tracking (Step 2)
+export const paymentIngestions = pgTable(
+  "payment_ingestions",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    channel: text("channel").notNull(), // ach|wire|realtime|check|card|paypal|venmo|book
+    sourceReference: text("source_reference"), // provider transfer id or file id
+    rawPayloadHash: text("raw_payload_hash").notNull(), // sha256 hex of raw body
+    artifactUri: text("artifact_uri")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    artifactHash: text("artifact_hash")
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    receivedAt: timestamp("received_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    normalizedEnvelope: jsonb("normalized_envelope").notNull(),
+    status: text("status", {
+      enum: ["received", "normalized", "published"] as const,
+    }).notNull(),
+  },
+  (t) => ({
+    channelReceivedIdx: index().on(t.channel, t.receivedAt),
+  }),
+);
+
+// Payment Artifacts - Document storage with hashes (Step 3)
+export const paymentArtifacts = pgTable(
+  "payment_artifacts",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    ingestionId: varchar("ingestion_id", { length: 36 })
+      .notNull()
+      .references(() => paymentIngestions.id, { onDelete: "cascade" }),
+    type: text("type").notNull(), // check_image_front|check_image_back|ach_return_pdf|wire_receipt|psp_receipt
+    uri: text("uri").notNull(),
+    sha256: text("sha256").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    mime: text("mime"),
+    sourceMetadata: jsonb("source_metadata"),
+  },
+  (t) => ({
+    ingestionTypeIdx: index().on(t.ingestionId, t.type),
+  }),
+);
+
+// Payment Events - Hash-chained audit ledger (Step 4)
+export const paymentEvents = pgTable(
+  "payment_events",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    paymentId: varchar("payment_id", { length: 36 }).references(
+      () => payments.id,
+    ), // UUID reference
+    ingestionId: varchar("ingestion_id", { length: 36 }), // nullable for internal-only events
+    type: text("type").notNull(), // payment.ingested|payment.validated|payment.posted|payment.reversed.nsf|...
+    eventTime: timestamp("event_time", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    actorType: text("actor_type").notNull(), // Check constraint in SQL: 'system'|'human'|'ai'
+    actorId: text("actor_id"),
+    correlationId: varchar("correlation_id", { length: 36 }).notNull(),
+    data: jsonb("data").notNull(),
+    prevEventHash: text("prev_event_hash"),
+    eventHash: text("event_hash").notNull(),
+  },
+  (t) => ({
+    paymentEventTimeIdx: index().on(t.paymentId, t.eventTime),
+    correlationIdx: index().on(t.correlationId),
+  }),
+);
+
+// Ledger Entries - Double-entry bookkeeping for payments
+export const ledgerEntries = pgTable(
+  "ledger_entries",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    paymentId: varchar("payment_id", { length: 36 })
+      .notNull()
+      .references(() => payments.id, { onDelete: "cascade" }),
+    entryDate: date("entry_date").notNull(),
+    accountType: text("account_type").notNull(), // asset, liability, revenue, expense
+    accountCode: text("account_code").notNull(), // specific account identifier
+    debitAmount: decimal("debit_amount", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    creditAmount: decimal("credit_amount", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    description: text("description").notNull(),
+    correlationId: varchar("correlation_id", { length: 36 }).notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    paymentIdx: index().on(t.paymentId),
+    accountIdx: index().on(t.accountCode, t.entryDate),
+    correlationIdx: index().on(t.correlationId),
+  }),
+);
+
+// Inbox for idempotency - tracks processed messages per consumer
+export const inbox = pgTable(
+  "inbox",
+  {
+    id: serial("id").primaryKey(),
+    consumer: text("consumer").notNull(),
+    messageId: text("message_id").notNull(),
+    resultHash: text("result_hash").notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    // Unique constraint to prevent duplicate processing
+    consumerMessageIdx: uniqueIndex().on(t.consumer, t.messageId),
+    // Index for cleanup of old messages
+    processedAtIdx: index().on(t.processedAt),
+  }),
+);
+
+// Outbox for transactional messaging - ensures events are published after transaction commits
+export const outbox = pgTable(
+  "outbox",
+  {
+    id: serial("id").primaryKey(),
+    aggregateType: text("aggregate_type").notNull(),
+    aggregateId: text("aggregate_id").notNull(),
+    schema: text("schema").notNull(),
+    routingKey: text("routing_key").notNull(),
+    payload: jsonb("payload").notNull(),
+    headers: jsonb("headers"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastError: text("last_error"),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  },
+  (t) => ({
+    // Index for polling unpublished messages
+    publishedIdx: index().on(t.publishedAt, t.createdAt),
+    // Index for retry mechanism
+    retryIdx: index().on(t.publishedAt, t.nextRetryAt),
+    // Index for aggregate queries
+    aggregateIdx: index().on(t.aggregateType, t.aggregateId),
+  }),
+);
+
+// Outbox Messages - Transactional outbox pattern (Step 5)
+export const outboxMessages = pgTable(
+  "outbox_messages",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    aggregateType: text("aggregate_type").notNull(), // payments
+    aggregateId: varchar("aggregate_id", { length: 36 }).notNull(), // payment_id
+    eventType: text("event_type").notNull(), // payment.posted
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    lastError: text("last_error"),
+    nextRetryAt: timestamp("next_retry_at", { withTimezone: true }), // For exponential backoff
+  },
+  (t) => ({
+    // Index for efficient polling (unpublished messages first, ordered by creation time)
+    publishedCreatedIdx: index().on(t.publishedAt, t.createdAt),
+    // Index for retry mechanism
+    retryIdx: index().on(t.publishedAt, t.nextRetryAt, t.attemptCount),
+  }),
+);
+
+// Reconciliations - Per channel period reconciliation outcomes (Step 6)
+export const reconciliations = pgTable(
+  "reconciliations",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    channel: text("channel").notNull(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    bankTotal: decimal("bank_total", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    sorTotal: decimal("sor_total", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    variance: decimal("variance", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    status: text("status").notNull(), // CHECK constraint in SQL: 'open'|'balanced'|'variance'
+    details: jsonb("details"),
+  },
+  (t) => ({
+    // Unique index on channel and period
+    channelPeriodIdx: uniqueIndex().on(t.channel, t.periodStart, t.periodEnd),
+  }),
+);
+
+// Exception Cases - Exception workflow with AI recommendations (Step 7)
+export const exceptionCases = pgTable(
+  "exception_cases",
+  {
+    id: varchar("id", { length: 36 })
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    ingestionId: varchar("ingestion_id", { length: 36 }).references(
+      () => paymentIngestions.id,
+    ),
+    paymentId: integer("payment_id").references(() => payments.id),
+    category: text("category").notNull(), // ach_return|nsf|wire_recall|duplicate|dispute|reconcile_variance
+    subcategory: text("subcategory"),
+    severity: text("severity").notNull(), // CHECK: 'low'|'medium'|'high'|'critical'
+    state: text("state").notNull(), // CHECK: 'open'|'pending'|'resolved'|'cancelled'
+    assignedTo: text("assigned_to"),
+    aiRecommendation: jsonb("ai_recommendation"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => ({
+    // Index on state and severity for efficient filtering
+    stateSeverityIdx: index().on(t.state, t.severity),
+  }),
+);
+
+// ========================================
+// Double-Entry Ledger Tables (replacing single-entry loanLedger)
+// All monetary values in minor units (cents) as BIGINT
+// ========================================
+
+// General Ledger Events - Header for each accounting transaction
+export const generalLedgerEvents = pgTable(
+  "general_ledger_events",
+  {
+    eventId: uuid("event_id").primaryKey().defaultRandom(),
+    loanId: integer("loan_id")
+      .references(() => loans.id, { onDelete: "cascade" })
+      .notNull(),
+    eventType: text("event_type").notNull(), // payment, disbursement, fee, adjustment, reversal, accrual
+    eventDate: date("event_date").notNull(),
+    effectiveDate: date("effective_date").notNull(),
+    correlationId: text("correlation_id"), // Link to external transaction
+    description: text("description").notNull(),
+    reversalOf: uuid("reversal_of").references(
+      () => generalLedgerEvents.eventId,
+    ),
+    metadata: jsonb("metadata"), // Additional context
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    createdBy: integer("created_by").references(() => users.id),
+  },
+  (t) => ({
+    loanEventTypeIdx: index("gl_events_loan_type_idx").on(
+      t.loanId,
+      t.eventType,
+    ),
+    eventDateIdx: index("gl_events_date_idx").on(t.eventDate),
+    correlationIdx: index("gl_events_correlation_idx").on(t.correlationId),
+  }),
+);
+
+// General Ledger Entries - Double-entry line items
+export const generalLedgerEntries = pgTable(
+  "general_ledger_entries",
+  {
+    entryId: uuid("entry_id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id")
+      .references(() => generalLedgerEvents.eventId, { onDelete: "cascade" })
+      .notNull(),
+    accountCode: text("account_code").notNull(), // Chart of accounts code
+    accountName: text("account_name").notNull(), // Human-readable account name
+    debitMinor: bigint("debit_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+    creditMinor: bigint("credit_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+    currency: text("currency").notNull().default("USD"),
+    memo: text("memo"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    eventIdx: index("gl_entries_event_idx").on(t.eventId),
+    accountCodeIdx: index("gl_entries_account_idx").on(t.accountCode),
+    // Ensure debit = credit for each event (enforced via trigger in DB)
+  }),
+);
+
+// Loan Terms - Time-bounded pricing and structural terms
+export const loanTerms = pgTable(
+  "loan_terms",
+  {
+    loanTermsId: serial("loan_terms_id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id, { onDelete: "cascade" })
+      .notNull(),
+    effectiveFrom: date("effective_from").notNull(),
+    effectiveTo: date("effective_to"), // null means open-ended
+    interestType: text("interest_type").notNull(), // fixed, arm, io_fixed, etc.
+    indexName: text("index_name"), // SOFR, Prime, etc.
+    indexMarginBps: integer("index_margin_bps"), // Basis points over index
+    nominalRateBps: integer("nominal_rate_bps").notNull(), // Current rate in basis points
+    rateCapUpBps: integer("rate_cap_up_bps"), // Maximum rate increase
+    rateCapDownBps: integer("rate_cap_down_bps"), // Maximum rate decrease
+    compounding: text("compounding").notNull(), // none, monthly, daily
+    dayCount: text("day_count").notNull(), // 30E/360, ACT/360, ACT/365
+    firstPaymentDate: date("first_payment_date"),
+    termMonths: integer("term_months"),
+    interestOnlyMonths: integer("interest_only_months"),
+    scheduledPaymentMinor: bigint("scheduled_payment_minor", {
+      mode: "bigint",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    loanEffectiveIdx: unique().on(t.loanId, t.effectiveFrom),
+    effectiveFromIdx: index("loan_terms_loan_effective_idx").on(
+      t.loanId,
+      t.effectiveFrom,
+    ),
+  }),
+);
+
+// Loan Balances - Fast snapshot for dashboards (derived from ledger)
+export const loanBalances = pgTable(
+  "loan_balances",
+  {
+    loanId: integer("loan_id")
+      .primaryKey()
+      .references(() => loans.id, { onDelete: "cascade" }),
+    principalMinor: bigint("principal_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+    interestAccruedMinor: bigint("interest_accrued_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+    escrowMinor: bigint("escrow_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+    lateFeesMinor: bigint("late_fees_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+    totalPaidMinor: bigint("total_paid_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+    lastPaymentDate: date("last_payment_date"),
+    lastPaymentMinor: bigint("last_payment_minor", { mode: "bigint" }),
+    nextPaymentDue: date("next_payment_due"),
+    delinquentDays: integer("delinquent_days").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    nextDueIdx: index("loan_balances_next_due_idx").on(t.nextPaymentDue),
+    delinquentIdx: index("loan_balances_delinquent_idx").on(t.delinquentDays),
+  }),
+);
+
+// Escrow Forecast - Deterministic monthly projections
+export const escrowForecasts = pgTable(
+  "escrow_forecasts",
+  {
+    forecastId: serial("forecast_id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id, { onDelete: "cascade" })
+      .notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    asOfDate: date("as_of_date").notNull(),
+    forecastMonths: integer("forecast_months").notNull().default(12),
+
+    // Current state
+    currentBalanceMinor: bigint("current_balance_minor", {
+      mode: "bigint",
+    }).notNull(),
+    currentPaymentMinor: bigint("current_payment_minor", {
+      mode: "bigint",
+    }).notNull(),
+
+    // Projected totals (annual)
+    projectedDisbursementsMinor: bigint("projected_disbursements_minor", {
+      mode: "bigint",
+    }).notNull(),
+    projectedCollectionsMinor: bigint("projected_collections_minor", {
+      mode: "bigint",
+    }).notNull(),
+    projectedShortageMinor: bigint("projected_shortage_minor", {
+      mode: "bigint",
+    })
+      .notNull()
+      .default(BigInt(0)),
+    projectedSurplusMinor: bigint("projected_surplus_minor", { mode: "bigint" })
+      .notNull()
+      .default(BigInt(0)),
+
+    // Recommended adjustments
+    recommendedPaymentMinor: bigint("recommended_payment_minor", {
+      mode: "bigint",
+    }).notNull(),
+    cushionRequiredMinor: bigint("cushion_required_minor", {
+      mode: "bigint",
+    }).notNull(),
+
+    // Detailed projections (JSONB array of monthly projections)
+    monthlyProjections: jsonb("monthly_projections").notNull(), // Array of {month, disbursements, balance}
+
+    // Analysis metadata
+    analysisVersion: text("analysis_version").notNull().default("1.0"),
+    assumptions: jsonb("assumptions"), // Rate assumptions, dates, etc.
+    warnings: jsonb("warnings"), // Array of warning messages
+
+    status: text("status").notNull().default("draft"), // draft, approved, superseded
+    approvedBy: integer("approved_by").references(() => users.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    supersededBy: integer("superseded_by").references(
+      () => escrowForecasts.forecastId,
+    ),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    loanAsOfIdx: unique().on(t.loanId, t.asOfDate, t.status),
+    statusIdx: index("escrow_forecasts_status_idx").on(t.status),
+    generatedAtIdx: index("escrow_forecasts_generated_idx").on(t.generatedAt),
+  }),
+);
+
+// Export types for new tables
+export const insertIdMappingSchema = createInsertSchema(idMappings).omit({
+  uuid: true,
+  createdAt: true,
+});
+export type InsertIdMapping = z.infer<typeof insertIdMappingSchema>;
+export type IdMapping = typeof idMappings.$inferSelect;
+
+export const insertPaymentIngestionSchema = createInsertSchema(
+  paymentIngestions,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPaymentIngestion = z.infer<
+  typeof insertPaymentIngestionSchema
+>;
+export type PaymentIngestion = typeof paymentIngestions.$inferSelect;
+
+export const insertPaymentArtifactSchema = createInsertSchema(
+  paymentArtifacts,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPaymentArtifact = z.infer<typeof insertPaymentArtifactSchema>;
+export type PaymentArtifact = typeof paymentArtifacts.$inferSelect;
+
+export const insertPaymentEventSchema = createInsertSchema(paymentEvents).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPaymentEvent = z.infer<typeof insertPaymentEventSchema>;
+export type PaymentEvent = typeof paymentEvents.$inferSelect;
+
+export const insertLedgerEntrySchema = createInsertSchema(ledgerEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertLedgerEntry = z.infer<typeof insertLedgerEntrySchema>;
+export type LedgerEntry = typeof ledgerEntries.$inferSelect;
+
+export const insertInboxSchema = createInsertSchema(inbox).omit({
+  id: true,
+  processedAt: true,
+});
+export type InsertInbox = z.infer<typeof insertInboxSchema>;
+export type Inbox = typeof inbox.$inferSelect;
+
+export const insertOutboxSchema = createInsertSchema(outbox).omit({
+  id: true,
+  createdAt: true,
+  publishedAt: true,
+  attemptCount: true,
+  lastError: true,
+  nextRetryAt: true,
+});
+export type InsertOutbox = z.infer<typeof insertOutboxSchema>;
+export type Outbox = typeof outbox.$inferSelect;
+
+export const insertOutboxMessageSchema = createInsertSchema(
+  outboxMessages,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertOutboxMessage = z.infer<typeof insertOutboxMessageSchema>;
+export type OutboxMessage = typeof outboxMessages.$inferSelect;
+
+export const insertReconciliationSchema = createInsertSchema(
+  reconciliations,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertReconciliation = z.infer<typeof insertReconciliationSchema>;
+export type Reconciliation = typeof reconciliations.$inferSelect;
+
+export const insertExceptionCaseSchema = createInsertSchema(
+  exceptionCases,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertExceptionCase = z.infer<typeof insertExceptionCaseSchema>;
+export type ExceptionCase = typeof exceptionCases.$inferSelect;
+
+// Export types for new double-entry ledger tables
+export const insertGeneralLedgerEventSchema = createInsertSchema(
+  generalLedgerEvents,
+).omit({
+  eventId: true,
+  createdAt: true,
+});
+export type InsertGeneralLedgerEvent = z.infer<
+  typeof insertGeneralLedgerEventSchema
+>;
+export type GeneralLedgerEvent = typeof generalLedgerEvents.$inferSelect;
+
+export const insertGeneralLedgerEntrySchema = createInsertSchema(
+  generalLedgerEntries,
+).omit({
+  entryId: true,
+  createdAt: true,
+});
+export type InsertGeneralLedgerEntry = z.infer<
+  typeof insertGeneralLedgerEntrySchema
+>;
+export type GeneralLedgerEntry = typeof generalLedgerEntries.$inferSelect;
+
+// Export types for loan terms
+export const insertLoanTermsSchema = createInsertSchema(loanTerms).omit({
+  loanTermsId: true,
+  createdAt: true,
+});
+export type InsertLoanTerms = z.infer<typeof insertLoanTermsSchema>;
+export type LoanTerms = typeof loanTerms.$inferSelect;
+
+// Export types for loan balances
+export const insertLoanBalancesSchema = createInsertSchema(loanBalances).omit({
+  updatedAt: true,
+});
+export type InsertLoanBalances = z.infer<typeof insertLoanBalancesSchema>;
+export type LoanBalances = typeof loanBalances.$inferSelect;
+
+// Export types for escrow forecasts
+export const insertEscrowForecastSchema = createInsertSchema(
+  escrowForecasts,
+).omit({
+  forecastId: true,
+  generatedAt: true,
+  createdAt: true,
+});
+export type InsertEscrowForecast = z.infer<typeof insertEscrowForecastSchema>;
+export type EscrowForecast = typeof escrowForecasts.$inferSelect;
+
+// ========================================
+// Banking and Cash Management Tables
+// All monetary values in minor units (cents) as BIGINT
 // ========================================
 
 // Bank Accounts - Financial institution accounts
-export const bankAccounts = pgTable("bank_accounts", {
-  bankAcctId: uuid("bank_acct_id").primaryKey().defaultRandom(),
-  accountName: text("account_name").notNull(),
-  accountNumber: text("account_number").notNull(), // Encrypted
-  routingNumber: text("routing_number").notNull(),
-  accountType: text("account_type").notNull(), // checking, savings, escrow, trust
-  bankName: text("bank_name").notNull(),
-  purpose: text("purpose").notNull(), // operating, escrow, payoff, investor
-  currentBalanceMinor: bigint("current_balance_minor", { mode: 'bigint' }).notNull().default(0n),
-  availableBalanceMinor: bigint("available_balance_minor", { mode: 'bigint' }).notNull().default(0n),
-  lastReconciled: timestamp("last_reconciled", { withTimezone: true }),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  purposeIdx: index("bank_accounts_purpose_idx").on(t.purpose),
-  activeIdx: index("bank_accounts_active_idx").on(t.isActive)
-}));
+export const bankAccounts = pgTable(
+  "bank_accounts",
+  {
+    bankAcctId: uuid("bank_acct_id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    bankId: text("bank_id").notNull(), // Institution identifier
+    accountNumberMask: text("account_number_mask").notNull(), // Last 4 digits
+    accountNumberEncrypted: text("account_number_encrypted"), // Full encrypted account
+    routingNumber: text("routing_number").notNull(),
+    accountType: text("account_type").notNull(), // checking, savings, escrow
+    currency: text("currency").notNull().default("USD"),
+    glCashAccount: text("gl_cash_account").notNull(), // GL account code
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    activeIdx: index("bank_accounts_active_idx").on(t.active),
+    glAccountIdx: index("bank_accounts_gl_idx").on(t.glCashAccount),
+  }),
+);
 
-// Bank Transactions - Imported from bank
-export const bankTxn = pgTable("bank_txn", {
-  bankTxnId: uuid("bank_txn_id").primaryKey().defaultRandom(),
-  bankAcctId: uuid("bank_acct_id").references(() => bankAccounts.bankAcctId).notNull(),
-  externalId: text("external_id").notNull(), // Bank's transaction ID
-  txnDate: date("txn_date").notNull(),
-  postDate: date("post_date").notNull(),
-  amountMinor: bigint("amount_minor", { mode: 'bigint' }).notNull(),
-  txnType: text("txn_type").notNull(), // debit, credit
-  bankDescription: text("bank_description").notNull(),
-  checkNumber: text("check_number"),
-  referenceNumber: text("reference_number"),
-  category: text("category"), // Internal categorization
-  reconStatus: text("recon_status").notNull().default('pending'), // pending, matched, exception
-  matchedEventId: uuid("matched_event_id").references(() => generalLedgerEvents.eventId),
-  notes: text("notes"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  accountDateIdx: index("bank_txn_acct_date_idx").on(t.bankAcctId, t.txnDate),
-  statusIdx: index("bank_txn_status_idx").on(t.reconStatus),
-  externalIdx: unique().on(t.bankAcctId, t.externalId)
-}));
+// Bank Transactions - Imported from bank statements
+export const bankTxn = pgTable(
+  "bank_txn",
+  {
+    bankTxnId: uuid("bank_txn_id").primaryKey().defaultRandom(),
+    bankAcctId: uuid("bank_acct_id")
+      .references(() => bankAccounts.bankAcctId)
+      .notNull(),
+    stmtFileId: uuid("stmt_file_id"),
+    transactionDate: date("transaction_date").notNull(),
+    valueDate: date("value_date").notNull(),
+    postDate: date("post_date"),
+    amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(), // Positive for credits, negative for debits
+    type: text("type").notNull(), // credit, debit
+    description: text("description").notNull(),
+    reference: text("reference"),
+    checkNumber: text("check_number"),
+    balanceMinor: bigint("balance_minor", { mode: "bigint" }), // Running balance after transaction
+    status: text("status").notNull().default("unmatched"), // unmatched, matched, reconciled
+    matchedAt: timestamp("matched_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    bankAcctDateIdx: index("bank_txn_acct_date_idx").on(
+      t.bankAcctId,
+      t.transactionDate,
+    ),
+    statusIdx: index("bank_txn_status_idx").on(t.status),
+    referenceIdx: index("bank_txn_reference_idx").on(t.reference),
+  }),
+);
 
-// Bank Statement Files - Track imported statements
-export const bankStatementFiles = pgTable("bank_statement_files", {
-  stmtFileId: uuid("stmt_file_id").primaryKey().defaultRandom(),
-  bankAcctId: uuid("bank_acct_id").references(() => bankAccounts.bankAcctId).notNull(),
-  filename: text("filename").notNull(),
-  format: text("format").notNull(), // bai2, mt940, csv, ofx
-  fileHash: text("file_hash").notNull().unique(), // SHA256 for deduplication
-  statementDate: date("statement_date").notNull(),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date").notNull(),
-  openingBalanceMinor: bigint("opening_balance_minor", { mode: 'bigint' }).notNull(),
-  closingBalanceMinor: bigint("closing_balance_minor", { mode: 'bigint' }).notNull(),
-  transactionCount: integer("transaction_count").notNull(),
-  status: text("status").notNull().default('pending'), // pending, processing, completed, failed
-  processedAt: timestamp("processed_at", { withTimezone: true }),
-  errors: jsonb("errors"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  hashIdx: unique().on(t.fileHash),
-  bankAcctDateIdx: index("stmt_files_acct_date_idx").on(t.bankAcctId, t.statementDate)
-}));
+// Bank Statement Files - Track imported files
+export const bankStatementFiles = pgTable(
+  "bank_statement_files",
+  {
+    stmtFileId: uuid("stmt_file_id").primaryKey().defaultRandom(),
+    bankAcctId: uuid("bank_acct_id")
+      .references(() => bankAccounts.bankAcctId)
+      .notNull(),
+    filename: text("filename").notNull(),
+    format: text("format").notNull(), // bai2, mt940, csv, ofx
+    fileHash: text("file_hash").notNull().unique(), // SHA256 for deduplication
+    statementDate: date("statement_date").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    openingBalanceMinor: bigint("opening_balance_minor", {
+      mode: "bigint",
+    }).notNull(),
+    closingBalanceMinor: bigint("closing_balance_minor", {
+      mode: "bigint",
+    }).notNull(),
+    transactionCount: integer("transaction_count").notNull(),
+    status: text("status").notNull().default("pending"), // pending, processing, completed, failed
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    errors: jsonb("errors"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    hashIdx: unique().on(t.fileHash),
+    bankAcctDateIdx: index("stmt_files_acct_date_idx").on(
+      t.bankAcctId,
+      t.statementDate,
+    ),
+  }),
+);
 
 // ACH Batch - Groups of ACH transactions
-export const achBatch = pgTable("ach_batch", {
-  achBatchId: uuid("ach_batch_id").primaryKey().defaultRandom(),
-  bankAcctId: uuid("bank_acct_id").references(() => bankAccounts.bankAcctId).notNull(),
-  serviceClass: text("service_class").notNull(), // 200, 220, 225
-  companyId: text("company_id").notNull(),
-  companyName: text("company_name").notNull(),
-  effectiveEntryDate: date("effective_entry_date").notNull(),
-  totalEntries: integer("total_entries").notNull(),
-  totalAmountMinor: bigint("total_amount_minor", { mode: 'bigint' }).notNull(),
-  status: text("status").notNull().default('pending'), // pending, submitted, settled, failed
-  submittedAt: timestamp("submitted_at", { withTimezone: true }),
-  settledAt: timestamp("settled_at", { withTimezone: true }),
-  createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  statusIdx: index("ach_batch_status_idx").on(t.status),
-  effectiveDateIdx: index("ach_batch_date_idx").on(t.effectiveEntryDate)
-}));
+export const achBatch = pgTable(
+  "ach_batch",
+  {
+    achBatchId: uuid("ach_batch_id").primaryKey().defaultRandom(),
+    bankAcctId: uuid("bank_acct_id")
+      .references(() => bankAccounts.bankAcctId)
+      .notNull(),
+    serviceClass: text("service_class").notNull(), // 200, 220, 225
+    companyId: text("company_id").notNull(),
+    companyName: text("company_name").notNull(),
+    effectiveEntryDate: date("effective_entry_date").notNull(),
+    totalEntries: integer("total_entries").notNull(),
+    totalAmountMinor: bigint("total_amount_minor", {
+      mode: "bigint",
+    }).notNull(),
+    status: text("status").notNull().default("pending"), // pending, submitted, settled, failed
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    statusIdx: index("ach_batch_status_idx").on(t.status),
+    effectiveDateIdx: index("ach_batch_date_idx").on(t.effectiveEntryDate),
+  }),
+);
 
 // ACH Entry - Individual ACH transactions
-export const achEntry = pgTable("ach_entry", {
-  achEntryId: uuid("ach_entry_id").primaryKey().defaultRandom(),
-  achBatchId: uuid("ach_batch_id").references(() => achBatch.achBatchId).notNull(),
-  loanId: integer("loan_id").references(() => loans.id),
-  txnCode: text("txn_code").notNull(), // 22, 27, 32, 37
-  rdfiRouting: text("rdfi_routing").notNull(),
-  ddaAccountMask: text("dda_account_mask").notNull(), // Last 4 digits
-  amountMinor: bigint("amount_minor", { mode: 'bigint' }).notNull(),
-  traceNumber: text("trace_number").notNull().unique(),
-  individualName: text("individual_name").notNull(),
-  addenda: text("addenda"),
-  status: text("status").notNull().default('pending'), // pending, sent, settled, returned
-  idempotencyKey: text("idempotency_key").unique(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  batchIdx: index("ach_entry_batch_idx").on(t.achBatchId),
-  loanIdx: index("ach_entry_loan_idx").on(t.loanId),
-  traceIdx: unique().on(t.traceNumber)
-}));
+export const achEntry = pgTable(
+  "ach_entry",
+  {
+    achEntryId: uuid("ach_entry_id").primaryKey().defaultRandom(),
+    achBatchId: uuid("ach_batch_id")
+      .references(() => achBatch.achBatchId)
+      .notNull(),
+    loanId: integer("loan_id").references(() => loans.id),
+    txnCode: text("txn_code").notNull(), // 22, 27, 32, 37
+    rdfiRouting: text("rdfi_routing").notNull(),
+    ddaAccountMask: text("dda_account_mask").notNull(), // Last 4 digits
+    amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
+    traceNumber: text("trace_number").notNull().unique(),
+    individualName: text("individual_name").notNull(),
+    addenda: text("addenda"),
+    status: text("status").notNull().default("pending"), // pending, sent, settled, returned
+    idempotencyKey: text("idempotency_key").unique(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    batchIdx: index("ach_entry_batch_idx").on(t.achBatchId),
+    loanIdx: index("ach_entry_loan_idx").on(t.loanId),
+    traceIdx: unique().on(t.traceNumber),
+  }),
+);
 
 // ACH Returns - Track returned ACH transactions
-export const achReturns = pgTable("ach_returns", {
-  achReturnId: uuid("ach_return_id").primaryKey().defaultRandom(),
-  achEntryId: uuid("ach_entry_id").references(() => achEntry.achEntryId).notNull(),
-  returnCode: text("return_code").notNull(), // R01, R02, etc.
-  returnReason: text("return_reason").notNull(),
-  returnDate: date("return_date").notNull(),
-  amountMinor: bigint("amount_minor", { mode: 'bigint' }).notNull(),
-  traceNumber: text("trace_number").notNull(),
-  processed: boolean("processed").notNull().default(false),
-  processedAt: timestamp("processed_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  entryIdx: index("ach_return_entry_idx").on(t.achEntryId),
-  processedIdx: index("ach_return_processed_idx").on(t.processed)
-}));
+export const achReturns = pgTable(
+  "ach_returns",
+  {
+    achReturnId: uuid("ach_return_id").primaryKey().defaultRandom(),
+    achEntryId: uuid("ach_entry_id")
+      .references(() => achEntry.achEntryId)
+      .notNull(),
+    returnCode: text("return_code").notNull(), // R01, R02, etc.
+    returnReason: text("return_reason").notNull(),
+    returnDate: date("return_date").notNull(),
+    amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
+    traceNumber: text("trace_number").notNull(),
+    processed: boolean("processed").notNull().default(false),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    entryIdx: index("ach_return_entry_idx").on(t.achEntryId),
+    processedIdx: index("ach_return_processed_idx").on(t.processed),
+  }),
+);
 
 // Cash Match Candidates - For reconciliation
-export const cashMatchCandidates = pgTable("cash_match_candidates", {
-  candidateId: uuid("candidate_id").primaryKey().defaultRandom(),
-  bankTxnId: uuid("bank_txn_id").references(() => bankTxn.bankTxnId).notNull(),
-  eventId: uuid("event_id").notNull(), // Reference to ledger event
-  score: integer("score").notNull(), // Confidence score 0-100
-  matchReason: text("match_reason").notNull(),
-  amountVarianceMinor: bigint("amount_variance_minor", { mode: 'bigint' }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  bankTxnIdx: index("match_candidate_txn_idx").on(t.bankTxnId),
-  scoreIdx: index("match_candidate_score_idx").on(t.score)
-}));
+export const cashMatchCandidates = pgTable(
+  "cash_match_candidates",
+  {
+    candidateId: uuid("candidate_id").primaryKey().defaultRandom(),
+    bankTxnId: uuid("bank_txn_id")
+      .references(() => bankTxn.bankTxnId)
+      .notNull(),
+    eventId: uuid("event_id").notNull(), // Reference to ledger event
+    score: integer("score").notNull(), // Confidence score 0-100
+    matchReason: text("match_reason").notNull(),
+    amountVarianceMinor: bigint("amount_variance_minor", {
+      mode: "bigint",
+    }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    bankTxnIdx: index("match_candidate_txn_idx").on(t.bankTxnId),
+    scoreIdx: index("match_candidate_score_idx").on(t.score),
+  }),
+);
 
 // Reconciliation Exceptions - Unmatched transactions
-export const reconExceptions = pgTable("recon_exceptions", {
-  exceptionId: uuid("exception_id").primaryKey().defaultRandom(),
-  bankTxnId: uuid("bank_txn_id").references(() => bankTxn.bankTxnId),
-  category: text("category").notNull(), // ach_return, nsf, wire_recall, duplicate, dispute
-  subcategory: text("subcategory"),
-  severity: text("severity").notNull(), // low, medium, high, critical
-  state: text("state").notNull().default('open'), // open, pending, resolved, cancelled
-  assignedTo: integer("assigned_to").references(() => users.id),
-  aiRecommendation: jsonb("ai_recommendation"),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
-}, (t) => ({
-  stateIdx: index("recon_exception_state_idx").on(t.state),
-  severityIdx: index("recon_exception_severity_idx").on(t.severity)
-}));
+export const reconExceptions = pgTable(
+  "recon_exceptions",
+  {
+    exceptionId: uuid("exception_id").primaryKey().defaultRandom(),
+    bankTxnId: uuid("bank_txn_id").references(() => bankTxn.bankTxnId),
+    category: text("category").notNull(), // ach_return, nsf, wire_recall, duplicate, dispute
+    subcategory: text("subcategory"),
+    severity: text("severity").notNull(), // low, medium, high, critical
+    state: text("state").notNull().default("open"), // open, pending, resolved, cancelled
+    assignedTo: integer("assigned_to").references(() => users.id),
+    aiRecommendation: jsonb("ai_recommendation"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => ({
+    stateIdx: index("recon_exception_state_idx").on(t.state),
+    severityIdx: index("recon_exception_severity_idx").on(t.severity),
+  }),
+);
 
 // ========================================
 // BORROWER PORTAL TABLES - Phase 1
 // ========================================
 
 // Borrower portal users - maps authenticated users to borrower entities
-export const borrowerUsers = pgTable("borrower_users", {
-  id: serial("id").primaryKey(),
-  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id).notNull(),
-  email: text("email").notNull(),
-  phone: text("phone"),
-  mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
-  status: text("status").default('active').notNull(), // active, disabled
-  lastLoginAt: timestamp("last_login_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  emailIdx: index("borrower_users_email_idx").on(t.email),
-  entityIdx: index("borrower_users_entity_idx").on(t.borrowerEntityId),
-  uniqueEntityEmail: unique().on(t.borrowerEntityId, t.email)
-}));
+export const borrowerUsers = pgTable(
+  "borrower_users",
+  {
+    id: serial("id").primaryKey(),
+    borrowerEntityId: integer("borrower_entity_id")
+      .references(() => borrowerEntities.id)
+      .notNull(),
+    email: text("email").notNull(),
+    phone: text("phone"),
+    mfaEnabled: boolean("mfa_enabled").default(false).notNull(),
+    status: text("status").default("active").notNull(), // active, disabled
+    lastLoginAt: timestamp("last_login_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    emailIdx: index("borrower_users_email_idx").on(t.email),
+    entityIdx: index("borrower_users_entity_idx").on(t.borrowerEntityId),
+    uniqueEntityEmail: unique().on(t.borrowerEntityId, t.email),
+  }),
+);
 
 // Links loans to borrower entities with roles
-export const loanBorrowerLinks = pgTable("loan_borrower_links", {
-  id: serial("id").primaryKey(),
-  loanId: integer("loan_id").references(() => loans.id).notNull(),
-  borrowerEntityId: integer("borrower_entity_id").references(() => borrowerEntities.id).notNull(),
-  borrowerUserId: integer("borrower_user_id").references(() => borrowerUsers.id),
-  role: text("role").notNull(), // primary, co, authorized
-  permissions: jsonb("permissions"), // view_only, make_payments, full_access
-  createdAt: timestamp("created_at").defaultNow().notNull()
-}, (t) => ({
-  loanIdx: index("loan_borrower_loan_idx").on(t.loanId),
-  entityIdx: index("loan_borrower_entity_idx").on(t.borrowerEntityId),
-  uniqueLoanBorrowerRole: unique().on(t.loanId, t.borrowerEntityId, t.role)
-}));
+export const loanBorrowerLinks = pgTable(
+  "loan_borrower_links",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    borrowerEntityId: integer("borrower_entity_id")
+      .references(() => borrowerEntities.id)
+      .notNull(),
+    borrowerUserId: integer("borrower_user_id").references(
+      () => borrowerUsers.id,
+    ),
+    role: text("role").notNull(), // primary, co, authorized
+    permissions: jsonb("permissions"), // view_only, make_payments, full_access
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    loanIdx: index("loan_borrower_loan_idx").on(t.loanId),
+    entityIdx: index("loan_borrower_entity_idx").on(t.borrowerEntityId),
+    uniqueLoanBorrowerRole: unique().on(t.loanId, t.borrowerEntityId, t.role),
+  }),
+);
 
 // Payment methods for borrower portal
-export const borrowerPaymentMethods = pgTable("borrower_payment_methods", {
-  id: serial("id").primaryKey(),
-  borrowerUserId: integer("borrower_user_id").references(() => borrowerUsers.id).notNull(),
-  type: text("type").notNull(), // ach, card (ach only for Phase 1)
-  nickname: text("nickname"),
-  accountNumberMask: text("account_number_mask").notNull(), // Last 4 digits
-  routingNumber: text("routing_number"), // For ACH
-  accountType: text("account_type"), // checking, savings
-  tokenReference: text("token_reference").notNull(), // Secure token from payment processor
-  isDefault: boolean("is_default").default(false).notNull(),
-  isVerified: boolean("is_verified").default(false).notNull(),
-  verifiedAt: timestamp("verified_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull()
-}, (t) => ({
-  userIdx: index("payment_methods_user_idx").on(t.borrowerUserId),
-  typeIdx: index("payment_methods_type_idx").on(t.type),
-  defaultIdx: index("payment_methods_default_idx").on(t.isDefault)
-}));
+export const borrowerPaymentMethods = pgTable(
+  "borrower_payment_methods",
+  {
+    id: serial("id").primaryKey(),
+    borrowerUserId: integer("borrower_user_id")
+      .references(() => borrowerUsers.id)
+      .notNull(),
+    type: text("type").notNull(), // ach, card (ach only for Phase 1)
+    processorToken: text("processor_token").notNull(), // Encrypted processor reference
+    last4: text("last4"),
+    bankName: text("bank_name"),
+    accountType: text("account_type"), // checking, savings
+    nameOnAccount: text("name_on_account"),
+    status: text("status").default("active").notNull(), // active, deleted
+    isDefault: boolean("is_default").default(false),
+    verifiedAt: timestamp("verified_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: index("payment_methods_user_idx").on(t.borrowerUserId),
+  }),
+);
+
+// Notices for borrowers
+export const borrowerNotices = pgTable(
+  "borrower_notices",
+  {
+    id: serial("id").primaryKey(),
+    loanId: integer("loan_id")
+      .references(() => loans.id)
+      .notNull(),
+    borrowerUserId: integer("borrower_user_id").references(
+      () => borrowerUsers.id,
+    ),
+    type: text("type").notNull(), // past_due, payment_received, statement_ready, etc
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    payload: jsonb("payload"),
+    readAt: timestamp("read_at"),
+    deliveryChannels: text("delivery_channels").array(), // portal, email, sms
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    loanIdx: index("notices_loan_idx").on(t.loanId),
+    userIdx: index("notices_user_idx").on(t.borrowerUserId),
+    unreadIdx: index("notices_unread_idx").on(t.readAt),
+  }),
+);
+
+// Borrower preferences
+export const borrowerPreferences = pgTable(
+  "borrower_preferences",
+  {
+    id: serial("id").primaryKey(),
+    borrowerUserId: integer("borrower_user_id")
+      .references(() => borrowerUsers.id)
+      .notNull()
+      .unique(),
+    statementDelivery: text("statement_delivery").default("paperless"), // paperless, mail
+    paperlessConsent: boolean("paperless_consent").default(false),
+    emailNotifications: boolean("email_notifications").default(true),
+    smsNotifications: boolean("sms_notifications").default(false),
+    language: text("language").default("en"),
+    timezone: text("timezone").default("America/Phoenix"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    userIdx: unique().on(t.borrowerUserId),
+  }),
+);
+
+// Export types for borrower portal tables
+export const insertBorrowerUserSchema = createInsertSchema(borrowerUsers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertBorrowerUser = z.infer<typeof insertBorrowerUserSchema>;
+export type BorrowerUser = typeof borrowerUsers.$inferSelect;
+
+export const insertLoanBorrowerLinkSchema = createInsertSchema(
+  loanBorrowerLinks,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertLoanBorrowerLink = z.infer<
+  typeof insertLoanBorrowerLinkSchema
+>;
+export type LoanBorrowerLink = typeof loanBorrowerLinks.$inferSelect;
+
+export const insertBorrowerPaymentMethodSchema = createInsertSchema(
+  borrowerPaymentMethods,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertBorrowerPaymentMethod = z.infer<
+  typeof insertBorrowerPaymentMethodSchema
+>;
+export type BorrowerPaymentMethod = typeof borrowerPaymentMethods.$inferSelect;
+
+export const insertBorrowerNoticeSchema = createInsertSchema(
+  borrowerNotices,
+).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertBorrowerNotice = z.infer<typeof insertBorrowerNoticeSchema>;
+export type BorrowerNotice = typeof borrowerNotices.$inferSelect;
+
+export const insertBorrowerPreferencesSchema = createInsertSchema(
+  borrowerPreferences,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertBorrowerPreferences = z.infer<
+  typeof insertBorrowerPreferencesSchema
+>;
+export type BorrowerPreferences = typeof borrowerPreferences.$inferSelect;
+
+// Export types for banking tables
+export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({
+  bankAcctId: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertBankAccount = z.infer<typeof insertBankAccountSchema>;
+export type BankAccount = typeof bankAccounts.$inferSelect;
+
+export const insertBankTxnSchema = createInsertSchema(bankTxn).omit({
+  bankTxnId: true,
+  createdAt: true,
+});
+export type InsertBankTxn = z.infer<typeof insertBankTxnSchema>;
+export type BankTxn = typeof bankTxn.$inferSelect;
+
+export const insertBankStatementFileSchema = createInsertSchema(
+  bankStatementFiles,
+).omit({
+  stmtFileId: true,
+  createdAt: true,
+});
+export type InsertBankStatementFile = z.infer<
+  typeof insertBankStatementFileSchema
+>;
+export type BankStatementFile = typeof bankStatementFiles.$inferSelect;
+
+export const insertAchBatchSchema = createInsertSchema(achBatch).omit({
+  achBatchId: true,
+  createdAt: true,
+});
+export type InsertAchBatch = z.infer<typeof insertAchBatchSchema>;
+export type AchBatch = typeof achBatch.$inferSelect;
+
+export const insertAchEntrySchema = createInsertSchema(achEntry).omit({
+  achEntryId: true,
+  createdAt: true,
+});
+export type InsertAchEntry = z.infer<typeof insertAchEntrySchema>;
+export type AchEntry = typeof achEntry.$inferSelect;
+
+export const insertAchReturnSchema = createInsertSchema(achReturns).omit({
+  achReturnId: true,
+  createdAt: true,
+});
+export type InsertAchReturn = z.infer<typeof insertAchReturnSchema>;
+export type AchReturn = typeof achReturns.$inferSelect;
+
+export const insertCashMatchCandidateSchema = createInsertSchema(
+  cashMatchCandidates,
+).omit({
+  candidateId: true,
+  createdAt: true,
+});
+export type InsertCashMatchCandidate = z.infer<
+  typeof insertCashMatchCandidateSchema
+>;
+export type CashMatchCandidate = typeof cashMatchCandidates.$inferSelect;
+
+export const insertReconExceptionSchema = createInsertSchema(
+  reconExceptions,
+).omit({
+  exceptionId: true,
+  createdAt: true,
+});
+export type InsertReconException = z.infer<typeof insertReconExceptionSchema>;
+export type ReconException = typeof reconExceptions.$inferSelect;
 
 // ========================================
 // PHASE 9 COMPLIANCE TABLES
@@ -1138,10 +4198,10 @@ export const borrowerPaymentMethods = pgTable("borrower_payment_methods", {
 
 // Compliance audit log (append-only with hash chain)
 export const complianceAuditLog = pgTable("compliance_audit_log", {
-  id: bigserial("id").primaryKey(),
+  id: serial("id").primaryKey(),
   correlationId: uuid("correlation_id").notNull(),
   accountId: uuid("account_id"),
-  actorType: text("actor_type").notNull().check(sql`actor_type IN ('user','system','integration')`),
+  actorType: text("actor_type").notNull(), // 'user','system','integration'
   actorId: text("actor_id"),
   eventType: text("event_type").notNull(),  // 'CRUD.CREATE','FIN.POST','NOTICE.SENT', etc.
   eventTsUtc: timestamp("event_ts_utc", { withTimezone: true }).notNull().defaultNow(),
@@ -1168,8 +4228,8 @@ export const consentRecord = pgTable("consent_record", {
   subjectId: uuid("subject_id").notNull(),
   purpose: text("purpose").notNull(),       // 'emarketing','esign','privacy', etc.
   scope: text("scope").notNull(),       // 'loan:read','email:marketing', ...
-  status: text("status").notNull().check(sql`status IN ('granted','revoked')`),
-  channel: text("channel").notNull().check(sql`channel IN ('web','email','sms','paper','ivr')`),
+  status: text("status").notNull(), // 'granted','revoked'
+  channel: text("channel").notNull(), // 'web','email','sms','paper','ivr'
   version: text("version").notNull(),       // doc/policy version or hash
   evidenceUri: text("evidence_uri"),                // WORM link
   locale: text("locale").default('en-US'),
@@ -1185,10 +4245,10 @@ export const consentRecord = pgTable("consent_record", {
 export const communicationPreference = pgTable("communication_preference", {
   id: uuid("id").primaryKey().defaultRandom(),
   subjectId: uuid("subject_id").notNull(),
-  channel: text("channel").notNull().check(sql`channel IN ('email','sms','phone','push','mail')`),
+  channel: text("channel").notNull(), // 'email','sms','phone','push','mail'
   topic: text("topic").notNull(),       // 'billing','collections','marketing','privacy'
   allowed: boolean("allowed").notNull().default(true),
-  frequency: text("frequency").check(sql`frequency IN ('immediate','daily','weekly','monthly')`),
+  frequency: text("frequency"), // 'immediate','daily','weekly','monthly'
   lastUpdatedBy: text("last_updated_by").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 }, (t) => ({
@@ -1213,7 +4273,7 @@ export const retentionPolicy = pgTable("retention_policy", {
 // Legal hold
 export const legalHold = pgTable("legal_hold", {
   id: uuid("id").primaryKey().defaultRandom(),
-  scopeType: text("scope_type").notNull().check(sql`scope_type IN ('artifact','account','subject')`),
+  scopeType: text("scope_type").notNull(), // 'artifact','account','subject'
   scopeId: text("scope_id").notNull(),
   reason: text("reason").notNull(),
   imposedBy: text("imposed_by").notNull(),
@@ -1221,7 +4281,7 @@ export const legalHold = pgTable("legal_hold", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   releasedAt: timestamp("released_at", { withTimezone: true })
 }, (t) => ({
-  scopeIdx: index("legal_hold_scope_idx").on(t.scopeType, t.scopeId).where(sql`active = true`)
+  scopeIdx: index("legal_hold_scope_idx").on(t.scopeType, t.scopeId)
 }));
 
 // Process timers (parameterized notice windows)
@@ -1258,7 +4318,7 @@ export const noticeDeliveryLog = pgTable("notice_delivery_log", {
   subjectId: uuid("subject_id"),
   noticeCode: text("notice_code").notNull(),     // 'PRIVACY.ANNUAL','ESCROW.ANALYSIS', ...
   deliveryChannel: text("delivery_channel").notNull(),     // 'email','mail','portal'
-  deliveryStatus: text("delivery_status").notNull().check(sql`delivery_status IN ('queued','sent','failed','opened','returned')`),
+  deliveryStatus: text("delivery_status").notNull(), // 'queued','sent','failed','opened','returned'
   scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   failureReason: text("failure_reason"),
@@ -1270,12 +4330,12 @@ export const noticeDeliveryLog = pgTable("notice_delivery_log", {
 
 // Account balance ledger for balance replay
 export const accountBalanceLedger = pgTable("account_balance_ledger", {
-  id: bigserial("id").primaryKey(),
+  id: serial("id").primaryKey(),
   accountId: uuid("account_id").notNull(),
   postingTsUtc: timestamp("posting_ts_utc", { withTimezone: true }).notNull(),
   amountCents: bigint("amount_cents", { mode: 'bigint' }).notNull(),
   currency: text("currency").notNull().default('USD'),
-  txnType: text("txn_type").notNull().check(sql`txn_type IN ('debit','credit')`),
+  txnType: text("txn_type").notNull(), // 'debit','credit'
   description: text("description"),
   externalRef: text("external_ref"),
   correlationId: uuid("correlation_id").notNull()
@@ -1298,9 +4358,9 @@ export const artifact = pgTable("artifact", {
 export const dataSubjectRequest = pgTable("data_subject_request", {
   id: uuid("id").primaryKey().defaultRandom(),
   subjectId: uuid("subject_id").notNull(),
-  type: text("type").notNull().check(sql`type IN ('access','deletion','correction')`),
-  status: text("status").notNull().check(sql`status IN ('received','in_progress','completed','rejected')`),
-  submittedVia: text("submitted_via").notNull().check(sql`submitted_via IN ('portal','email','mail')`),
+  type: text("type").notNull(), // 'access','deletion','correction'
+  status: text("status").notNull(), // 'received','in_progress','completed','rejected'
+  submittedVia: text("submitted_via").notNull(), // 'portal','email','mail'
   openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
   dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -1309,378 +4369,6 @@ export const dataSubjectRequest = pgTable("data_subject_request", {
 }, (t) => ({
   subjectIdx: index("dsar_subject_idx").on(t.subjectId, t.status)
 }));
-
-// Export all schemas
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
-
-export const insertLenderSchema = createInsertSchema(lenders).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertLender = z.infer<typeof insertLenderSchema>;
-export type Lender = typeof lenders.$inferSelect;
-
-export const insertServicerSchema = createInsertSchema(servicers).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertServicer = z.infer<typeof insertServicerSchema>;
-export type Servicer = typeof servicers.$inferSelect;
-
-export const insertBorrowerEntitySchema = createInsertSchema(borrowerEntities).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertBorrowerEntity = z.infer<typeof insertBorrowerEntitySchema>;
-export type BorrowerEntity = typeof borrowerEntities.$inferSelect;
-
-export const insertPropertySchema = createInsertSchema(properties).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertProperty = z.infer<typeof insertPropertySchema>;
-export type Property = typeof properties.$inferSelect;
-
-export const insertLoanSchema = createInsertSchema(loans).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertLoan = z.infer<typeof insertLoanSchema>;
-export type Loan = typeof loans.$inferSelect;
-
-export const insertLoanBorrowerSchema = createInsertSchema(loanBorrowers).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertLoanBorrower = z.infer<typeof insertLoanBorrowerSchema>;
-export type LoanBorrower = typeof loanBorrowers.$inferSelect;
-
-export const insertInvestorSchema = createInsertSchema(investors).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertInvestor = z.infer<typeof insertInvestorSchema>;
-export type Investor = typeof investors.$inferSelect;
-
-export const insertPaymentSchema = createInsertSchema(payments).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertPayment = z.infer<typeof insertPaymentSchema>;
-export type Payment = typeof payments.$inferSelect;
-
-export const insertEscrowAccountSchema = createInsertSchema(escrowAccounts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertEscrowAccount = z.infer<typeof insertEscrowAccountSchema>;
-export type EscrowAccount = typeof escrowAccounts.$inferSelect;
-
-export const insertEscrowTransactionSchema = createInsertSchema(escrowTransactions).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertEscrowTransaction = z.infer<typeof insertEscrowTransactionSchema>;
-export type EscrowTransaction = typeof escrowTransactions.$inferSelect;
-
-export const insertDocumentSchema = createInsertSchema(documents).omit({
-  id: true,
-  createdAt: true,
-  uploadedAt: true
-});
-export type InsertDocument = z.infer<typeof insertDocumentSchema>;
-export type Document = typeof documents.$inferSelect;
-
-export const insertPaymentScheduleSchema = createInsertSchema(paymentSchedule).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertPaymentSchedule = z.infer<typeof insertPaymentScheduleSchema>;
-export type PaymentSchedule = typeof paymentSchedule.$inferSelect;
-
-export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
-export type AuditLog = typeof auditLogs.$inferSelect;
-
-export const insertNoteSchema = createInsertSchema(notes).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertNote = z.infer<typeof insertNoteSchema>;
-export type Note = typeof notes.$inferSelect;
-
-export const insertTaskSchema = createInsertSchema(tasks).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertTask = z.infer<typeof insertTaskSchema>;
-export type Task = typeof tasks.$inferSelect;
-
-export const insertEscrowDisbursementSchema = createInsertSchema(escrowDisbursements).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertEscrowDisbursement = z.infer<typeof insertEscrowDisbursementSchema>;
-export type EscrowDisbursement = typeof escrowDisbursements.$inferSelect;
-
-export const insertCollectionActivitySchema = createInsertSchema(collectionActivities).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertCollectionActivity = z.infer<typeof insertCollectionActivitySchema>;
-export type CollectionActivity = typeof collectionActivities.$inferSelect;
-
-export const insertLoanSnapshotSchema = createInsertSchema(loanSnapshots).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertLoanSnapshot = z.infer<typeof insertLoanSnapshotSchema>;
-export type LoanSnapshot = typeof loanSnapshots.$inferSelect;
-
-export const insertCrmContactSchema = createInsertSchema(crmContacts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertCrmContact = z.infer<typeof insertCrmContactSchema>;
-export type CrmContact = typeof crmContacts.$inferSelect;
-
-export const insertCrmActivitySchema = createInsertSchema(crmActivities).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertCrmActivity = z.infer<typeof insertCrmActivitySchema>;
-export type CrmActivity = typeof crmActivities.$inferSelect;
-
-export const insertPermissionSchema = createInsertSchema(permissions).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertPermission = z.infer<typeof insertPermissionSchema>;
-export type Permission = typeof permissions.$inferSelect;
-
-export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
-export type RolePermission = typeof rolePermissions.$inferSelect;
-
-export const insertUserPermissionOverrideSchema = createInsertSchema(userPermissionOverrides).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertUserPermissionOverride = z.infer<typeof insertUserPermissionOverrideSchema>;
-export type UserPermissionOverride = typeof userPermissionOverrides.$inferSelect;
-
-export const insertSessionSchema = createInsertSchema(sessions).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertSession = z.infer<typeof insertSessionSchema>;
-export type Session = typeof sessions.$inferSelect;
-
-export const insertPaymentAllocationSchema = createInsertSchema(paymentAllocations).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertPaymentAllocation = z.infer<typeof insertPaymentAllocationSchema>;
-export type PaymentAllocation = typeof paymentAllocations.$inferSelect;
-
-export const insertInvestorPositionSchema = createInsertSchema(investorPositions).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertInvestorPosition = z.infer<typeof insertInvestorPositionSchema>;
-export type InvestorPosition = typeof investorPositions.$inferSelect;
-
-export const insertEscrowDisbursementPaymentSchema = createInsertSchema(escrowDisbursementPayments).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertEscrowDisbursementPayment = z.infer<typeof insertEscrowDisbursementPaymentSchema>;
-export type EscrowDisbursementPayment = typeof escrowDisbursementPayments.$inferSelect;
-
-export const insertEscrowAnalysisSchema = createInsertSchema(escrowAnalysis).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertEscrowAnalysis = z.infer<typeof insertEscrowAnalysisSchema>;
-export type EscrowAnalysis = typeof escrowAnalysis.$inferSelect;
-
-export const insertEmailTemplateFolderSchema = createInsertSchema(emailTemplateFolders).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertEmailTemplateFolder = z.infer<typeof insertEmailTemplateFolderSchema>;
-export type EmailTemplateFolder = typeof emailTemplateFolders.$inferSelect;
-
-export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
-export type EmailTemplate = typeof emailTemplates.$inferSelect;
-
-export const insertSmsTemplateSchema = createInsertSchema(smsTemplates).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertSmsTemplate = z.infer<typeof insertSmsTemplateSchema>;
-export type SmsTemplate = typeof smsTemplates.$inferSelect;
-
-export const insertDocumentFolderSchema = createInsertSchema(documentFolders).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertDocumentFolder = z.infer<typeof insertDocumentFolderSchema>;
-export type DocumentFolder = typeof documentFolders.$inferSelect;
-
-export const insertDocumentV2Schema = createInsertSchema(documentsV2).omit({
-  id: true,
-  createdAt: true,
-  uploadedAt: true
-});
-export type InsertDocumentV2 = z.infer<typeof insertDocumentV2Schema>;
-export type DocumentV2 = typeof documentsV2.$inferSelect;
-
-export const insertDocumentAccessLogSchema = createInsertSchema(documentAccessLogs).omit({
-  id: true,
-  createdAt: true
-});
-export type InsertDocumentAccessLog = z.infer<typeof insertDocumentAccessLogSchema>;
-export type DocumentAccessLog = typeof documentAccessLogs.$inferSelect;
-
-export const insertPolicyRuleSchema = createInsertSchema(policyRules).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true
-});
-export type InsertPolicyRule = z.infer<typeof insertPolicyRuleSchema>;
-export type PolicyRule = typeof policyRules.$inferSelect;
-
-// New double-entry and cash management types
-export const insertGeneralLedgerEventSchema = createInsertSchema(generalLedgerEvents).omit({
-  eventId: true,
-  eventTimestamp: true,
-  createdAt: true
-});
-export type InsertGeneralLedgerEvent = z.infer<typeof insertGeneralLedgerEventSchema>;
-export type GeneralLedgerEvent = typeof generalLedgerEvents.$inferSelect;
-
-export const insertGeneralLedgerEntrySchema = createInsertSchema(generalLedgerEntries).omit({
-  entryId: true,
-  createdAt: true
-});
-export type InsertGeneralLedgerEntry = z.infer<typeof insertGeneralLedgerEntrySchema>;
-export type GeneralLedgerEntry = typeof generalLedgerEntries.$inferSelect;
-
-export const insertLoanTermsSchema = createInsertSchema(loanTerms).omit({
-  termId: true,
-  createdAt: true
-});
-export type InsertLoanTerms = z.infer<typeof insertLoanTermsSchema>;
-export type LoanTerms = typeof loanTerms.$inferSelect;
-
-export const insertLoanBalancesSchema = createInsertSchema(loanBalances).omit({
-  lastUpdated: true
-});
-export type InsertLoanBalances = z.infer<typeof insertLoanBalancesSchema>;
-export type LoanBalances = typeof loanBalances.$inferSelect;
-
-export const insertEscrowForecastSchema = createInsertSchema(escrowForecasts).omit({
-  forecastId: true,
-  createdAt: true
-});
-export type InsertEscrowForecast = z.infer<typeof insertEscrowForecastSchema>;
-export type EscrowForecast = typeof escrowForecasts.$inferSelect;
-
-export const insertRemittanceCycleSchema = createInsertSchema(remittanceCycle).omit({
-  cycleId: true,
-  createdAt: true
-});
-export type InsertRemittanceCycle = z.infer<typeof insertRemittanceCycleSchema>;
-export type RemittanceCycle = typeof remittanceCycle.$inferSelect;
-
-export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({
-  bankAcctId: true,
-  createdAt: true
-});
-export type InsertBankAccount = z.infer<typeof insertBankAccountSchema>;
-export type BankAccount = typeof bankAccounts.$inferSelect;
-
-export const insertBankTxnSchema = createInsertSchema(bankTxn).omit({
-  bankTxnId: true,
-  createdAt: true
-});
-export type InsertBankTxn = z.infer<typeof insertBankTxnSchema>;
-export type BankTxn = typeof bankTxn.$inferSelect;
-
-export const insertBankStatementFileSchema = createInsertSchema(bankStatementFiles).omit({
-  stmtFileId: true,
-  createdAt: true
-});
-export type InsertBankStatementFile = z.infer<typeof insertBankStatementFileSchema>;
-export type BankStatementFile = typeof bankStatementFiles.$inferSelect;
-
-export const insertAchBatchSchema = createInsertSchema(achBatch).omit({
-  achBatchId: true,
-  createdAt: true
-});
-export type InsertAchBatch = z.infer<typeof insertAchBatchSchema>;
-export type AchBatch = typeof achBatch.$inferSelect;
-
-export const insertAchEntrySchema = createInsertSchema(achEntry).omit({
-  achEntryId: true,
-  createdAt: true
-});
-export type InsertAchEntry = z.infer<typeof insertAchEntrySchema>;
-export type AchEntry = typeof achEntry.$inferSelect;
-
-export const insertAchReturnSchema = createInsertSchema(achReturns).omit({
-  achReturnId: true,
-  createdAt: true
-});
-export type InsertAchReturn = z.infer<typeof insertAchReturnSchema>;
-export type AchReturn = typeof achReturns.$inferSelect;
-
-export const insertCashMatchCandidateSchema = createInsertSchema(cashMatchCandidates).omit({
-  candidateId: true,
-  createdAt: true
-});
-export type InsertCashMatchCandidate = z.infer<typeof insertCashMatchCandidateSchema>;
-export type CashMatchCandidate = typeof cashMatchCandidates.$inferSelect;
-
-export const insertReconExceptionSchema = createInsertSchema(reconExceptions).omit({
-  exceptionId: true,
-  createdAt: true
-});
-export type InsertReconException = z.infer<typeof insertReconExceptionSchema>;
-export type ReconException = typeof reconExceptions.$inferSelect;
 
 // Phase 9 Compliance Types
 export const insertComplianceAuditLogSchema = createInsertSchema(complianceAuditLog).omit({
