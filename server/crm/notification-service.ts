@@ -213,16 +213,15 @@ export class CRMNotificationService {
    * Get or create template for notification type
    */
   private async getOrCreateTemplate(type: string): Promise<any> {
-    // Use 'notice' as the document type since email notifications are notices to borrowers
     let template = await this.repo.getLatestTemplate(`crm_${type}`);
     
     if (!template) {
-      // Create default template using 'notice' type (valid enum value)
+      // Create default template
       await db.execute(sql`
         INSERT INTO document_template (template_id, type, version, engine, html_source, css_source)
         VALUES (
           ${`tmpl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`},
-          ${'notice'},
+          ${`crm_${type}`},
           1,
           'handlebars-html',
           ${this.getDefaultHtmlTemplate(type)},
