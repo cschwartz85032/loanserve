@@ -4,15 +4,35 @@ import { db } from "../db";
 import { escrowDisbursementPayments, escrowAccounts, loanLedger } from "../../shared/schema";
 import { eq } from "drizzle-orm";
 import { insertEscrowDisbursementSchema, insertEscrowDisbursementPaymentSchema } from "../../shared/schema";
+import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
 
 const router = Router();
 
 // Get all disbursements for a loan
-router.get("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
+router.get("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
   try {
     const loanId = parseInt(req.params.loanId);
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     const disbursements = await storage.getEscrowDisbursements(loanId);
+    
+    // Log escrow disbursements access
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.ESCROW.VIEWED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_disbursements',
+      resourceId: loanId.toString(),
+      details: {
+        action: 'view_escrow_disbursements',
+        loanId,
+        disbursementCount: disbursements.length,
+        userId
+      },
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
     
     res.json(disbursements);
   } catch (error) {
@@ -22,15 +42,35 @@ router.get("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
 });
 
 // Get single disbursement with payment history
-router.get("/api/escrow-disbursements/:id", async (req, res) => {
+router.get("/api/escrow-disbursements/:id", async (req: any, res) => {
   try {
     const id = parseInt(req.params.id);
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     const disbursement = await storage.getEscrowDisbursement(id);
     
     if (!disbursement) {
       return res.status(404).json({ error: "Disbursement not found" });
     }
+    
+    // Log disbursement detail access
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.ESCROW.VIEWED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_disbursement',
+      resourceId: id.toString(),
+      details: {
+        action: 'view_disbursement_detail',
+        disbursementId: id,
+        disbursementType: disbursement.disbursementType,
+        payeeName: disbursement.payeeName,
+        userId
+      },
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
     
     res.json(disbursement);
   } catch (error) {
@@ -40,9 +80,10 @@ router.get("/api/escrow-disbursements/:id", async (req, res) => {
 });
 
 // Create new disbursement
-router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
+router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
   try {
     const loanId = parseInt(req.params.loanId);
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     // Get or create escrow account for this loan
     let escrowAccount = await storage.getEscrowAccount(loanId);
@@ -54,6 +95,24 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
         accountNumber: `ESC-${loanId}-${Date.now()}`,
         currentBalance: "0",
         isActive: true
+      });
+      
+      // Log escrow account creation
+      await complianceAudit.logEvent({
+        eventType: COMPLIANCE_EVENTS.ESCROW.ACCOUNT_CREATED,
+        actorType: 'user',
+        actorId: userId?.toString(),
+        resourceType: 'escrow_account',
+        resourceId: escrowAccount.id.toString(),
+        details: {
+          action: 'create_escrow_account',
+          loanId,
+          accountNumber: escrowAccount.accountNumber,
+          userId
+        },
+        userId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
       });
     }
     
@@ -171,6 +230,32 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
     
     const disbursement = await storage.createEscrowDisbursement(validatedData);
     
+    // Log disbursement creation
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_CREATED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_disbursement',
+      resourceId: disbursement.id.toString(),
+      details: {
+        action: 'create_escrow_disbursement',
+        disbursementId: disbursement.id,
+        loanId,
+        disbursementType: disbursement.disbursementType,
+        payeeName: disbursement.payeeName,
+        annualAmount: disbursement.annualAmount,
+        paymentMethod: disbursement.paymentMethod,
+        frequency: disbursement.frequency,
+        status: disbursement.status,
+        autoPayEnabled: disbursement.autoPayEnabled,
+        userId
+      },
+      newValues: disbursement,
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+    
     res.status(201).json(disbursement);
   } catch (error: any) {
     console.error("Error creating disbursement:", error);
@@ -180,9 +265,10 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req, res) => {
 });
 
 // Update disbursement
-router.patch("/api/escrow-disbursements/:id", async (req, res) => {
+router.patch("/api/escrow-disbursements/:id", async (req: any, res) => {
   try {
     const id = parseInt(req.params.id);
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     const existingDisbursement = await storage.getEscrowDisbursement(id);
     
@@ -242,6 +328,28 @@ router.patch("/api/escrow-disbursements/:id", async (req, res) => {
     
     const updatedDisbursement = await storage.updateEscrowDisbursement(id, cleanedData);
     
+    // Log disbursement update with changed fields
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_UPDATED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_disbursement',
+      resourceId: id.toString(),
+      details: {
+        action: 'update_escrow_disbursement',
+        disbursementId: id,
+        loanId: existingDisbursement.loanId,
+        changedFields: Object.keys(cleanedData),
+        userId
+      },
+      previousValues: existingDisbursement,
+      newValues: updatedDisbursement,
+      changedFields: Object.keys(cleanedData),
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+    
     res.json(updatedDisbursement);
   } catch (error) {
     console.error("Error updating disbursement:", error);
@@ -250,11 +358,39 @@ router.patch("/api/escrow-disbursements/:id", async (req, res) => {
 });
 
 // Delete disbursement
-router.delete("/api/escrow-disbursements/:id", async (req, res) => {
+router.delete("/api/escrow-disbursements/:id", async (req: any, res) => {
   try {
     const id = parseInt(req.params.id);
+    const userId = req.user?.id || (req.session as any)?.userId;
+    
+    // Get disbursement before deletion for audit log
+    const disbursement = await storage.getEscrowDisbursement(id);
     
     await storage.deleteEscrowDisbursement(id);
+    
+    // Log disbursement deletion
+    if (disbursement) {
+      await complianceAudit.logEvent({
+        eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_DELETED,
+        actorType: 'user',
+        actorId: userId?.toString(),
+        resourceType: 'escrow_disbursement',
+        resourceId: id.toString(),
+        details: {
+          action: 'delete_escrow_disbursement',
+          disbursementId: id,
+          loanId: disbursement.loanId,
+          disbursementType: disbursement.disbursementType,
+          payeeName: disbursement.payeeName,
+          deletedData: disbursement,
+          userId
+        },
+        previousValues: disbursement,
+        userId,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
+      });
+    }
     
     res.status(204).send();
   } catch (error) {
@@ -267,9 +403,10 @@ router.delete("/api/escrow-disbursements/:id", async (req, res) => {
 // This unified endpoint handles both hold and release actions based on the action parameter
 
 // Record a disbursement payment
-router.post("/api/escrow-disbursements/:id/payments", async (req, res) => {
+router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
   try {
     const disbursementId = parseInt(req.params.id);
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     const disbursement = await storage.getEscrowDisbursement(disbursementId);
     
@@ -340,6 +477,32 @@ router.post("/api/escrow-disbursements/:id/payments", async (req, res) => {
       return { ...updatedPayment, ledgerEntryId: ledgerEntry.id };
     });
     
+    // Log payment processing
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.ESCROW.PAYMENT_PROCESSED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_payment',
+      resourceId: result.id.toString(),
+      details: {
+        action: 'process_escrow_payment',
+        paymentId: result.id,
+        disbursementId,
+        loanId: disbursement.loanId,
+        amount: validatedData.amount,
+        paymentDate: validatedData.paymentDate,
+        paymentMethod: validatedData.paymentMethod,
+        checkNumber: validatedData.checkNumber,
+        transactionNumber: validatedData.transactionNumber,
+        ledgerEntryId: result.ledgerEntryId,
+        userId
+      },
+      newValues: result,
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+    
     res.status(201).json(result);
   } catch (error: any) {
     console.error("Error recording disbursement payment:", error);
@@ -349,11 +512,33 @@ router.post("/api/escrow-disbursements/:id/payments", async (req, res) => {
 });
 
 // Get escrow account summary for a loan
-router.get("/api/loans/:loanId/escrow-summary", async (req, res) => {
+router.get("/api/loans/:loanId/escrow-summary", async (req: any, res) => {
   try {
     const loanId = parseInt(req.params.loanId);
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     const summary = await storage.getEscrowSummary(loanId);
+    
+    // Log escrow summary access
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.ESCROW.VIEWED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_summary',
+      resourceId: loanId.toString(),
+      details: {
+        action: 'view_escrow_summary',
+        loanId,
+        totalDisbursements: summary.summary.totalDisbursements,
+        activeDisbursements: summary.summary.activeDisbursements,
+        onHoldDisbursements: summary.summary.onHoldDisbursements,
+        totalAnnualAmount: summary.summary.totalAnnualAmount,
+        userId
+      },
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
     
     res.json(summary);
   } catch (error) {
@@ -363,7 +548,7 @@ router.get("/api/loans/:loanId/escrow-summary", async (req, res) => {
 });
 
 // Put escrow disbursement on hold or release from hold  
-router.post("/api/escrow-disbursements/:id/hold", async (req, res) => {
+router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) {
@@ -371,15 +556,42 @@ router.post("/api/escrow-disbursements/:id/hold", async (req, res) => {
     }
     
     const { action, reason, requestedBy } = req.body;
+    const userId = req.user?.id || (req.session as any)?.userId;
     
     let result;
+    let eventType;
     if (action === 'hold') {
       result = await storage.holdEscrowDisbursement(id, reason, requestedBy);
+      eventType = COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_HELD;
     } else if (action === 'release') {
       result = await storage.releaseEscrowDisbursement(id);
+      eventType = COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_RELEASED;
     } else {
       return res.status(400).json({ error: "Action must be 'hold' or 'release'" });
     }
+    
+    // Log hold/release action
+    await complianceAudit.logEvent({
+      eventType,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_disbursement',
+      resourceId: id.toString(),
+      details: {
+        action: action === 'hold' ? 'hold_escrow_disbursement' : 'release_escrow_disbursement',
+        disbursementId: id,
+        loanId: result.loanId,
+        reason: reason || null,
+        requestedBy: requestedBy || userId,
+        isOnHold: result.isOnHold,
+        holdReason: result.holdReason,
+        userId
+      },
+      newValues: result,
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
     
     res.json(result);
   } catch (error) {

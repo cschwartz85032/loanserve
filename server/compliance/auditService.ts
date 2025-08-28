@@ -27,6 +27,7 @@ export const COMPLIANCE_EVENTS = {
     ALLOCATED: 'PAYMENT.ALLOCATED',
     REJECTED: 'PAYMENT.REJECTED',
     SCHEDULED: 'PAYMENT.SCHEDULED',
+    VIEWED: 'PAYMENT.VIEWED',
   },
 
   // Fee Management
@@ -70,11 +71,20 @@ export const COMPLIANCE_EVENTS = {
   ESCROW: {
     ACCOUNT_CREATED: 'ESCROW.ACCOUNT_CREATED',
     ACCOUNT_UPDATED: 'ESCROW.ACCOUNT_UPDATED',
+    DISBURSEMENT_CREATED: 'ESCROW.DISBURSEMENT_CREATED',
+    DISBURSEMENT_UPDATED: 'ESCROW.DISBURSEMENT_UPDATED',
+    DISBURSEMENT_DELETED: 'ESCROW.DISBURSEMENT_DELETED',
     DISBURSEMENT_SCHEDULED: 'ESCROW.DISBURSEMENT_SCHEDULED',
     DISBURSEMENT_COMPLETED: 'ESCROW.DISBURSEMENT_COMPLETED',
     DISBURSEMENT_CANCELLED: 'ESCROW.DISBURSEMENT_CANCELLED',
+    DISBURSEMENT_HELD: 'ESCROW.DISBURSEMENT_HELD',
+    DISBURSEMENT_RELEASED: 'ESCROW.DISBURSEMENT_RELEASED',
+    PAYMENT_PROCESSED: 'ESCROW.PAYMENT_PROCESSED',
+    PAYMENT_FAILED: 'ESCROW.PAYMENT_FAILED',
     ANALYSIS_PERFORMED: 'ESCROW.ANALYSIS_PERFORMED',
     SHORTAGE_DETECTED: 'ESCROW.SHORTAGE_DETECTED',
+    SURPLUS_DETECTED: 'ESCROW.SURPLUS_DETECTED',
+    VIEWED: 'ESCROW.VIEWED',
   },
 
   // Document Management
@@ -257,22 +267,20 @@ class ComplianceAuditService {
       // Insert audit log entry
       await db.insert(complianceAuditLog).values({
         correlationId,
-        accountId: data.sessionId,
+        accountId: data.sessionId || null,
         actorType: data.actorType,
         actorId: String(data.actorId || ''),
         eventType: data.eventType,
+        eventTsUtc: new Date(),
         resourceType: data.resourceType,
         resourceId: String(data.resourceId || ''),
-        loanId: data.loanId || null,
         payloadHash,
         payloadJson,
         prevHash,
         recordHash,
         ipAddr: data.ipAddr,
         userAgent: data.userAgent,
-        geo: null,
-        createdAt: new Date(),
-        legalHold: false
+        geo: null
       });
 
     } catch (error) {

@@ -14,6 +14,7 @@ import {
 } from '@shared/schema';
 import { eq, desc, and, or } from 'drizzle-orm';
 import { z } from 'zod';
+import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
 import sgMail from '@sendgrid/mail';
 import multer from 'multer';
 import path from 'path';
@@ -110,6 +111,28 @@ router.post('/loans/:loanId/crm/notes', asyncHandler(async (req, res) => {
     description: `Added a note: ${content.substring(0, 100)}...`
   }, note.id);
   
+  // Log compliance audit
+  await complianceAudit.logEvent({
+    eventType: COMPLIANCE_EVENTS.CRM.NOTE_ADDED,
+    actorType: 'user',
+    actorId: userId?.toString(),
+    resourceType: 'crm_note',
+    resourceId: note.id.toString(),
+    details: {
+      action: 'create_crm_note',
+      noteId: note.id,
+      loanId,
+      isPrivate,
+      mentionedUsers: mentionedUsers || [],
+      hasAttachments: (attachments || []).length > 0,
+      userId
+    },
+    newValues: note,
+    userId,
+    ipAddress: (req as any).ip,
+    userAgent: (req as any).headers?.['user-agent']
+  });
+  
   sendSuccess(res, note, 'Note created successfully');
 }));
 
@@ -164,6 +187,29 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
     await logActivity(loanId, userId, 'task', {
       description: `Created task: ${title}`
     }, task.id);
+    
+    // Log compliance audit
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.CRM.TASK_CREATED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'crm_task',
+      resourceId: task.id.toString(),
+      details: {
+        action: 'create_crm_task',
+        taskId: task.id,
+        loanId,
+        title,
+        assignedTo,
+        priority: priority || 'medium',
+        dueDate,
+        userId
+      },
+      newValues: task,
+      userId,
+      ipAddress: (req as any).ip,
+      userAgent: (req as any).headers?.['user-agent']
+    });
     
     // Send notification if task is assigned to someone
     if (assignedTo && assignedTo !== userId) {

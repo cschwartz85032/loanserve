@@ -8,12 +8,14 @@ import { db } from '../db';
 import { payments, paymentEvents, ledgerEntries, loans, paymentArtifacts } from '@shared/schema';
 import { eq, desc, and, sql, gte, or } from 'drizzle-orm';
 import { z } from 'zod';
+import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
 
 const router = Router();
 
 // Get all payments across all loans
-router.get('/api/payments/all', async (req, res) => {
+router.get('/api/payments/all', async (req: any, res) => {
   try {
+    const userId = req.user?.id || (req.session as any)?.userId;
     // Fetch all payments with allocations from ledger entries
     const paymentsData = await db
       .select({
@@ -104,6 +106,23 @@ router.get('/api/payments/all', async (req, res) => {
       metadata: payment.metadata,
       notes: payment.notes
     }));
+    
+    // Log payment list access
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.PAYMENT.VIEWED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'payments',
+      resourceId: 'all',
+      details: {
+        action: 'view_all_payments',
+        totalPayments: formattedPayments.length,
+        userId
+      },
+      userId,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    });
 
     res.json({
       payments: formattedPayments,
