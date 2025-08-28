@@ -748,7 +748,7 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
       recipientName: to,
       data: {
         subject,
-        content: body,
+        content: content,
         cc: cc || null,
         bcc: bcc || null,
         from: fromEmail
