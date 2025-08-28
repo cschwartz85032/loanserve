@@ -106,6 +106,37 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   // Extract audit logs from response
   const auditLogs = auditLogsResponse || [];
 
+  // Helper function to get user name from actor ID
+  const getUserName = (actorId: string) => {
+    // For now, return a simple mapping - could be enhanced with a user lookup API
+    if (actorId === '1') return 'loanatik';
+    return `User ${actorId}`;
+  };
+
+  // Helper function to format audit details
+  const formatAuditDetails = (log: any) => {
+    const payload = log.payloadJson;
+    if (!payload) return 'N/A';
+
+    // For CRM notes, show the actual note content
+    if (log.eventType === 'CRM.NOTE_ADDED' && payload.newValues?.content) {
+      return `Note: "${payload.newValues.content}"`;
+    }
+
+    // For changes, show before/after values
+    if (payload.changedFields && payload.changedFields.length > 0) {
+      const changes = payload.changedFields.map((field: string) => {
+        const oldValue = payload.previousValues?.[field];
+        const newValue = payload.newValues?.[field];
+        return `${field}: ${oldValue || 'null'} → ${newValue || 'null'}`;
+      }).join(', ');
+      return `Changed: ${changes}`;
+    }
+
+    // Fallback to description
+    return payload.description || 'N/A';
+  };
+
   // Update form data when loan is loaded
   useEffect(() => {
     if (loan) {
@@ -566,8 +597,6 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead>User</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Entity Type</TableHead>
                       <TableHead>Details</TableHead>
                       <TableHead>IP Address</TableHead>
                     </TableRow>
@@ -578,17 +607,13 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                         <TableCell className="font-mono text-xs">
                           {new Date(log.eventTsUtc).toLocaleString()}
                         </TableCell>
-                        <TableCell>{log.actorId || 'System'}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{log.eventType}</Badge>
+                        <TableCell className="font-medium">
+                          {getUserName(log.actorId) || 'System'}
                         </TableCell>
-                        <TableCell className="text-sm text-gray-600">
-                          {log.resourceType}
+                        <TableCell className="text-sm">
+                          {formatAuditDetails(log)}
                         </TableCell>
-                        <TableCell className="text-sm text-gray-600">
-                          {log.payloadJson?.description || 'N/A'}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="font-mono text-xs text-gray-500">
                           {log.ipAddr || 'N/A'}
                         </TableCell>
                       </TableRow>
