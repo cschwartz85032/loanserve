@@ -772,6 +772,35 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
         documentId: notificationResult.docId
       });
 
+      // Log to Phase 9 compliance audit trail
+      await complianceAudit.logEvent({
+        eventType: COMPLIANCE_EVENTS.CRM.EMAIL_SENT,
+        actorType: 'user',
+        actorId: userId,
+        resourceType: 'email',
+        resourceId: notificationResult.docId || `email-${Date.now()}`,
+        loanId: loanId,  // Include loan ID so it appears in loan audit tab
+        description: `Email sent to ${to}: ${subject}`,
+        newValues: {
+          to,
+          cc: cc || null,
+          bcc: bcc || null,
+          subject,
+          contentLength: content.length,
+          attachmentCount: attachments.length,
+          documentId: notificationResult.docId,
+          fromEmail
+        },
+        metadata: {
+          loanId,
+          userId,
+          recipientCount: 1 + (cc ? cc.split(',').length : 0) + (bcc ? bcc.split(',').length : 0),
+          hasAttachments: attachments.length > 0
+        },
+        ipAddr: (req as any).ip,
+        userAgent: (req as any).headers?.['user-agent']
+      });
+
       res.json({ 
         success: true, 
         message: 'Email sent successfully', 

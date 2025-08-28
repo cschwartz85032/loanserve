@@ -1085,6 +1085,9 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       await queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
       await queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
       
+      // Invalidate audit log cache so new compliance events appear immediately
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
+      
       setEmailTo('');
       setEmailCc('');
       setEmailBcc('');
