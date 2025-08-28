@@ -218,8 +218,9 @@ export class CRMNotificationService {
     if (!template) {
       // Create default template
       await db.execute(sql`
-        INSERT INTO document_template (type, version, engine, html_source, css_source)
+        INSERT INTO document_template (template_id, type, version, engine, html_source, css_source)
         VALUES (
+          ${`tmpl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`},
           ${`crm_${type}`},
           1,
           'handlebars-html',

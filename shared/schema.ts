@@ -1305,7 +1305,21 @@ export const documents = pgTable(
   },
 );
 
-// Document Templates
+// Document Template System (used by DocsRepo for notifications)
+export const documentTemplate = pgTable("document_template", {
+  templateId: varchar("template_id").primaryKey(),
+  type: text("type").notNull(),
+  jurisdiction: text("jurisdiction"),
+  version: integer("version").notNull(),
+  engine: text("engine").notNull(),
+  htmlSource: text("html_source").notNull(),
+  cssSource: text("css_source"),
+  fontFamily: text("font_family"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  retiredAt: timestamp("retired_at"),
+});
+
+// Document Templates (user-facing template management)
 export const documentTemplates = pgTable("document_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -2375,6 +2389,11 @@ export const insertDocumentSchema = createInsertSchema(documents).omit({
 export const insertDocumentTemplateSchema = createInsertSchema(
   documentTemplates,
 ).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Document template system schema (for notifications)
+export const insertDocumentTemplateSystemSchema = createInsertSchema(
+  documentTemplate,
+).omit({ createdAt: true, retiredAt: true });
 
 // Servicing schemas
 export const insertServicingInstructionSchema = createInsertSchema(
