@@ -7,7 +7,6 @@ import {
   escrowAccounts, 
   escrowTransactions, 
   documents, 
-  auditLogs, 
   notifications,
   borrowerEntities,
   properties,
@@ -29,8 +28,6 @@ import {
   type InsertEscrowTransaction,
   type Document,
   type InsertDocument,
-  type AuditLog,
-  type InsertAuditLog,
   type Notification,
   type InsertNotification,
   type BorrowerEntity,
@@ -163,9 +160,6 @@ export interface IStorage {
   updateDocument(id: number, document: Partial<InsertDocument>): Promise<Document>;
   deleteDocument(id: number): Promise<void>;
 
-  // Audit methods
-  createAuditLog(auditLog: InsertAuditLog): Promise<AuditLog>;
-  getAuditLogs(entityType: string, entityId: number): Promise<AuditLog[]>;
 
   // Notification methods
   getNotifications(userId: number, limit?: number): Promise<Notification[]>;
@@ -857,25 +851,6 @@ export class DatabaseStorage implements IStorage {
     await db.delete(documents).where(eq(documents.id, id));
   }
 
-  // Audit methods
-  async createAuditLog(insertAuditLog: InsertAuditLog): Promise<AuditLog> {
-    const [log] = await db
-      .insert(auditLogs)
-      .values(insertAuditLog)
-      .returning();
-    return log;
-  }
-
-  async getAuditLogs(entityType: string, entityId: number): Promise<AuditLog[]> {
-    return await db
-      .select()
-      .from(auditLogs)
-      .where(and(
-        eq(auditLogs.entityType, entityType),
-        eq(auditLogs.entityId, entityId)
-      ))
-      .orderBy(desc(auditLogs.createdAt));
-  }
 
   // Notification methods
   async getNotifications(userId: number, limit?: number): Promise<Notification[]> {

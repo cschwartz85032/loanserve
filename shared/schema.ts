@@ -1576,32 +1576,6 @@ export const insurancePolicies = pgTable(
 // SYSTEM TABLES
 // ========================================
 
-// Audit Log
-export const auditLogs = pgTable(
-  "audit_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: integer("user_id").references(() => users.id),
-    loanId: integer("loan_id").references(() => loans.id),
-    entityType: text("entity_type").notNull(),
-    entityId: integer("entity_id").notNull(),
-    action: text("action").notNull(), // 'create', 'update', 'delete', 'view', 'export'
-    previousValues: jsonb("previous_values"),
-    newValues: jsonb("new_values"),
-    changedFields: text("changed_fields").array(),
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
-    sessionId: text("session_id"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => {
-    return {
-      userIdx: index("audit_user_idx").on(table.userId),
-      entityIdx: index("audit_entity_idx").on(table.entityType, table.entityId),
-      createdAtIdx: index("audit_created_at_idx").on(table.createdAt),
-    };
-  },
-);
 
 // Notifications
 export const notifications = pgTable(
@@ -1763,7 +1737,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   loansAsServicer: many(loans),
   documentsUploaded: many(documents),
   notifications: many(notifications),
-  auditLogs: many(auditLogs),
   tasks: many(tasks),
 }));
 
@@ -2441,10 +2414,6 @@ export const insertInsurancePolicySchema = createInsertSchema(
 ).omit({ id: true, createdAt: true, updatedAt: true });
 
 // System schemas
-export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
-  id: true,
-  createdAt: true,
-});
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
   createdAt: true,
@@ -2518,8 +2487,6 @@ export type LoanLedger = typeof loanLedger.$inferSelect;
 export type InsertLoanLedger = z.infer<typeof insertLoanLedgerSchema>;
 export type InsurancePolicy = typeof insurancePolicies.$inferSelect;
 export type InsertInsurancePolicy = z.infer<typeof insertInsurancePolicySchema>;
-export type AuditLog = typeof auditLogs.$inferSelect;
-export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Task = typeof tasks.$inferSelect;

@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
+import { complianceAudit, COMPLIANCE_EVENTS } from './compliance/auditService';
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import multer from "multer";
@@ -211,12 +212,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertBorrowerEntitySchema.parse(req.body);
       const borrower = await storage.createBorrowerEntity(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
-        action: "CREATE_BORROWER",
-        entityType: "borrower",
-        entityId: borrower.id,
-        newValues: borrower
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.BORROWER.CREATED,
+        resourceType: 'borrower',
+        resourceId: borrower.id,
+        newValues: borrower,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(201).json(borrower);
@@ -236,13 +240,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const borrower = await storage.updateBorrowerEntity(id, req.body);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
-        action: "UPDATE_BORROWER",
-        entityType: "borrower",
-        entityId: borrower.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.BORROWER.UPDATED,
+        resourceType: 'borrower',
+        resourceId: borrower.id,
         previousValues: existingBorrower,
-        newValues: borrower
+        newValues: borrower,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.json(borrower);
@@ -281,14 +288,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertPropertySchema.parse(req.body);
       const property = await storage.createProperty(validatedData);
       
-      // Temporarily skip audit log until database schema is updated
-      // await storage.createAuditLog({
-      //   userId: req.user?.id,
-      //   action: "CREATE_PROPERTY",
-      //   entityType: "property",
-      //   entityId: property.id,
-      //   newValues: property
-      // });
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.PROPERTY.CREATED,
+        resourceType: 'property',
+        resourceId: property.id,
+        newValues: property,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
+      });
 
       res.status(201).json(property);
     } catch (error: any) {
@@ -308,13 +317,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const property = await storage.updateProperty(id, req.body);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
-        action: "UPDATE_PROPERTY",
-        entityType: "property",
-        entityId: property.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.PROPERTY.UPDATED,
+        resourceType: 'property',
+        resourceId: property.id,
         previousValues: existingProperty,
-        newValues: property
+        newValues: property,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.json(property);
@@ -398,15 +410,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const loan = await storage.createLoan(validatedData);
     console.log("Loan created in database:", loan);
     
-    // Temporarily skip audit log until database schema is updated
-    // await storage.createAuditLog({
-    //   userId: req.user?.id,
-    //   loanId: loan.id,
-    //   action: "CREATE_LOAN",
-    //   entityType: "loan",
-    //   entityId: loan.id,
-    //   newValues: loan
-    // });
+    await complianceAudit.logEvent({
+      actorType: 'user',
+      actorId: req.user?.id,
+      eventType: COMPLIANCE_EVENTS.LOAN.CREATED,
+      resourceType: 'loan',
+      resourceId: loan.id,
+      loanId: loan.id,
+      newValues: loan,
+      ipAddr: req.ip,
+      userAgent: req.headers['user-agent']
+    });
 
     console.log("Sending success response");
     return successResponse(res, loan, 201);
@@ -508,16 +522,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         loan = await storage.updateLoan(id, cleanedLoanData);
       }
       
-      // Temporarily skip audit log until database schema is updated
-      // await storage.createAuditLog({
-      //   userId: req.user?.id,
-      //   loanId: loan.id,
-      //   action: "UPDATE_LOAN",
-      //   entityType: "loan",
-      //   entityId: loan.id,
-      //   previousValues: existingLoan,
-      //   newValues: loan
-      // });
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.LOAN.UPDATED,
+        resourceType: 'loan',
+        resourceId: loan.id,
+        loanId: loan.id,
+        previousValues: existingLoan,
+        newValues: loan,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
+      });
 
       res.json(loan);
     } catch (error) {
@@ -650,13 +666,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       const payment = await storage.createPayment(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.PAYMENT.CREATED,
+        resourceType: 'payment',
+        resourceId: payment.id,
         loanId: loanId,
-        action: "CREATE_PAYMENT",
-        entityType: "payment",
-        entityId: payment.id,
-        newValues: payment
+        newValues: payment,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(201).json(payment);
@@ -671,13 +690,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const id = parseInt(req.params.id);
       const payment = await storage.updatePayment(id, req.body);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.PAYMENT.UPDATED,
+        resourceType: 'payment',
+        resourceId: payment.id,
         loanId: payment.loanId,
-        action: "UPDATE_PAYMENT",
-        entityType: "payment",
-        entityId: payment.id,
-        newValues: payment
+        previousValues: await storage.getPayment(id),
+        newValues: payment,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.json(payment);
@@ -746,13 +769,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       const escrowAccount = await storage.createEscrowAccount(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.ESCROW.ACCOUNT_CREATED,
+        resourceType: 'escrow_account',
+        resourceId: escrowAccount.id,
         loanId: loanId,
-        action: "CREATE_ESCROW_ACCOUNT",
-        entityType: "escrow_account",
-        entityId: escrowAccount.id,
-        newValues: escrowAccount
+        newValues: escrowAccount,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(201).json(escrowAccount);
@@ -767,13 +793,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const id = parseInt(req.params.id);
       const escrowAccount = await storage.updateEscrowAccount(id, req.body);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.ESCROW.ACCOUNT_UPDATED,
+        resourceType: 'escrow_account',
+        resourceId: escrowAccount.id,
         loanId: escrowAccount.loanId,
-        action: "UPDATE_ESCROW_ACCOUNT",
-        entityType: "escrow_account",
-        entityId: escrowAccount.id,
-        newValues: escrowAccount
+        previousValues: await storage.getEscrowAccount(id),
+        newValues: escrowAccount,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.json(escrowAccount);
@@ -832,12 +862,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       const transaction = await storage.createEscrowTransaction(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
-        action: "CREATE_ESCROW_TRANSACTION",
-        entityType: "escrow_transaction",
-        entityId: transaction.id,
-        newValues: transaction
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_COMPLETED,
+        resourceType: 'escrow_transaction',
+        resourceId: transaction.id,
+        newValues: transaction,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(201).json(transaction);
@@ -1091,13 +1124,16 @@ To implement full file serving:
       const validatedData = insertDocumentSchema.parse(documentData);
       const document = await storage.createDocument(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.UPLOADED,
+        resourceType: 'document',
+        resourceId: document.id,
         loanId: document.loanId,
-        action: "CREATE_DOCUMENT",
-        entityType: "document",
-        entityId: document.id,
-        newValues: document
+        newValues: document,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(201).json(document);
@@ -1115,13 +1151,16 @@ To implement full file serving:
       });
       const document = await storage.createDocument(validatedData);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.UPLOADED,
+        resourceType: 'document',
+        resourceId: document.id,
         loanId: document.loanId,
-        action: "CREATE_DOCUMENT",
-        entityType: "document",
-        entityId: document.id,
-        newValues: document
+        newValues: document,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(201).json(document);
@@ -1141,14 +1180,17 @@ To implement full file serving:
 
       const document = await storage.updateDocument(id, req.body);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.RENAMED,
+        resourceType: 'document',
+        resourceId: document.id,
         loanId: document.loanId,
-        action: "UPDATE_DOCUMENT",
-        entityType: "document",
-        entityId: document.id,
         previousValues: existingDocument,
-        newValues: document
+        newValues: document,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.json(document);
@@ -1168,13 +1210,16 @@ To implement full file serving:
 
       await storage.deleteDocument(id);
       
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.DELETED,
+        resourceType: 'document',
+        resourceId: document.id,
         loanId: document.loanId,
-        action: "DELETE_DOCUMENT",
-        entityType: "document",
-        entityId: document.id,
-        previousValues: document
+        previousValues: document,
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(204).send();
@@ -1373,13 +1418,17 @@ To implement full file serving:
       const loan = await storage.createLoan(validatedData);
 
       // Create audit log
-      await storage.createAuditLog({
-        userId: req.user?.id,
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id,
+        eventType: COMPLIANCE_EVENTS.LOAN.CREATED,
+        resourceType: 'loan',
+        resourceId: loan.id,
         loanId: loan.id,
-        action: "CREATE_LOAN_AI",
-        entityType: "loan",
-        entityId: loan.id,
-        newValues: { ...loan, documentTypes }
+        newValues: { ...loan, documentTypes },
+        metadata: { source: 'ai_extraction' },
+        ipAddr: req.ip,
+        userAgent: req.headers['user-agent']
       });
 
       res.status(201).json(loan);
