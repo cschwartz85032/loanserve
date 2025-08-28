@@ -918,6 +918,8 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/notes`] });
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/crm/activity`] });
+      // Invalidate audit log cache so new compliance events appear immediately
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
       setNewNoteContent('');
       toast({ title: 'Success', description: 'Note added successfully' });
     },
