@@ -123,6 +123,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Column banking routes (Step 17)
   const columnWebhookRoutes = await import('./routes/column-webhooks');
   app.use('/api', columnWebhookRoutes.default);
+
+  // Register Compliance routes (Phase 9)
+  const complianceRoutes = await import('./routes/compliance');
+  app.use(complianceRoutes.default);
   console.log('[Routes] Registered Column banking routes');
 
   // Register payment ingestion routes (Step 2)

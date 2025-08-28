@@ -159,6 +159,15 @@ app.use((req, res, next) => {
     console.error('[Server] Failed to start remittance scheduler:', error);
   }
   
+  // Start Compliance Scheduler (Phase 9)
+  try {
+    const { initializeComplianceScheduler } = await import('./compliance');
+    initializeComplianceScheduler();
+    console.log('[Server] Compliance scheduler initialized successfully');
+  } catch (error) {
+    console.error('[Server] Failed to initialize compliance scheduler:', error);
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler
