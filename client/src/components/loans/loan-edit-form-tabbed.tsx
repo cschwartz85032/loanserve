@@ -576,20 +576,20 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                     {auditLogs.map((log: any) => (
                       <TableRow key={log.id}>
                         <TableCell className="font-mono text-xs">
-                          {new Date(log.timestamp).toLocaleString()}
+                          {new Date(log.eventTsUtc).toLocaleString()}
                         </TableCell>
-                        <TableCell>{log.userId || 'System'}</TableCell>
+                        <TableCell>{log.actorId || 'System'}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{log.eventType}</Badge>
                         </TableCell>
                         <TableCell className="text-sm text-gray-600">
-                          {log.entityType}
+                          {log.resourceType}
                         </TableCell>
                         <TableCell className="text-sm text-gray-600">
-                          {log.eventDescription || 'N/A'}
+                          {log.payloadJson?.description || 'N/A'}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {log.ipAddress || 'N/A'}
+                          {log.ipAddr || 'N/A'}
                         </TableCell>
                       </TableRow>
                     ))}
