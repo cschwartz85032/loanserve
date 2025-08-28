@@ -530,14 +530,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       await complianceAudit.logEvent({
         actorType: 'user',
-        actorId: req.user?.id,
+        actorId: req.user?.id?.toString() || '1',
         eventType: COMPLIANCE_EVENTS.LOAN.UPDATED,
         resourceType: 'loan',
-        resourceId: loan.id,
-        loanId: loan.id,
-        previousValues: existingLoan,
-        newValues: loan,
-        ipAddr: req.ip,
+        resourceId: loan.id.toString(),
+        details: {
+          action: 'update_loan',
+          loanId: loan.id,
+          userId: req.user?.id || 1,
+          changedFields: Object.keys(cleanedLoanData).length > 0 ? Object.keys(cleanedLoanData) : Object.keys(propertyFields),
+          previousValues: existingLoan,
+          newValues: loan
+        },
+        userId: req.user?.id || 1,
+        ipAddress: req.ip,
         userAgent: req.headers['user-agent']
       });
 
@@ -580,7 +586,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/loan-borrowers/:id", isAuthenticated, async (req, res) => {
     try {
-      await storage.deleteLoanBorrower(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      const userId = (req as any).user?.id || 1;
+      
+      // Get existing loan borrower before deletion for audit
+      const loanBorrowers = await db.select().from(loanBorrower).where(eq(loanBorrower.id, id));
+      const existingLoanBorrower = loanBorrowers[0];
+      
+      await storage.deleteLoanBorrower(id);
+      
+      // Log compliance audit
+      if (existingLoanBorrower) {
+        await complianceAudit.logEvent({
+          actorType: 'user',
+          actorId: userId.toString(),
+          eventType: 'LOAN.BORROWER_REMOVED',
+          resourceType: 'loan_borrower',
+          resourceId: id.toString(),
+          details: {
+            action: 'delete_loan_borrower',
+            loanBorrowerId: id,
+            loanId: existingLoanBorrower.loanId,
+            borrowerId: existingLoanBorrower.borrowerId,
+            userId,
+            previousValues: existingLoanBorrower
+          },
+          userId,
+          ipAddress: (req as any).ip,
+          userAgent: (req as any).headers?.['user-agent']
+        });
+      }
+      
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting loan borrower:", error);
