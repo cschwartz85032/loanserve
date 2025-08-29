@@ -22,7 +22,7 @@ const router = Router();
  */
 router.post('/check-dnc', async (req, res) => {
   try {
-    const validation = emailRequestSchema.safeParse(req.body);
+    const validation = sendEmailSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({
         error: 'Invalid request data',
