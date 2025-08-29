@@ -22,7 +22,7 @@ interface Investor {
   id?: number;
   investorId: string;
   loanId: number;
-  entityType: 'individual' | 'corporation' | 'llc' | 'partnership' | 'trust' | 'estate';
+  entityType: 'individual' | 'entity';
   name: string;
   contactName?: string;
   ssnOrEin?: string;
@@ -210,6 +210,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
       setEditingInvestor(null);
       // Set initial investment date to loan origination date
       const initialData: Partial<Investor> = {
+        investorId: '',
         entityType: 'individual',
         ownershipPercentage: 0,
         accountType: 'checking',
@@ -225,6 +226,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     setIsDialogOpen(false);
     setEditingInvestor(null);
     setFormData({
+      investorId: '',
       entityType: 'individual',
       ownershipPercentage: 0,
       investmentAmount: 0,
@@ -237,6 +239,9 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     const errors: Record<string, string> = {};
     
     // Validate required fields
+    if (!formData.investorId) {
+      errors.investorId = "Investor ID is required";
+    }
     if (!formData.name) {
       errors.name = "Name is required";
     }
@@ -491,7 +496,20 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 <Users className="h-4 w-4" />
                 Basic Information
               </h3>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="investorId">Investor ID *</Label>
+                  <Input
+                    id="investorId"
+                    value={formData.investorId || ''}
+                    onChange={(e) => handleInputChange('investorId', e.target.value)}
+                    placeholder="INV-001 or ACME-CORP"
+                    className={formErrors.investorId ? 'border-red-500' : ''}
+                  />
+                  {formErrors.investorId && (
+                    <p className="text-sm text-red-500">{formErrors.investorId}</p>
+                  )}
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="entityType">Entity Type *</Label>
                   <Select
@@ -503,11 +521,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="individual">Individual</SelectItem>
-                      <SelectItem value="corporation">Corporation</SelectItem>
-                      <SelectItem value="llc">LLC</SelectItem>
-                      <SelectItem value="partnership">Partnership</SelectItem>
-                      <SelectItem value="trust">Trust</SelectItem>
-                      <SelectItem value="estate">Estate</SelectItem>
+                      <SelectItem value="entity">Entity</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
