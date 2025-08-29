@@ -19,6 +19,7 @@ import { ipAllowlistRouter } from "./routes/ip-allowlist";
 import mfaRoutes from "./routes/mfa";
 import crmRoutes from "./routes/crm";
 import crmEmailRoutes from "./crm/email-routes";
+import communicationPreferencesRoutes from "./routes/communication-preferences";
 import { registerBorrowerRoutes } from "./routes/borrower";
 import { settingsRouter } from "./routes/settings";
 import { noticeTemplatesRouter } from "./routes/notice-templates";
@@ -116,6 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register CRM routes
   app.use('/api', crmRoutes);
   app.use('/api/crm/emails', crmEmailRoutes);
+  app.use('/api/communication-preferences', communicationPreferencesRoutes);
 
   // Register Borrower Portal routes
   registerBorrowerRoutes(app);

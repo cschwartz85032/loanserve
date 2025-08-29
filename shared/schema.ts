@@ -3633,6 +3633,61 @@ export const insertOutboxMessageSchema = createInsertSchema(
 export type InsertOutboxMessage = z.infer<typeof insertOutboxMessageSchema>;
 export type OutboxMessage = typeof outboxMessages.$inferSelect;
 
+// Email Artifacts - Immutable email content storage for compliance
+export const emailArtifacts = pgTable(
+  "email_artifacts",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(), // ULID
+    correlationId: varchar("correlation_id", { length: 36 }).notNull(),
+    loanId: integer("loan_id").references(() => loans.id),
+    userId: integer("user_id").references(() => users.id),
+    templateId: text("template_id"),
+    
+    // Email metadata
+    subject: text("subject").notNull(),
+    fromAddress: text("from_address").notNull(),
+    toAddresses: text("to_addresses").array().notNull(),
+    ccAddresses: text("cc_addresses").array().default([]),
+    bccAddresses: text("bcc_addresses").array().default([]),
+    
+    // Content (immutable snapshot)
+    htmlContent: text("html_content"),
+    textContent: text("text_content"),
+    htmlContentHash: text("html_content_hash"), // SHA-256
+    textContentHash: text("text_content_hash"), // SHA-256
+    variablesUsed: jsonb("variables_used").notNull(),
+    
+    // Attachments
+    attachments: jsonb("attachments").default([]),
+    
+    // Sending details
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+    providerMessageId: text("provider_message_id"),
+    deliveryStatus: text("delivery_status").notNull().default("queued"), // queued, sent, delivered, failed, bounced
+    deliveryDetails: jsonb("delivery_details").default({}),
+    
+    // Classification
+    emailCategory: text("email_category").notNull(), // transactional, marketing
+    topic: text("topic").notNull(),
+    
+    // Compliance
+    dncCheckPassed: boolean("dnc_check_passed").notNull(),
+    dncCheckDetails: jsonb("dnc_check_details").default({}),
+    
+    // Audit metadata
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+    retentionExpiresAt: timestamp("retention_expires_at", { withTimezone: true }).notNull()
+  },
+  (t) => ({
+    correlationIdx: index("email_artifacts_correlation_idx").on(t.correlationId),
+    loanIdx: index("email_artifacts_loan_idx").on(t.loanId),
+    sentAtIdx: index("email_artifacts_sent_at_idx").on(t.sentAt),
+    categoryTopicIdx: index("email_artifacts_category_topic_idx").on(t.emailCategory, t.topic),
+    retentionIdx: index("email_artifacts_retention_idx").on(t.retentionExpiresAt)
+  })
+);
+
 export const insertReconciliationSchema = createInsertSchema(
   reconciliations,
 ).omit({

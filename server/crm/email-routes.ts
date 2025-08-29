@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import type { CRMEmailRequestedEvent, EmailValidationRules } from './email-types';
 import { DEFAULT_EMAIL_VALIDATION_RULES } from './email-types';
 import { complianceAudit } from '../compliance/auditService';
+import { checkContactRestrictions } from './dnc-enforcement';
 
 const router = Router();
 
