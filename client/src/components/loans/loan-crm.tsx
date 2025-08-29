@@ -60,7 +60,6 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import MD5 from 'crypto-js/md5';
-import { CommunicationPreferences } from '@/components/crm/communication-preferences';
 import { EnhancedEmailCompose } from '@/components/crm/enhanced-email-compose';
 
 interface LoanCRMProps {
@@ -2322,12 +2321,6 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
             </ScrollArea>
           </CardContent>
         </Card>
-
-        {/* Communication Preferences Panel */}
-        <CommunicationPreferences 
-          borrowerId={loanData?.borrowerId?.toString() || '1'} 
-          loanId={loanId}
-        />
 
       </div>
 

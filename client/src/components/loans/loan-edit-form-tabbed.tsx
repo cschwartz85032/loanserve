@@ -24,6 +24,7 @@ import { LoanAccountingLedger } from "@/components/loans/loan-accounting-ledger"
 import { LoanInvestorsManager } from "@/components/loans/loan-investors-manager";
 import { EscrowDisbursementsTab } from "@/components/loans/escrow-disbursements-tab";
 import { LoanCRM } from "@/components/loans/loan-crm";
+import { CommunicationPreferences } from "@/components/crm/communication-preferences";
 
 interface LoanEditFormProps {
   loanId: string;
@@ -366,12 +367,13 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       </div>
 
       <Tabs defaultValue="crm" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="crm">CRM</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiary</TabsTrigger>
           <TabsTrigger value="escrows">Escrows</TabsTrigger>
           <TabsTrigger value="documents">Docs</TabsTrigger>
           <TabsTrigger value="accounting">Accounting</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="audit">Audit Trail</TabsTrigger>
         </TabsList>
 
@@ -576,6 +578,14 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         {/* Accounting Tab */}
         <TabsContent value="accounting" className="space-y-6">
           <LoanAccountingLedger loanId={loanId} loanAmount={parseFloat(formData.loanAmount) || 0} />
+        </TabsContent>
+
+        {/* Settings Tab */}
+        <TabsContent value="settings" className="space-y-6">
+          <CommunicationPreferences 
+            borrowerId={formData?.borrowerId?.toString() || '1'} 
+            loanId={loanId}
+          />
         </TabsContent>
 
         {/* Audit Trail Tab - Phase 9 Compliance Infrastructure */}
