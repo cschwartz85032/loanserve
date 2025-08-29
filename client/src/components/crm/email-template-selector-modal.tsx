@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { FileText, Check, ArrowLeft } from 'lucide-react';
+import { FileText, Check, ArrowLeft, Search } from 'lucide-react';
 import { TemplateBrowser, type Template, type TemplateFolder } from '@/components/shared/TemplateBrowser';
 
 // Type aliases for backward compatibility
