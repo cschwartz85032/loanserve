@@ -12,6 +12,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { AlertTriangle, HelpCircle, Mail, Send, Shield, X, Bold, Italic, Link as LinkIcon, List, Image, Paperclip, FileText, Trash2, Clock } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
+import { EmailAttachmentModal } from './email-attachment-modal';
+import { EmailTemplateSelectorModal } from './email-template-selector-modal';
 
 interface EnhancedEmailComposeProps {
   loanId: number;
@@ -28,6 +30,26 @@ interface DNCCheckResult {
     topic?: string;
   }>;
   category: 'transactional' | 'marketing';
+}
+
+interface AttachmentFile {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  path: string;
+}
+
+interface EmailTemplate {
+  id: number;
+  name: string;
+  subject: string;
+  content: string;
+  folderId: number | null;
+  folderName?: string;
+  isShared: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: EnhancedEmailComposeProps) {
@@ -48,6 +70,7 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
   const [emailSent, setEmailSent] = useState(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
+  const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
 
   // DNC check mutation
   const dncCheckMutation = useMutation({
@@ -184,6 +207,15 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
     await sendEmailMutation.mutateAsync(emailPayload);
   };
 
+  const handleTemplateSelect = (template: EmailTemplate) => {
+    setEmailData(prev => ({
+      ...prev,
+      subject: template.subject,
+      content: template.content,
+      template_id: template.id.toString()
+    }));
+  };
+
   const isMarketingBlocked = emailData.category === 'marketing' && 
                             dncCheckResult && 
                             !dncCheckResult.allowed && 
@@ -204,18 +236,18 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
             <label className="text-xs font-medium">To:</label>
             <div className="flex gap-1">
               <Button
-                variant="outline"
+                variant={showCc ? "secondary" : "ghost"}
                 size="sm"
-                className="h-6 text-xs px-2"
+                className="h-7 text-xs px-3 font-medium"
                 onClick={() => setShowCc(!showCc)}
                 data-testid="button-cc"
               >
                 CC
               </Button>
               <Button
-                variant="outline"
+                variant={showBcc ? "secondary" : "ghost"}
                 size="sm"
-                className="h-6 text-xs px-2"
+                className="h-7 text-xs px-3 font-medium"
                 onClick={() => setShowBcc(!showBcc)}
                 data-testid="button-bcc"
               >
@@ -330,17 +362,22 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
             <Button
               variant="ghost" 
               size="sm" 
-              className="h-6 text-xs px-2"
+              className="h-7 text-xs px-2"
               onClick={() => setShowAttachmentsModal(true)}
               data-testid="button-attachments"
             >
               <Paperclip className="h-3 w-3 mr-1" />
               Attachments
+              {attachments.length > 0 && (
+                <Badge variant="secondary" className="ml-1 text-xs">
+                  {attachments.length}
+                </Badge>
+              )}
             </Button>
             <Button
               variant="ghost" 
               size="sm" 
-              className="h-6 text-xs px-2"
+              className="h-7 text-xs px-2"
               onClick={() => setShowTemplatesModal(true)}
               data-testid="button-templates"
             >
@@ -350,9 +387,10 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 w-6 p-0"
+              className="h-7 w-7 p-0"
               onClick={() => {
                 setEmailData(prev => ({ ...prev, to: '', cc: '', bcc: '', subject: '', content: '' }));
+                setAttachments([]);
               }}
               title="Delete"
               data-testid="button-delete"
@@ -393,6 +431,47 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
             </AlertDescription>
           </Alert>
         )}
+
+        {/* Attachment List Preview */}
+        {attachments.length > 0 && (
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Attachments ({attachments.length}):</Label>
+            <div className="flex flex-wrap gap-1">
+              {attachments.map((attachment) => (
+                <Badge
+                  key={attachment.id}
+                  variant="outline"
+                  className="text-xs py-1 px-2 flex items-center gap-1"
+                >
+                  <Paperclip className="h-3 w-3" />
+                  {attachment.name}
+                  <button
+                    onClick={() => setAttachments(prev => prev.filter(a => a.id !== attachment.id))}
+                    className="ml-1 hover:text-red-500"
+                    title="Remove attachment"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Attachment Modal */}
+        <EmailAttachmentModal
+          open={showAttachmentsModal}
+          onOpenChange={setShowAttachmentsModal}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
+        />
+
+        {/* Template Selector Modal */}
+        <EmailTemplateSelectorModal
+          open={showTemplatesModal}
+          onOpenChange={setShowTemplatesModal}
+          onTemplateSelect={handleTemplateSelect}
+        />
       </div>
     </TooltipProvider>
   );
