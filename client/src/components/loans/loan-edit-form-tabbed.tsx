@@ -321,6 +321,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       // Invalidate and refetch the specific loan data
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
       queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+      // Invalidate audit logs to show new beneficiary changes
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
       // Force a refetch of the current loan data
       queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}`] });
       toast({

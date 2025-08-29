@@ -344,6 +344,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
       toast({
         title: "Loan Updated",
         description: "Loan information has been successfully updated",

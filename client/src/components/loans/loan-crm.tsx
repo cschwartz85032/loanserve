@@ -535,6 +535,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       });
       setEditLoanTermsModal(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({
         title: 'Error',
@@ -557,6 +558,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       });
       setEditServicingModal(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({
         title: 'Error',
@@ -579,6 +581,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       });
       setEditPropertyModal(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({
         title: 'Error',
@@ -601,6 +604,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       });
       setEditingBorrowerName(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({
         title: 'Error',
@@ -620,6 +624,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Trustee name updated' });
       setEditingTrusteeName(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -634,6 +639,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Company updated' });
       setEditingTrusteeCompany(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -653,6 +659,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Address updated' });
       setEditingTrusteeAddress(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -667,6 +674,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Phone updated' });
       setEditingTrusteePhone(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -681,6 +689,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Email updated' });
       setEditingTrusteeEmail(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -696,6 +705,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Escrow company updated' });
       setEditingEscrowCompany(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -710,6 +720,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Escrow number updated' });
       setEditingEscrowNumber(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -729,6 +740,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Address updated' });
       setEditingEscrowAddress(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -743,6 +755,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Phone updated' });
       setEditingEscrowPhone(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -757,6 +770,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       toast({ title: 'Success', description: 'Email updated' });
       setEditingEscrowEmail(false);
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update', variant: 'destructive' });
     }
@@ -837,6 +851,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
         
         // Invalidate query to refresh loan data
         queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
         
         toast({
           title: 'Success',
@@ -937,6 +952,7 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
       toast({ title: 'Success', description: 'Contact information updated successfully' });
     },
   });
