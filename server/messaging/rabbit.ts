@@ -66,7 +66,16 @@ export class RabbitService {
         this.attempts = 0;
       } catch {
         this.attempts++;
+        
+        // Honor max reconnect attempts to prevent infinite loops
+        if (this.attempts >= this.cfg.rabbitReconnectMax) {
+          console.error(`[RabbitMQ] Max reconnection attempts (${this.cfg.rabbitReconnectMax}) reached, giving up`);
+          this.reconnecting = false;
+          return;
+        }
+        
         const delay = Math.min(this.cfg.rabbitReconnectBaseMs * Math.pow(1.5, this.attempts), 60000);
+        console.log(`[RabbitMQ] Scheduling reconnection attempt ${this.attempts + 1} in ${delay}ms`);
         setTimeout(doReconnect, delay);
       }
     };
@@ -96,7 +105,7 @@ export class RabbitService {
           expiration: opts.expiration,
           correlationId: opts.correlationId ?? envelope.correlation_id,
           replyTo: opts.replyTo,
-          timestamp: envelope.timestamp_unix_ms
+          timestamp: new Date(envelope.occurred_at).getTime()
         },
         (err) => err ? reject(err) : resolve()
       );

@@ -1,12 +1,6 @@
-export interface MessageEnvelope<T = unknown> {
-  message_id: string;               // uuid v7
-  schema: string;                   // e.g. "loanserve.payment.received.v1"
-  trace_id?: string;                // OpenTelemetry trace id if available
-  correlation_id: string;           // required
-  priority?: number;                // 0..9
-  timestamp_unix_ms: number;
-  payload: T;
-}
+// Re-export the canonical envelope from shared messaging
+export type { MessageEnvelope, MessageMetadata, MessageSchema } from '../../shared/messaging/envelope';
+export { MessagePriority, MessageSchemas } from '../../shared/messaging/envelope';
 
 export const MandatoryHeaders = {
   MESSAGE_ID: "x-message-id",

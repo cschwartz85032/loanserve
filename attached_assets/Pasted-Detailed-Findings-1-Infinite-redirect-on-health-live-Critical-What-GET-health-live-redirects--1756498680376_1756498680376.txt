@@ -1,0 +1,165 @@
+Detailed Findings
+1) Infinite redirect on /health/live (Critical)
+
+What: GET /health/live redirects to itself (/health/live → /health/live) causing a loop.
+
+Where: server/http/server.ts lines that register app.get("/health/live", … res.redirect(307, "/health/live")).
+
+Fix: Return JSON directly or mount the health router only once:
+
+app.get("/health/live", (_req, res) => res.status(200).json({status:"live"}));
+// or just rely on: app.use("/health", healthRoutes(db))
+
+2) Envelope contract divergence (High)
+
+What: Two incompatible message shapes are present:
+
+server/messaging/contracts.ts uses { payload, timestamp_unix_ms }.
+
+shared/messaging/envelope.ts uses { data, occurred_at, version, idempotency_key, … }.
+
+RabbitService.publish reads envelope.timestamp_unix_ms. If a producer imports the shared envelope (with data/occurred_at), you’ll get runtime/type errors.
+
+Where: server/messaging/contracts.ts, shared/messaging/envelope.ts, server/messaging/rabbit.ts.
+
+Fix: Pick one canonical envelope (recommend the richer shared/messaging/envelope.ts) and:
+
+Change RabbitService.publish to use occurred_at (or populate timestamp_unix_ms at publish time).
+
+Remove/alias the other type to prevent drift. Add a zod/Ajv validator for the envelope at boundaries.
+
+3) Priority on quorum queues (High)
+
+What: Topology defines x-max-priority on quorum queues, which RabbitMQ ignores (only classic queues support priority). Example: investor.calculations sets 'x-queue-type': 'quorum' and 'x-max-priority': 10.
+
+Spec mismatch: Your own spec says “Quorum queues do not support message priorities… use classic priority or multiple queues.”
+
+Fix: Either:
+
+Use classic queues for priority paths, or
+
+Implement separate queues per priority (p10/p5/p1) as your doc suggests.
+
+4) Health “ready” check does not check Rabbit (Medium)
+
+What: checks.rabbit is set to { ok: true } without a real passive check or state inspection.
+
+Fix: Add a passive checkExchange or checkQueue on a known object (or verify channel state). Surface errors into checks.rabbit.
+
+5) Config schema vs dev env & dual boot paths (Medium)
+
+What: config/schema.json requires telemetry endpoint, Rabbit settings, etc.
+.env.development leaves OTEL endpoint blank; that fails Ajv.
+Meanwhile there are two servers:
+
+Phase-0 style server/app.ts (Ajv validation, Rabbit first, health server, graceful shutdown).
+
+Replit-style server/index.ts (dotenv, Vite, schedulers, etc.).
+
+Risk: Local dev may crash under app.ts; prod may run index.ts with different invariants → drift.
+
+Fix: Consolidate to one boot entry. Make telemetry/Rabbit optional in schema for local (or provide a dev ConfigMap with valid values). Prefer the Ajv-validated path to keep invariants.
+
+6) Rabbit reconnect loop ignores max attempts (Medium)
+
+What: Config defines rabbitReconnectMax, but reconnect code never stops trying; it only exponential-backs off.
+
+Fix: Abort after rabbitReconnectMax attempts, emit fatal telemetry, and transition health to degraded.
+
+7) PII-risky logging of response JSON (Medium)
+
+What: API middleware logs entire JSON response bodies for /api paths. This risks PII leakage (borrowers, banking, etc.).
+
+Fix: Log status + correlation id + summary metrics; never full payloads. Add field scrubbing (e.g., mask SSN, bank, tokens).
+
+8) Express error handler re-throws after responding (Medium)
+
+What: In server/index.ts, the error handler sends a response and then throw err; which can crash the process or produce duplicate logs.
+
+Fix: Don’t throw; rely on the handler (and centralized logging) to finish the request.
+
+9) Migrations not idempotent enough (Medium)
+
+What: Runtime logs show error: type "collection_status" already exists during migrations, so Drizzle scripts aren’t guarding CREATE TYPE/CREATE TABLE statements.
+
+Fix: Wrap type/table creation with IF NOT EXISTS or split enum changes into ALTER TYPE guarded steps.
+
+10) Session secret default (Low → Medium in prod)
+
+What: SESSION_CONFIG.SECRET falls back to a hardcoded string if not set.
+
+Fix: Fail fast if missing in non-dev, or load via secrets manager. Add a startup check.
+
+11) Metrics collector interval cleanup (Low)
+
+What: stopMetricsCollection() clears all intervals by iterating up to highestIntervalId (sledgehammer).
+
+Fix: Track interval IDs you created and clear only those.
+
+12) Topology duplication & feature flags (Low)
+
+What: Two topology implementations exist (OptimizedTopologyManager and RabbitMQ Topology Manager), with overlapping but not identical queues and different flags (e.g., disabling servicing due to CloudAMQP conflicts).
+
+Spec note: Your Phase-0 doc emphasizes consistent Rabbit invariants and non-negotiables.
+
+Fix: Keep one topology source of truth. Expose environment profiles via config only; avoid code forks.
+
+13) Strengths worth keeping (Positive)
+
+Confirm channels + manual acks in Rabbit publish/consume are correctly used.
+
+Ajv-validated config and clean telemetry bootstrap are solid.
+
+Graceful shutdown covers HTTP, Rabbit, telemetry, DB.
+
+Conformance to Architect’s Design & Docs
+
+Message invariants & headers: Your Phase-0 spec requires standard headers & confirm publish. Current code meets headers in RabbitService.publish, but the payload shape mismatch (Section #2) violates the “single envelope contract” intent.
+
+No priority on quorum: Spec calls this out; current topology contradicts it (Section #3).
+
+Health endpoints and startup invariants: Spec expects working /health/live and /health/ready; redirect loop breaks that.
+
+Config must validate before start: Ajv path enforces this, but dual boot path (index.ts) tolerates failures and proceeds, deviating from strict Phase-0 rules.
+
+Conclusion: You’re close, but need to unify envelope, topology semantics, and startup invariants to match the spec.
+
+User-Anticipated Behavior (UX/API/Operational)
+
+Health endpoints must be reliable (no redirects / 200 vs 503 status with real checks). Fix #1 and #4.
+
+Operational transparency without PII leakage: Trim logs to correlation IDs + metrics (#7).
+
+Robustness under Rabbit outages: Honor reconnect ceilings and expose degraded health (#6).
+
+Predictable message contract: One envelope; consistent across services and client libs (#2).
+
+Suggested tests (black-box & integration):
+
+/health/live returns 200 JSON; /health/ready returns 503 if Rabbit is down (force checkQueue failure).
+
+Publish/consume round-trip using the canonical envelope validates schema and headers; reject wrong shapes.
+
+Topology smoke test: assert queues/exchanges without priority on quorum; if priority needed, classic queues are present.
+
+Migration idempotency: re-run migrations twice; no enum/DDL errors.
+
+Recommendations (Refactor & Hardening)
+
+Unify boot entry (pick server/app.ts pattern): single place for Ajv config, telemetry, Rabbit connect, HTTP, graceful shutdown. Make telemetry optional in dev config schema.
+
+Single envelope library (shared/messaging/envelope.ts), generate types from JSON Schema; enforce via lint rule & runtime validation.
+
+Fix health routes (remove redirect; real Rabbit check).
+
+Topology cleanup: remove quorum+priority combos; use classic for priority or multi-queue strategy; keep one topology manager.
+
+Reconnect policy: respect rabbitReconnectMax; after N failures, mark degraded and stop consumers.
+
+Logging policy: redact fields (token, account, SSN), never log full bodies by default.
+
+Migrations: guard enum/table creation; test up-migrations on an already-provisioned DB.
+
+Security: require session secret in non-dev; wire rate-limit constants into actual middleware.
+
+Metrics cleanup: hold interval IDs, clear only those.

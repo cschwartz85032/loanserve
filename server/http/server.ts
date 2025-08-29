@@ -15,7 +15,7 @@ export function startHttpServer(port: number, logLevel: string, db?: Pool) {
     withCorrelation(cid, async () => next());
   });
 
-  app.get("/health/live", (_req, res) => res.redirect(307, "/health/live"));
+  // Mount health routes - includes /health/live, /health/ready, and /health/
   app.use("/health", healthRoutes(db));
 
   const srv = app.listen(port, () => {

@@ -372,15 +372,17 @@ export class OptimizedTopologyManager extends TopologyManager {
       ],
     });
 
-    // Investor calculations - use single queue with priority
+    // Investor calculations - quorum queues don't support priority
+    // Use separate priority queues instead (RabbitMQ spec compliance)
     if (this.config.performance.usePriorityQueues) {
+      // Note: Quorum queues don't support x-max-priority, using separate queues
       this.addQueue({
         name: 'investor.calculations',
         durable: true,
         arguments: {
           'x-queue-type': 'quorum',
           'x-dead-letter-exchange': 'dlx.main',
-          'x-max-priority': 10, // Priority queue
+          // Removed x-max-priority - quorum queues don't support it
         },
         bindings: [
           { exchange: 'investor.direct', routingKey: 'calc.*' },
