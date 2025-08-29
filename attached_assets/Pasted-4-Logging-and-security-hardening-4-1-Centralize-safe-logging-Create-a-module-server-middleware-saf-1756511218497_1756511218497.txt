@@ -1,0 +1,64 @@
+4. Logging and security hardening
+4.1 Centralize safe logging
+
+Create a module server/middleware/safe-logger.ts with a function to mask sensitive fields:
+
+// server/middleware/safe-logger.ts
+export function maskSensitive(obj: any): any {
+  if (obj == null || typeof obj !== 'object') return obj;
+  const clone = Array.isArray(obj) ? [] : {} as any;
+  for (const [k, v] of Object.entries(obj)) {
+    if (['account_number', 'routing_number', 'account_number_masked', 'routing_number_masked', 'ssn', 'token'].includes(k)) {
+      clone[k] = '***';
+    } else if (typeof v === 'object') {
+      clone[k] = maskSensitive(v);
+    } else {
+      clone[k] = v;
+    }
+  }
+  return clone;
+}
+
+
+In server/index.ts (middleware that logs API responses), replace the captured JSON logging logic (lines ~70–89) with safe logging:
+
+import { maskSensitive } from './middleware/safe-logger';
+// ...
+res.on('finish', () => {
+  const duration = Date.now() - start;
+  if (path.startsWith('/api')) {
+    let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+    if (capturedJsonResponse) {
+      const safeBody = maskSensitive(capturedJsonResponse);
+      logLine += ` :: ${JSON.stringify(safeBody)}`;
+    }
+    if (logLine.length > 160) {
+      logLine = logLine.slice(0, 159) + '…';
+    }
+    log(logLine);
+  }
+});
+
+
+Do not log raw request bodies. Remove any console.log(JSON.stringify(req.body)) or similar statements throughout the codebase.
+
+4.2 Enforce authorization and avoid test bypasses
+
+Ensure that all routes requiring authentication/authorization use your auth middleware. If there are commented‑out permission checks (e.g., // TODO remove temporary bypass), delete the bypass and apply the proper guard.
+
+Audit the server/routes directory for any route that is publicly accessible but should be protected. Add requireAuth('permission:scope') middleware accordingly.
+
+5. Express error handling
+
+In server/index.ts, the global error handler currently sends a JSON response and then throws the error (line 185–191). Throwing after sending a response can crash the process or double‑log the error. Remove the throw, retaining only the response and a log. Update the handler as follows:
+
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  const status = err.status || err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
+  log(`[Error] ${status} ${message}`);
+  res.status(status).json({ message });
+  // do not rethrow
+});
+
+
+This ensures a clean error response and prevents the server from crashing unnecessarily.

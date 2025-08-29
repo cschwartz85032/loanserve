@@ -190,6 +190,7 @@ export class InvestorRepository {
         }
 
         const oldValues = prev.rows[0];
+        const investorName = oldValues.name || 'Unknown Investor';
         
         // Build update query
         const updateFields: string[] = [];
@@ -253,7 +254,7 @@ export class InvestorRepository {
           newValues,
           changedFields,
           investorId: oldValues.investor_id,
-          investorName: oldValues.name
+          investorName
         };
       },
       async (result) => {

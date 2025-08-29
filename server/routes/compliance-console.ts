@@ -213,6 +213,12 @@ router.get('/audit-logs', async (req: any, res) => {
       .limit(Number(limit))
       .offset(offset);
 
+    // Transform logs to extract description from payload_json for UI compatibility
+    const transformedLogs = logs.map((log: any) => ({
+      ...log,
+      description: log.payloadJson?.description || `${log.eventType} operation`,
+    }));
+
     // Log audit log access
     await complianceAudit.logEvent({
       eventType: 'COMPLIANCE.AUDIT_ACCESSED',
@@ -230,7 +236,7 @@ router.get('/audit-logs', async (req: any, res) => {
     });
 
     res.json({
-      logs,
+      logs: transformedLogs,
       pagination: {
         page: Number(page),
         limit: Number(limit),
