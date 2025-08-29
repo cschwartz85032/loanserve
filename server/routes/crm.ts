@@ -38,7 +38,9 @@ import {
   EMAIL_CONFIG,
   FILE_UPLOAD_CONFIG
 } from '../config/constants';
-import { CRMNotificationService } from '../crm/notification-service';
+// CRMNotificationService removed - now using outbox pattern
+import { OutboxService } from '../services/outbox';
+import { randomUUID } from 'crypto';
 import { twilioService } from '../services/twilio-service';
 
 const router = Router();
@@ -49,8 +51,10 @@ if (process.env.SENDGRID_API_KEY) {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 }
 
-// Initialize CRM Notification Service
-const notificationService = new CRMNotificationService();
+// CRM Notification Service removed - using outbox pattern for async processing
+
+// Initialize Outbox Service
+const outboxService = new OutboxService();
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -233,13 +237,14 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
         
         const assigner = assignerResult[0]?.username || 'System';
         
-        // Send task assignment notification
-        const notificationResult = await notificationService.sendNotification({
-          type: 'task_assignment',
-          loanId,
-          recipientEmail: assignee.email,
-          recipientName: assignee.username,
-          data: {
+        // Create outbox event for task assignment notification
+        await outboxService.createMessage({
+          aggregateType: 'crm',
+          aggregateId: loanId.toString(),
+          eventType: 'crm.task.assigned.v1',
+          payload: {
+            recipientEmail: assignee.email,
+            recipientName: assignee.username,
             task: {
               title,
               description: description || 'No description provided'
@@ -250,15 +255,13 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
           }
         });
         
-        // Log the notification to activity
-        if (notificationResult.success) {
-          await logActivity(loanId, userId, 'notification', {
-            description: `Task assignment notification sent to ${assignee.username}`,
-            taskId: task.id,
-            taskTitle: title,
-            documentId: notificationResult.docId
-          }, task.id);
-        }
+        // Log the outbox notification to activity
+        await logActivity(loanId, userId, 'notification', {
+          description: `Task assignment notification queued for ${assignee.username}`,
+          taskId: task.id,
+          taskTitle: title,
+          eventType: 'crm.task.assigned.v1'
+        }, task.id);
       }
     }
     
@@ -357,6 +360,34 @@ router.post('/loans/:loanId/crm/appointments', async (req, res) => {
     await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.APPOINTMENT, {
       description: `Scheduled appointment: ${title}`
     }, appointment.id);
+
+    // Log compliance audit
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.CRM.APPOINTMENT_SCHEDULED,
+      actorType: 'user',
+      actorId: userId,
+      resourceType: 'appointment',
+      resourceId: appointment.id,
+      loanId: loanId,
+      description: `Scheduled appointment: ${title}`,
+      newValues: {
+        title,
+        description,
+        location,
+        startTime,
+        endTime,
+        attendees,
+        reminderMinutes,
+        meetingLink
+      },
+      metadata: {
+        loanId,
+        userId,
+        appointmentId: appointment.id
+      },
+      ipAddr: (req as any).ip,
+      userAgent: (req as any).headers?.['user-agent']
+    });
     
     res.json(appointment);
   } catch (error) {
@@ -377,6 +408,29 @@ router.post('/loans/:loanId/crm/texts', async (req, res) => {
       description: `Sent text message: ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}`,
       phone: recipientPhone,
       message: message
+    });
+
+    // Log compliance audit
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.CRM.TEXT_SENT,
+      actorType: 'user',
+      actorId: userId,
+      resourceType: 'text',
+      resourceId: `text-${Date.now()}`,
+      loanId: loanId,
+      description: `Sent text message to ${recipientPhone}`,
+      newValues: {
+        recipientPhone,
+        message: message.substring(0, 100), // Truncate for audit
+        messageLength: message.length
+      },
+      metadata: {
+        loanId,
+        userId,
+        phoneNumber: recipientPhone
+      },
+      ipAddr: (req as any).ip,
+      userAgent: (req as any).headers?.['user-agent']
     });
     
     res.json({ success: true, message: 'Text message logged' });
@@ -525,6 +579,30 @@ router.post('/loans/:loanId/crm/collaborators', async (req, res) => {
     await logActivity(loanId, addedBy, 'collaborator', {
       description: `Added collaborator with ${role} role`
     });
+
+    // Log compliance audit
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.CRM.COLLABORATOR_ADDED,
+      actorType: 'user',
+      actorId: addedBy,
+      resourceType: 'collaborator',
+      resourceId: collaborator.id,
+      loanId: loanId,
+      description: `Added collaborator with ${role} role`,
+      newValues: {
+        userId,
+        role: role || 'viewer',
+        permissions: permissions || {}
+      },
+      metadata: {
+        loanId,
+        addedBy,
+        targetUserId: userId,
+        collaboratorId: collaborator.id
+      },
+      ipAddr: (req as any).ip,
+      userAgent: (req as any).headers?.['user-agent']
+    });
     
     res.json(collaborator);
   } catch (error) {
@@ -584,6 +662,34 @@ router.post('/loans/:loanId/crm/deals', async (req, res) => {
     await logActivity(loanId, createdBy, 'deal', {
       description: `Created deal: ${title}`
     }, deal.id);
+
+    // Log compliance audit
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.CRM.DEAL_CREATED,
+      actorType: 'user',
+      actorId: createdBy,
+      resourceType: 'deal',
+      resourceId: deal.id,
+      loanId: loanId,
+      description: `Created deal: ${title}`,
+      newValues: {
+        title,
+        value,
+        stage: stage || 'prospecting',
+        probability: probability || 0,
+        expectedCloseDate,
+        assignedTo,
+        notes
+      },
+      metadata: {
+        loanId,
+        createdBy,
+        dealId: deal.id,
+        dealValue: value
+      },
+      ipAddr: (req as any).ip,
+      userAgent: (req as any).headers?.['user-agent']
+    });
     
     res.json(deal);
   } catch (error) {
@@ -740,76 +846,96 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
       console.log('No attachments to add to email');
     }
 
-    // Use notification service for better tracking and unified management
-    const notificationResult = await notificationService.sendNotification({
-      type: 'email_notification',
-      loanId,
-      recipientEmail: to,
-      recipientName: to,
-      data: {
-        subject,
-        content: content,
-        cc: cc || null,
-        bcc: bcc || null,
-        from: fromEmail
-      },
-      attachments: attachments.map(att => ({
-        content: att.content,
-        filename: att.filename,
-        type: att.type
-      }))
+    // Generate correlation ID for tracking
+    const correlationId = (req as any).correlationId || randomUUID();
+    const resourceId = `email-${Date.now()}-${randomUUID().substring(0, 8)}`;
+    
+    // Create outbox event instead of direct notification service call
+    await outboxService.createMessage({
+      aggregateType: 'crm',
+      aggregateId: loanId.toString(),
+      eventType: 'crm.email.requested.v1',
+      payload: {
+        loanId,
+        userId,
+        resourceId,
+        templateId: 'email_notification',
+        variables: {
+          subject,
+          content,
+          cc: cc || null,
+          bcc: bcc || null,
+          from: fromEmail
+        },
+        recipient: {
+          email: to,
+          name: to
+        },
+        attachments: attachments.map(att => ({
+          content: att.content,
+          filename: att.filename,
+          type: att.type
+        })),
+        correlationId,
+        requestMetadata: {
+          ipAddr: (req as any).ip,
+          userAgent: (req as any).headers?.['user-agent'],
+          recipientCount: 1 + (cc ? cc.split(',').length : 0) + (bcc ? bcc.split(',').length : 0),
+          hasAttachments: attachments.length > 0
+        }
+      }
     });
 
-    if (notificationResult.success) {
-      // Log activity with attachment info and document ID
-      await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.EMAIL, {
-        description: `Email sent to ${to}`,
-        subject,
+    // Log activity immediately (request queued)
+    await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.EMAIL, {
+      description: `Email queued for sending to ${to}`,
+      subject,
+      to,
+      cc: cc || null,
+      bcc: bcc || null,
+      attachmentCount: attachments.length,
+      status: 'queued'
+    });
+
+    // Log to Phase 9 compliance audit trail (request logged)
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.CRM.EMAIL_SENT,
+      actorType: 'user',
+      actorId: userId,
+      resourceType: 'email',
+      resourceId: resourceId,
+      loanId: loanId,
+      description: `Email queued for sending to ${to}: ${subject}`,
+      newValues: {
         to,
         cc: cc || null,
         bcc: bcc || null,
+        subject,
+        contentLength: content.length,
         attachmentCount: attachments.length,
-        documentId: notificationResult.docId
-      });
+        status: 'queued',
+        fromEmail
+      },
+      metadata: {
+        loanId,
+        userId,
+        correlationId,
+        recipientCount: 1 + (cc ? cc.split(',').length : 0) + (bcc ? bcc.split(',').length : 0),
+        hasAttachments: attachments.length > 0
+      },
+      ipAddr: (req as any).ip,
+      userAgent: (req as any).headers?.['user-agent']
+    });
 
-      // Log to Phase 9 compliance audit trail
-      await complianceAudit.logEvent({
-        eventType: COMPLIANCE_EVENTS.CRM.EMAIL_SENT,
-        actorType: 'user',
-        actorId: userId,
-        resourceType: 'email',
-        resourceId: notificationResult.docId || `email-${Date.now()}`,
-        loanId: loanId,  // Include loan ID so it appears in loan audit tab
-        description: `Email sent to ${to}: ${subject}`,
-        newValues: {
-          to,
-          cc: cc || null,
-          bcc: bcc || null,
-          subject,
-          contentLength: content.length,
-          attachmentCount: attachments.length,
-          documentId: notificationResult.docId,
-          fromEmail
-        },
-        metadata: {
-          loanId,
-          userId,
-          recipientCount: 1 + (cc ? cc.split(',').length : 0) + (bcc ? bcc.split(',').length : 0),
-          hasAttachments: attachments.length > 0
-        },
-        ipAddr: (req as any).ip,
-        userAgent: (req as any).headers?.['user-agent']
-      });
-
-      res.json({ 
-        success: true, 
-        message: 'Email sent successfully', 
-        attachmentCount: attachments.length,
-        documentId: notificationResult.docId 
-      });
-    } else {
-      throw new Error(notificationResult.error || 'Failed to send notification');
-    }
+    // Return 202 Accepted immediately (request queued)
+    res.status(202).json({ 
+      success: true, 
+      message: 'Email queued for sending', 
+      attachmentCount: attachments.length,
+      resourceId: resourceId,
+      correlationId: correlationId,
+      status: 'queued'
+    });
   } catch (error: any) {
     console.error('Error sending email:', error);
     

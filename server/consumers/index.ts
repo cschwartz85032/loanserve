@@ -12,6 +12,7 @@ import { PaymentProcessingConsumer } from './payment-processing-consumer';
 import { PaymentDistributionConsumer } from './payment-distribution-consumer';
 import { PaymentReversalSaga } from './payment-reversal-saga';
 import { notificationsConsumer } from './notifications-consumer';
+import { CRMEmailConsumer } from './crm-email-consumer';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { getOutboxPublisher } from '../services/outbox-publisher';
 import { getEscrowManager } from '../escrow/escrow-manager';
@@ -75,6 +76,11 @@ export async function startPaymentConsumers(): Promise<void> {
     // DISABLED: Notifications consumer needs refactoring for enhanced RabbitMQ service
     // await notificationsConsumer.start();
     // console.log('[Consumers] Notifications consumer started');
+
+    // Start CRM email consumer (Phase 5 - Outbox Pattern)
+    const crmEmailConsumer = new CRMEmailConsumer();
+    await crmEmailConsumer.start();
+    console.log('[Consumers] CRM email consumer started');
 
     // Start Phase 3: Escrow Subsystem
     console.log('[Consumers] Starting escrow subsystem...');
