@@ -115,14 +115,15 @@ export class DNCEnforcementService {
         variables
       );
 
-      console.log(`[DNCEnforcement] AI classified email "${subject}" as ${classification.category} (confidence: ${classification.confidence})`);
+      const redactedSubject = this.redactEmailFromString(subject);
+      console.log(`[DNCEnforcement] AI classified email "${redactedSubject}" as ${classification.category} (confidence: ${classification.confidence})`);
       
       return {
         category: classification.category,
         topic: classification.topic
       };
     } catch (error) {
-      console.error('[DNCEnforcement] AI classification failed, using fallback:', error);
+      console.error('[DNCEnforcement] AI classification failed, using fallback:', this.redactEmailFromError(error));
       
       // Fallback to conservative classification
       return {
@@ -147,6 +148,38 @@ export class DNCEnforcementService {
     const { category, topic } = await this.determineEmailCategory(subject, templateId, variables);
 
     return this.checkContactRestrictions(loanId, emailAddresses, category, topic);
+  }
+
+  /**
+   * Redact email addresses from strings for privacy in logs
+   */
+  private redactEmailFromString(text: string): string {
+    return text.replace(
+      /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+      (match) => {
+        const [local, domain] = match.split('@');
+        const redactedLocal = local.length > 2 ? 
+          local.substring(0, 2) + '***' : 
+          '***';
+        return `${redactedLocal}@${domain}`;
+      }
+    );
+  }
+
+  /**
+   * Redact email addresses from error objects for privacy
+   */
+  private redactEmailFromError(error: any): any {
+    if (!error || typeof error !== 'object') return error;
+    
+    const errorStr = JSON.stringify(error);
+    const redactedStr = this.redactEmailFromString(errorStr);
+    
+    try {
+      return JSON.parse(redactedStr);
+    } catch {
+      return redactedStr;
+    }
   }
 }
 

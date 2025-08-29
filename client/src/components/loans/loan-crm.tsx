@@ -60,6 +60,8 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import MD5 from 'crypto-js/md5';
+import { CommunicationPreferences } from '@/components/crm/communication-preferences';
+import { EnhancedEmailCompose } from '@/components/crm/enhanced-email-compose';
 
 interface LoanCRMProps {
   loanId: number;
@@ -2067,200 +2069,10 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
 
               {/* Email Tab Content */}
               <TabsContent value="email" className="mt-4">
-                <div className="border rounded-lg p-3 space-y-3">
-                  {/* To Field */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium">To:</label>
-                      <div className="space-x-2">
-                        {!showCc && (
-                          <button
-                            onClick={() => setShowCc(true)}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            CC
-                          </button>
-                        )}
-                        {!showBcc && (
-                          <button
-                            onClick={() => setShowBcc(true)}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            BCC
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <Input
-                      placeholder="recipient@example.com"
-                      value={emailTo}
-                      onChange={(e) => setEmailTo(e.target.value)}
-                      className="text-xs"
-                    />
-                  </div>
-
-                  {/* CC Field */}
-                  {showCc && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium">CC:</label>
-                      <Input
-                        placeholder="cc@example.com (separate multiple with commas)"
-                        value={emailCc}
-                        onChange={(e) => setEmailCc(e.target.value)}
-                        className="text-xs"
-                      />
-                    </div>
-                  )}
-                  
-                  {/* BCC Field */}
-                  {showBcc && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium">BCC:</label>
-                      <Input
-                        placeholder="bcc@example.com (separate multiple with commas)"
-                        value={emailBcc}
-                        onChange={(e) => setEmailBcc(e.target.value)}
-                        className="text-xs"
-                      />
-                    </div>
-                  )}
-
-                  {/* Subject Field */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Subject:</label>
-                    <Input
-                      placeholder="Email subject"
-                      value={emailSubject}
-                      onChange={(e) => setEmailSubject(e.target.value)}
-                      className="text-xs"
-                    />
-                  </div>
-
-                  {/* Email Content with Rich Text Editor */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium">Message:</label>
-                    <div className="border rounded-lg">
-                      <div className="flex items-center space-x-1 p-2 border-b">
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                          <Bold className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                          <Italic className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                          <Link className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                          <List className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                          <Image className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      <Textarea
-                        placeholder="Email content..."
-                        value={emailContent}
-                        onChange={(e) => setEmailContent(e.target.value)}
-                        className="min-h-[150px] text-xs border-0 focus:ring-0"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Attachments, Templates and Action Buttons on same line */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        onClick={() => setShowAttachmentModal(true)}
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs px-2"
-                      >
-                        <Paperclip className="h-3 w-3 mr-1" />
-                        Attachments
-                      </Button>
-                      <Button
-                        onClick={() => setShowTemplatesModal(true)}
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs px-2"
-                      >
-                        <FileText className="h-3 w-3 mr-1" />
-                        Templates
-                      </Button>
-                      
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() => {
-                          // Clear all email fields
-                          setEmailTo('');
-                          setEmailCc('');
-                          setEmailBcc('');
-                          setEmailSubject('');
-                          setEmailContent('');
-                          setEmailAttachments([]);
-                        }}
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                      
-                      <div className="flex-1" />
-                      
-                      <Button 
-                        onClick={handleSendEmail}
-                        disabled={!emailTo || !emailSubject || !emailContent || sendEmailMutation.isPending}
-                        size="sm"
-                        className="h-7 text-xs"
-                      >
-                        {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          // Schedule send functionality
-                          toast({
-                            title: 'Scheduled Send',
-                            description: 'Email scheduled for later delivery'
-                          });
-                        }}
-                        disabled={!emailTo || !emailSubject || !emailContent}
-                        variant="outline"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        title="Schedule"
-                      >
-                        <Clock className="h-3 w-3" />
-                      </Button>
-                    </div>
-                    
-                    {emailAttachments.length > 0 && (
-                      <div className="border rounded-md p-2 space-y-1">
-                        {emailAttachments.map((attachment, index) => (
-                          <div key={index} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
-                            <div className="flex items-center space-x-2">
-                              <FileText className="h-3 w-3 text-muted-foreground" />
-                              <span className="truncate max-w-[200px]">{attachment.name}</span>
-                              {attachment.size && (
-                                <span className="text-muted-foreground">
-                                  ({(attachment.size / 1024).toFixed(1)} KB)
-                                </span>
-                              )}
-                            </div>
-                            <Button
-                              onClick={() => setEmailAttachments(prev => prev.filter((_, i) => i !== index))}
-                              variant="ghost"
-                              size="sm"
-                              className="h-5 w-5 p-0"
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <EnhancedEmailCompose 
+                  loanId={loanId}
+                  defaultTo={emailAddresses.map(e => e.email)}
+                />
               </TabsContent>
 
               {/* Text Tab Content */}
@@ -2511,6 +2323,11 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
           </CardContent>
         </Card>
 
+        {/* Communication Preferences Panel */}
+        <CommunicationPreferences 
+          borrowerId={loanData?.borrowerId?.toString() || '1'} 
+          loanId={loanId}
+        />
 
       </div>
 

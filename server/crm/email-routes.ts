@@ -16,6 +16,43 @@ import { dncEnforcementService } from './dnc-enforcement';
 
 const router = Router();
 
+/**
+ * POST /api/crm/emails/check-dnc
+ * Check DNC restrictions for email addresses
+ */
+router.post('/check-dnc', async (req, res) => {
+  try {
+    const validation = emailRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid request data',
+        details: validation.error.errors
+      });
+    }
+
+    const emailRequest = validation.data;
+
+    // Check DNC restrictions using AI classification
+    const contactCheckResult = await dncEnforcementService.checkEmailRestrictions(
+      emailRequest.loan_id,
+      emailRequest.to,
+      emailRequest.subject,
+      emailRequest.template_id,
+      emailRequest.variables
+    );
+
+    // Return DNC check result without sending email
+    res.status(200).json(contactCheckResult);
+
+  } catch (error) {
+    console.error('[EmailRoutes] DNC check failed:', error);
+    res.status(500).json({
+      error: 'Failed to check DNC restrictions',
+      code: 'DNC_CHECK_FAILED'
+    });
+  }
+});
+
 // Validation schema for email requests
 const sendEmailSchema = z.object({
   loan_id: z.number().int().positive(),

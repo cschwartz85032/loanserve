@@ -57,7 +57,7 @@ export class AIEmailClassifier {
       };
 
     } catch (error) {
-      console.error('[AIEmailClassifier] Classification failed:', error);
+      console.error('[AIEmailClassifier] Classification failed:', this.redactEmailFromError(error));
       
       // Fallback to conservative classification
       return {
@@ -168,6 +168,31 @@ Be conservative - when in doubt, classify as transactional to ensure important c
     }
     
     return results;
+  }
+
+  /**
+   * Redact email addresses from error messages for privacy
+   */
+  private redactEmailFromError(error: any): any {
+    if (!error || typeof error !== 'object') return error;
+    
+    const errorStr = JSON.stringify(error);
+    const redactedStr = errorStr.replace(
+      /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+      (match) => {
+        const [local, domain] = match.split('@');
+        const redactedLocal = local.length > 2 ? 
+          local.substring(0, 2) + '***' : 
+          '***';
+        return `${redactedLocal}@${domain}`;
+      }
+    );
+    
+    try {
+      return JSON.parse(redactedStr);
+    } catch {
+      return redactedStr;
+    }
   }
 }
 

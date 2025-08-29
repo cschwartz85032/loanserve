@@ -50,7 +50,7 @@ router.get('/:borrowerId', async (req, res) => {
     const borrower = await db
       .select()
       .from(borrowerEntities)
-      .where(eq(borrowerEntities.id, parseInt(borrowerId)))
+      .where(eq(borrowerEntities.id, borrowerId))
       .limit(1);
 
     if (borrower.length === 0) {
