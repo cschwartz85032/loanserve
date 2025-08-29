@@ -102,6 +102,30 @@ export async function postEvent(
     // Commit transaction
     await repo.commit();
     
+    // Log audit event for every ledger operation (Phase 9 requirement)
+    try {
+      const { auditService, COMPLIANCE_EVENTS } = await import('../compliance/auditService');
+      await auditService.logEvent({
+        eventType: COMPLIANCE_EVENTS.ACCOUNTING.LEDGER_EVENT_CREATED,
+        entityType: 'loan',
+        entityId: args.loanId.toString(),
+        correlationId: args.correlationId,
+        description: `Ledger event created: ${args.schema}`,
+        details: {
+          event_id: eventId,
+          schema: args.schema,
+          effective_date: args.effectiveDate,
+          currency: args.currency,
+          line_count: args.lines.length,
+          debit_total: debitSum.toString(),
+          credit_total: creditSum.toString()
+        }
+      });
+    } catch (auditError) {
+      // Don't fail the transaction for audit issues, but log the problem
+      console.error('[PostEvent] Audit logging failed:', auditError);
+    }
+    
     return { eventId };
     
   } catch (error) {

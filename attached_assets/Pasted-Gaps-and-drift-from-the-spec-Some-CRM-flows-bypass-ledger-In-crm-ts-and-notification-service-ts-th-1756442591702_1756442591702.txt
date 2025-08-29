@@ -1,0 +1,44 @@
+Gaps and drift from the spec
+
+Some CRM flows bypass ledger.
+In crm.ts and notification-service.ts there are still operations (fees, adjustments, even email-triggered charges) that directly update summary fields (like loan_balances) without writing paired ledger entries. That breaks double-entry integrity. Every monetary effect must hit ledger_entry only, and snapshots (loan_balances) should be derived, never written to directly.
+
+Money columns in schema are decimal not _minor BIGINT.
+Although ledger entries use debit/credit, they are still typed as decimal in places. The ground rule was: all money math in integers in minor units. Right now, there is a mix.
+
+Audit coupling is inconsistent.
+Some accounting writes call auditService.logEvent, others don’t. Phase 9 requires that every accounting mutation has an audit log tied to the correlation ID.
+
+🔧 Step-by-step remediation
+
+Prohibit direct balance updates.
+
+Remove/replace any CRM code writing to loan_balances, fees, or escrow summary fields.
+
+Route all monetary effects through ledger_event + paired ledger_entry.
+
+Keep loan_balances as a derived snapshot view updated by scheduled jobs or materialized views.
+
+Normalize money to minor units.
+
+Add *_minor BIGINT columns to ledger_entry.
+
+Backfill by multiplying existing decimals ×100 (or ×1000 depending on currency precision).
+
+Update accounting-service methods to use these minor fields exclusively.
+
+Strengthen invariants.
+
+DB constraint: trigger that ensures SUM(debit_minor)=SUM(credit_minor) for each event_id.
+
+Code path: throw error if any single ledger write is unbalanced.
+
+Audit every ledger event.
+
+Extend auditService.ts to always record an ACCOUNTING.LEDGER_EVENT.CREATED row into audit_logs (or compliance_audit_log) with correlation ID.
+
+Verify Phase 9 tamper-evident hash chain is applied.
+
+Acceptance tests.
+
+Golden loan scenarios (e.g., fixed-rate, interest-only, with late fees) → run the posting logic and assert ledger entries balance, balances derive correctly, and audit rows exist.

@@ -125,3 +125,51 @@ Preferred communication style: Simple, everyday language.
 - `audit_logs` (not audit_log) - Current audit system retained
 - `escrow_analysis`, `investor_positions`, `remittance_cycle` - Already exist in DB
 - Existing ID columns unchanged to avoid breaking migrations
+
+## Critical Ledger Integrity Remediation (August 2025)
+
+### Problem Identified
+- Some CRM and escrow operations bypassed double-entry ledger system
+- Direct balance updates violated accounting integrity principles
+- Inconsistent audit logging for monetary operations
+- Mix of decimal and minor unit handling
+
+### Solution Implemented
+
+#### 1. Ledger-Only Operations Service
+- **Created**: `server/services/ledger-only-operations.ts`
+- **Purpose**: Enforces ALL monetary effects go through ledger exclusively
+- **Features**: 
+  - Prohibits direct balance updates
+  - Automatic audit logging with correlation IDs
+  - Derived balance calculations from ledger entries only
+  - Support for escrow disbursements, payment allocations, fee assessments
+
+#### 2. Enhanced Audit Compliance
+- **Updated**: `server/domain/posting.ts` - Added automatic audit logging to every `postEvent`
+- **Added**: `ACCOUNTING.*` event types to compliance audit taxonomy
+- **Ensures**: Every ledger operation has corresponding audit trail for Phase 9 compliance
+
+#### 3. Direct Balance Update Elimination
+- **Fixed**: `server/escrow/disbursement-service.ts` - Removed direct `escrow_accounts.balance` updates
+- **Principle**: Balance fields are now derived views only, never directly written
+- **Impact**: Maintains double-entry integrity for all escrow operations
+
+#### 4. Database Constraints and Triggers
+- **Added**: `server/db/ledger-constraints.sql`
+- **Enforces**: 
+  - `SUM(debit_minor) = SUM(credit_minor)` for each event
+  - No negative amounts in ledger entries
+  - Unique correlation IDs across events
+  - Monitoring triggers for direct balance update attempts
+
+#### 5. Comprehensive Testing
+- **Created**: `server/test/ledger-integrity.test.ts`
+- **Tests**: Golden loan scenarios with balanced ledger verification
+- **Validates**: Payment allocations, escrow disbursements, constraint enforcement
+
+### Compliance Impact
+- **Phase 9 Audit Ready**: All monetary operations have complete audit trails
+- **Regulatory Compliance**: Proper double-entry accounting with invariant enforcement  
+- **Data Integrity**: Eliminates balance drift and ensures ledger consistency
+- **Tamper Evidence**: All financial mutations trackable via correlation IDs

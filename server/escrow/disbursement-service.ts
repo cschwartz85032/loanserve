@@ -237,14 +237,16 @@ export class EscrowDisbursementService {
         WHERE disb_id = $2
       `, [eventId, disbursement.disb_id]);
       
-      // Update escrow account balance
-      const newBalance = hasInsufficientFunds ? 0 : Number(escrowBalance - amountMinor) / 100;
+      // NOTE: Removed direct balance update to comply with ledger-only operations
+      // Balance is now derived from ledger entries only via getLedgerDerivedBalance()
+      // This ensures double-entry integrity and eliminates direct balance manipulation
+      
+      // Update disbursement metadata only (non-monetary fields)
       await this.db.query(`
         UPDATE escrow_accounts
-        SET balance = $1,
-            last_disbursement_date = $2
-        WHERE loan_id = $3
-      `, [newBalance, disbursement.due_date, disbursement.loan_id]);
+        SET last_disbursement_date = $1
+        WHERE loan_id = $2
+      `, [disbursement.due_date, disbursement.loan_id]);
       
       await this.db.query('COMMIT');
       
