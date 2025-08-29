@@ -50,9 +50,9 @@ export function EmailTemplateSelectorModal({
 
   // Fetch folders
   const { data: foldersResponse = {} } = useQuery({
-    queryKey: ['/api/email-folders'],
+    queryKey: ['/api/email-template-folders'],
     queryFn: async () => {
-      const response = await fetch('/api/email-folders', {
+      const response = await fetch('/api/email-template-folders', {
         credentials: 'include'
       });
       if (!response.ok) return {};
@@ -131,8 +131,27 @@ export function EmailTemplateSelectorModal({
     });
   };
 
-  const handlePreviewTemplate = (template: EmailTemplate) => {
-    setSelectedTemplate(template);
+  const handlePreviewTemplate = async (template: EmailTemplate) => {
+    try {
+      // Fetch full template details if content is missing
+      if (!template.content) {
+        const response = await fetch(`/api/email-templates/${template.id}`, {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const templateData = await response.json();
+          const fullTemplate = templateData.success ? templateData.data : templateData;
+          setSelectedTemplate(fullTemplate);
+        } else {
+          setSelectedTemplate(template);
+        }
+      } else {
+        setSelectedTemplate(template);
+      }
+    } catch (error) {
+      console.error('Error fetching template details:', error);
+      setSelectedTemplate(template);
+    }
     setPreviewMode(true);
   };
 
@@ -243,25 +262,26 @@ export function EmailTemplateSelectorModal({
           </div>
 
           {/* Breadcrumb Navigation */}
-          {folderBreadcrumbs.length > 1 && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              {folderBreadcrumbs.map((breadcrumb, index) => (
-                <div key={index} className="flex items-center gap-1">
-                  {index > 0 && <ChevronRight className="h-3 w-3" />}
-                  <button
-                    onClick={() => navigateToBreadcrumb(index)}
-                    className="hover:text-blue-600 underline-offset-4 hover:underline flex items-center gap-1"
-                  >
-                    {index === 0 ? (
+          <div className="flex items-center gap-1 text-sm text-gray-600 bg-gray-50 p-2 rounded-lg">
+            {folderBreadcrumbs.map((breadcrumb, index) => (
+              <div key={index} className="flex items-center gap-1">
+                {index > 0 && <ChevronRight className="h-3 w-3" />}
+                <button
+                  onClick={() => navigateToBreadcrumb(index)}
+                  className="hover:text-blue-600 underline-offset-4 hover:underline flex items-center gap-1"
+                >
+                  {index === 0 ? (
+                    <>
                       <Home className="h-4 w-4" />
-                    ) : (
-                      breadcrumb.name
-                    )}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                      All Folders
+                    </>
+                  ) : (
+                    breadcrumb.name
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
 
           {/* Folders */}
           {!searchQuery && filteredFolders.length > 0 && (

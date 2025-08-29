@@ -243,13 +243,6 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
   const handleSave = () => {
     const errors: Record<string, string> = {};
     
-    // Auto-generate investor ID if not provided
-    if (!formData.investorId) {
-      const generatedId = generateInvestorId();
-      setFormData(prev => ({ ...prev, investorId: generatedId }));
-      formData.investorId = generatedId;
-    }
-    
     // Validate required fields
     if (!formData.name) {
       errors.name = "Name is required";
@@ -270,10 +263,16 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     
     setFormErrors({});
     
+    // Auto-generate investor ID if not provided or editing a new investor
+    const investorId = (editingInvestor && formData.investorId) 
+      ? formData.investorId 
+      : generateInvestorId();
+    
     // Ensure investment amount is calculated and converted to string for decimal field
     const calculatedAmount = calculateInvestmentAmount(formData.ownershipPercentage || 0);
     const dataToSave = {
       ...formData,
+      investorId,
       investmentAmount: calculatedAmount.toString(),
       ownershipPercentage: formData.ownershipPercentage?.toString()
     };
@@ -505,21 +504,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 <Users className="h-4 w-4" />
                 Basic Information
               </h3>
-              <div className="grid grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="investorId">Investor ID</Label>
-                  <Input
-                    id="investorId"
-                    value={formData.investorId || ''}
-                    onChange={(e) => handleInputChange('investorId', e.target.value)}
-                    placeholder="Auto-generated if empty"
-                    className={formErrors.investorId ? 'border-red-500' : ''}
-                  />
-                  <p className="text-xs text-gray-500">Will be auto-generated if left empty</p>
-                  {formErrors.investorId && (
-                    <p className="text-sm text-red-500">{formErrors.investorId}</p>
-                  )}
-                </div>
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="entityType">Entity Type *</Label>
                   <Select
