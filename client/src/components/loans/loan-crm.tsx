@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { EmailTemplateSelectorModal } from '@/components/crm/email-template-selector-modal';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { format, parseISO } from 'date-fns';
@@ -3315,69 +3316,48 @@ export function LoanCRM({ loanId, calculations, loanData }: LoanCRMProps) {
       </Dialog>
 
       {/* Email Templates Modal */}
-      <Dialog open={showTemplatesModal} onOpenChange={setShowTemplatesModal}>
-        <DialogContent className="sm:max-w-[700px] max-h-[600px] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Email Templates</DialogTitle>
-            <DialogDescription>
-              Select a template to use for your email
-            </DialogDescription>
-          </DialogHeader>
-          <EmailTemplatesContent 
-            onSelectTemplate={(template: any) => {
-              setEmailSubject(template.subject);
-              setEmailContent(template.body);  // Changed from template.content to template.body
-              setShowTemplatesModal(false);
-              toast({
-                title: 'Template Loaded',
-                description: `${template.name} has been loaded into your email`
-              });
-            }}
-            onClose={() => setShowTemplatesModal(false)}
-          />
-        </DialogContent>
-      </Dialog>
+      <EmailTemplateSelectorModal
+        open={showTemplatesModal}
+        onOpenChange={setShowTemplatesModal}
+        onTemplateSelect={(template) => {
+          setEmailSubject(template.subject);
+          setEmailContent(template.content || '');
+          toast({
+            title: 'Template Loaded',
+            description: `${template.name} has been loaded into your email`
+          });
+        }}
+      />
 
       {/* SMS Templates Modal */}
-      <Dialog open={showSmsTemplatesModal} onOpenChange={setShowSmsTemplatesModal}>
-        <DialogContent className="sm:max-w-[700px] max-h-[600px] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>SMS Templates</DialogTitle>
-            <DialogDescription>
-              Select a template to use for your SMS
-            </DialogDescription>
-          </DialogHeader>
-          <EmailTemplatesContent 
-            onSelectTemplate={(template: any) => {
-              // Convert template to plain text for SMS
-              let smsText = '';
-              
-              // Include subject if present
-              if (template.subject) {
-                smsText = template.subject + '\n\n';
-              }
-              
-              // Convert body HTML/rich text to plain text
-              if (template.body) {
-                // Strip HTML tags and convert to plain text
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = template.body;
-                const plainText = tempDiv.textContent || tempDiv.innerText || '';
-                smsText += plainText;
-              }
-              
-              setTextMessage(smsText.trim());
-              setShowSmsTemplatesModal(false);
-              toast({
-                title: 'Template Loaded',
-                description: `${template.name} has been converted to SMS format`
-              });
-            }}
-            onClose={() => setShowSmsTemplatesModal(false)}
-            templateType="sms"
-          />
-        </DialogContent>
-      </Dialog>
+      <EmailTemplateSelectorModal
+        open={showSmsTemplatesModal}
+        onOpenChange={setShowSmsTemplatesModal}
+        onTemplateSelect={(template) => {
+          // Convert template to plain text for SMS
+          let smsText = '';
+          
+          // Include subject if present
+          if (template.subject) {
+            smsText = template.subject + '\n\n';
+          }
+          
+          // Convert content HTML/rich text to plain text
+          if (template.content) {
+            // Strip HTML tags and convert to plain text
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = template.content;
+            const plainText = tempDiv.textContent || tempDiv.innerText || '';
+            smsText += plainText;
+          }
+          
+          setTextMessage(smsText.trim());
+          toast({
+            title: 'Template Loaded',
+            description: `${template.name} has been converted to SMS format`
+          });
+        }}
+      />
 
       {/* Edit Property Modal */}
       <Dialog open={editPropertyModal} onOpenChange={setEditPropertyModal}>

@@ -244,7 +244,8 @@ export class InvestorRepository {
           ),
           newValues,
           changedFields,
-          investorId: oldValues.investor_id
+          investorId: oldValues.investor_id,
+          investorName: oldValues.name
         };
       },
       async (result) => {
@@ -264,7 +265,7 @@ export class InvestorRepository {
                 newValue: result.newValues[field]
               },
               correlationId,
-              description: `Investor ${result.investorId} field '${field}' updated from '${result.oldValues[field]}' to '${result.newValues[field]}'`,
+              description: `Investor "${result.investorName}" (${result.investorId}) field '${field}' updated from '${result.oldValues[field]}' to '${result.newValues[field]}'`,
               req // Pass request context for IP and user agent
             });
           }
