@@ -15,6 +15,7 @@ export interface AuditParams {
   payloadJson?: Record<string, any>;
   correlationId: string;
   description?: string;
+  req?: any; // Express request object for IP and user agent
 }
 
 /**
@@ -68,7 +69,7 @@ export async function createAuditEvent(
   try {
     const correlationId = await complianceAudit.logEvent({
       eventType: params.eventType,
-      actorType: 'user',
+      actorType: params.actorId && params.actorId !== 'system' ? 'user' : 'system',
       actorId: params.actorId,
       resourceType: params.resourceType,
       resourceId: params.resourceId,
@@ -78,6 +79,9 @@ export async function createAuditEvent(
       previousValues: params.payloadJson?.oldValues || params.payloadJson?.previousValues,
       newValues: params.payloadJson?.newValues || params.payloadJson,
       changedFields: params.payloadJson?.changedFields,
+      // Capture request context for audit trail
+      ipAddr: params.req?.ip,
+      userAgent: params.req?.get?.('user-agent'),
       metadata: {
         correlationId: params.correlationId,
         // Preserve original payload for backward compatibility

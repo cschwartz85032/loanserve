@@ -64,7 +64,8 @@ router.patch('/loans/:loanId/beneficiary', async (req, res) => {
       loanId,
       actorId,
       correlationId,
-      updates: cleanUpdates
+      updates: cleanUpdates,
+      req // Pass request for audit context
     });
 
     res.status(200).json({
@@ -115,7 +116,8 @@ router.patch('/loans/:loanId/beneficiary/name', async (req, res) => {
       loanId,
       actorId,
       correlationId,
-      updates: { beneficiaryName: newName }
+      updates: { beneficiaryName: newName },
+      req // Pass request for audit context
     });
 
     res.status(200).json({

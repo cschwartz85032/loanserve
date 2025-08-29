@@ -2,31 +2,14 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { FileText, Folder, Search, Home, ChevronRight, Eye, Check, ArrowLeft } from 'lucide-react';
+import { FileText, Check, ArrowLeft } from 'lucide-react';
+import { TemplateBrowser, type Template, type TemplateFolder } from '@/components/shared/TemplateBrowser';
 
-interface EmailTemplate {
-  id: number;
-  name: string;
-  subject: string;
-  content: string;
-  folderId: number | null;
-  folderName?: string;
-  isShared: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface EmailFolder {
-  id: number;
-  name: string;
-  parentId: number | null;
-  templateCount?: number;
-}
+// Type aliases for backward compatibility
+type EmailTemplate = Template;
+type EmailFolder = TemplateFolder;
 
 interface EmailTemplateSelectorModalProps {
   open: boolean;
@@ -44,9 +27,6 @@ export function EmailTemplateSelectorModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
-  const [folderBreadcrumbs, setFolderBreadcrumbs] = useState<{id: number | null, name: string}[]>([
-    {id: null, name: 'All Folders'}
-  ]);
 
   // Fetch folders
   const { data: foldersResponse = {} } = useQuery({
@@ -88,39 +68,6 @@ export function EmailTemplateSelectorModal({
     ? templatesResponse 
     : (templatesResponse.data || []);
 
-  const navigateToFolder = (folderId: number | null, folderName: string) => {
-    setSelectedFolder(folderId);
-    
-    if (folderId === null) {
-      setFolderBreadcrumbs([{id: null, name: 'All Folders'}]);
-    } else {
-      // Find folder path
-      const findFolderPath = (targetId: number, currentPath: {id: number | null, name: string}[] = []): {id: number | null, name: string}[] | null => {
-        const folder = folders.find((f: EmailFolder) => f.id === targetId);
-        if (!folder) return null;
-        
-        const newPath = [{id: folder.id, name: folder.name}, ...currentPath];
-        
-        if (folder.parentId) {
-          return findFolderPath(folder.parentId, newPath);
-        } else {
-          return [{id: null, name: 'All Folders'}, ...newPath];
-        }
-      };
-      
-      const path = findFolderPath(folderId);
-      if (path) {
-        setFolderBreadcrumbs(path);
-      }
-    }
-  };
-
-  const navigateToBreadcrumb = (index: number) => {
-    const targetBreadcrumb = folderBreadcrumbs[index];
-    const newBreadcrumbs = folderBreadcrumbs.slice(0, index + 1);
-    setFolderBreadcrumbs(newBreadcrumbs);
-    setSelectedFolder(targetBreadcrumb.id);
-  };
 
   const handleTemplateSelect = (template: EmailTemplate) => {
     onTemplateSelect(template);
@@ -154,10 +101,6 @@ export function EmailTemplateSelectorModal({
     }
     setPreviewMode(true);
   };
-
-  const filteredFolders = selectedFolder 
-    ? folders.filter((folder: EmailFolder) => folder.parentId === selectedFolder)
-    : folders.filter((folder: EmailFolder) => folder.parentId === null);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

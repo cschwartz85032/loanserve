@@ -21,6 +21,7 @@ export interface BeneficiaryUpdateParams {
     beneficiaryState?: string;
     beneficiaryZipCode?: string;
   };
+  req?: any; // Express request object for audit context
 }
 
 export interface BeneficiaryUpdateResult {
@@ -42,7 +43,7 @@ export class BeneficiaryRepository {
     client: PoolClient,
     params: BeneficiaryUpdateParams
   ): Promise<BeneficiaryUpdateResult> {
-    const { loanId, actorId, correlationId, updates } = params;
+    const { loanId, actorId, correlationId, updates, req } = params;
 
     // Set request context for triggers
     await setRequestContext(client, actorId, correlationId);
@@ -142,7 +143,8 @@ export class BeneficiaryRepository {
                 newValue: result.newValues[field] 
               },
               correlationId,
-              description: `Beneficiary ${field} updated`
+              description: `Beneficiary ${field} updated`,
+              req // Pass request context for IP and user agent
             });
           }
 
