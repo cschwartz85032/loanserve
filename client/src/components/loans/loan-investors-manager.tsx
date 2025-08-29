@@ -235,13 +235,22 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     setFormErrors({});
   };
 
+  const generateInvestorId = () => {
+    const timestamp = Date.now().toString().slice(-6);
+    return `INV-${timestamp}`;
+  };
+
   const handleSave = () => {
     const errors: Record<string, string> = {};
     
-    // Validate required fields
+    // Auto-generate investor ID if not provided
     if (!formData.investorId) {
-      errors.investorId = "Investor ID is required";
+      const generatedId = generateInvestorId();
+      setFormData(prev => ({ ...prev, investorId: generatedId }));
+      formData.investorId = generatedId;
     }
+    
+    // Validate required fields
     if (!formData.name) {
       errors.name = "Name is required";
     }
@@ -498,14 +507,15 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
               </h3>
               <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="investorId">Investor ID *</Label>
+                  <Label htmlFor="investorId">Investor ID</Label>
                   <Input
                     id="investorId"
                     value={formData.investorId || ''}
                     onChange={(e) => handleInputChange('investorId', e.target.value)}
-                    placeholder="INV-001 or ACME-CORP"
+                    placeholder="Auto-generated if empty"
                     className={formErrors.investorId ? 'border-red-500' : ''}
                   />
+                  <p className="text-xs text-gray-500">Will be auto-generated if left empty</p>
                   {formErrors.investorId && (
                     <p className="text-sm text-red-500">{formErrors.investorId}</p>
                   )}

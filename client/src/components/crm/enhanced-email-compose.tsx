@@ -234,25 +234,23 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium">To:</label>
-            <div className="flex gap-1">
-              <Button
-                variant={showCc ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 text-xs px-3 font-medium"
+            <div className="flex gap-3">
+              <button
+                type="button"
                 onClick={() => setShowCc(!showCc)}
+                className={`text-xs ${showCc ? 'text-blue-600 font-medium' : 'text-gray-600 hover:text-blue-600'} underline`}
                 data-testid="button-cc"
               >
                 CC
-              </Button>
-              <Button
-                variant={showBcc ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 text-xs px-3 font-medium"
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowBcc(!showBcc)}
+                className={`text-xs ${showBcc ? 'text-blue-600 font-medium' : 'text-gray-600 hover:text-blue-600'} underline`}
                 data-testid="button-bcc"
               >
                 BCC
-              </Button>
+              </button>
             </div>
           </div>
           <Input

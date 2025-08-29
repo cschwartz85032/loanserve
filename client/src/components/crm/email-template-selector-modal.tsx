@@ -49,20 +49,25 @@ export function EmailTemplateSelectorModal({
   ]);
 
   // Fetch folders
-  const { data: folders = [] } = useQuery({
+  const { data: foldersResponse = {} } = useQuery({
     queryKey: ['/api/email-folders'],
     queryFn: async () => {
       const response = await fetch('/api/email-folders', {
         credentials: 'include'
       });
-      if (!response.ok) return [];
+      if (!response.ok) return {};
       return response.json();
     },
     enabled: open
   });
 
+  // Extract folders from response - handle both direct array and success/data structure
+  const folders = Array.isArray(foldersResponse) 
+    ? foldersResponse 
+    : (foldersResponse.data || []);
+
   // Fetch templates
-  const { data: templates = [] } = useQuery({
+  const { data: templatesResponse = {} } = useQuery({
     queryKey: ['/api/email-templates', { folderId: selectedFolder, search: searchQuery }],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -72,11 +77,16 @@ export function EmailTemplateSelectorModal({
       const response = await fetch(`/api/email-templates?${params}`, {
         credentials: 'include'
       });
-      if (!response.ok) return [];
+      if (!response.ok) return {};
       return response.json();
     },
     enabled: open
   });
+
+  // Extract templates from response - handle both direct array and success/data structure
+  const templates = Array.isArray(templatesResponse) 
+    ? templatesResponse 
+    : (templatesResponse.data || []);
 
   const navigateToFolder = (folderId: number | null, folderName: string) => {
     setSelectedFolder(folderId);
