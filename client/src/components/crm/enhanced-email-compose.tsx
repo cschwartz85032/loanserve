@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, HelpCircle, Mail, Send, Shield, X } from 'lucide-react';
+import { AlertTriangle, HelpCircle, Mail, Send, Shield, X, Bold, Italic, Link as LinkIcon, List, Image, Paperclip, FileText, Trash2, Clock } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 
@@ -46,6 +46,8 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
   const [dncCheckResult, setDncCheckResult] = useState<DNCCheckResult | null>(null);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [showAttachmentsModal, setShowAttachmentsModal] = useState(false);
 
   // DNC check mutation
   const dncCheckMutation = useMutation({
@@ -195,204 +197,203 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
 
   return (
     <TooltipProvider>
-      <Card className="w-full max-w-4xl" data-testid="enhanced-email-compose">
-        <CardHeader>
+      <div className="border rounded-lg p-3 space-y-3" data-testid="enhanced-email-compose">
+        {/* Top Row - To field with CC/BCC buttons */}
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CardTitle>Compose Email</CardTitle>
-              {emailSent && correlationId && (
-                <Badge variant="outline" className="ml-2" data-testid="audit-badge">
-                  <Shield className="mr-1 h-3 w-3" />
-                  ID: {correlationId.substring(0, 8)}
-                </Badge>
-              )}
-            </div>
-            {onClose && (
-              <Button variant="ghost" size="sm" onClick={onClose} data-testid="button-close-email">
-                <X className="h-4 w-4" />
+            <label className="text-xs font-medium">To:</label>
+            <div className="flex gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => setShowCc(!showCc)}
+                data-testid="button-cc"
+              >
+                CC
               </Button>
-            )}
-          </div>
-          <CardDescription>
-            Send email communications to borrowers and related parties
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Category Selector */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="email-category">Email Category</Label>
-              <Tooltip>
-                <TooltipTrigger>
-                  <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent className="max-w-sm">
-                  <p>
-                    <strong>Transactional:</strong> Required business communications (payment notices, statements, legal notices).
-                    These cannot be blocked by recipients.
-                  </p>
-                  <p className="mt-2">
-                    <strong>Marketing:</strong> Promotional communications that recipients can opt out of.
-                  </p>
-                </TooltipContent>
-              </Tooltip>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => setShowBcc(!showBcc)}
+                data-testid="button-bcc"
+              >
+                BCC
+              </Button>
             </div>
-            <Select 
-              value={emailData.category} 
-              onValueChange={(value: 'transactional' | 'marketing') => handleInputChange('category', value)}
-            >
-              <SelectTrigger data-testid="select-email-category">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="transactional">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-green-600" />
-                    <span>Transactional (Always Delivered)</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="marketing">
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-blue-600" />
-                    <span>Marketing (Subject to DNC)</span>
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
           </div>
+          <Input
+            type="email"
+            placeholder="recipient@example.com"
+            value={emailData.to}
+            onChange={(e) => handleInputChange('to', e.target.value)}
+            className="text-xs"
+            data-testid="input-email-to"
+          />
+        </div>
 
-          {/* DNC Warning Banner */}
-          {isMarketingBlocked && (
-            <Alert variant="destructive" data-testid="dnc-warning-banner">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Marketing email blocked:</strong> The following recipients have opted out of marketing communications:
-                <ul className="mt-2 list-disc list-inside">
-                  {dncCheckResult!.restrictions.map((restriction, index) => (
-                    <li key={index} className="text-sm">
-                      {restriction.email.replace(/(.{2}).*(@.*)/, '$1***$2')} - {restriction.reason}
-                    </li>
-                  ))}
-                </ul>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Recipients */}
+        {/* CC Field */}
+        {showCc && (
           <div className="space-y-2">
-            <Label htmlFor="email-to">To</Label>
+            <label className="text-xs font-medium">CC:</label>
             <Input
-              id="email-to"
               type="email"
-              placeholder="recipient@example.com, another@example.com"
-              value={emailData.to}
-              onChange={(e) => handleInputChange('to', e.target.value)}
-              data-testid="input-email-to"
+              placeholder="cc@example.com"
+              value={emailData.cc}
+              onChange={(e) => handleInputChange('cc', e.target.value)}
+              className="text-xs"
+              data-testid="input-email-cc"
             />
           </div>
+        )}
 
-          {/* CC Field */}
-          {showCc && (
-            <div className="space-y-2">
-              <Label htmlFor="email-cc">CC</Label>
-              <Input
-                id="email-cc"
-                type="email"
-                placeholder="cc@example.com"
-                value={emailData.cc}
-                onChange={(e) => handleInputChange('cc', e.target.value)}
-                data-testid="input-email-cc"
-              />
-            </div>
-          )}
-
-          {/* BCC Field */}
-          {showBcc && (
-            <div className="space-y-2">
-              <Label htmlFor="email-bcc">BCC</Label>
-              <Input
-                id="email-bcc"
-                type="email"
-                placeholder="bcc@example.com"
-                value={emailData.bcc}
-                onChange={(e) => handleInputChange('bcc', e.target.value)}
-                data-testid="input-email-bcc"
-              />
-            </div>
-          )}
-
-          {/* CC/BCC Toggles */}
-          <div className="flex gap-2">
-            {!showCc && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCc(true)}
-                data-testid="button-show-cc"
-              >
-                Add CC
-              </Button>
-            )}
-            {!showBcc && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowBcc(true)}
-                data-testid="button-show-bcc"
-              >
-                Add BCC
-              </Button>
-            )}
-          </div>
-
-          {/* Subject */}
+        {/* BCC Field */}
+        {showBcc && (
           <div className="space-y-2">
-            <Label htmlFor="email-subject">Subject</Label>
+            <label className="text-xs font-medium">BCC:</label>
             <Input
-              id="email-subject"
-              placeholder="Enter email subject"
-              value={emailData.subject}
-              onChange={(e) => handleInputChange('subject', e.target.value)}
-              data-testid="input-email-subject"
+              type="email"
+              placeholder="bcc@example.com"
+              value={emailData.bcc}
+              onChange={(e) => handleInputChange('bcc', e.target.value)}
+              className="text-xs"
+              data-testid="input-email-bcc"
             />
           </div>
+        )}
 
-          {/* Content */}
-          <div className="space-y-2">
-            <Label htmlFor="email-content">Message</Label>
+        {/* Subject Field */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium">Subject:</label>
+          <Input
+            placeholder="Email subject"
+            value={emailData.subject}
+            onChange={(e) => handleInputChange('subject', e.target.value)}
+            className="text-xs"
+            data-testid="input-email-subject"
+          />
+        </div>
+
+        {/* Message Field with Toolbar */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium">Message:</label>
+          <div className="border rounded-lg">
+            {/* Formatting Toolbar */}
+            <div className="flex items-center space-x-1 border-b p-2">
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                <Bold className="h-3 w-3" />
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                <Italic className="h-3 w-3" />
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                <LinkIcon className="h-3 w-3" />
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                <List className="h-3 w-3" />
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                <Image className="h-3 w-3" />
+              </Button>
+            </div>
             <Textarea
-              id="email-content"
-              placeholder="Enter your message..."
-              className="min-h-[200px]"
+              placeholder="Email content..."
               value={emailData.content}
               onChange={(e) => handleInputChange('content', e.target.value)}
+              className="min-h-[200px] border-0 focus:ring-0 text-xs resize-none"
               data-testid="textarea-email-content"
             />
           </div>
+        </div>
 
-          {/* Send Button */}
-          <div className="flex justify-end pt-4">
+        {/* DNC Warning Banner */}
+        {isMarketingBlocked && (
+          <Alert variant="destructive" data-testid="dnc-warning-banner">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Marketing email blocked:</strong> The following recipients have opted out of marketing communications:
+              <ul className="mt-2 list-disc list-inside">
+                {dncCheckResult!.restrictions.map((restriction, index) => (
+                  <li key={index} className="text-sm">
+                    {restriction.email.replace(/(.{2}).*(@.*)/, '$1***$2')} - {restriction.reason}
+                  </li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Bottom Action Bar */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <Button
-              onClick={handleSend}
-              disabled={!canSend}
-              data-testid="button-send-email"
+              variant="ghost" 
+              size="sm" 
+              className="h-6 text-xs px-2"
+              onClick={() => setShowAttachmentsModal(true)}
+              data-testid="button-attachments"
             >
-              <Send className="mr-2 h-4 w-4" />
-              {sendEmailMutation.isPending ? 'Sending...' : 'Send Email'}
+              <Paperclip className="h-3 w-3 mr-1" />
+              Attachments
+            </Button>
+            <Button
+              variant="ghost" 
+              size="sm" 
+              className="h-6 text-xs px-2"
+              onClick={() => setShowTemplatesModal(true)}
+              data-testid="button-templates"
+            >
+              <FileText className="h-3 w-3 mr-1" />
+              Templates
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => {
+                setEmailData(prev => ({ ...prev, to: '', cc: '', bcc: '', subject: '', content: '' }));
+              }}
+              title="Delete"
+              data-testid="button-delete"
+            >
+              <Trash2 className="h-3 w-3" />
             </Button>
           </div>
+          
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={handleSend}
+              disabled={!canSend}
+              size="sm"
+              className="h-7 text-xs"
+              data-testid="button-send-email"
+            >
+              <Send className="h-3 w-3 mr-1" />
+              Send Email
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-7 p-0"
+              title="Schedule"
+              data-testid="button-schedule"
+            >
+              <Clock className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
 
-          {/* Success Message */}
-          {emailSent && correlationId && (
-            <Alert className="mt-4" data-testid="success-message">
-              <Shield className="h-4 w-4" />
-              <AlertDescription>
-                Email sent successfully. Audit ID: <code className="font-mono">{correlationId}</code>
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+        {/* Success Message */}
+        {emailSent && correlationId && (
+          <Alert data-testid="success-message">
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              Email sent successfully. Audit ID: <code className="font-mono">{correlationId}</code>
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
     </TooltipProvider>
   );
 }
