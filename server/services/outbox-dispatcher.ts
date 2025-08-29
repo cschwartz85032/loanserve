@@ -206,12 +206,23 @@ export class OutboxDispatcher {
             trace_id: message.payload?.trace_id || message.id
           };
 
-          const routingKey = message.eventType?.startsWith('payment.') 
-            ? message.eventType 
-            : 'generic';
+          // Map events to exchanges and routing keys
+          let exchange: string;
+          let routingKey: string;
+
+          if (message.eventType?.startsWith('payment.')) {
+            exchange = 'payments.topic';
+            routingKey = message.eventType;
+          } else if (message.eventType?.startsWith('crm.email.')) {
+            exchange = 'crm.email.topic';
+            routingKey = message.eventType;
+          } else {
+            exchange = 'events.topic';
+            routingKey = message.eventType || 'generic';
+          }
 
           const success = await enhancedRabbitMQService.publish(envelope, {
-            exchange: 'payments.topic',
+            exchange,
             routingKey,
             persistent: true,
             mandatory: true,

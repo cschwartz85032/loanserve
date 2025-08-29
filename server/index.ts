@@ -109,6 +109,16 @@ app.use((req, res, next) => {
     // Continue server startup even if validations fail (non-fatal)
   }
   
+  // Initialize CRM email topology first
+  try {
+    const { crmTopologySetup } = await import('./crm/topology-setup');
+    await crmTopologySetup.initialize();
+    console.log('[Server] CRM email topology initialized successfully');
+  } catch (error) {
+    console.error('[Server] Failed to initialize CRM topology:', error);
+    // Continue server startup even if topology setup fails
+  }
+
   // Start payment processing consumers with idempotency
   try {
     const { startPaymentConsumers } = await import('./consumers/index');

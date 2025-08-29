@@ -1,0 +1,185 @@
+1) Lock in the correct architecture for CRM email
+
+Request path must be fire-and-queue.
+
+The HTTP route returns 202 after writing a single outbox row.
+
+No synchronous template render or provider call in the route.
+
+Worker path does the heavy lifting.
+
+A consumer handles crm.email.requested.v1, renders the template, assembles attachments, sends via provider, persists the artifact, and emits crm.email.sent.v1 or crm.email.failed.v1.
+
+2) Consolidate to one outbox implementation
+
+Single table: outbox_messages only.
+
+If the legacy outbox table or a legacy “publisher” process still exists, stop starting it and remove its code path.
+
+Outbox schema contract (authoritative fields).
+
+Required: id uuid PK, aggregate_type text, aggregate_id text, event_type text, payload jsonb, created_at timestamptz DEFAULT now(), published_at timestamptz NULL, attempt_count int DEFAULT 0, last_error text NULL, next_retry_at timestamptz NULL, correlation_id text.
+
+Dispatcher scans: WHERE published_at IS NULL AND (next_retry_at IS NULL OR next_retry_at <= now()) ORDER BY created_at ASC LIMIT N.
+
+Dispatcher behavior.
+
+Publish in confirm mode.
+
+On success: set published_at = now(), clear last_error.
+
+On failure: attempt_count += 1, set last_error, compute exponential backoff to next_retry_at.
+
+Idempotency.
+
+Include event_id (uuid) in the payload; consumers de-dupe on event_id using a small processed_events(event_id) table.
+
+3) Event contracts for CRM email (explicit)
+
+crm.email.requested.v1
+
+Fields: loan_id, user_id, template_id, subject, to[], cc[]?, bcc[]?, variables{}, attachments[{filename, content(base64), type}], correlation_id.
+
+Validation in route: ensure to non-empty, subject non-empty, template variables resolved or defaulted; cap attachment total size and count.
+
+crm.email.sent.v1
+
+Fields: loan_id, user_id, provider_message_id, artifact_id, correlation_id, duration_ms.
+
+crm.email.failed.v1
+
+Fields: loan_id, user_id, error_code, error_message, correlation_id, attempt_count.
+
+4) Phase 9 audit: prove every CRM mutation is recorded
+
+One audit writer that all routes use.
+
+API signature: record({ actorId, eventType, objectType, objectId, loanId?, oldValue?, newValue?, correlationId, payloadJson?, payloadHash?, prevHash? }).
+
+Required audit entries:
+
+Email request: CRM.EMAIL.REQUESTED at outbox write.
+
+Email sent: CRM.EMAIL.SENT in worker after provider success.
+
+Email failed: CRM.EMAIL.FAILED in worker catch path.
+
+Every CRM field update: contact info, notes, tags, labels, owner changes, do-not-contact flags.
+
+Tamper-evidence.
+
+If you keep hash chaining: compute record_hash = H(prev_hash || canonical_json(payload)), store prev_hash and record_hash.
+
+If you choose simple logs: ensure immutable storage and WORM backups (object storage with retention).
+
+5) Template rendering and variable safety
+
+Centralize variable resolution.
+
+A pure function for resolveEmailVariables(loanId, contactId) that returns a plain object with defaults. No template engine exceptions should occur at runtime.
+
+Strict variable allow-list.
+
+Reject unknown placeholders to catch typos early.
+
+Attachment rules.
+
+Enforce max files and total size (config), sanitize filenames, allow only MIME types needed. Compute SHA-256 of content and store it with the artifact metadata.
+
+6) Artifact persistence (documents/attachments)
+
+Store every outbound email’s compiled HTML and metadata (template ID, resolved variables hash, recipients) as an immutable artifact.
+
+Keep a content hash; store a canonical set (HTML/PDF if you generate one) and a small JSON manifest.
+
+Index by event_id, loan_id, and correlation_id for traceability.
+
+7) RabbitMQ topology hygiene (only what CRM needs)
+
+Exchanges:
+
+notifications.topic (topic).
+
+Queues:
+
+q.crm.email.v1 for crm.email.requested.v1 (quorum, DLX, delivery limit).
+
+DLQ: q.crm.email.v1.dlq bound to a dedicated DLX.
+
+Bindings:
+
+q.crm.email.v1 ← notifications.topic key crm.email.requested.v1.
+
+Consumer options:
+
+Manual acks, prefetch tuned to provider limits, poison-pill routing to DLQ after max attempts.
+
+8) Security and privacy controls
+
+PII minimization in logs.
+
+No full email bodies, no raw attachments, no full email addresses in info logs. Use redaction and hashes.
+
+RBAC in CRM endpoints.
+
+Enforce that only permitted roles can send emails for loans they own or are assigned.
+
+Do-not-contact enforcement.
+
+Deny queuing if the contact has dnc=true or communication is blocked by jurisdictional rules; audit the denial.
+
+9) Observability and SLOs
+
+Metrics:
+
+crm_email_requests_total, crm_email_sent_total, crm_email_failed_total, crm_email_queue_lag_seconds, outbox_unpublished_count, outbox_publish_latency_ms.
+
+Traces:
+
+Propagate correlation_id from HTTP route to outbox row to RMQ to worker to provider response.
+
+Alerts:
+
+Fire on crm_email_failed_total rate, queue lag, dispatcher stalls, and DLQ growth.
+
+SLOs:
+
+99% of emails queued to “sent” within 5 minutes; error budget tracked.
+
+10) Money math and schema normalization (phase-wide hygiene)
+
+Plan to move every decimal money column to integer minor units.
+
+Introduce parallel *_minor BIGINT columns; backfill by rounding; switch code to use _minor; later drop decimals or keep as derived views.
+
+Keep the ledger the single source of truth.
+
+CRM must never “fix” balances; read snapshots and derive user-facing numbers from ledger or precomputed snapshot tables.
+
+11) Remove remaining legacy code and tables
+
+Code:
+
+No direct provider calls from any HTTP route.
+
+No references to legacy tables or V2 temp tables.
+
+Only the new outbox and new audit service are used.
+
+Database:
+
+After confirming no references, drop outbox (legacy), audit_log (singular), notice_template_v2, ledger_entries_legacy, and other superseded tables.
+
+CI guard:
+
+A schema check at startup that verifies required columns are present in outbox_messages and the audit table; fail health if missing.
+
+12) Tests you must keep green
+
+Route test: POST send-email returns 202, creates exactly one unpublished outbox row, and writes an audit entry CRM.EMAIL.REQUESTED.
+
+Worker happy path: consumes request, calls provider stub, stores artifact, publishes crm.email.sent.v1, writes CRM.EMAIL.SENT.
+
+Worker fail path: provider throws, publishes crm.email.failed.v1, increments attempt_count, sets next_retry_at, writes CRM.EMAIL.FAILED, eventually routes to DLQ after max attempts.
+
+Redaction: logs contain no PII for bodies/attachments; tests assert redaction.

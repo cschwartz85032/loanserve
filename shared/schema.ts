@@ -3274,9 +3274,9 @@ export const outboxMessages = pgTable(
     id: varchar("id", { length: 36 })
       .primaryKey()
       .default(sql`gen_random_uuid()`),
-    aggregateType: text("aggregate_type").notNull(), // payments
-    aggregateId: varchar("aggregate_id", { length: 36 }).notNull(), // payment_id
-    eventType: text("event_type").notNull(), // payment.posted
+    aggregateType: text("aggregate_type").notNull(), // payments, crm
+    aggregateId: varchar("aggregate_id", { length: 36 }).notNull(), // payment_id, loan_id
+    eventType: text("event_type").notNull(), // payment.posted, crm.email.requested.v1
     payload: jsonb("payload").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -3285,6 +3285,7 @@ export const outboxMessages = pgTable(
     attemptCount: integer("attempt_count").notNull().default(0),
     lastError: text("last_error"),
     nextRetryAt: timestamp("next_retry_at", { withTimezone: true }), // For exponential backoff
+    correlationId: varchar("correlation_id", { length: 36 })
   },
   (t) => ({
     // Index for efficient polling (unpublished messages first, ordered by creation time)
