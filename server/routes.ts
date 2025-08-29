@@ -137,6 +137,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const complianceConsoleRoutes = await import('./routes/compliance-console');
   app.use('/api/compliance', complianceConsoleRoutes.default);
   console.log('[Routes] Registered compliance console routes');
+
+  // Register Beneficiary and Investor audit routes (Phase 9 Enhanced CRM)
+  const beneficiaryRoutes = await import('./routes/beneficiary-routes');
+  app.use('/api', beneficiaryRoutes.default);
+  console.log('[Routes] Registered beneficiary audit routes');
+
+  const investorRoutes = await import('./routes/investor-routes');
+  app.use('/api', investorRoutes.default);
+  console.log('[Routes] Registered investor audit routes');
   
   console.log('[Routes] Registered Column banking routes');
 
