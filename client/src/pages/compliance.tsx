@@ -33,13 +33,15 @@ import {
   ShieldAlert,
   FileCheck,
   Trash2,
-  Scale
+  Scale,
+  ExternalLink
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { PRIORITY_LEVELS } from "@/lib/constants";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 
 // Event type color mapping
 const getEventTypeColor = (eventType: string) => {
@@ -73,6 +75,72 @@ const getActorIcon = (actorType: string) => {
   }
 };
 
+// Helper function to render details with loan hyperlinks
+const renderDetailsWithLoanLinks = (log: any, setLocation: any) => {
+  const loanMatch = log.description?.match(/Loan (\S+)/);
+  const loanNumber = loanMatch?.[1];
+  const loanId = log.loanId;
+
+  if (loanNumber && loanId) {
+    // Parse the description to create a clickable link
+    const parts = log.description.split(`Loan ${loanNumber}`);
+    
+    return (
+      <div className="max-w-[300px] text-xs space-y-1">
+        <div className="flex items-center gap-1 flex-wrap">
+          <span>{parts[0]}</span>
+          <Button
+            variant="link"
+            size="sm"
+            className="p-0 h-auto text-xs text-blue-600 underline hover:text-blue-800"
+            onClick={() => setLocation(`/loans/${loanId}/crm`)}
+            data-testid={`link-loan-${loanId}`}
+          >
+            <span>Loan {loanNumber}</span>
+            <ExternalLink className="ml-1 h-3 w-3" />
+          </Button>
+          <span>{parts[1] || ''}</span>
+        </div>
+        
+        {/* Show field changes in a cleaner format */}
+        {log.payloadJson && (
+          <div className="bg-muted/50 p-2 rounded text-xs">
+            {typeof log.payloadJson === 'object' && log.payloadJson.field && (
+              <div className="space-y-1">
+                <div className="font-medium text-muted-foreground">
+                  {log.payloadJson.field}:
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-red-600">
+                    {log.payloadJson.oldValue}
+                  </span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="text-green-600">
+                    {log.payloadJson.newValue}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback to original rendering for non-loan entries
+  return (
+    <div className="max-w-[300px] truncate text-xs">
+      {log.payloadJson && (
+        <code className="bg-muted px-1 rounded">
+          {typeof log.payloadJson === 'string' 
+            ? log.payloadJson 
+            : JSON.stringify(log.payloadJson).substring(0, 100)}
+        </code>
+      )}
+    </div>
+  );
+};
+
 export default function CompliancePage() {
   const [selectedPeriod, setSelectedPeriod] = useState("7days");
   const [eventTypeFilter, setEventTypeFilter] = useState("all");
@@ -81,6 +149,7 @@ export default function CompliancePage() {
   const [auditLogPage, setAuditLogPage] = useState(1);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   // Fetch compliance dashboard metrics
   const { data: dashboard, isLoading: dashboardLoading } = useQuery({
@@ -382,15 +451,7 @@ export default function CompliancePage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="max-w-[300px] truncate text-xs">
-                                {log.payloadJson && (
-                                  <code className="bg-muted px-1 rounded">
-                                    {typeof log.payloadJson === 'string' 
-                                      ? log.payloadJson 
-                                      : JSON.stringify(log.payloadJson).substring(0, 100)}
-                                  </code>
-                                )}
-                              </div>
+                              {renderDetailsWithLoanLinks(log, setLocation)}
                             </TableCell>
                             <TableCell>
                               <code className="text-xs font-mono text-muted-foreground">

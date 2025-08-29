@@ -74,6 +74,10 @@ export class InvestorRepository {
 
     await setRequestContext(client, actorId, correlationId);
 
+    // Get loan number for audit description
+    const loanResult = await client.query('SELECT loan_number FROM loans WHERE id = $1', [loanId]);
+    const loanNumber = loanResult.rows[0]?.loan_number || loanId;
+
     return auditAndRun(client,
       async () => {
         // Check if investor already exists for this loan
@@ -133,7 +137,7 @@ export class InvestorRepository {
             ownershipPercentage: result.ownershipPercentage
           },
           correlationId,
-          description: `Investor ${result.name} added to loan`
+          description: `Investor ${result.name} added to Loan ${loanNumber}`
         });
 
         // Emit domain event
@@ -165,6 +169,10 @@ export class InvestorRepository {
     const { investorDbId, loanId, actorId, correlationId, req, updates } = params;
 
     await setRequestContext(client, actorId, correlationId);
+
+    // Get loan number for audit description
+    const loanResult = await client.query('SELECT loan_number FROM loans WHERE id = $1', [loanId]);
+    const loanNumber = loanResult.rows[0]?.loan_number || loanId;
 
     return auditAndRun(client,
       async () => {
@@ -265,7 +273,7 @@ export class InvestorRepository {
                 newValue: result.newValues[field]
               },
               correlationId,
-              description: `Investor "${result.investorName}" (${result.investorId}) field '${field}' updated from '${result.oldValues[field]}' to '${result.newValues[field]}'`,
+              description: `Investor "${result.investorName}" (${result.investorId}) field '${field}' updated from '${result.oldValues[field]}' to '${result.newValues[field]}' on Loan ${loanNumber}`,
               req // Pass request context for IP and user agent
             });
           }
