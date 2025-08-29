@@ -35,6 +35,7 @@ export interface UpdateInvestorParams {
   loanId: string;
   actorId: string;
   correlationId: string;
+  req?: any; // Express request object for audit context
   updates: {
     name?: string;
     ownershipPercentage?: number;
@@ -161,7 +162,7 @@ export class InvestorRepository {
     client: PoolClient,
     params: UpdateInvestorParams
   ): Promise<{ oldValues: Record<string, any>; newValues: Record<string, any>; changedFields: string[] }> {
-    const { investorDbId, loanId, actorId, correlationId, updates } = params;
+    const { investorDbId, loanId, actorId, correlationId, req, updates } = params;
 
     await setRequestContext(client, actorId, correlationId);
 
@@ -262,7 +263,8 @@ export class InvestorRepository {
               newValues: result.newValues
             },
             correlationId,
-            description: `Investor ${result.investorId} updated`
+            description: `Investor ${result.investorId} updated`,
+            req // Pass request context for IP and user agent
           });
 
           // Emit domain event

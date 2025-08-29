@@ -167,6 +167,7 @@ router.patch('/loans/:loanId/investors/:investorDbId', async (req, res) => {
       loanId,
       actorId,
       correlationId,
+      req, // Pass request context for IP and user agent
       updates: cleanUpdates
     });
 

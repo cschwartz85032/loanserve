@@ -672,6 +672,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/investors/:id", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const actorId = req.user?.id?.toString() || 'system';
+      
+      // Get current investor data before update for audit
+      const previousInvestor = await storage.getInvestor(id);
+      if (!previousInvestor) {
+        return res.status(404).json({ error: "Investor not found" });
+      }
+      
       // Remove timestamp fields that are automatically managed
       const { createdAt, updatedAt, ...updateData } = req.body;
       
@@ -683,6 +691,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const investor = await storage.updateInvestor(id, updateData);
+      
+      // Determine what changed for audit
+      const changedFields = [];
+      const oldValues: any = {};
+      const newValues: any = {};
+      
+      for (const [key, newValue] of Object.entries(updateData)) {
+        const oldValue = (previousInvestor as any)[key];
+        if (oldValue !== newValue) {
+          changedFields.push(key);
+          oldValues[key] = oldValue;
+          newValues[key] = newValue;
+        }
+      }
+      
+      // Log audit event if there were changes
+      if (changedFields.length > 0) {
+        await complianceAudit.logEvent({
+          actorType: 'user',
+          actorId: actorId,
+          eventType: 'CRM.INVESTOR.UPDATED',
+          resourceType: 'investor',
+          resourceId: id.toString(),
+          loanId: investor.loanId,
+          previousValues: oldValues,
+          newValues: newValues,
+          changedFields: changedFields,
+          ipAddr: req.ip,
+          userAgent: req.get('user-agent'),
+          description: `Investor ${investor.investorId || investor.name} updated: ${changedFields.join(', ')}`
+        });
+      }
+      
       res.json(investor);
     } catch (error) {
       console.error("Error updating investor:", error);
