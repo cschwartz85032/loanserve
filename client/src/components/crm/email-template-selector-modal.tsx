@@ -6,14 +6,10 @@ import { useToast } from '@/hooks/use-toast';
 import { FileText, Check, ArrowLeft } from 'lucide-react';
 import { TemplateBrowser, type Template, type TemplateFolder } from '@/components/shared/TemplateBrowser';
 
-// Type aliases for backward compatibility
-type EmailTemplate = Template;
-type EmailFolder = TemplateFolder;
-
 interface EmailTemplateSelectorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onTemplateSelect: (template: EmailTemplate) => void;
+  onTemplateSelect: (template: Template) => void;
 }
 
 export function EmailTemplateSelectorModal({ 
@@ -24,8 +20,6 @@ export function EmailTemplateSelectorModal({
   const { toast } = useToast();
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
-  const [previewMode, setPreviewMode] = useState(false);
 
   // Fetch folders
   const { data: foldersResponse = {} } = useQuery({
@@ -41,7 +35,7 @@ export function EmailTemplateSelectorModal({
   });
 
   // Extract folders from response
-  const folders = Array.isArray(foldersResponse) 
+  const folders: TemplateFolder[] = Array.isArray(foldersResponse) 
     ? foldersResponse 
     : (foldersResponse.data || []);
 
@@ -62,12 +56,25 @@ export function EmailTemplateSelectorModal({
     enabled: open
   });
 
-  // Extract templates from response
-  const templates = Array.isArray(templatesResponse) 
+  // Extract templates from response and transform to Template interface
+  const rawTemplates = Array.isArray(templatesResponse) 
     ? templatesResponse 
     : (templatesResponse.data || []);
+    
+  // Transform email templates to match Template interface
+  const templates: Template[] = rawTemplates.map((t: any) => ({
+    id: t.id,
+    name: t.name,
+    subject: t.subject || '',
+    content: t.body || '',
+    folderId: t.folderId,
+    folderName: t.folderName,
+    isShared: t.isShared || false,
+    createdAt: t.createdAt || '',
+    updatedAt: t.updatedAt || ''
+  }));
 
-  const handleTemplateSelect = (template: EmailTemplate) => {
+  const handleTemplateSelect = (template: Template) => {
     onTemplateSelect(template);
     onOpenChange(false);
     toast({
@@ -76,95 +83,17 @@ export function EmailTemplateSelectorModal({
     });
   };
 
-  const handlePreviewTemplate = async (template: EmailTemplate) => {
-    try {
-      // Fetch full template details if content is missing
-      if (!template.content) {
-        const response = await fetch(`/api/email-templates/${template.id}`, {
-          credentials: 'include'
-        });
-        if (response.ok) {
-          const templateData = await response.json();
-          const fullTemplate = templateData.success ? templateData.data : templateData;
-          setSelectedTemplate(fullTemplate);
-        } else {
-          setSelectedTemplate(template);
-        }
-      } else {
-        setSelectedTemplate(template);
-      }
-      setPreviewMode(true);
-    } catch (error) {
-      console.error('Error fetching template:', error);
-      setSelectedTemplate(template);
-      setPreviewMode(true);
-    }
-  };
-
-  const handleBackToList = () => {
-    setPreviewMode(false);
-    setSelectedTemplate(null);
-  };
-
-  // If we're in preview mode, show the preview
-  if (previewMode && selectedTemplate) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBackToList}
-                className="mr-2"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              Preview: {selectedTemplate.name}
-            </DialogTitle>
-            <DialogDescription>
-              Subject: {selectedTemplate.subject}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto">
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <div 
-                className="prose max-w-none"
-                dangerouslySetInnerHTML={{ __html: selectedTemplate.content || '' }}
-              />
-            </div>
-          </div>
-
-          <div className="flex-shrink-0 flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={handleBackToList}>
-              Back to List
-            </Button>
-            <Button onClick={() => handleTemplateSelect(selectedTemplate)}>
-              <Check className="h-4 w-4 mr-2" />
-              Use This Template
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Select Email Template
-          </DialogTitle>
+      <DialogContent className="max-w-4xl w-full h-[80vh] p-0 overflow-hidden">
+        <DialogHeader className="p-6 pb-2">
+          <DialogTitle className="text-lg">Select Email Template</DialogTitle>
           <DialogDescription>
-            Choose from your organized email templates and folders
+            Choose an email template to use for your message
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 px-6 pb-6 overflow-auto">
           <TemplateBrowser
             templates={templates}
             folders={folders}
@@ -174,10 +103,9 @@ export function EmailTemplateSelectorModal({
             selectedFolder={selectedFolder}
             onFolderChange={setSelectedFolder}
             onTemplateSelect={handleTemplateSelect}
-            onTemplatePreview={handlePreviewTemplate}
-            showPreviewButton={true}
             showSelectButton={true}
-            emptyMessage="No templates found. Create your first email template to get started."
+            emptyMessage="No email templates found. Create some templates in Settings to get started."
+            className="h-full"
           />
         </div>
       </DialogContent>

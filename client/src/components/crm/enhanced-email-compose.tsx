@@ -14,6 +14,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 import { EmailAttachmentModal } from './email-attachment-modal';
 import { EmailTemplateSelectorModal } from './email-template-selector-modal';
+import type { Template } from '@/components/shared/TemplateBrowser';
 
 interface EnhancedEmailComposeProps {
   loanId: number;
@@ -207,11 +208,11 @@ export function EnhancedEmailCompose({ loanId, defaultTo = [], onClose }: Enhanc
     await sendEmailMutation.mutateAsync(emailPayload);
   };
 
-  const handleTemplateSelect = (template: EmailTemplate) => {
+  const handleTemplateSelect = (template: Template) => {
     setEmailData(prev => ({
       ...prev,
       subject: template.subject,
-      content: template.content,
+      content: template.content || '',
       template_id: template.id.toString()
     }));
   };
