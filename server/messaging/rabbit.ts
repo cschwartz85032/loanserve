@@ -1,7 +1,10 @@
 import amqp, { ConfirmChannel, Connection, ConsumeMessage } from "amqplib";
+import { z } from "zod";
 import { AppConfig } from "../bootstrap/config";
 import { currentCorrelationId } from "../bootstrap/logger";
 import { MandatoryHeaders, MessageEnvelope } from "./contracts";
+import { MessageEnvelope as SharedMessageEnvelope } from "../../shared/messaging/envelope";
+import { buildEnvelopeSchema } from "../../shared/messaging/envelope-schema";
 import { topologyManager } from "./topology"; // existing
 
 export interface PublishOptions {
@@ -112,19 +115,43 @@ export class RabbitService {
     });
   }
 
-  async consume<T>(opts: ConsumeOptions, handler: (env: MessageEnvelope<T>, raw: ConsumeMessage) => Promise<void>): Promise<string> {
+  /**
+   * Consume messages with runtime validation using Zod schemas
+   * @param opts Consume options including queue and prefetch settings
+   * @param dataSchema Zod schema for validating the message data payload
+   * @param handler Message handler function
+   * @returns Consumer tag
+   */
+  async consume<T>(opts: ConsumeOptions, dataSchema: z.ZodType<T>, handler: (env: SharedMessageEnvelope<T>, raw: ConsumeMessage) => Promise<void>): Promise<string> {
     if (!this.conConn) throw new Error("Consumer connection not available");
     const ch = await this.conConn.createChannel();
     await ch.prefetch(opts.prefetch ?? this.cfg.rabbitPrefetch);
+    const envelopeSchema = buildEnvelopeSchema(dataSchema);
+    
     const { consumerTag } = await ch.consume(opts.queue, async (msg) => {
       if (!msg) return;
       try {
-        const env = JSON.parse(msg.content.toString()) as MessageEnvelope<T>;
-        await handler(env, msg);
+        // Parse and validate the entire envelope with typed data
+        const rawEnvelope = JSON.parse(msg.content.toString());
+        const validatedEnvelope = envelopeSchema.parse(rawEnvelope);
+        
+        await handler(validatedEnvelope as SharedMessageEnvelope<T>, msg);
         if (!opts.noAck) ch.ack(msg);
       } catch (err) {
+        console.error('[Rabbit] Message processing failed:', err);
+        
+        // If it's a validation error, log details and decide on retry strategy
+        if (err instanceof z.ZodError) {
+          console.error('[Rabbit] Envelope validation failed:', {
+            queue: opts.queue,
+            errors: err.errors,
+            rawMessage: msg.content.toString().substring(0, 500) // First 500 chars for debugging
+          });
+        }
+        
+        // Reject message with requeue logic
         const redelivered = msg.fields.redelivered;
-        ch.nack(msg, false, !redelivered);
+        ch.nack(msg, false, !redelivered); // Don't requeue if already redelivered once
       }
     }, { noAck: opts.noAck ?? false, exclusive: opts.exclusive ?? false, consumerTag: opts.consumerTag });
 

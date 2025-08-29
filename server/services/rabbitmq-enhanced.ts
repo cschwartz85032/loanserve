@@ -3,11 +3,13 @@
  */
 
 import amqp from 'amqplib';
+import { v4 as uuidv4 } from 'uuid';
 import { topologyManager } from '../messaging/topology.js';
 import { MessageEnvelope, MessageMetadata } from '../../shared/messaging/envelope.js';
 import { getMessageFactory } from '../messaging/message-factory.js';
 import { ErrorClassifier, RetryTracker } from './rabbitmq-errors.js';
 import { rabbitmqConfig } from './rabbitmq-config.js';
+import { RabbitService } from '../messaging/rabbit.js';
 
 export interface PublishOptions {
   exchange: string;
@@ -553,6 +555,61 @@ export class EnhancedRabbitMQService {
     this.isConnected = false;
     console.log('[RabbitMQ] Shutdown complete');
   }
+}
+
+/**
+ * Helper function to create a properly formatted message envelope
+ * @param schema Message schema identifier (e.g., 'loanserve.v1.payment.processed')
+ * @param data The actual payload data
+ * @param partial Optional partial envelope properties to override defaults
+ * @returns Complete MessageEnvelope with all required fields
+ */
+export function makeEnvelope<T>(
+  schema: string,
+  data: T,
+  partial: Partial<MessageEnvelope<T>> = {}
+): MessageEnvelope<T> {
+  return {
+    schema,
+    message_id: uuidv4(),
+    correlation_id: partial.correlation_id || uuidv4(),
+    causation_id: partial.causation_id || uuidv4(),
+    occurred_at: new Date().toISOString(),
+    producer: process.env.SERVICE_NAME || 'loanserve',
+    version: partial.version || 1,
+    ...partial,
+    data,
+  };
+}
+
+/**
+ * Convenience function to publish a message with automatic envelope wrapping
+ * @param rabbit RabbitService instance
+ * @param exchange Exchange name
+ * @param routingKey Routing key
+ * @param schema Message schema identifier
+ * @param data Message payload data
+ * @param opts Additional publish options (excluding exchange and routingKey)
+ */
+export async function publishMessage<T>(
+  rabbit: RabbitService,
+  exchange: string,
+  routingKey: string,
+  schema: string,
+  data: T,
+  opts?: Omit<PublishOptions, 'exchange' | 'routingKey'>
+): Promise<void> {
+  const envelope = makeEnvelope(schema, data, {
+    correlation_id: opts?.correlationId,
+    user_id: opts?.headers?.['x-user-id'] as string,
+    trace_id: opts?.headers?.['x-trace-id'] as string,
+  });
+
+  await rabbit.publish(envelope, { 
+    exchange, 
+    routingKey, 
+    ...opts 
+  });
 }
 
 // Export singleton instance

@@ -250,7 +250,7 @@ export class NotificationsConsumer {
     recipient: NotificationRecipient,
     eventType: string,
     paymentDetails: any,
-    payload: PaymentEventMessage
+    data: PaymentEventMessage
   ): Promise<any> {
     const { title, message, priority } = this.generateNotificationContent(
       eventType,
@@ -293,7 +293,7 @@ export class NotificationsConsumer {
   private generateNotificationContent(
     eventType: string,
     paymentDetails: any,
-    payload: PaymentEventMessage,
+    data: PaymentEventMessage,
     role: string
   ): { title: string; message: string; priority: 'low' | 'medium' | 'high' | 'urgent' } {
     const amount = new Intl.NumberFormat('en-US', {

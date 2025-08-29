@@ -167,7 +167,7 @@ export class OutboxDispatcher {
       aggregateId: message.aggregateId,
       failureReason: error.message,
       attempts: message.attemptCount,
-      payload: message.payload
+      data: message.payload
     });
 
     // In production, you would integrate with your case management system here
@@ -195,7 +195,7 @@ export class OutboxDispatcher {
             message_id: message.id,
             correlation_id: message.payload?.correlation_id || message.id,
             schema: '1.0',
-            payload: message.payload,
+            data: message.payload,
             metadata: {
               aggregate_type: message.aggregateType,
               aggregate_id: message.aggregateId,

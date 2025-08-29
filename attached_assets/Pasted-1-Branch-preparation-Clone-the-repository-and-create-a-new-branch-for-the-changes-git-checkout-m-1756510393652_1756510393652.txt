@@ -1,0 +1,130 @@
+1. Branch preparation
+
+Clone the repository and create a new branch for the changes:
+
+git checkout main
+git pull origin main
+git checkout -b hardening/v2
+
+
+Ensure you have Node.js and npm/yarn installed. Run npm install (or yarn) to install dependencies.
+
+Add or update a .gitattributes file to enforce LF line endings and text file normalization:
+
+* text=auto
+*.ts text eol=lf
+*.js text eol=lf
+
+
+Create or update .github/CODEOWNERS so that messaging and payments changes require review by the relevant team:
+
+# .github/CODEOWNERS
+/shared/messaging/*       @your-team/messaging
+/server/messaging/*       @your-team/messaging
+/server/routes/payments*  @your-team/payments
+/server/consumers/*       @your-team/payments
+
+2. Canonical envelope and runtime validation
+2.1 Unify the envelope definition
+
+Keep using the existing interface in shared/messaging/envelope.ts. This file defines MessageEnvelope with a data property. Do not create alternative envelope shapes in other folders.
+
+Remove any interfaces with a payload property. Search the repository for payload: and delete or update those interfaces so that they extend MessageEnvelope<T> and place the domain object in data.
+
+2.2 Add Zod schema for runtime validation
+
+Create a new file shared/messaging/envelope-schema.ts with the following contents:
+
+// shared/messaging/envelope-schema.ts
+import { z } from 'zod';
+
+export const BaseEnvelopeSchema = z.object({
+  schema: z.string(),
+  message_id: z.string(),
+  correlation_id: z.string(),
+  causation_id: z.string().optional(),
+  idempotency_key: z.string().optional(),
+  tenant_id: z.string().optional(),
+  user_id: z.string().optional(),
+  occurred_at: z.string(),
+  published_at: z.string().optional(),
+  producer: z.string(),
+  producer_instance: z.string().optional(),
+  trace_id: z.string().optional(),
+  span_id: z.string().optional(),
+  version: z.number().optional(),
+  retry_count: z.number().optional(),
+  ttl: z.number().optional(),
+  priority: z.number().optional(),
+  headers: z.record(z.any()).optional(),
+});
+
+export function buildEnvelopeSchema<T extends z.ZodTypeAny>(dataSchema: T) {
+  return BaseEnvelopeSchema.extend({ data: dataSchema });
+}
+
+
+This helper allows each consumer to provide its own data schema. If you need a strictly typed generic type, create a type Envelope<T> = z.infer<typeof BaseEnvelopeSchema> & { data: T }.
+
+Wherever you parse an envelope from RabbitMQ, validate it using Zod. See section 3 for details.
+
+3. RabbitMQ publish/consume API
+3.1 Publish API
+
+In server/messaging/rabbit.ts, the publish method currently accepts (envelope: MessageEnvelope, opts: PublishOptions). Leave that signature but ensure that the caller passes a correctly shaped envelope with a data property.
+
+If any part of your application publishes raw data (e.g., rabbit.publishMessage(exchange, routingKey, payload)), create a helper publishMessage that wraps the payload in an envelope. This can live in server/services/rabbitmq-enhanced.ts or similar:
+
+// server/services/rabbitmq-enhanced.ts (example)
+import { MessageEnvelope } from '../../shared/messaging/envelope';
+import { v4 as uuidv4 } from 'uuid';
+
+export function makeEnvelope<T>(schema: string, data: T, partial: Partial<MessageEnvelope<T>> = {}): MessageEnvelope<T> {
+  return {
+    schema,
+    message_id: uuidv4(),
+    correlation_id: partial.correlation_id || uuidv4(),
+    occurred_at: new Date().toISOString(),
+    producer: process.env.SERVICE_NAME || 'loanserve',
+    ...partial,
+    data,
+  };
+}
+
+export async function publishMessage<T>(rabbit: RabbitService, exchange: string, routingKey: string, schema: string, data: T, opts?: Omit<PublishOptions, 'exchange' | 'routingKey'>) {
+  const env = makeEnvelope(schema, data);
+  await rabbit.publish(env, { exchange, routingKey, ...opts });
+}
+
+
+Do not serialize custom properties outside the envelope. The publish method already sets standard headers based on the envelope fields.
+
+3.2 Consume API
+
+In server/messaging/rabbit.ts, update the consume method to perform runtime validation:
+
+import { buildEnvelopeSchema } from '../../shared/messaging/envelope-schema';
+
+async consume<T>(opts: ConsumeOptions, dataSchema: z.ZodType<T>, handler: (env: MessageEnvelope<T>, raw: ConsumeMessage) => Promise<void>) {
+  if (!this.conConn) throw new Error('Consumer connection not available');
+  const ch = await this.conConn.createChannel();
+  await ch.prefetch(opts.prefetch ?? this.cfg.rabbitPrefetch);
+  const envelopeSchema = buildEnvelopeSchema(dataSchema);
+  await ch.consume(opts.queue, async msg => {
+    if (!msg) return;
+    try {
+      const parsed = envelopeSchema.parse(JSON.parse(msg.content.toString()));
+      await handler(parsed as any, msg);
+      if (!opts.noAck) ch.ack(msg);
+    } catch (err) {
+      console.error('[Rabbit] Envelope validation failed:', err);
+      const redelivered = msg.fields.redelivered;
+      ch.nack(msg, false, !redelivered);
+    }
+  }, { noAck: opts.noAck ?? false, exclusive: opts.exclusive ?? false, consumerTag: opts.consumerTag });
+}
+
+
+All consumers must call consume(queue, dataSchema, handler) with a concrete zod schema for their data object.
+
+This design prevents malformed messages from propagating into your business logic.

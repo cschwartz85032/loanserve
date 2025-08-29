@@ -153,7 +153,7 @@ export class BeneficiaryRepository {
             aggregateType: 'loan',
             aggregateId: loanId,
             eventType: 'beneficiary.updated.v1',
-            payload: {
+            data: {
               loanId,
               changedFields: result.changedFields,
               oldValues: result.oldValues,
