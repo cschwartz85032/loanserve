@@ -1,0 +1,419 @@
+A. Previously agreed CRM baseline that must remain in place
+
+Request path is fire-and-queue.
+
+The HTTP route validates and writes exactly one outbox row, then returns 202.
+
+No provider call or template rendering in the route.
+
+Worker path does the heavy work.
+
+A consumer handles the event, resolves variables, renders, sends via provider, persists artifact, emits sent or failed.
+
+One outbox implementation.
+
+Single table: outbox_messages.
+
+Dispatcher scans unpublished messages, publishes with confirms, sets published_at, increments attempt_count on failure with exponential backoff and next_retry_at.
+
+Event contracts are explicit.
+
+crm.email.requested.v1, crm.email.sent.v1, crm.email.failed.v1 with stable fields and correlation_id.
+
+Phase 9 audit for every CRM mutation.
+
+Audit rows for email requested, sent, failed, and any preference changes.
+
+Correlation ID on every audit row.
+
+Strict variable resolver.
+
+Allow-list variables. Reject unknown placeholders. Defaults for missing fields.
+
+Artifacts are immutable.
+
+Store rendered content and a manifest with hashes. Index by event_id, loan_id, correlation_id.
+
+RabbitMQ topology is minimal and consistent.
+
+Exchange: crm.email.topic. Queue: q.crm.email.v1 with DLQ. Binding key: crm.email.requested.v1. Manual ack. Prefetch tuned.
+
+Security and privacy.
+
+Redact PII in logs. RBAC on routes. Respect do-not-contact where applicable.
+
+Observability and SLOs.
+
+Metrics for outbox lag, publish latency, consumer throughput, failures, DLQ growth. Trace with correlation IDs.
+
+Money math hygiene across CRM.
+
+Plan to move all amounts to integer minor units columns. Keep decimals only as derived views or for read-only.
+
+Tests.
+
+Route test returns 202 and writes one outbox row. Worker happy and fail paths. Redaction. Audit coverage.
+
+B. New requirement: categories and selective DNC enforcement
+
+Policy
+
+Two categories: transactional and marketing.
+
+Transactional communications are servicing notices required to fulfill the servicing obligation. They are exempt from DNC.
+
+Marketing communications must enforce DNC rules before enqueue.
+
+Enforcement
+
+DNC is evaluated only when category = marketing.
+
+For email: do_not_email blocks the request. For SMS: do_not_text. For voice: do_not_call.
+
+When blocked, return 409 with a precise error code and write a Phase 9 audit entry documenting the denial.
+
+C. Database migrations
+
+PostgreSQL SQL. Run in this order.
+
+Add category to outbox_messages
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'outbox_category') THEN
+    CREATE TYPE outbox_category AS ENUM ('transactional', 'marketing');
+  END IF;
+END $$;
+
+ALTER TABLE public.outbox_messages
+  ADD COLUMN IF NOT EXISTS category outbox_category NOT NULL DEFAULT 'transactional';
+
+CREATE INDEX IF NOT EXISTS idx_outbox_category_unpublished
+  ON public.outbox_messages (category) WHERE published_at IS NULL;
+
+
+Communication preferences schema
+
+Option A. Separate table, least risky to existing code.
+
+CREATE TABLE IF NOT EXISTS public.contact_comm_prefs (
+  contact_id      bigint PRIMARY KEY REFERENCES public.contacts(id) ON DELETE CASCADE,
+  do_not_email    boolean NOT NULL DEFAULT false,
+  do_not_text     boolean NOT NULL DEFAULT false,
+  do_not_call     boolean NOT NULL DEFAULT false,
+  reason          text,
+  policy_basis    text,                -- e.g. "customer_request", "legal_block", "system"
+  updated_by      text,
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Helpful read path
+CREATE VIEW public.v_contact_comm_prefs AS
+  SELECT c.id AS contact_id,
+         COALESCE(p.do_not_email, false) AS do_not_email,
+         COALESCE(p.do_not_text,  false) AS do_not_text,
+         COALESCE(p.do_not_call,  false) AS do_not_call
+  FROM public.contacts c
+  LEFT JOIN public.contact_comm_prefs p ON p.contact_id = c.id;
+
+
+Option B. Inline on contacts. If you prefer this, run:
+
+ALTER TABLE public.contacts
+  ADD COLUMN IF NOT EXISTS do_not_email boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS do_not_text  boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS do_not_call  boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS comm_reason  text,
+  ADD COLUMN IF NOT EXISTS comm_policy_basis text,
+  ADD COLUMN IF NOT EXISTS comm_updated_by text,
+  ADD COLUMN IF NOT EXISTS comm_updated_at timestamptz NOT NULL DEFAULT now();
+
+
+Audit table for preference changes, if not present
+
+If you already have compliance_audit_log with the shape below, skip. Otherwise:
+
+CREATE TABLE IF NOT EXISTS public.compliance_audit_log (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  correlation_id  text,
+  actor_type      text NOT NULL,
+  actor_id        text NOT NULL,
+  event_type      text NOT NULL,
+  event_ts_utc    timestamptz NOT NULL DEFAULT now(),
+  resource_type   text,
+  resource_id     text,
+  loan_id         bigint,
+  payload_json    jsonb,
+  ip_addr         text,
+  user_agent      text
+);
+
+CREATE INDEX IF NOT EXISTS idx_compliance_audit_ts ON public.compliance_audit_log (event_ts_utc);
+CREATE INDEX IF NOT EXISTS idx_compliance_audit_corr ON public.compliance_audit_log (correlation_id);
+
+
+Backfill defaults
+
+UPDATE public.outbox_messages
+SET category = 'transactional'
+WHERE category IS DISTINCT FROM 'transactional';
+
+D. Drizzle schema additions
+
+TypeScript snippets. Adjust import paths as needed.
+
+outbox_messages
+
+export const outboxCategoryEnum = pgEnum('outbox_category', ['transactional', 'marketing']);
+
+export const outboxMessages = pgTable('outbox_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  aggregateType: text('aggregate_type').notNull(),
+  aggregateId: text('aggregate_id').notNull(),
+  eventType: text('event_type').notNull(),
+  payload: jsonb('payload').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  lastError: text('last_error'),
+  nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+  correlationId: text('correlation_id'),
+  category: outboxCategoryEnum('category').notNull().default('transactional')
+});
+
+
+contact communication preferences
+
+Option A table:
+
+export const contactCommPrefs = pgTable('contact_comm_prefs', {
+  contactId: bigint('contact_id', { mode: 'number' }).primaryKey(),
+  doNotEmail: boolean('do_not_email').notNull().default(false),
+  doNotText: boolean('do_not_text').notNull().default(false),
+  doNotCall: boolean('do_not_call').notNull().default(false),
+  reason: text('reason'),
+  policyBasis: text('policy_basis'),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+
+Option B columns on contacts:
+
+export const contacts = pgTable('contacts', {
+  // existing fields...
+  doNotEmail: boolean('do_not_email').notNull().default(false),
+  doNotText: boolean('do_not_text').notNull().default(false),
+  doNotCall: boolean('do_not_call').notNull().default(false),
+  commReason: text('comm_reason'),
+  commPolicyBasis: text('comm_policy_basis'),
+  commUpdatedBy: text('comm_updated_by'),
+  commUpdatedAt: timestamp('comm_updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+E. HTTP API changes
+
+Email send request contract
+
+Route: POST /api/loans/:loanId/crm/send-email
+
+Body:
+
+{
+  "to": ["alice@example.com"],
+  "cc": ["ops@example.com"],
+  "bcc": [],
+  "subject": "Your escrow analysis",
+  "templateId": "escrow-analysis-v1",
+  "variables": { "BorrowerName": "Alice" },
+  "attachments": [{"filename":"escrow.pdf","content":"<base64>","type":"application/pdf"}],
+  "category": "transactional"
+}
+
+
+Validation:
+
+category is enum transactional or marketing. Default transactional.
+
+to not empty. subject not empty. templateId required.
+
+variables restricted to allow list.
+
+DNC enforcement in the route
+
+If category = transactional then skip DNC checks.
+
+If category = marketing then:
+
+Resolve contacts from recipient emails.
+
+If any recipient has do_not_email true then return 409 with body {"error":"DNC_ENFORCED","blocked":["bad@example.com"],"correlationId":"..."}
+
+Write a compliance audit row documenting the denial.
+
+Outbox write includes category
+
+The outbox payload should include category and all inputs.
+
+Set outbox_messages.category to the supplied value.
+
+Communication preferences endpoints
+
+GET /api/contacts/:id/comm-preferences
+
+Response:
+
+{
+  "contactId": 123,
+  "doNotEmail": false,
+  "doNotText": false,
+  "doNotCall": false,
+  "updatedBy": "user-42",
+  "updatedAt": "2025-08-24T17:23:00Z",
+  "reason": "customer request",
+  "policyBasis": "customer_request"
+}
+
+
+PATCH /api/contacts/:id/comm-preferences
+
+{
+  "doNotEmail": true,
+  "doNotText": false,
+  "doNotCall": false,
+  "reason": "customer request",
+  "policyBasis": "customer_request"
+}
+
+
+On any change, write a compliance audit row with event type COMMS.PREFS.UPDATED and a JSON payload of diffs.
+
+F. Worker and dispatcher updates
+
+Dispatcher
+
+No change except ensure it copies category from the row into the outbound message headers and payload for observability.
+
+Consumer
+
+No DNC checks inside the consumer. The route has already enforced policy if needed.
+
+Persist artifact and audits. Include category in both.
+
+Idempotency
+
+Use a processed_events table keyed by event_id or message_id to prevent duplicate sends on redelivery.
+
+G. RabbitMQ topology note
+
+Exchange crm.email.topic already exists.
+
+No binding change required for the category field. It lives in the payload.
+
+Optional: add a header x-category to messages if you want broker-level routing later. Not required today.
+
+H. Phase 9 audit entries to add or confirm
+
+CRM.EMAIL.REQUESTED at enqueue time
+
+Fields: category, to, cc, bcc (redacted), subject, templateId, correlationId.
+
+CRM.EMAIL.SENT in consumer after provider success
+
+Fields: category, provider_message_id, artifact_id, correlationId, duration_ms.
+
+CRM.EMAIL.FAILED in consumer on error
+
+Fields: category, error_code, error_message, attempt_count, correlationId.
+
+COMMS.PREFS.UPDATED on any change
+
+Fields: contactId, old values, new values, reason, policy_basis, actor, correlationId.
+
+All entries must include event_ts_utc and be queryable by correlationId.
+
+I. UI changes
+
+Contact details pane
+
+Add a Communication Preferences panel with three toggles: Do not email, Do not text, Do not call.
+
+When a toggle changes, require a reason and policy basis. Disable Save until provided.
+
+On Save, call PATCH endpoint. Show optimistic UI and rollback on error.
+
+Email compose UI
+
+A category selector with values transactional and marketing. Default transactional.
+
+If user selects marketing and any recipient is DNC for email, show a blocking banner that names the blocked recipients. Disable send.
+
+Always surface the audit badge with the correlation ID after submission.
+
+Accessibility and logging
+
+Do not log full email addresses at info level. Redact user parts.
+
+Show a small help tooltip that explains the transactional exemption.
+
+J. Tests
+
+Route unit tests
+
+transactional flow: returns 202, writes outbox with category transactional, writes CRM.EMAIL.REQUESTED audit.
+
+marketing flow, DNC hit: returns 409 with error DNC_ENFORCED and audit row for rejection.
+
+marketing flow, no DNC: returns 202 and writes outbox with category marketing.
+
+Consumer unit tests
+
+successful send: writes artifact, publishes sent event, audit row CRM.EMAIL.SENT.
+
+failure: increments attempt_count, publishes failed, audit row CRM.EMAIL.FAILED.
+
+idempotency: repeated delivery does nothing.
+
+Preferences tests
+
+PATCH comm-preferences flips flags and writes COMMS.PREFS.UPDATED.
+
+GET returns updated values.
+
+Redaction tests
+
+Logs never contain full PII. Assert redaction.
+
+K. Rollout steps
+
+Apply DB migrations C.
+
+Deploy schema code D.
+
+Deploy route and consumer changes E and F.
+
+Turn on a feature flag ENFORCE_DNC_FOR_MARKETING and default it to true in staging, then production.
+
+Backfill outbox_messages.category to transactional for old rows.
+
+Enable dashboards for unpublished outbox count, consumer DLQ count, audit write rate.
+
+Announce the UI change and update runbooks.
+
+L. Acceptance criteria
+
+Email routes always return 202 or a validation error. Never 500 on happy paths.
+
+For category transactional, DNC checks are bypassed.
+
+For category marketing, DNC is enforced and returns 409 on violation with an audit row.
+
+Outbox rows have category set correctly.
+
+Audit rows exist for email requested, sent, failed, and for any preference changes.
+
+No legacy outbox tables or direct provider calls in routes.
+
+Consumer idempotency prevents duplicate sends.
+
+Observability panels show healthy throughput and low lag.
