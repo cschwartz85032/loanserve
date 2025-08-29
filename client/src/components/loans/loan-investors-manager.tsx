@@ -95,15 +95,19 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
     enabled: !!loanId
   });
 
+  // Type-safe access to loan data
+  const loanInfo = loanData as any;
+  const investorsList = investors as Investor[];
+
   // Calculate total ownership percentage
-  const totalOwnership = investors.reduce((sum: number, inv: Investor) => 
+  const totalOwnership = investorsList.reduce((sum: number, inv: Investor) => 
     sum + parseFloat(inv.ownershipPercentage?.toString() || '0'), 0
   );
 
   // Calculate investment amount based on ownership percentage
   const calculateInvestmentAmount = (percentage: number) => {
-    if (!loanData?.loanAmount) return 0;
-    return (parseFloat(loanData.loanAmount) * percentage / 100);
+    if (!loanInfo?.loanAmount) return 0;
+    return (parseFloat(loanInfo.loanAmount) * percentage / 100);
   };
 
   // Create investor mutation
@@ -214,7 +218,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
         entityType: 'individual',
         ownershipPercentage: 0,
         accountType: 'checking',
-        investmentDate: loanData?.originationDate || new Date().toISOString().split('T')[0],
+        investmentDate: loanInfo?.originationDate || new Date().toISOString().split('T')[0],
         investmentAmount: 0
       };
       setFormData(initialData);
@@ -268,13 +272,13 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
       ? formData.investorId 
       : generateInvestorId();
     
-    // Ensure investment amount is calculated and converted to string for decimal field
+    // Ensure investment amount is calculated - keep ownershipPercentage as number for backend
     const calculatedAmount = calculateInvestmentAmount(formData.ownershipPercentage || 0);
     const dataToSave = {
       ...formData,
       investorId,
       investmentAmount: calculatedAmount.toString(),
-      ownershipPercentage: formData.ownershipPercentage?.toString()
+      ownershipPercentage: formData.ownershipPercentage // Keep as number for backend validation
     };
 
     if (editingInvestor) {
@@ -374,7 +378,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
           <CardTitle>Current Investors</CardTitle>
         </CardHeader>
         <CardContent>
-          {investors.length === 0 ? (
+          {investorsList.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               No investors added yet. Click "Add Investor" to get started.
             </div>
@@ -393,7 +397,7 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {investors.map((investor: Investor) => (
+                {investorsList.map((investor: Investor) => (
                   <TableRow key={investor.id}>
                     <TableCell 
                       className="font-mono text-sm cursor-pointer text-blue-600 underline"
@@ -581,10 +585,10 @@ export function LoanInvestorsManager({ loanId }: LoanInvestorsManagerProps) {
                 <Percent className="h-4 w-4" />
                 Investment Details
               </h3>
-              {loanData?.loanAmount && (
+              {loanInfo?.loanAmount && (
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-sm text-blue-700">
-                    Total Loan Amount: <span className="font-semibold">${parseFloat(loanData.loanAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    Total Loan Amount: <span className="font-semibold">${parseFloat(loanInfo.loanAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </p>
                 </div>
               )}
