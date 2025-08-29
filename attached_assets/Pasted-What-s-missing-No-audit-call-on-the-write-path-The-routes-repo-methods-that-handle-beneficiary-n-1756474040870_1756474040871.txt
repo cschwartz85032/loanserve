@@ -1,0 +1,235 @@
+What’s missing
+
+No audit call on the write path
+The routes/repo methods that handle:
+
+“beneficiary name update”
+
+“investor create/update/delete”
+do not call a centralized audit logger with correlation IDs.
+
+No DB history/trigger as backstop
+There aren’t before/after history tables or triggers for beneficiaries or investors. If the app forgets to audit, nothing captures the change.
+
+No domain events for these mutations
+You don’t emit domain events like beneficiary.updated.v1 or investor.added.v1, which would also be auditable and replayable.
+
+Exact fixes
+A. Application-level auditing (must-have)
+
+Create a tiny helper that performs a write and records the audit atomically in the same transaction.
+
+// audit-helper.ts
+export async function auditAndRun<T>(
+  client: PoolClient,
+  action: () => Promise<T>,
+  audit: (result: T) => Promise<void>
+): Promise<T> {
+  try {
+    await client.query('BEGIN');
+    const res = await action();
+    await audit(res);
+    await client.query('COMMIT');
+    return res;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  }
+}
+
+1) Beneficiary update instrumentation
+
+Repository method (example):
+
+// repo.ts (beneficiaries)
+export async function updateBeneficiaryName(
+  client: PoolClient,
+  params: { beneficiaryId: string; newName: string; actorId: string; correlationId: string }
+) {
+  const { beneficiaryId, newName, actorId, correlationId } = params;
+
+  return auditAndRun(client,
+    async () => {
+      const prev = await client.query(
+        `SELECT name, loan_id FROM beneficiaries WHERE id = $1 FOR UPDATE`,
+        [beneficiaryId]
+      );
+      if (prev.rowCount === 0) throw new Error('BENEFICIARY_NOT_FOUND');
+
+      await client.query(
+        `UPDATE beneficiaries SET name = $1, updated_at = now() WHERE id = $2`,
+        [newName, beneficiaryId]
+      );
+
+      return { oldName: prev.rows[0].name, newName, loanId: prev.rows[0].loan_id };
+    },
+    async ({ oldName, newName, loanId }) => {
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId,
+        eventType: 'CRM.BENEFICIARY.UPDATED',
+        resourceType: 'beneficiary',
+        resourceId: beneficiaryId,
+        loanId,
+        payloadJson: { field: 'name', oldValue: oldName, newValue: newName },
+        correlationId
+      });
+    }
+  );
+}
+
+
+Route/controller:
+
+// routes.ts or crm.ts
+router.patch('/beneficiaries/:id/name', async (req, res) => {
+  const beneficiaryId = req.params.id;
+  const { newName } = req.body;
+  const actorId = req.user.id;
+  const correlationId = req.correlationId;
+
+  await repo.updateBeneficiaryName(req.dbClient, { beneficiaryId, newName, actorId, correlationId });
+  res.status(200).json({ ok: true, correlationId });
+});
+
+2) Investor add/update/delete instrumentation
+
+Repository method (example for add):
+
+export async function addInvestor(
+  client: PoolClient,
+  params: { loanId: string; investorId: string; pct: number; actorId: string; correlationId: string }
+) {
+  const { loanId, investorId, pct, actorId, correlationId } = params;
+
+  return auditAndRun(client,
+    async () => {
+      await client.query(
+        `INSERT INTO investors_loans (loan_id, investor_id, ownership_pct, created_at)
+         VALUES ($1, $2, $3, now())`,
+        [loanId, investorId, pct]
+      );
+      return { loanId, investorId, pct };
+    },
+    async ({ loanId, investorId, pct }) => {
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId,
+        eventType: 'CRM.INVESTOR.ADDED',
+        resourceType: 'investor_loan',
+        resourceId: `${loanId}:${investorId}`,
+        loanId,
+        payloadJson: { investorId, ownershipPct: pct },
+        correlationId
+      });
+    }
+  );
+}
+
+
+Similar patterns for update (log old/new values) and delete.
+
+3) Emit domain events (optional but recommended)
+
+After the DB write (still inside the auditAndRun audit section), also enqueue an outbox message so downstream systems can react:
+
+await outboxService.createMessage({
+  aggregateType: 'loan',
+  aggregateId: String(loanId),
+  eventType: 'beneficiary.updated.v1',
+  payload: { beneficiaryId, field: 'name', oldValue: oldName, newValue: newName },
+  correlationId
+});
+
+
+Add equivalent investor.added.v1, investor.updated.v1, investor.removed.v1.
+
+B. Database-level history (safety net)
+
+Add history tables and triggers so you always have an immutable record even if an engineer forgets to call the audit helper.
+
+-- Beneficiary history
+CREATE TABLE IF NOT EXISTS beneficiary_history (
+  hist_id       bigserial PRIMARY KEY,
+  beneficiary_id bigint NOT NULL,
+  loan_id       bigint,
+  old_row       jsonb,
+  new_row       jsonb,
+  changed_at    timestamptz NOT NULL DEFAULT now(),
+  changed_by    text
+);
+
+CREATE OR REPLACE FUNCTION trg_beneficiary_history()
+RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    INSERT INTO beneficiary_history (beneficiary_id, loan_id, old_row, new_row, changed_by)
+    VALUES (OLD.id, OLD.loan_id, to_jsonb(OLD), to_jsonb(NEW), current_setting('app.actor_id', true));
+  ELSIF TG_OP = 'INSERT' THEN
+    INSERT INTO beneficiary_history (beneficiary_id, loan_id, old_row, new_row, changed_by)
+    VALUES (NEW.id, NEW.loan_id, NULL, to_jsonb(NEW), current_setting('app.actor_id', true));
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO beneficiary_history (beneficiary_id, loan_id, old_row, new_row, changed_by)
+    VALUES (OLD.id, OLD.loan_id, to_jsonb(OLD), NULL, current_setting('app.actor_id', true));
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_beneficiary_history ON beneficiaries;
+CREATE TRIGGER trg_beneficiary_history
+AFTER INSERT OR UPDATE OR DELETE ON beneficiaries
+FOR EACH ROW EXECUTE FUNCTION trg_beneficiary_history();
+
+
+Repeat for investors, or your join table investors_loans.
+
+Important: set app.actor_id and app.correlation_id at the start of each request/transaction:
+
+SELECT set_config('app.actor_id', :actorId, true);
+SELECT set_config('app.correlation_id', :correlationId, true);
+
+
+You can extend the trigger to record current_setting('app.correlation_id', true) as well.
+
+C. Acceptance tests (must pass)
+
+Beneficiary update test
+
+Call the PATCH endpoint to change beneficiary name.
+
+Assert: 200 OK; one audit row CRM.BENEFICIARY.UPDATED with old/new; one beneficiary_history row with old/new JSON; correlation ID present.
+
+Investor add test
+
+Add an investor to a loan.
+
+Assert: 200 OK; one audit row CRM.INVESTOR.ADDED with ownershipPct; one investor_history row; optional outbox investor.added.v1 exists.
+
+Negative test
+
+Simulate a failing update mid-transaction; assert no partial write and no audit/history records.
+
+Redelivery/idempotency
+
+For domain events emitted on these changes, simulate consumer redelivery; assert your idempotency table prevents duplicate side effects.
+
+D. Observability
+
+Metrics: crm_audit_events_total by event_type, crm_history_rows_total by table; error counters for audit failures.
+
+Tracing: include correlation_id from HTTP → repo → audit → outbox.
+
+Dashboards: “last audit event timestamp,” “audit error rate,” and quick filters for beneficiary/investor events.
+
+E. Guardrails
+
+Startup schema guard: on service boot, verify compliance_audit_log exists with required columns; verify beneficiary_history/investor_history triggers exist. Fail health if missing.
+
+Code review rule: any repo method that writes to beneficiaries or investors must use auditAndRun (or a similar decorator) and include correlationId.
+
+Bottom line
+
+Your observation is correct: the current paths for “beneficiary change” and “investor add” were not emitting Phase 9 audit entries, and there was no DB fallback to catch them.
+
+The changes above make those mutations auditable in two ways (app-level and DB-level), with correlation IDs, old/new values, and optional domain events.

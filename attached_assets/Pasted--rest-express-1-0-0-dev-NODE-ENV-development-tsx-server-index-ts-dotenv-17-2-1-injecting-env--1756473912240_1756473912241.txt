@@ -1,0 +1,655 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[dotenv@17.2.1] injecting env (4) from .env.local -- tip: ⚙️  write to custom object with { processEnv: myObject }
+[Twilio] Creating service instance...
+[Twilio] Checking configuration...
+[Twilio] Account SID: Present
+[Twilio] Auth Token: Present
+[Twilio] Phone Number: +12023017979
+[Twilio] Messaging Service SID: MG695e1b1cd14f6b2fb31fa6db23d8a05b
+[Twilio] ✓ Service configured successfully with phone: +12023017979
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Establishing connections...
+[INFO] Successfully loaded pdf2pic module
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: libuuid.so.1: cannot open shared object file: No such file or directory".
+[INFO] Successfully loaded pdfjs-dist module
+[dotenv@17.2.1] injecting env (0) from .env.local -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[Config] Loaded .env.local
+[Telemetry] Initializing observability...
+[Telemetry] Service: loanserve-pro
+[Telemetry] Version: 1.0.0
+[Telemetry] Environment: development
+[Migration] Starting database migrations...
+[Migration] Error running migrations: error: type "collection_status" already exists
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async migrate (/home/runner/workspace/node_modules/src/neon-http/migrator.ts:45:5)
+    at async runMigrations (/home/runner/workspace/server/migrations.ts:13:5)
+    at async <anonymous> (/home/runner/workspace/server/index.ts:100:3) {
+  length: 97,
+  severity: 'ERROR',
+  code: '42710',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'typecmds.c',
+  line: '1167',
+  routine: 'DefineEnum'
+}
+[Server] About to run startup validations...
+[SchemaValidator] Starting validation process...
+[SchemaValidator] Running startup validations...
+[SchemaValidator] Environment variables validated
+[SchemaValidator] Starting schema validation...
+[SchemaValidator] Schema validation warnings:
+  - Table 'accounts_chart' exists in database but not defined in schema
+  - Table 'ach_batch' exists in database but not defined in schema
+  - Table 'ach_entry' exists in database but not defined in schema
+  - Table 'ach_return' exists in database but not defined in schema
+  - Table 'ach_return_windows' exists in database but not defined in schema
+  - Table 'allocation_rules' exists in database but not defined in schema
+  - Table 'aml_screenings' exists in database but not defined in schema
+  - Table 'attorney' exists in database but not defined in schema
+  - Table 'audit_log' exists in database but not defined in schema
+  - Table 'audit_logs' exists in database but not defined in schema
+  - Table 'auth_events' exists in database but not defined in schema
+  - Table 'bank_account' exists in database but not defined in schema
+  - Table 'bank_files' exists in database but not defined in schema
+  - Table 'bank_statement_file' exists in database but not defined in schema
+  - Table 'bank_transactions' exists in database but not defined in schema
+  - Table 'bank_txn' exists in database but not defined in schema
+  - Table 'borrower_entities' exists in database but not defined in schema
+  - Table 'borrower_notices' exists in database but not defined in schema
+  - Table 'borrower_payment_methods' exists in database but not defined in schema
+  - Table 'borrower_preferences' exists in database but not defined in schema
+  - Table 'borrower_users' exists in database but not defined in schema
+  - Table 'cash_match_candidate' exists in database but not defined in schema
+  - Table 'collection_activities' exists in database but not defined in schema
+  - Table 'collection_case' exists in database but not defined in schema
+  - Table 'compliance_audit_log' exists in database but not defined in schema
+  - Table 'consumer_inbox' exists in database but not defined in schema
+  - Table 'contact_comm_prefs' exists in database but not defined in schema
+  - Table 'contacts' exists in database but not defined in schema
+  - Table 'crm_activity' exists in database but not defined in schema
+  - Table 'crm_appointments' exists in database but not defined in schema
+  - Table 'crm_calls' exists in database but not defined in schema
+  - Table 'crm_collaborators' exists in database but not defined in schema
+  - Table 'crm_deals' exists in database but not defined in schema
+  - Table 'crm_notes' exists in database but not defined in schema
+  - Table 'crm_tasks' exists in database but not defined in schema
+  - Table 'currency_codes' exists in database but not defined in schema
+  - Table 'dead_letter_messages' exists in database but not defined in schema
+  - Table 'deletion_receipt' exists in database but not defined in schema
+  - Table 'delinquency_current' exists in database but not defined in schema
+  - Table 'delinquency_snapshot' exists in database but not defined in schema
+  - Table 'document_artifact' exists in database but not defined in schema
+  - Table 'document_template' exists in database but not defined in schema
+  - Table 'document_templates' exists in database but not defined in schema
+  - Table 'documents' exists in database but not defined in schema
+  - Table 'email_artifacts' exists in database but not defined in schema
+  - Table 'email_template_folders' exists in database but not defined in schema
+  - Table 'email_templates' exists in database but not defined in schema
+  - Table 'escrow_accounts' exists in database but not defined in schema
+  - Table 'escrow_advances' exists in database but not defined in schema
+  - Table 'escrow_analysis' exists in database but not defined in schema
+  - Table 'escrow_analysis_item' exists in database but not defined in schema
+  - Table 'escrow_disbursement' exists in database but not defined in schema
+  - Table 'escrow_disbursement_payments' exists in database but not defined in schema
+  - Table 'escrow_disbursements' exists in database but not defined in schema
+  - Table 'escrow_forecast' exists in database but not defined in schema
+  - Table 'escrow_items' exists in database but not defined in schema
+  - Table 'escrow_ledger' exists in database but not defined in schema
+  - Table 'escrow_policy' exists in database but not defined in schema
+  - Table 'escrow_statement' exists in database but not defined in schema
+  - Table 'escrow_transactions' exists in database but not defined in schema
+  - Table 'exception_cases' exists in database but not defined in schema
+  - Table 'expected_settlements' exists in database but not defined in schema
+  - Table 'fee_policy' exists in database but not defined in schema
+  - Table 'fee_templates' exists in database but not defined in schema
+  - Table 'foreclosure_case' exists in database but not defined in schema
+  - Table 'foreclosure_event' exists in database but not defined in schema
+  - Table 'gateway_provider' exists in database but not defined in schema
+  - Table 'general_ledger_entries' exists in database but not defined in schema
+  - Table 'general_ledger_events' exists in database but not defined in schema
+  - Table 'guarantors' exists in database but not defined in schema
+  - Table 'idempotency_key' exists in database but not defined in schema
+  - Table 'inbox' exists in database but not defined in schema
+  - Table 'insurance_policies' exists in database but not defined in schema
+  - Table 'interest_accruals' exists in database but not defined in schema
+  - Table 'investor_contract' exists in database but not defined in schema
+  - Table 'investor_distributions' exists in database but not defined in schema
+  - Table 'investor_position_versions' exists in database but not defined in schema
+  - Table 'investor_positions' exists in database but not defined in schema
+  - Table 'investor_waterfall_rule' exists in database but not defined in schema
+  - Table 'investors' exists in database but not defined in schema
+  - Table 'irs_1098_records' exists in database but not defined in schema
+  - Table 'late_fee_assessment' exists in database but not defined in schema
+  - Table 'ledger_entries_legacy' exists in database but not defined in schema
+  - Table 'ledger_entry' exists in database but not defined in schema
+  - Table 'ledger_event' exists in database but not defined in schema
+  - Table 'legal_hold' exists in database but not defined in schema
+  - Table 'legal_proceedings' exists in database but not defined in schema
+  - Table 'lender_entity' exists in database but not defined in schema
+  - Table 'loan_accounting_config' exists in database but not defined in schema
+  - Table 'loan_balances' exists in database but not defined in schema
+  - Table 'loan_borrower_links' exists in database but not defined in schema
+  - Table 'loan_borrowers' exists in database but not defined in schema
+  - Table 'loan_fees' exists in database but not defined in schema
+  - Table 'loan_ledger' exists in database but not defined in schema
+  - Table 'loan_terms' exists in database but not defined in schema
+  - Table 'loans' exists in database but not defined in schema
+  - Table 'login_attempts' exists in database but not defined in schema
+  - Table 'message_metrics' exists in database but not defined in schema
+  - Table 'mfa_audit_log' exists in database but not defined in schema
+  - Table 'mfa_backup_codes' exists in database but not defined in schema
+  - Table 'mfa_challenges' exists in database but not defined in schema
+  - Table 'notice_schedule' exists in database but not defined in schema
+  - Table 'notice_template_v2' exists in database but not defined in schema
+  - Table 'notifications' exists in database but not defined in schema
+  - Table 'outbox' exists in database but not defined in schema
+  - Table 'outbox_events' exists in database but not defined in schema
+  - Table 'outbox_messages' exists in database but not defined in schema
+  - Table 'password_reset_tokens' exists in database but not defined in schema
+  - Table 'payees' exists in database but not defined in schema
+  - Table 'payment_artifacts' exists in database but not defined in schema
+  - Table 'payment_distributions' exists in database but not defined in schema
+  - Table 'payment_events' exists in database but not defined in schema
+  - Table 'payment_ingestion' exists in database but not defined in schema
+  - Table 'payment_ingestions' exists in database but not defined in schema
+  - Table 'payment_intake' exists in database but not defined in schema
+  - Table 'payment_ledger' exists in database but not defined in schema
+  - Table 'payment_posting' exists in database but not defined in schema
+  - Table 'payment_schedule' exists in database but not defined in schema
+  - Table 'payment_state_transitions' exists in database but not defined in schema
+  - Table 'payment_transactions' exists in database but not defined in schema
+  - Table 'payment_validation' exists in database but not defined in schema
+  - Table 'payments' exists in database but not defined in schema
+  - Table 'payments_inbox' exists in database but not defined in schema
+  - Table 'permissions' exists in database but not defined in schema
+  - Table 'plan_header' exists in database but not defined in schema
+  - Table 'plan_progress' exists in database but not defined in schema
+  - Table 'plan_schedule' exists in database but not defined in schema
+  - Table 'processed_events' exists in database but not defined in schema
+  - Table 'product_policy' exists in database but not defined in schema
+  - Table 'properties' exists in database but not defined in schema
+  - Table 'recon_exception' exists in database but not defined in schema
+  - Table 'reconciliation_exceptions' exists in database but not defined in schema
+  - Table 'reconciliation_matches' exists in database but not defined in schema
+  - Table 'reconciliations' exists in database but not defined in schema
+  - Table 'remittance_cycle' exists in database but not defined in schema
+  - Table 'remittance_export' exists in database but not defined in schema
+  - Table 'remittance_item' exists in database but not defined in schema
+  - Table 'remittance_recon_snapshot' exists in database but not defined in schema
+  - Table 'retention_policy' exists in database but not defined in schema
+  - Table 'role_permissions' exists in database but not defined in schema
+  - Table 'roles' exists in database but not defined in schema
+  - Table 'saga_states' exists in database but not defined in schema
+  - Table 'saga_step_history' exists in database but not defined in schema
+  - Table 'schedule_plan' exists in database but not defined in schema
+  - Table 'schedule_row' exists in database but not defined in schema
+  - Table 'servicing_events' exists in database but not defined in schema
+  - Table 'servicing_exceptions' exists in database but not defined in schema
+  - Table 'servicing_instructions' exists in database but not defined in schema
+  - Table 'servicing_runs' exists in database but not defined in schema
+  - Table 'session' exists in database but not defined in schema
+  - Table 'sessions' exists in database but not defined in schema
+  - Table 'settlement_windows' exists in database but not defined in schema
+  - Table 'system_alerts' exists in database but not defined in schema
+  - Table 'system_settings' exists in database but not defined in schema
+  - Table 'tasks' exists in database but not defined in schema
+  - Table 'user_ip_allowlist' exists in database but not defined in schema
+  - Table 'user_mfa_factors' exists in database but not defined in schema
+  - Table 'user_roles' exists in database but not defined in schema
+  - Table 'users' exists in database but not defined in schema
+[SchemaValidator] Startup validations complete
+[Server] Startup validations completed
+[CRMTopology] Setting up CRM email topology...
+[CRMTopology] Created exchange: crm.email.topic
+[RabbitMQ] Connection failed: Error: Expected ConnectionOpenOk; got <ConnectionClose channel:0>
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:113:16
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:104:11
+    at TLSSocket.recv (/home/runner/workspace/node_modules/amqplib/lib/connection.js:453:9)
+    at Object.onceWrapper (node:events:638:28)
+    at TLSSocket.emit (node:events:524:28)
+    at emitReadable_ (node:internal/streams/readable:834:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:81:21)
+[RabbitMQ] Scheduling reconnection attempt 1 in 5000ms
+[CRMTopology] Created exchange: notifications.topic
+[CRMTopology] Created dead letter exchange: crm.email.dlx
+[CRMTopology] Created queue: q.crm.email.v1
+[RabbitMQ] Applying topology...
+[CRMTopology] Created queue: q.crm.email.dlq.v1
+[RabbitMQ] Exchange declared: servicing.direct (direct)
+[CRMTopology] Created queue: q.crm.notifications.v1
+[RabbitMQ] Exchange declared: payments.topic (topic)
+[CRMTopology] Bound q.crm.email.v1 to crm.email.topic with key crm.email.requested.v1
+[RabbitMQ] Exchange declared: documents.direct (direct)
+[CRMTopology] Bound q.crm.notifications.v1 to notifications.topic with key crm.email.sent.v1
+[RabbitMQ] Exchange declared: notifications.topic (topic)
+[CRMTopology] Bound q.crm.notifications.v1 to notifications.topic with key crm.email.failed.v1
+[RabbitMQ] Exchange declared: escrow.workflow (topic)
+[CRMTopology] Bound q.crm.email.dlq.v1 to crm.email.dlx with key crm.email.failed
+[CRMTopology] CRM email topology setup complete
+[RabbitMQ] Exchange declared: escrow.compensate (topic)
+[RabbitMQ] Exchange declared: escrow.saga (topic)
+[Server] CRM email topology initialized successfully
+[RabbitMQ] Exchange declared: escrow.events (topic)
+[RabbitMQ] Exchange declared: escrow.dlq (direct)
+[Consumers] Starting payment processing consumers...
+[Consumers] Waiting for RabbitMQ connection...
+[RabbitMQ] Exchange declared: compliance.topic (topic)
+[RabbitMQ] Exchange declared: investor.direct (direct)
+[RabbitMQ] Exchange declared: audit.topic (topic)
+[RabbitMQ] Exchange declared: cash.events (topic)
+[RabbitMQ] Exchange declared: remittance (topic)
+[RabbitMQ] Exchange declared: remit.saga (topic)
+[RabbitMQ] Exchange declared: remit.events (topic)
+[RabbitMQ] Exchange declared: remit.dlq (direct)
+[RabbitMQ] Exchange declared: settlement.topic (topic)
+[RabbitMQ] Exchange declared: reconciliation.topic (topic)
+[RabbitMQ] Exchange declared: bank.topic (topic)
+[RabbitMQ] Exchange declared: aml.topic (topic)
+[RabbitMQ] Exchange declared: dlx.main (topic)
+[RabbitMQ] Exchange declared: retry.5s (topic)
+[RabbitMQ] Exchange declared: retry.30s (topic)
+[RabbitMQ] Exchange declared: payments.dlq (direct)
+[RabbitMQ] Queue declared: servicing.daily.tasks.0
+[RabbitMQ] Bound servicing.daily.tasks.0 to servicing.direct with key servicing.0.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.1
+[RabbitMQ] Bound servicing.daily.tasks.1 to servicing.direct with key servicing.1.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.2
+[RabbitMQ] Bound servicing.daily.tasks.2 to servicing.direct with key servicing.2.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.3
+[RabbitMQ] Bound servicing.daily.tasks.3 to servicing.direct with key servicing.3.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.4
+[RabbitMQ] Bound servicing.daily.tasks.4 to servicing.direct with key servicing.4.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.5
+[RabbitMQ] Bound servicing.daily.tasks.5 to servicing.direct with key servicing.5.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.6
+[RabbitMQ] Bound servicing.daily.tasks.6 to servicing.direct with key servicing.6.*
+[RabbitMQ] Queue declared: servicing.daily.tasks.7
+[RabbitMQ] Bound servicing.daily.tasks.7 to servicing.direct with key servicing.7.*
+[RabbitMQ] Queue declared: payments.validation
+[RabbitMQ] Bound payments.validation to payments.topic with key payment.*.received
+[RabbitMQ] Queue declared: payments.processing
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.validated
+[RabbitMQ] Bound payments.processing to payments.topic with key payment.*.process
+[RabbitMQ] Queue declared: payments.distribution
+[RabbitMQ] Bound payments.distribution to payments.topic with key payment.*.processed
+[RabbitMQ] Queue declared: payments.compliance
+[RabbitMQ] Bound payments.compliance to payments.topic with key payment.*.compliance
+[RabbitMQ] Queue declared: payments.reversal
+[RabbitMQ] Bound payments.reversal to payments.topic with key payment.*.reversal
+[RabbitMQ] Queue declared: payments.returned
+[RabbitMQ] Bound payments.returned to payments.topic with key payment.*.returned
+[RabbitMQ] Queue declared: documents.analysis.request
+[RabbitMQ] Bound documents.analysis.request to documents.direct with key analyze
+[RabbitMQ] Queue declared: notifications.email
+[RabbitMQ] Bound notifications.email to notifications.topic with key notify.*.*.email
+[RabbitMQ] Queue declared: notifications.sms
+[RabbitMQ] Bound notifications.sms to notifications.topic with key notify.*.*.sms
+[RabbitMQ] Queue declared: notifications.dashboard
+[RabbitMQ] Bound notifications.dashboard to notifications.topic with key notify.*.*.dashboard
+[RabbitMQ] Queue declared: escrow.validate
+[RabbitMQ] Bound escrow.validate to escrow.workflow with key escrow.validate
+[RabbitMQ] Queue declared: escrow.authorize
+[RabbitMQ] Bound escrow.authorize to escrow.workflow with key escrow.authorize
+[RabbitMQ] Queue declared: escrow.disburse
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Bound escrow.disburse to escrow.workflow with key escrow.disburse
+[RabbitMQ] Queue declared: escrow.reconcile
+[RabbitMQ] Bound escrow.reconcile to escrow.workflow with key escrow.reconcile
+[RabbitMQ] Queue declared: q.escrow.forecast.v2
+[RabbitMQ] Bound q.escrow.forecast.v2 to escrow.saga with key forecast.request.v1
+[RabbitMQ] Queue declared: q.escrow.disburse.schedule.v2
+[RabbitMQ] Bound q.escrow.disburse.schedule.v2 to escrow.saga with key disbursement.schedule.v1
+[RabbitMQ] Queue declared: q.escrow.disburse.post.v2
+[RabbitMQ] Bound q.escrow.disburse.post.v2 to escrow.saga with key disbursement.post.v1
+[RabbitMQ] Queue declared: q.escrow.analysis.run.v2
+[RabbitMQ] Bound q.escrow.analysis.run.v2 to escrow.saga with key analysis.run.v1
+[RabbitMQ] Queue declared: q.escrow.events.audit.v2
+[RabbitMQ] Bound q.escrow.events.audit.v2 to escrow.events with key escrow.*
+[RabbitMQ] Queue declared: q.escrow.dlq.v2
+[RabbitMQ] Bound q.escrow.dlq.v2 to escrow.dlq with key #
+[RabbitMQ] Queue declared: q.remit.aggregate
+[RabbitMQ] Connection failed: Error: Expected ConnectionOpenOk; got <ConnectionClose channel:0>
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:113:16
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:104:11
+    at TLSSocket.recv (/home/runner/workspace/node_modules/amqplib/lib/connection.js:453:9)
+    at Object.onceWrapper (node:events:638:28)
+    at TLSSocket.emit (node:events:524:28)
+    at emitReadable_ (node:internal/streams/readable:834:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:81:21)
+[RabbitMQ] Scheduling reconnection attempt 2 in 7500ms
+[RabbitMQ] Bound q.remit.aggregate to remit.saga with key cycle.aggregate.v1
+[RabbitMQ] Queue declared: q.remit.export
+[RabbitMQ] Bound q.remit.export to remit.saga with key cycle.export.v1
+[RabbitMQ] Queue declared: q.remit.settle
+[RabbitMQ] Bound q.remit.settle to remit.saga with key cycle.settle.v1
+[RabbitMQ] Queue declared: q.remit.events.audit
+[RabbitMQ] Bound q.remit.events.audit to remit.events with key remit.*
+[RabbitMQ] Queue declared: q.remit.dlq
+[RabbitMQ] Bound q.remit.dlq to remit.dlq with key #
+[RabbitMQ] Queue declared: compliance.regulatory
+[RabbitMQ] Bound compliance.regulatory to compliance.topic with key compliance.regulatory.*
+[RabbitMQ] Queue declared: compliance.investor
+[RabbitMQ] Bound compliance.investor to compliance.topic with key compliance.investor.*
+[RabbitMQ] Queue declared: compliance.internal
+[RabbitMQ] Bound compliance.internal to compliance.topic with key compliance.internal.*
+[RabbitMQ] Queue declared: investor.calc.p10
+[RabbitMQ] Bound investor.calc.p10 to investor.direct with key calc.p10
+[RabbitMQ] Queue declared: investor.calc.p5
+[RabbitMQ] Bound investor.calc.p5 to investor.direct with key calc.p5
+[RabbitMQ] Queue declared: investor.calc.p1
+[RabbitMQ] Bound investor.calc.p1 to investor.direct with key calc.p1
+[RabbitMQ] Queue declared: investor.clawback
+[RabbitMQ] Bound investor.clawback to investor.direct with key clawback
+[RabbitMQ] Queue declared: audit.events
+[RabbitMQ] Bound audit.events to audit.topic with key audit.*
+[RabbitMQ] Queue declared: settlement.ach.settle
+[RabbitMQ] Bound settlement.ach.settle to settlement.topic with key ach.settlement.*
+[RabbitMQ] Queue declared: settlement.ach.return
+[RabbitMQ] Bound settlement.ach.return to settlement.topic with key ach.return.*
+[RabbitMQ] Queue declared: settlement.wire.advice
+[RabbitMQ] Bound settlement.wire.advice to settlement.topic with key wire.advice.*
+[RabbitMQ] Queue declared: settlement.check.clear
+[RabbitMQ] Bound settlement.check.clear to settlement.topic with key check.clear.*
+[RabbitMQ] Queue declared: reconciliation.bank.import
+[RabbitMQ] Bound reconciliation.bank.import to bank.topic with key bank.file.*
+[RabbitMQ] Queue declared: reconciliation.match
+[RabbitMQ] Bound reconciliation.match to reconciliation.topic with key match.*
+[RabbitMQ] Queue declared: reconciliation.exceptions
+[RabbitMQ] Bound reconciliation.exceptions to reconciliation.topic with key exception.*
+[RabbitMQ] Queue declared: compliance.hits
+[RabbitMQ] Bound compliance.hits to compliance.topic with key compliance.hit.*
+[RabbitMQ] Queue declared: aml.screen
+[RabbitMQ] Bound aml.screen to aml.topic with key screen.*
+[RabbitMQ] Queue declared: aml.review
+[RabbitMQ] Bound aml.review to aml.topic with key review.*
+[RabbitMQ] Queue declared: dlq.payments
+[RabbitMQ] Bound dlq.payments to dlx.main with key payments.dlq
+[RabbitMQ] Queue declared: dlq.documents
+[RabbitMQ] Bound dlq.documents to dlx.main with key documents.dlq
+[RabbitMQ] Queue declared: dlq.notifications
+[RabbitMQ] Bound dlq.notifications to dlx.main with key notifications.dlq
+[RabbitMQ] Queue declared: dlq.settlement
+[RabbitMQ] Bound dlq.settlement to dlx.main with key settlement.dlq
+[RabbitMQ] Queue declared: dlq.reconciliation
+[RabbitMQ] Bound dlq.reconciliation to dlx.main with key reconciliation.dlq
+[RabbitMQ] Queue declared: dlq.compliance
+[RabbitMQ] Bound dlq.compliance to dlx.main with key compliance.dlq
+[RabbitMQ] Queue declared: dlq.aml
+[RabbitMQ] Bound dlq.aml to dlx.main with key aml.dlq
+[RabbitMQ] Queue declared: dlq.servicing.0
+[RabbitMQ] Bound dlq.servicing.0 to dlx.main with key servicing.dlq.0
+[RabbitMQ] Queue declared: dlq.servicing.1
+[RabbitMQ] Bound dlq.servicing.1 to dlx.main with key servicing.dlq.1
+[RabbitMQ] Queue declared: dlq.servicing.2
+[RabbitMQ] Bound dlq.servicing.2 to dlx.main with key servicing.dlq.2
+[RabbitMQ] Queue declared: dlq.servicing.3
+[RabbitMQ] Bound dlq.servicing.3 to dlx.main with key servicing.dlq.3
+[RabbitMQ] Queue declared: dlq.servicing.4
+[RabbitMQ] Bound dlq.servicing.4 to dlx.main with key servicing.dlq.4
+[RabbitMQ] Queue declared: dlq.servicing.5
+[RabbitMQ] Bound dlq.servicing.5 to dlx.main with key servicing.dlq.5
+[RabbitMQ] Queue declared: dlq.servicing.6
+[RabbitMQ] Bound dlq.servicing.6 to dlx.main with key servicing.dlq.6
+[RabbitMQ] Queue declared: dlq.servicing.7
+[RabbitMQ] Bound dlq.servicing.7 to dlx.main with key servicing.dlq.7
+[RabbitMQ] Queue declared: payments.intake
+[RabbitMQ] Bound payments.intake to payments.topic with key payment.*.received
+[RabbitMQ] Bound payments.intake to payments.topic with key payment.*.validate
+[RabbitMQ] Queue declared: q.payments.processing.v2
+[RabbitMQ] Bound q.payments.processing.v2 to payments.topic with key payment.card.validated
+[RabbitMQ] Bound q.payments.processing.v2 to payments.topic with key payment.ach.validated
+[RabbitMQ] Bound q.payments.processing.v2 to payments.topic with key payment.wire.validated
+[RabbitMQ] Queue declared: investor.calculations
+[RabbitMQ] Bound investor.calculations to investor.direct with key calc.*
+[RabbitMQ] Queue declared: q.forecast.v2
+[RabbitMQ] Bound q.forecast.v2 to escrow.saga with key forecast.request
+[RabbitMQ] Bound q.forecast.v2 to escrow.saga with key forecast.retry
+[RabbitMQ] Queue declared: q.schedule.disbursement.v2
+[RabbitMQ] Bound q.schedule.disbursement.v2 to escrow.saga with key disbursement.schedule
+[RabbitMQ] Bound q.schedule.disbursement.v2 to escrow.saga with key disbursement.retry
+[RabbitMQ] Queue declared: q.escrow.analysis.v2
+[RabbitMQ] Bound q.escrow.analysis.v2 to escrow.saga with key analysis.request
+[RabbitMQ] Bound q.escrow.analysis.v2 to escrow.saga with key analysis.retry
+[RabbitMQ] Queue declared: escrow.operations
+[RabbitMQ] Bound escrow.operations to escrow.workflow with key escrow.*
+[RabbitMQ] Queue declared: dlq.general
+[RabbitMQ] Bound dlq.general to dlx.main with key *.dlq
+[RabbitMQ] Topology applied successfully (with warnings for existing queues)
+[RabbitMQ] Topology setup complete using admin channel
+[RabbitMQ] Successfully connected and topology applied
+[RabbitMQ] Topology stats: {
+  exchanges: 25,
+  queues: 74,
+  quorumQueues: 51,
+  lazyQueues: 3,
+  dlqs: 16
+}
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Connection ready
+[Consumers] RabbitMQ connected
+[OutboxPublisher] Starting outbox publisher...
+[Consumers] Outbox publisher started
+[Validator] Starting payment validator consumer
+[RabbitMQ] Connection failed: Error: Expected ConnectionOpenOk; got <ConnectionClose channel:0>
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:113:16
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:104:11
+    at TLSSocket.recv (/home/runner/workspace/node_modules/amqplib/lib/connection.js:453:9)
+    at Object.onceWrapper (node:events:638:28)
+    at TLSSocket.emit (node:events:524:28)
+    at emitReadable_ (node:internal/streams/readable:834:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:81:21)
+[RabbitMQ] Scheduling reconnection attempt 3 in 11250ms
+[RabbitMQ] Created consumer channel for validator-consumer with prefetch 50
+[RabbitMQ] Consumer started: validator-consumer on queue payments.validation
+[Validator] Consumer started successfully
+[Consumers] Validator consumer started
+[Classifier] Starting payment classifier consumer
+[RabbitMQ] Created consumer channel for classifier-consumer with prefetch 25
+[RabbitMQ] Consumer started: classifier-consumer on queue q.classify
+[Classifier] Consumer started successfully
+[Consumers] Classifier consumer started
+[RulesEngine] Starting rules engine consumer
+[RabbitMQ] Created consumer channel for rules-engine-consumer with prefetch 10
+[RabbitMQ] Consumer started: rules-engine-consumer on queue q.rules.post
+[RulesEngine] Consumer started successfully
+[Consumers] Rules engine consumer started
+[RabbitMQ] Created consumer channel for payment-validation-consumer with prefetch 10
+[RabbitMQ] Consumer started: payment-validation-consumer on queue q.validate
+[Validation] Payment validation consumer started
+[Consumers] Validation consumer started
+[RabbitMQ] Created consumer channel for payment-processing-consumer with prefetch 32
+[RabbitMQ] Consumer started: payment-processing-consumer on queue q.payments.processing.v2
+[Processing] Payment processing consumer started on q.payments.processing.v2
+[Consumers] Processing consumer started
+[RabbitMQ] Created consumer channel for payment-distribution-consumer with prefetch 10
+[RabbitMQ] Consumer started: payment-distribution-consumer on queue payments.distribution
+[RabbitMQ] Created consumer channel for payment-clawback-consumer with prefetch 5
+[RabbitMQ] Consumer started: payment-clawback-consumer on queue investor.clawback
+[Distribution] Payment distribution consumer started
+[Consumers] Distribution consumer started
+[RabbitMQ] Created consumer channel for payment-reversal-consumer with prefetch 5
+[RabbitMQ] Consumer started: payment-reversal-consumer on queue payments.reversal
+[RabbitMQ] Created consumer channel for ach-return-consumer with prefetch 5
+[RabbitMQ] Consumer started: ach-return-consumer on queue payments.returned
+[Reversal] Payment reversal saga started
+[Consumers] Reversal saga started
+[CRMEmailConsumer] Starting consumer
+[RabbitMQ] Created consumer channel for crm-email-consumer with prefetch 5
+[CRMEmailConsumer] Consumer started successfully
+[Consumers] CRM email consumer started
+[Consumers] Starting escrow subsystem...
+[EscrowManager] Starting escrow subsystem...
+[EscrowForecast] Starting forecast consumer
+[EscrowDisbursement] Starting disbursement consumer
+[EscrowAnalysis] Starting analysis consumer
+[RabbitMQ] Created consumer channel for escrow-forecast-consumer with prefetch 10
+[RabbitMQ] Created consumer channel for escrow-disbursement-consumer with prefetch 10
+[RabbitMQ] Created consumer channel for escrow-analysis-consumer with prefetch 5
+[RabbitMQ] Consumer started: escrow-forecast-consumer on queue q.forecast.v2
+[EscrowForecast] Consumer started successfully
+[RabbitMQ] Consumer started: escrow-disbursement-consumer on queue q.schedule.disbursement.v2
+[EscrowDisbursement] Consumer started successfully
+[RabbitMQ] Consumer started: escrow-analysis-consumer on queue q.escrow.analysis.v2
+[EscrowAnalysis] Consumer started successfully
+[EscrowCycle] Daily cycle scheduled for 2025-08-30T02:00:00.000Z
+[EscrowCycle] Will run in 757 minutes
+[EscrowManager] Escrow subsystem started successfully
+[Consumers] Escrow subsystem started successfully
+[Consumers] All payment processing consumers started successfully
+[Server] Payment consumers started successfully
+[Metrics] Metric collectors initialized
+[MetricsCollector] Started periodic metrics collection
+[Server] Metrics collection started
+[CRM] Running notification checks...
+[Server] CRM notification checks scheduled (hourly)
+[CRM] Found 0 overdue tasks to notify
+[CRM] Found 0 appointments to remind
+[CRM] Notification checks complete
+The `fetchConnectionCache` option is deprecated (now always `true`)
+[RemittanceScheduler] Processing cycles...
+[RemittanceScheduler] Started. Next run in 13 hours at 2 AM
+[Server] Remittance scheduler started successfully
+[Compliance] Scheduler initialized - will run daily at 2 AM
+[Server] Compliance scheduler initialized successfully
+[Column] API credentials not configured
+[Routes] Registered compliance console routes
+[Routes] Registered Column banking routes
+[RemittanceScheduler] Cycle processing complete
+[Routes] Registered escrow subsystem routes
+[Routes] Registered document generation routes
+[Routes] Registered cash management routes
+[Routes] Registered cash management routes
+[Routes] Registered investor remittance routes
+1:22:51 PM [express] serving on port 5000
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Connection failed: Error: Expected ConnectionOpenOk; got <ConnectionClose channel:0>
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:113:16
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:104:11
+    at TLSSocket.recv (/home/runner/workspace/node_modules/amqplib/lib/connection.js:453:9)
+    at Object.onceWrapper (node:events:638:28)
+    at TLSSocket.emit (node:events:524:28)
+    at emitReadable_ (node:internal/streams/readable:834:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:81:21)
+[RabbitMQ] Scheduling reconnection attempt 4 in 16875ms
+1:23:01 PM [vite] warning: The "??" operator here will always return the left operand
+94 |        const prefs = preferencesData.data;
+95 |        const newPrefs: PreferenceState = {
+96 |          doNotEmail: !prefs.email?.marketing_general?.allowed ?? false,
+   |                                                               ^
+97 |          doNotText: !prefs.sms?.marketing_general?.allowed ?? false,
+98 |          doNotCall: !prefs.phone?.marketing_general?.allowed ?? false,
+
+  Plugin: vite:esbuild
+  File: /home/runner/workspace/client/src/components/crm/communication-preferences.tsx
+1:23:01 PM [vite] warning: The "??" operator here will always return the left operand
+95 |        const newPrefs: PreferenceState = {
+96 |          doNotEmail: !prefs.email?.marketing_general?.allowed ?? false,
+97 |          doNotText: !prefs.sms?.marketing_general?.allowed ?? false,
+   |                                                            ^
+98 |          doNotCall: !prefs.phone?.marketing_general?.allowed ?? false,
+99 |          reason: '',
+
+  Plugin: vite:esbuild
+  File: /home/runner/workspace/client/src/components/crm/communication-preferences.tsx
+1:23:01 PM [vite] warning: The "??" operator here will always return the left operand
+96 |          doNotEmail: !prefs.email?.marketing_general?.allowed ?? false,
+97 |          doNotText: !prefs.sms?.marketing_general?.allowed ?? false,
+98 |          doNotCall: !prefs.phone?.marketing_general?.allowed ?? false,
+   |                                                              ^
+99 |          reason: '',
+100|          policyBasis: ''
+
+  Plugin: vite:esbuild
+  File: /home/runner/workspace/client/src/components/crm/communication-preferences.tsx
+1:23:02 PM [express] GET /api/user 401 in 4ms
+1:23:07 PM [express] GET /api/user 304 in 162ms :: {"id":1,"username":"loanatik","email":"cschwartz@…
+1:23:07 PM [express] GET /api/loans/metrics 304 in 303ms :: {"totalPortfolio":"1553750.00","activeLo…
+1:23:07 PM [express] GET /api/user 304 in 224ms :: {"id":1,"username":"loanatik","email":"cschwartz@…
+1:23:08 PM [express] GET /api/loans/metrics 304 in 254ms :: {"totalPortfolio":"1553750.00","activeLo…
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Connection failed: Error: Expected ConnectionOpenOk; got <ConnectionClose channel:0>
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:113:16
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:104:11
+    at TLSSocket.recv (/home/runner/workspace/node_modules/amqplib/lib/connection.js:453:9)
+    at Object.onceWrapper (node:events:638:28)
+    at TLSSocket.emit (node:events:524:28)
+    at emitReadable_ (node:internal/streams/readable:834:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:81:21)
+[RabbitMQ] Scheduling reconnection attempt 5 in 25312.5ms
+[RabbitMQ] Establishing connections...
+[RabbitMQ] Connection failed: Error: Expected ConnectionOpenOk; got <ConnectionClose channel:0>
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:113:16
+    at /home/runner/workspace/node_modules/amqplib/lib/connection.js:104:11
+    at TLSSocket.recv (/home/runner/workspace/node_modules/amqplib/lib/connection.js:453:9)
+    at Object.onceWrapper (node:events:638:28)
+    at TLSSocket.emit (node:events:524:28)
+    at emitReadable_ (node:internal/streams/readable:834:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:81:21)
+[RabbitMQ] Scheduling reconnection attempt 6 in 37968.75ms
+1:23:53 PM [express] GET /api/loans 304 in 511ms :: [{"id":36,"loanNumber":"LN-2025-001","loanType":…
+1:23:55 PM [express] GET /api/loans/36 304 in 189ms :: {"id":36,"loanNumber":"LN-2025-001","loanType…
+1:23:55 PM [express] GET /api/compliance/audit-log 304 in 265ms :: [{"id":111,"correlationId":"01K3T…
+1:23:55 PM [express] GET /api/loans/36/escrow-disbursements 304 in 290ms :: []
+1:23:55 PM [express] GET /api/documents 304 in 285ms :: []
+[CRM] Fetching CRM notes { loanId: 36 }
+1:23:55 PM [express] GET /api/loans/36/crm/appointments 304 in 184ms :: []
+1:23:55 PM [express] GET /api/loans/36/crm/notes 304 in 202ms :: {"success":true,"data":[{"id":14,"c…
+Error fetching communication preferences: error: relation "communication_preference" does not exist
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async NeonPreparedQuery.execute (/home/runner/workspace/node_modules/src/neon-serverless/session.ts:102:18)
+    at async <anonymous> (/home/runner/workspace/server/routes/communication-preferences.ts:61:25) {
+  length: 124,
+  severity: 'ERROR',
+  code: '42P01',
+  detail: undefined,
+  hint: undefined,
+  position: '109',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '1449',
+  routine: 'parserOpenTable'
+}
+[API Error] Failed to fetch communication preferences: 500 
+node:_http_server:351
+    throw new ERR_HTTP_INVALID_STATUS_CODE(originalStatusCode);
+          ^
+
+RangeError [ERR_HTTP_INVALID_STATUS_CODE]: Invalid status code: Failed to fetch communication preferences
+    at ServerResponse.writeHead (node:_http_server:351:11)
+    at ServerResponse.writeHead (/home/runner/workspace/node_modules/on-headers/index.js:50:26)
+    at ServerResponse._implicitHeader (node:_http_server:337:8)
+    at writetop (/home/runner/workspace/node_modules/express-session/index.js:284:15)
+    at ServerResponse.end (/home/runner/workspace/node_modules/express-session/index.js:364:16)
+    at ServerResponse.send (/home/runner/workspace/node_modules/express/lib/response.js:232:10)
+    at ServerResponse.json (/home/runner/workspace/node_modules/express/lib/response.js:278:15)
+    at ServerResponse.res.json (/home/runner/workspace/server/index.ts:74:28)
+    at sendError (/home/runner/workspace/server/utils/api-helpers.ts:25:29)
+    at <anonymous> (/home/runner/workspace/server/routes/communication-preferences.ts:107:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5) {
+  code: 'ERR_HTTP_INVALID_STATUS_CODE'
+}
+
+Node.js v20.19.3
