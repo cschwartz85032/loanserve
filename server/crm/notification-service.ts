@@ -216,12 +216,13 @@ export class CRMNotificationService {
     let template = await this.repo.getLatestTemplate(`crm_${type}`);
     
     if (!template) {
-      // Create default template
+      // Create default template using consistent naming
       await db.execute(sql`
-        INSERT INTO document_template (template_id, type, version, engine, html_source, css_source)
+        INSERT INTO document_template (template_id, type, jurisdiction, version, engine, html_source, css_source)
         VALUES (
           ${`tmpl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`},
           ${`crm_${type}`},
+          NULL,
           1,
           'handlebars-html',
           ${this.getDefaultHtmlTemplate(type)},

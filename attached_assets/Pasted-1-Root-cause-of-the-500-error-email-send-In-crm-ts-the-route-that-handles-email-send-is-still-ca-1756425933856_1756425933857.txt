@@ -1,0 +1,138 @@
+1. Root cause of the 500 error (email send)
+
+In crm.ts the route that handles email send is still calling legacy notification code in some paths (direct call to notification-service.ts).
+
+That bypasses the Phase 4–5 outbox pattern. If the notification service encounters a missing template variable, mis-configured SMTP/API key, or any exception, it propagates up as a 500.
+
+There’s no audit entry created in audit_logs when this fails — so the CRM action is invisible to Phase 9 audit trails.
+
+2. Confirmed architectural gaps
+
+Outbox exists (outbox.ts, outbox-dispatcher.ts, outbox-publisher.ts), but CRM’s email path isn’t writing to it consistently.
+
+Audit coverage missing: In schema.ts the audit_logs table is present, but CRM mutations (send email, update contact, update loan) don’t record to it.
+
+Legacy fields still referenced: CRM code still pulls from notice_template_v2 and audit_log in some branches. These are Phase 0/legacy artifacts that should be retired (Phase 9 requires audit_logs).
+
+3. Step-by-step instructions for engineering
+Step 1: Refactor CRM email sending
+
+In crm.ts, remove the direct call to notification-service.ts.
+
+Instead, create an outbox event whenever a CRM user clicks “Send Email”:
+
+await outbox.insert({
+  eventType: 'crm.email.requested.v1',
+  aggregateId: loanId,
+  payload: {
+    templateId,
+    variables,
+    recipient,
+    senderUserId: req.user.id,
+  },
+  correlationId: req.correlationId,
+});
+
+
+Let the outbox dispatcher publish this to notifications.topic with routing key crm.email.requested.
+
+Step 2: Modernize notification service
+
+In notification-service.ts, ensure it only consumes messages from RabbitMQ (notifications.topic) and not direct function calls.
+
+It should render the email using templates in notice_templates, not notice_template_v2.
+
+Store the generated artifact in document_artifacts with a hash.
+
+Publish a follow-up event: crm.email.sent.v1.
+
+Step 3: Enforce Phase 9 audit trail
+
+In outbox-dispatcher.ts, after writing to outbox, also call an AuditLogger:
+
+await auditLogger.record({
+  userId: req.user.id,
+  objectType: 'loan',
+  objectId: loanId,
+  action: 'send_email',
+  newValue: JSON.stringify({ templateId, recipient }),
+  oldValue: null,
+  correlationId: req.correlationId,
+});
+
+
+Confirm in schema.ts that audit_logs has:
+
+actor_id
+
+object_type
+
+object_id
+
+field
+
+old_value
+
+new_value
+
+correlation_id
+
+created_at
+
+Require every controller in crm.ts (contact update, loan update, email send) to write an audit entry.
+
+Step 4: Kill legacy code paths
+
+Search for any references to:
+
+audit_log (singular) → replace with audit_logs.
+
+notice_template_v2 → replace with notice_templates.
+
+Direct calls to notification-service → replace with outbox events.
+
+Remove unused migrations for legacy tables once dependencies are cleared.
+
+Step 5: Strengthen error handling
+
+In notification-service.ts wrap template rendering with try/catch.
+
+If variables are missing, log a structured error and publish crm.email.failed.v1 to notifications.topic instead of throwing a raw 500.
+
+CRM route should immediately return 202 Accepted (request queued) rather than waiting for send completion.
+
+Step 6: Test end-to-end
+
+CRM “Send Email” → row appears in outbox.
+
+Outbox dispatcher publishes event with confirm.
+
+Notification service consumes event, renders template, stores artifact.
+
+Sends email via provider.
+
+Publishes crm.email.sent.v1.
+
+Audit log written with correlation ID.
+
+Verify both happy path and error path create audit entries.
+
+4. Acceptance criteria
+
+No 500s: CRM “Send Email” never returns 500. It always responds 202 (queued) or 4xx (validation error).
+
+All audit trails present: For every CRM data change (contact update, loan update, email send), a row exists in audit_logs.
+
+Legacy code removed: No references to audit_log, notice_template_v2, or direct notification service calls.
+
+Outbox enforced: All outbound email requests flow through outbox.
+
+Consistent events: crm.email.requested.v1, crm.email.sent.v1, crm.email.failed.v1 all appear in RabbitMQ with confirm.
+
+✅ By following these steps, you’ll not only fix the 500 error but also align CRM with Phases 1–9:
+
+Phase 1–3 canonical data,
+
+Phase 4–5 outbox pattern,
+
+Phase 9 audit trails for every data mutation.
