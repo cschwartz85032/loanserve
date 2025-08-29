@@ -249,23 +249,25 @@ export class InvestorRepository {
       },
       async (result) => {
         if (result.changedFields.length > 0) {
-          // Create audit event
-          await createAuditEvent(client, {
-            actorId,
-            eventType: 'CRM.INVESTOR.UPDATED',
-            resourceType: 'investor_loan',
-            resourceId: `${loanId}:${result.investorId}`,
-            loanId,
-            payloadJson: {
-              investorId: result.investorId,
-              changedFields: result.changedFields,
-              oldValues: result.oldValues,
-              newValues: result.newValues
-            },
-            correlationId,
-            description: `Investor ${result.investorId} updated`,
-            req // Pass request context for IP and user agent
-          });
+          // Create separate audit event for each changed field
+          for (const field of result.changedFields) {
+            await createAuditEvent(client, {
+              actorId,
+              eventType: 'CRM.INVESTOR.FIELD_UPDATED',
+              resourceType: 'investor_loan',
+              resourceId: `${loanId}:${result.investorId}`,
+              loanId,
+              payloadJson: {
+                investorId: result.investorId,
+                field: field,
+                oldValue: result.oldValues[field],
+                newValue: result.newValues[field]
+              },
+              correlationId,
+              description: `Investor ${result.investorId} field '${field}' updated from '${result.oldValues[field]}' to '${result.newValues[field]}'`,
+              req // Pass request context for IP and user agent
+            });
+          }
 
           // Emit domain event
           await outboxService.createMessage({

@@ -706,22 +706,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Log audit event if there were changes
+      // Log separate audit event for each changed field
       if (changedFields.length > 0) {
-        await complianceAudit.logEvent({
-          actorType: 'user',
-          actorId: actorId,
-          eventType: 'CRM.INVESTOR.UPDATED',
-          resourceType: 'investor',
-          resourceId: id.toString(),
-          loanId: investor.loanId,
-          previousValues: oldValues,
-          newValues: newValues,
-          changedFields: changedFields,
-          ipAddr: req.ip,
-          userAgent: req.get('user-agent'),
-          description: `Investor ${investor.investorId || investor.name} updated: ${changedFields.join(', ')}`
-        });
+        for (const field of changedFields) {
+          await complianceAudit.logEvent({
+            actorType: 'user',
+            actorId: actorId,
+            eventType: 'CRM.INVESTOR.FIELD_UPDATED',
+            resourceType: 'investor',
+            resourceId: id.toString(),
+            loanId: investor.loanId,
+            previousValues: { [field]: oldValues[field] },
+            newValues: { [field]: newValues[field] },
+            changedFields: [field],
+            ipAddr: req.ip,
+            userAgent: req.get('user-agent'),
+            description: `Investor ${investor.investorId || investor.name} field '${field}' updated from '${oldValues[field]}' to '${newValues[field]}'`
+          });
+        }
       }
       
       res.json(investor);

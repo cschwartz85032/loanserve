@@ -99,6 +99,7 @@ export interface IStorage {
 
   // Investor methods
   getInvestorsByLoan(loanId: number): Promise<Investor[]>;
+  getInvestor(id: number): Promise<Investor | undefined>;
   createInvestor(investor: InsertInvestor): Promise<Investor>;
   updateInvestor(id: number, investor: Partial<InsertInvestor>): Promise<Investor>;
   deleteInvestor(id: number): Promise<void>;
@@ -596,6 +597,11 @@ export class DatabaseStorage implements IStorage {
   // Investor methods
   async getInvestorsByLoan(loanId: number): Promise<Investor[]> {
     return await db.select().from(investors).where(eq(investors.loanId, loanId));
+  }
+
+  async getInvestor(id: number): Promise<Investor | undefined> {
+    const [investor] = await db.select().from(investors).where(eq(investors.id, id));
+    return investor || undefined;
   }
 
   async createInvestor(investor: InsertInvestor): Promise<Investor> {
