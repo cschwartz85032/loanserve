@@ -74,9 +74,14 @@ export async function createAuditEvent(
       resourceId: params.resourceId,
       loanId: params.loanId ? parseInt(params.loanId) : undefined,
       description: params.description || `${params.eventType} operation`,
-      newValues: params.payloadJson || {},
+      // Support both direct payload and structured field changes
+      previousValues: params.payloadJson?.oldValues || params.payloadJson?.previousValues,
+      newValues: params.payloadJson?.newValues || params.payloadJson,
+      changedFields: params.payloadJson?.changedFields,
       metadata: {
-        correlationId: params.correlationId
+        correlationId: params.correlationId,
+        // Preserve original payload for backward compatibility
+        originalPayload: params.payloadJson
       }
     });
     

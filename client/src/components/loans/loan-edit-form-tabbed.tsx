@@ -124,18 +124,54 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       return `Note: "${payload.newValues.content}"`;
     }
 
-    // For changes, show before/after values
+    // For single field changes (beneficiary updates)
+    if (payload.field && (payload.oldValue !== undefined || payload.newValue !== undefined)) {
+      const oldVal = payload.oldValue ?? 'null';
+      const newVal = payload.newValue ?? 'null';
+      return (
+        <div className="space-y-1">
+          <div className="font-medium text-gray-700">Field: {payload.field}</div>
+          <div className="text-sm">
+            <span className="text-red-600 line-through">Current: {oldVal}</span>
+            <span className="mx-2">→</span>
+            <span className="text-green-600 font-medium">New: {newVal}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // For multiple field changes (investor updates)
     if (payload.changedFields && payload.changedFields.length > 0) {
       const changes = payload.changedFields.map((field: string) => {
-        const oldValue = payload.previousValues?.[field];
-        const newValue = payload.newValues?.[field];
-        return `${field}: ${oldValue || 'null'} → ${newValue || 'null'}`;
-      }).join(', ');
-      return `Changed: ${changes}`;
+        const oldValue = payload.oldValues?.[field] ?? payload.previousValues?.[field] ?? 'null';
+        const newValue = payload.newValues?.[field] ?? 'null';
+        return (
+          <div key={field} className="border-l-2 border-blue-200 pl-2 py-1">
+            <div className="font-medium text-gray-700 text-xs">{field}</div>
+            <div className="text-xs">
+              <span className="text-red-600 line-through">Current: {oldValue}</span>
+              <span className="mx-2">→</span>
+              <span className="text-green-600 font-medium">New: {newValue}</span>
+            </div>
+          </div>
+        );
+      });
+      return <div className="space-y-2">{changes}</div>;
+    }
+
+    // For email operations, show enhanced details  
+    if (log.eventType === 'CRM.EMAIL.SENT' && payload.emailDetails) {
+      return (
+        <div className="space-y-1">
+          <div className="font-medium">Email Sent</div>
+          <div className="text-sm text-gray-600">To: {payload.emailDetails.to}</div>
+          <div className="text-sm text-gray-600">Subject: {payload.emailDetails.subject}</div>
+        </div>
+      );
     }
 
     // Fallback to description
-    return payload.description || 'N/A';
+    return payload.description || log.description || 'N/A';
   };
 
   // Update form data when loan is loaded
