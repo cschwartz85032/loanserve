@@ -51,13 +51,21 @@ export class CRMEmailConsumer {
     // Create consumer channel with prefetch
     const consumerChannel = await this.rabbitmq.createConsumerChannel('crm-email-consumer', 5);
 
-    // Start consuming messages using the channel directly
-    await this.rabbitmq.startConsumer(
-      consumerChannel,
-      'q.crm.email.v1',
-      this.handleEmailRequest.bind(this),
-      'crm-email-consumer'
-    );
+    // Start consuming messages
+    await consumerChannel.consume('q.crm.email.v1', async (message) => {
+      if (message) {
+        try {
+          const content = JSON.parse(message.content.toString());
+          await this.handleEmailRequest({ content });
+          consumerChannel.ack(message);
+        } catch (error) {
+          console.error('[CRMEmailConsumer] Error processing message:', error);
+          consumerChannel.nack(message, false, false);
+        }
+      }
+    }, {
+      consumerTag: 'crm-email-consumer'
+    });
 
     console.log('[CRMEmailConsumer] Consumer started successfully');
   }
@@ -82,6 +90,44 @@ export class CRMEmailConsumer {
       });
 
       if (notificationResult.success) {
+        // Publish success event
+        await this.rabbitmq.publish('notifications.topic', 'crm.email.sent.v1', {
+          loanId: payload.loanId,
+          userId: payload.userId,
+          resourceId: payload.resourceId,
+          correlationId: payload.correlationId,
+          recipient: payload.recipient,
+          success: true,
+          docId: notificationResult.docId
+        });
+
+        // Log to Phase 9 compliance audit trail (success)
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.CRM.EMAIL_SENT,
+          actorType: 'user',
+          actorId: payload.userId,
+          resourceType: 'email',
+          resourceId: payload.resourceId,
+          loanId: payload.loanId,
+          description: `Email successfully sent to ${payload.recipient.email}: ${payload.variables.subject}`,
+          newValues: {
+            to: payload.recipient.email,
+            cc: payload.variables.cc,
+            bcc: payload.variables.bcc,
+            subject: payload.variables.subject,
+            status: 'sent',
+            docId: notificationResult.docId
+          },
+          metadata: {
+            loanId: payload.loanId,
+            userId: payload.userId,
+            correlationId: payload.correlationId,
+            resourceId: payload.resourceId
+          },
+          ipAddr: payload.requestMetadata?.ipAddr,
+          userAgent: payload.requestMetadata?.userAgent
+        });
+
         // Update CRM activity status (queued → sent)
         await logActivity(payload.loanId, payload.userId, CRM_CONSTANTS.ACTIVITY_TYPES.EMAIL, {
           description: `Email sent to ${payload.recipient.email}`,
@@ -92,45 +138,6 @@ export class CRMEmailConsumer {
           attachmentCount: payload.attachments.length,
           documentId: notificationResult.docId,
           status: 'sent'
-        });
-
-        // Update Phase 9 compliance audit (queued → sent)
-        await complianceAudit.logEvent({
-          eventType: COMPLIANCE_EVENTS.CRM.EMAIL_SENT,
-          actorType: 'system',
-          actorId: payload.userId,
-          resourceType: 'email',
-          resourceId: payload.resourceId,
-          loanId: payload.loanId,
-          description: `Email successfully sent to ${payload.recipient.email}: ${payload.variables.subject}`,
-          newValues: {
-            ...payload.variables,
-            status: 'sent',
-            documentId: notificationResult.docId,
-            attachmentCount: payload.attachments.length
-          },
-          metadata: {
-            ...payload.requestMetadata,
-            correlationId: payload.correlationId,
-            loanId: payload.loanId,
-            userId: payload.userId,
-            documentId: notificationResult.docId
-          },
-          ipAddr: payload.requestMetadata.ipAddr,
-          userAgent: payload.requestMetadata.userAgent
-        });
-
-        // Publish success event
-        await this.rabbitmq.publish('notifications.topic', 'crm.email.sent.v1', {
-          loanId: payload.loanId,
-          userId: payload.userId,
-          resourceId: payload.resourceId,
-          documentId: notificationResult.docId,
-          recipient: payload.recipient,
-          subject: payload.variables.subject,
-          status: 'sent',
-          correlationId: payload.correlationId,
-          timestamp: new Date().toISOString()
         });
 
         console.log(`[CRMEmailConsumer] Email sent successfully for resource ${payload.resourceId}`);
@@ -156,7 +163,7 @@ export class CRMEmailConsumer {
 
       // Log failure to Phase 9 compliance audit
       await complianceAudit.logEvent({
-        eventType: COMPLIANCE_EVENTS.CRM.EMAIL_SENT,
+        eventType: COMPLIANCE_EVENTS.CRM.EMAIL_FAILED,
         actorType: 'system',
         actorId: payload.userId,
         resourceType: 'email',

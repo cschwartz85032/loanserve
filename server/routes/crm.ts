@@ -899,13 +899,13 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
 
     // Log to Phase 9 compliance audit trail (request logged)
     await complianceAudit.logEvent({
-      eventType: COMPLIANCE_EVENTS.CRM.EMAIL_SENT,
+      eventType: COMPLIANCE_EVENTS.CRM.EMAIL_REQUESTED,
       actorType: 'user',
       actorId: userId,
       resourceType: 'email',
       resourceId: resourceId,
       loanId: loanId,
-      description: `Email queued for sending to ${to}: ${subject}`,
+      description: `Email requested for sending to ${to}: ${subject}`,
       newValues: {
         to,
         cc: cc || null,

@@ -32,7 +32,8 @@ export class OutboxService {
       aggregateId: message.aggregateId,
       eventType: message.eventType,
       payload: message.payload,
-      attemptCount: 0
+      attemptCount: 0,
+      publishedAt: null
     }).returning();
 
     console.log(`[Outbox] Created message: ${created.id} for ${message.aggregateType}/${message.aggregateId} event: ${message.eventType}`);
