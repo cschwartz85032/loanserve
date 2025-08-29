@@ -11,8 +11,8 @@ import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { CRMEmailRequestedEvent, EmailValidationRules } from './email-types';
 import { DEFAULT_EMAIL_VALIDATION_RULES } from './email-types';
-import { complianceAudit } from '../compliance/auditService';
-import { checkContactRestrictions } from './dnc-enforcement';
+import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
+import { dncEnforcementService } from './dnc-enforcement';
 
 const router = Router();
 
@@ -60,6 +60,9 @@ router.post('/send', async (req, res) => {
 
     const emailRequest = validationResult.data;
 
+    // Generate correlation ID for tracking
+    const correlationId = randomUUID();
+
     // Validate business rules
     const validationError = await validateEmailRequest(emailRequest, DEFAULT_EMAIL_VALIDATION_RULES);
     if (validationError) {
@@ -69,18 +72,47 @@ router.post('/send', async (req, res) => {
       });
     }
 
-    // Check do-not-contact restrictions
-    const contactCheckResult = await checkContactRestrictions(emailRequest.loan_id, emailRequest.to);
+    // Check do-not-contact restrictions using AI classification
+    const contactCheckResult = await dncEnforcementService.checkEmailRestrictions(
+      emailRequest.loan_id, 
+      emailRequest.to,
+      emailRequest.subject,
+      emailRequest.template_id,
+      emailRequest.variables
+    );
+    
     if (!contactCheckResult.allowed) {
+      // Log DNC violation for compliance
+      await complianceAudit.logEvent({
+        eventType: COMPLIANCE_EVENTS.COMMS.DNC_VIOLATION_BLOCKED,
+        actorType: 'system',
+        actorId: 'dnc-enforcement',
+        resourceType: 'email_request',
+        resourceId: correlationId,
+        loanId: emailRequest.loan_id,
+        description: `Email blocked due to DNC restrictions: ${emailRequest.subject}`,
+        newValues: {
+          correlation_id: correlationId,
+          subject: emailRequest.subject,
+          restrictions: contactCheckResult.restrictions,
+          category: contactCheckResult.category
+        },
+        metadata: {
+          loanId: emailRequest.loan_id,
+          correlationId: correlationId,
+          dncCategory: contactCheckResult.category
+        },
+        ipAddr: (req as any).ip,
+        userAgent: req.headers['user-agent']
+      });
+
       return res.status(403).json({
         error: 'Contact restrictions prevent email delivery',
         code: 'CONTACT_RESTRICTED',
-        details: contactCheckResult.restrictions
+        details: contactCheckResult.restrictions,
+        category: contactCheckResult.category
       });
     }
-
-    // Generate correlation ID for tracking
-    const correlationId = randomUUID();
 
     // Create outbox event - SINGLE ROW WRITE
     const outboxEvent: CRMEmailRequestedEvent = {

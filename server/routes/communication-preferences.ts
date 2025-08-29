@@ -9,7 +9,6 @@ import { db } from '../db';
 import { communicationPreference, borrowerEntities } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { ConsentManagementService } from '../compliance/consentManagement';
-import { requireAuth } from '../auth/middleware';
 import { sendSuccess, sendError } from '../utils/api-helpers';
 import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
 
@@ -38,7 +37,7 @@ const dncRequestSchema = z.object({
  * GET /api/communication-preferences/:borrowerId
  * Get all communication preferences for a borrower
  */
-router.get('/:borrowerId', requireAuth, async (req, res) => {
+router.get('/:borrowerId', async (req, res) => {
   try {
     const borrowerId = req.params.borrowerId;
     const userId = (req as any).user?.id;
@@ -113,7 +112,7 @@ router.get('/:borrowerId', requireAuth, async (req, res) => {
  * PUT /api/communication-preferences/:borrowerId
  * Update communication preference for a borrower
  */
-router.put('/:borrowerId', requireAuth, async (req, res) => {
+router.put('/:borrowerId', async (req, res) => {
   try {
     const borrowerId = req.params.borrowerId;
     const userId = (req as any).user?.id;
@@ -124,6 +123,21 @@ router.put('/:borrowerId', requireAuth, async (req, res) => {
     }
 
     const { channel, topic, allowed, frequency } = validation.data;
+
+    // Prevent blocking transactional email topics
+    const transactionalTopics = [
+      'payment_notifications',
+      'account_statements', 
+      'escrow_notifications',
+      'delinquency_notifications',
+      'document_requests',
+      'legal_compliance',
+      'loan_servicing'
+    ];
+
+    if (!allowed && transactionalTopics.includes(topic)) {
+      return sendError(res, 'Cannot opt out of required transactional communications', 400);
+    }
 
     // Update preference via consent service (includes audit logging)
     await consentService.updateCommunicationPreference({
@@ -174,7 +188,7 @@ router.put('/:borrowerId', requireAuth, async (req, res) => {
  * POST /api/communication-preferences/:borrowerId/bulk
  * Bulk update multiple communication preferences
  */
-router.post('/:borrowerId/bulk', requireAuth, async (req, res) => {
+router.post('/:borrowerId/bulk', async (req, res) => {
   try {
     const borrowerId = req.params.borrowerId;
     const userId = (req as any).user?.id;
@@ -255,7 +269,7 @@ router.post('/:borrowerId/bulk', requireAuth, async (req, res) => {
  * POST /api/communication-preferences/:borrowerId/dnc
  * Add comprehensive Do Not Contact restriction
  */
-router.post('/:borrowerId/dnc', requireAuth, async (req, res) => {
+router.post('/:borrowerId/dnc', async (req, res) => {
   try {
     const borrowerId = req.params.borrowerId;
     const userId = (req as any).user?.id;
@@ -268,12 +282,14 @@ router.post('/:borrowerId/dnc', requireAuth, async (req, res) => {
     const { channel, reason, effective_date } = validation.data;
 
     // Set DNC for all marketing topics on the specified channel
+    // Note: Only marketing topics can be blocked - transactional emails are required
     const marketingTopics = [
       'promotional_offers',
       'marketing_campaigns', 
       'newsletters',
       'product_updates',
-      'surveys'
+      'surveys',
+      'marketing_general'
     ];
 
     const results = [];
@@ -337,7 +353,7 @@ router.post('/:borrowerId/dnc', requireAuth, async (req, res) => {
  * GET /api/communication-preferences/:borrowerId/check/:channel/:topic
  * Check if communication is allowed for specific channel/topic
  */
-router.get('/:borrowerId/check/:channel/:topic', requireAuth, async (req, res) => {
+router.get('/:borrowerId/check/:channel/:topic', async (req, res) => {
   try {
     const { borrowerId, channel, topic } = req.params;
 
