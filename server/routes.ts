@@ -418,11 +418,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/loans", isAuthenticated, asyncHandler(async (req, res) => {
     console.log("=== BACKEND: LOAN CREATION ENDPOINT CALLED (v2) ===");
-    console.log("Request body received:", JSON.stringify(req.body, null, 2));
     
     // Validate input with centralized error handling
     const validatedData = validateInput(insertLoanSchema, req.body, 'Invalid loan data');
-    console.log("Validation successful. Validated data:", JSON.stringify(validatedData, null, 2));
+    console.log("Validation successful.");
     
     // Create loan with transaction (already implemented in storage)
     console.log("Calling storage.createLoan...");

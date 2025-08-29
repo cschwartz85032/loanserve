@@ -122,7 +122,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    console.log('Login attempt for:', req.body.username);
+    console.log('Login attempt received');
     console.log('Session ID before auth:', req.sessionID);
     console.log('Session cookie settings:', sessionSettings.cookie);
     

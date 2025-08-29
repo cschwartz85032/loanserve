@@ -5,6 +5,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import cors from "cors";
 import { initializeTelemetry, shutdownTelemetry } from './observability/telemetry';
 import { correlationIdMiddleware, correlationErrorHandler } from './middleware/correlation-id';
+import { maskSensitive } from './middleware/safe-logger';
 import { startMetricsCollection, stopMetricsCollection } from './observability/metrics-collector';
 import { runStartupValidations } from './utils/schema-validator';
 import dotenv from 'dotenv';
@@ -79,13 +80,12 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        const safeBody = maskSensitive(capturedJsonResponse);
+        logLine += ` :: ${JSON.stringify(safeBody)}`;
       }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
+      if (logLine.length > 160) {
+        logLine = logLine.slice(0, 159) + "…";
       }
-
       log(logLine);
     }
   });
@@ -186,9 +186,9 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
+    log(`[Error] ${status} ${message}`);
     res.status(status).json({ message });
-    throw err;
+    // do not rethrow
   });
 
   // importantly only setup vite in development and after

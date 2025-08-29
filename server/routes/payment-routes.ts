@@ -57,14 +57,14 @@ const PaymentSubmissionSchema = z.object({
 /**
  * Submit a payment for processing
  */
-router.post('/payments', async (req, res) => {  // TEMPORARILY DISABLED AUTH FOR TESTING
+router.post('/payments', requireAuth, async (req, res) => {
   try {
-    console.log('[API] Payment submission request body:', JSON.stringify(req.body, null, 2));
+    console.log('[API] Payment submission received');
     
-    // TEMPORARILY BYPASS PERMISSIONS FOR TESTING
-    // if (!await hasPermission(req.user.id, 'payments', 'write', { userId: req.user.id })) {
-    //   return res.status(403).json({ error: 'Insufficient permissions' });
-    // }
+    // Check user permissions for payment operations
+    if (!await hasPermission(req.user.id, 'payments', 'write', { userId: req.user.id })) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
 
     const data = PaymentSubmissionSchema.parse(req.body);
     const paymentId = ulid();

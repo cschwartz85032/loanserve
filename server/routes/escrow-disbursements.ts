@@ -221,12 +221,12 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
       }
     });
     
-    console.log("Raw request body:", req.body);
-    console.log("Cleaned data before validation:", cleanedData);
+    console.log("Processing escrow disbursement request");
+    console.log("Data validation in progress...");
     
     const validatedData = insertEscrowDisbursementSchema.parse(cleanedData);
     
-    console.log("Validated data being sent to DB:", validatedData);
+    console.log("Validation complete, creating disbursement...");
     
     const disbursement = await storage.createEscrowDisbursement(validatedData);
     
