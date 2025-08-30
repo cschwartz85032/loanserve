@@ -309,6 +309,9 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       refetchDisbursements();
       refetchSummary();
       
+      // Invalidate audit log cache to show new entries
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
+      
       setIsAddDialogOpen(false);
       setEditingDisbursement(null);
       form.reset();
@@ -337,6 +340,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       refetchSummary();
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
+      
+      // Invalidate audit log cache to show new entries
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
+      
       setIsAddDialogOpen(false);
       setEditingDisbursement(null);
       form.reset();
@@ -362,6 +369,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       
       refetchDisbursements();
       refetchSummary();
+      
+      // Invalidate audit log cache to show new entries
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
+      
       toast({ title: "Disbursement status updated successfully" });
     },
   });
@@ -389,6 +400,10 @@ export function EscrowDisbursementsTab({ loanId }: EscrowDisbursementsTabProps) 
       
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-disbursements`] });
       queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}/escrow-summary`] });
+      
+      // Invalidate audit log cache to show new entries
+      queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
+      
       toast({ title: "Disbursement deleted successfully" });
     },
     onError: (error: any) => {
