@@ -2,6 +2,7 @@ import { db } from '../db';
 import { complianceAuditLog } from '@shared/schema';
 import { createHash } from 'crypto';
 import { ulid } from 'ulid';
+import { getRealUserIP } from '../utils/audit-helper.js';
 
 // Comprehensive Event Taxonomy
 export const COMPLIANCE_EVENTS = {
@@ -336,7 +337,7 @@ class ComplianceAuditService {
       resourceId,
       previousValues,
       newValues,
-      ipAddr: req?.ip,
+      ipAddr: req ? getRealUserIP(req) : undefined,
       userAgent: req?.headers?.['user-agent'],
       sessionId: req?.sessionID
     });
@@ -362,7 +363,7 @@ class ComplianceAuditService {
       resourceId,
       description,
       metadata,
-      ipAddr: req?.ip,
+      ipAddr: req ? getRealUserIP(req) : undefined,
       userAgent: req?.headers?.['user-agent'],
       sessionId: req?.sessionID
     });

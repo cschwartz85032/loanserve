@@ -15,6 +15,7 @@ import {
 import { eq, desc, and, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
+import { getRealUserIP } from '../utils/audit-helper.js';
 import sgMail from '@sendgrid/mail';
 import multer from 'multer';
 import path from 'path';
@@ -136,7 +137,7 @@ router.post('/loans/:loanId/crm/notes', asyncHandler(async (req, res) => {
       loanId,
       userId
     },
-    ipAddr: (req as any).ip,
+    ipAddr: getRealUserIP(req as any),
     userAgent: (req as any).headers?.['user-agent']
   });
   
@@ -216,7 +217,7 @@ router.post('/loans/:loanId/crm/tasks', async (req, res) => {
         loanId,
         userId
       },
-      ipAddr: (req as any).ip,
+      ipAddr: getRealUserIP(req as any),
       userAgent: (req as any).headers?.['user-agent']
     });
     
@@ -385,7 +386,7 @@ router.post('/loans/:loanId/crm/appointments', async (req, res) => {
         userId,
         appointmentId: appointment.id
       },
-      ipAddr: (req as any).ip,
+      ipAddr: getRealUserIP(req as any),
       userAgent: (req as any).headers?.['user-agent']
     });
     
@@ -429,7 +430,7 @@ router.post('/loans/:loanId/crm/texts', async (req, res) => {
         userId,
         phoneNumber: recipientPhone
       },
-      ipAddr: (req as any).ip,
+      ipAddr: getRealUserIP(req as any),
       userAgent: (req as any).headers?.['user-agent']
     });
     
@@ -600,7 +601,7 @@ router.post('/loans/:loanId/crm/collaborators', async (req, res) => {
         targetUserId: userId,
         collaboratorId: collaborator.id
       },
-      ipAddr: (req as any).ip,
+      ipAddr: getRealUserIP(req as any),
       userAgent: (req as any).headers?.['user-agent']
     });
     
@@ -687,7 +688,7 @@ router.post('/loans/:loanId/crm/deals', async (req, res) => {
         dealId: deal.id,
         dealValue: value
       },
-      ipAddr: (req as any).ip,
+      ipAddr: getRealUserIP(req as any),
       userAgent: (req as any).headers?.['user-agent']
     });
     
@@ -878,7 +879,7 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
         })),
         correlationId,
         requestMetadata: {
-          ipAddr: (req as any).ip,
+          ipAddr: getRealUserIP(req as any),
           userAgent: (req as any).headers?.['user-agent'],
           recipientCount: 1 + (cc ? cc.split(',').length : 0) + (bcc ? bcc.split(',').length : 0),
           hasAttachments: attachments.length > 0
@@ -923,7 +924,7 @@ router.post('/loans/:loanId/crm/send-email', upload.array('files', 10), async (r
         recipientCount: 1 + (cc ? cc.split(',').length : 0) + (bcc ? bcc.split(',').length : 0),
         hasAttachments: attachments.length > 0
       },
-      ipAddr: (req as any).ip,
+      ipAddr: getRealUserIP(req as any),
       userAgent: (req as any).headers?.['user-agent']
     });
 
@@ -1176,7 +1177,7 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
         loanId,
         userId
       },
-      ipAddr: (req as any).ip,
+      ipAddr: getRealUserIP(req as any),
       userAgent: (req as any).headers?.['user-agent']
     });
 

@@ -5,6 +5,61 @@
 
 import { PoolClient } from '@neondatabase/serverless';
 import { complianceAudit } from '../compliance/auditService';
+import type { Request } from 'express';
+
+/**
+ * Extract real user IP address from request, handling proxy headers
+ */
+export function getRealUserIP(req: Request): string {
+  // Check common proxy headers in order of preference
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  const xRealIP = req.headers['x-real-ip'];
+  const xClientIP = req.headers['x-client-ip'];
+  const cfConnectingIP = req.headers['cf-connecting-ip']; // Cloudflare
+  
+  // X-Forwarded-For can contain multiple IPs, get the first (original client)
+  if (xForwardedFor) {
+    const forwarded = Array.isArray(xForwardedFor) ? xForwardedFor[0] : xForwardedFor;
+    const firstIP = forwarded.split(',')[0]?.trim();
+    if (firstIP && !isPrivateIP(firstIP)) {
+      return firstIP;
+    }
+  }
+  
+  // Try other proxy headers
+  if (xRealIP && typeof xRealIP === 'string' && !isPrivateIP(xRealIP)) {
+    return xRealIP;
+  }
+  
+  if (xClientIP && typeof xClientIP === 'string' && !isPrivateIP(xClientIP)) {
+    return xClientIP;
+  }
+  
+  if (cfConnectingIP && typeof cfConnectingIP === 'string' && !isPrivateIP(cfConnectingIP)) {
+    return cfConnectingIP;
+  }
+  
+  // Fallback to req.ip (which may be proxy IP)
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+/**
+ * Check if IP address is private/internal (RFC 1918)
+ */
+function isPrivateIP(ip: string): boolean {
+  const privateRanges = [
+    /^10\./,           // 10.0.0.0/8
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./,  // 172.16.0.0/12
+    /^192\.168\./,     // 192.168.0.0/16
+    /^127\./,          // 127.0.0.0/8 (localhost)
+    /^169\.254\./,     // 169.254.0.0/16 (link-local)
+    /^::1$/,           // IPv6 localhost
+    /^fc00:/,          // IPv6 unique local
+    /^fe80:/           // IPv6 link-local
+  ];
+  
+  return privateRanges.some(range => range.test(ip));
+}
 
 export interface AuditParams {
   actorId: string;
@@ -80,7 +135,7 @@ export async function createAuditEvent(
       newValues: params.payloadJson?.newValues || params.payloadJson,
       changedFields: params.payloadJson?.changedFields,
       // Capture request context for audit trail
-      ipAddr: params.req?.ip,
+      ipAddr: params.req ? getRealUserIP(params.req) : undefined,
       userAgent: params.req?.get?.('user-agent'),
       metadata: {
         correlationId: params.correlationId,

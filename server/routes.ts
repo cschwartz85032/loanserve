@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { complianceAudit, COMPLIANCE_EVENTS } from './compliance/auditService';
 import { db } from "./db";
+import { getRealUserIP } from './utils/audit-helper.js';
 import { sql } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
@@ -242,7 +243,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resourceType: 'borrower',
         resourceId: borrower.id,
         newValues: borrower,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -271,7 +272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resourceId: borrower.id,
         previousValues: existingBorrower,
         newValues: borrower,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -318,7 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resourceType: 'property',
         resourceId: property.id,
         newValues: property,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -348,7 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resourceId: property.id,
         previousValues: existingProperty,
         newValues: property,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -722,7 +723,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             previousValues: { [field]: oldValues[field] },
             newValues: { [field]: newValues[field] },
             changedFields: [field],
-            ipAddr: req.ip,
+            ipAddr: getRealUserIP(req),
             userAgent: req.get('user-agent'),
             description: `Investor ${investor.investorId || investor.name} field '${field}' updated from '${oldValues[field]}' to '${newValues[field]}'`
           });
@@ -775,7 +776,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resourceId: payment.id,
         loanId: loanId,
         newValues: payment,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -800,7 +801,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         loanId: payment.loanId,
         previousValues: await storage.getPayment(id),
         newValues: payment,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -878,7 +879,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resourceId: escrowAccount.id,
         loanId: loanId,
         newValues: escrowAccount,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -903,7 +904,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         loanId: escrowAccount.loanId,
         previousValues: await storage.getEscrowAccount(id),
         newValues: escrowAccount,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -970,7 +971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resourceType: 'escrow_transaction',
         resourceId: transaction.id,
         newValues: transaction,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -1233,7 +1234,7 @@ To implement full file serving:
         resourceId: document.id,
         loanId: document.loanId,
         newValues: document,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -1260,7 +1261,7 @@ To implement full file serving:
         resourceId: document.id,
         loanId: document.loanId,
         newValues: document,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -1290,7 +1291,7 @@ To implement full file serving:
         loanId: document.loanId,
         previousValues: existingDocument,
         newValues: document,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -1319,7 +1320,7 @@ To implement full file serving:
         resourceId: document.id,
         loanId: document.loanId,
         previousValues: document,
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
@@ -1528,7 +1529,7 @@ To implement full file serving:
         loanId: loan.id,
         newValues: { ...loan, documentTypes },
         metadata: { source: 'ai_extraction' },
-        ipAddr: req.ip,
+        ipAddr: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
 
