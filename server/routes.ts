@@ -545,24 +545,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
         loan = await storage.updateLoan(id, cleanedLoanData);
       }
       
-      await complianceAudit.logEvent({
-        actorType: 'user',
-        actorId: req.user?.id?.toString() || '1',
-        eventType: COMPLIANCE_EVENTS.LOAN.UPDATED,
-        resourceType: 'loan',
-        resourceId: loan.id.toString(),
-        details: {
-          action: 'update_loan',
-          loanId: loan.id,
-          userId: req.user?.id || 1,
-          changedFields: Object.keys(cleanedLoanData).length > 0 ? Object.keys(cleanedLoanData) : Object.keys(propertyFields),
-          previousValues: existingLoan,
-          newValues: loan
-        },
-        userId: req.user?.id || 1,
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent']
-      });
+      // Implement field-by-field audit logging for loan fields
+      if (Object.keys(cleanedLoanData).length > 0) {
+        for (const [field, newValue] of Object.entries(cleanedLoanData)) {
+          const oldValue = (existingLoan as any)[field];
+          
+          // Only log if the value actually changed (use String conversion for comparison)
+          if (String(oldValue) !== String(newValue)) {
+            await complianceAudit.logEvent({
+              eventType: COMPLIANCE_EVENTS.LOAN.UPDATED,
+              actorType: 'user',
+              actorId: req.user?.id?.toString() || '1',
+              resourceType: 'loan',
+              resourceId: loan.id.toString(),
+              loanId: loan.id,
+              ipAddr: getRealUserIP(req),
+              userAgent: req.headers?.['user-agent'],
+              description: `Loan field '${field}' updated from '${oldValue}' to '${newValue}' on ${existingLoan.loanNumber}`,
+              previousValues: { [field]: oldValue },
+              newValues: { [field]: newValue },
+              changedFields: [field]
+            });
+          }
+        }
+      }
+
+      // Implement field-by-field audit logging for property fields
+      if (Object.keys(propertyFields).length > 0) {
+        // Get the existing property data for comparison
+        const existingProperty = await storage.getProperty(existingLoan.propertyId);
+        
+        for (const [field, newValue] of Object.entries(propertyFields)) {
+          const oldValue = (existingProperty as any)[field];
+          
+          // Only log if the value actually changed (use String conversion for comparison)
+          if (String(oldValue) !== String(newValue)) {
+            await complianceAudit.logEvent({
+              eventType: COMPLIANCE_EVENTS.PROPERTY.UPDATED,
+              actorType: 'user',
+              actorId: req.user?.id?.toString() || '1',
+              resourceType: 'property',
+              resourceId: existingLoan.propertyId.toString(),
+              loanId: loan.id,
+              ipAddr: getRealUserIP(req),
+              userAgent: req.headers?.['user-agent'],
+              description: `Property field '${field}' updated from '${oldValue}' to '${newValue}' on ${existingLoan.loanNumber}`,
+              previousValues: { [field]: oldValue },
+              newValues: { [field]: newValue },
+              changedFields: [field]
+            });
+          }
+        }
+      }
+
+      // Send cache invalidation signals in response headers for client-side cache refresh
+      res.setHeader('X-Cache-Invalidate', JSON.stringify([
+        `/api/compliance/audit-log`,
+        `/api/loans/${loan.id}`
+      ]));
 
       res.json(loan);
     } catch (error) {
