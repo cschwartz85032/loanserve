@@ -55,15 +55,21 @@ const getEventDescription = (log: any): string => {
 };
 
 // Insert hyperlink around the loan number within the description
-const renderDescriptionWithLink = (description: string) => {
-  const match = description.match(/Loan ([A-Z0-9-]+)/);
-  if (!match) return description;
-  const loanNumber = match[1];
-  const [before, after] = description.split(match[0]);
+const renderDescriptionWithLink = (description: string, log?: any, loanNumber?: string) => {
+  // If description doesn't contain loan number but we have loanId and loanNumber, append it
+  let fullDescription = description;
+  if (description !== 'N/A' && !description.includes('Loan ') && log?.loanId && loanNumber) {
+    fullDescription = `${description} on Loan ${loanNumber}`;
+  }
+  
+  const match = fullDescription.match(/Loan ([A-Z0-9-]+)/);
+  if (!match) return fullDescription;
+  const extractedLoanNumber = match[1];
+  const [before, after] = fullDescription.split(match[0]);
   return (
     <>
       {before}
-      <a href={`/loan/${loanNumber}`} className="text-blue-500 underline">{loanNumber}</a>
+      <a href={`/loan/${extractedLoanNumber}`} className="text-blue-500 underline">{extractedLoanNumber}</a>
       {after}
     </>
   );
@@ -683,7 +689,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           {log.actorId || 'System'}
                         </TableCell>
                         <TableCell className="whitespace-pre-wrap">
-                          {renderDescriptionWithLink(getEventDescription(log))}
+                          {renderDescriptionWithLink(getEventDescription(log), log, loan?.loanNumber)}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-gray-500">
                           {log.ipAddr || 'N/A'}
