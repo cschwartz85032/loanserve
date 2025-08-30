@@ -141,6 +141,13 @@ router.post('/loans/:loanId/crm/notes', asyncHandler(async (req, res) => {
     userAgent: (req as any).headers?.['user-agent']
   });
   
+  // Send cache invalidation signals in response headers for client-side cache refresh
+  res.setHeader('X-Cache-Invalidate', JSON.stringify([
+    `/api/compliance/audit-log`,
+    `/api/loans/${loanId}/crm/activity`,
+    `/api/loans/${loanId}/crm/notes`
+  ]));
+  
   sendSuccess(res, note, 'Note created successfully');
 }));
 
@@ -339,6 +346,13 @@ router.patch('/loans/:loanId/crm/tasks/:taskId', async (req, res) => {
       }, taskId);
     }
     
+    // Send cache invalidation signals in response headers for client-side cache refresh
+    res.setHeader('X-Cache-Invalidate', JSON.stringify([
+      `/api/compliance/audit-log`,
+      `/api/loans/${loanId}/crm/activity`,
+      `/api/loans/${loanId}/crm/tasks`
+    ]));
+    
     res.json(task);
   } catch (error) {
     console.error('Error updating CRM task:', error);
@@ -428,6 +442,13 @@ router.post('/loans/:loanId/crm/appointments', async (req, res) => {
       userAgent: (req as any).headers?.['user-agent']
     });
     
+    // Send cache invalidation signals in response headers for client-side cache refresh
+    res.setHeader('X-Cache-Invalidate', JSON.stringify([
+      `/api/compliance/audit-log`,
+      `/api/loans/${loanId}/crm/activity`,
+      `/api/loans/${loanId}/crm/appointments`
+    ]));
+    
     res.json(appointment);
   } catch (error) {
     console.error('Error creating CRM appointment:', error);
@@ -472,6 +493,12 @@ router.post('/loans/:loanId/crm/texts', async (req, res) => {
       userAgent: (req as any).headers?.['user-agent']
     });
     
+    // Send cache invalidation signals in response headers for client-side cache refresh
+    res.setHeader('X-Cache-Invalidate', JSON.stringify([
+      `/api/compliance/audit-log`,
+      `/api/loans/${loanId}/crm/activity`
+    ]));
+
     res.json({ success: true, message: 'Text message logged' });
   } catch (error) {
     console.error('Error logging text message:', error);
@@ -1325,6 +1352,13 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       .where(eq(loans.id, loanId))
       .limit(1);
 
+    // Send cache invalidation signals in response headers for client-side cache refresh
+    res.setHeader('X-Cache-Invalidate', JSON.stringify([
+      `/api/compliance/audit-log`,
+      `/api/loans/${loanId}/crm/activity`,
+      `/api/loans/${loanId}`
+    ]));
+
     res.json(finalLoanResult[0]);
   } catch (error) {
     console.error('Error updating contact info:', error);
@@ -1360,6 +1394,12 @@ router.post('/loans/:loanId/profile-photo', async (req, res) => {
       description: 'Profile photo updated'
     });
     
+    // Send cache invalidation signals in response headers for client-side cache refresh
+    res.setHeader('X-Cache-Invalidate', JSON.stringify([
+      `/api/compliance/audit-log`,
+      `/api/loans/${loanId}/crm/activity`
+    ]));
+
     res.json({ success: true, photoUrl });
   } catch (error) {
     console.error('Error updating profile photo:', error);
