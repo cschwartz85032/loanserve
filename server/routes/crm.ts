@@ -1210,14 +1210,21 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
     
     const updatedLoan = updatedLoanResult[0];
 
-    // Log individual audit entries for each field change (like escrow disbursements)
-    const potentialFields = Object.keys(updateData);
-    for (const field of potentialFields) {
-      const oldValue = (existingLoan as any)[field];
-      const newValue = (updatedLoan as any)[field];
-      
-      // Only log if the value actually changed (use String conversion for comparison)
-      if (String(oldValue) !== String(newValue)) {
+    // Log individual audit entries for phone and email changes (like escrow disbursements)
+    // Parse existing and new phone/email data for proper comparison
+    const existingPhones = parsePhoneData(existingLoan.borrowerPhone);
+    const existingEmails = parseEmailData(existingLoan.borrowerEmail);
+    const newPhones = phones || [];
+    const newEmails = emails || [];
+
+    // Track phone changes - additions, deletions, modifications
+    const existingPhoneNumbers = existingPhones.map(p => `${p.number}:${p.label}`);
+    const newPhoneNumbers = newPhones.map((p: any) => `${p.number}:${p.label}`);
+
+    // Log phone deletions
+    for (const existingPhone of existingPhones) {
+      const phoneKey = `${existingPhone.number}:${existingPhone.label}`;
+      if (!newPhoneNumbers.includes(phoneKey)) {
         await complianceAudit.logEvent({
           eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
           actorType: 'user',
@@ -1227,10 +1234,77 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
           loanId: loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.['user-agent'],
-          description: `Contact info field '${field}' updated from '${oldValue}' to '${newValue}' on LN-2025-001`,
-          previousValues: { [field]: oldValue },
-          newValues: { [field]: newValue },
-          changedFields: [field]
+          description: `Phone '${existingPhone.number}' (${existingPhone.label}) deleted from contact info on ${existingLoan.loanNumber}`,
+          previousValues: { phone: `${existingPhone.number} (${existingPhone.label})` },
+          newValues: { phone: null },
+          changedFields: ['phone']
+        });
+      }
+    }
+
+    // Log phone additions
+    for (const newPhone of newPhones) {
+      const phoneKey = `${newPhone.number}:${newPhone.label}`;
+      if (!existingPhoneNumbers.includes(phoneKey)) {
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
+          actorType: 'user',
+          actorId: userId?.toString(),
+          resourceType: 'loan',
+          resourceId: loanId.toString(),
+          loanId: loanId,
+          ipAddr: getRealUserIP(req),
+          userAgent: req.headers?.['user-agent'],
+          description: `Phone '${newPhone.number}' (${newPhone.label}) added to contact info on ${existingLoan.loanNumber}`,
+          previousValues: { phone: null },
+          newValues: { phone: `${newPhone.number} (${newPhone.label})` },
+          changedFields: ['phone']
+        });
+      }
+    }
+
+    // Track email changes - additions, deletions, modifications
+    const existingEmailAddresses = existingEmails.map(e => `${e.email}:${e.label}`);
+    const newEmailAddresses = newEmails.map((e: any) => `${e.email}:${e.label}`);
+
+    // Log email deletions
+    for (const existingEmail of existingEmails) {
+      const emailKey = `${existingEmail.email}:${existingEmail.label}`;
+      if (!newEmailAddresses.includes(emailKey)) {
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
+          actorType: 'user',
+          actorId: userId?.toString(),
+          resourceType: 'loan',
+          resourceId: loanId.toString(),
+          loanId: loanId,
+          ipAddr: getRealUserIP(req),
+          userAgent: req.headers?.['user-agent'],
+          description: `Email '${existingEmail.email}' (${existingEmail.label}) deleted from contact info on ${existingLoan.loanNumber}`,
+          previousValues: { email: `${existingEmail.email} (${existingEmail.label})` },
+          newValues: { email: null },
+          changedFields: ['email']
+        });
+      }
+    }
+
+    // Log email additions
+    for (const newEmail of newEmails) {
+      const emailKey = `${newEmail.email}:${newEmail.label}`;
+      if (!existingEmailAddresses.includes(emailKey)) {
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
+          actorType: 'user',
+          actorId: userId?.toString(),
+          resourceType: 'loan',
+          resourceId: loanId.toString(),
+          loanId: loanId,
+          ipAddr: getRealUserIP(req),
+          userAgent: req.headers?.['user-agent'],
+          description: `Email '${newEmail.email}' (${newEmail.label}) added to contact info on ${existingLoan.loanNumber}`,
+          previousValues: { email: null },
+          newValues: { email: `${newEmail.email} (${newEmail.label})` },
+          changedFields: ['email']
         });
       }
     }
