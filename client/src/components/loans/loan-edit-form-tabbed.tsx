@@ -232,6 +232,35 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       );
     }
 
+    // For escrow disbursement changes  
+    if ((log.eventType === 'ESCROW.DISBURSEMENT_UPDATED' || log.eventType === 'ESCROW.DISBURSEMENT_CREATED') && payload.changedFields && payload.changedFields.length > 0) {
+      const changes = payload.changedFields.map((field: string) => {
+        const oldValue = payload.previousValues?.[field] ?? payload.oldValues?.[field] ?? (log.eventType === 'ESCROW.DISBURSEMENT_CREATED' ? 'null' : 'null');
+        const newValue = payload.newValues?.[field] ?? 'null';
+        
+        // Format field names for better readability
+        const fieldDisplayName = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        
+        return (
+          <div key={field} className="border-l-2 border-green-200 pl-2 py-1">
+            <div className="font-medium text-gray-700 text-xs">{fieldDisplayName}</div>
+            <div className="text-xs">
+              {log.eventType === 'ESCROW.DISBURSEMENT_CREATED' ? (
+                <span className="text-green-600 font-medium">Set to: {newValue}</span>
+              ) : (
+                <>
+                  <span className="text-red-600 line-through">From: {oldValue}</span>
+                  <span className="mx-2">→</span>
+                  <span className="text-green-600 font-medium">To: {newValue}</span>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      });
+      return <div className="space-y-2">{changes}</div>;
+    }
+
     // For multiple field changes (investor updates)
     if (payload.changedFields && payload.changedFields.length > 0) {
       const changes = payload.changedFields.map((field: string) => {

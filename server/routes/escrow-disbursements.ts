@@ -240,7 +240,11 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
     
     const disbursement = await storage.createEscrowDisbursement(validatedData);
     
-    // Log disbursement creation
+    // Log disbursement creation with all created fields
+    const createdFields = Object.keys(disbursement).filter(key => 
+      disbursement[key] !== null && disbursement[key] !== undefined && disbursement[key] !== ''
+    );
+    
     await complianceAudit.logEvent({
       eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_CREATED,
       actorType: 'user',
@@ -250,23 +254,8 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
       loanId: loanId,
       ipAddr: getRealUserIP(req),
       userAgent: req.headers?.['user-agent'],
-      details: {
-        action: 'create_escrow_disbursement',
-        disbursementId: disbursement.id,
-        loanId,
-        disbursementType: disbursement.disbursementType,
-        payeeName: disbursement.payeeName,
-        annualAmount: disbursement.annualAmount,
-        paymentMethod: disbursement.paymentMethod,
-        frequency: disbursement.frequency,
-        status: disbursement.status,
-        autoPayEnabled: disbursement.autoPayEnabled,
-        userId
-      },
       newValues: disbursement,
-      userId,
-      ipAddress: getRealUserIP(req),
-      userAgent: req.headers['user-agent']
+      changedFields: createdFields
     });
     
     res.status(201).json(disbursement);
