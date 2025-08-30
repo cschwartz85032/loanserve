@@ -47,11 +47,73 @@ interface PaymentCalculation {
   };
 }
 
-// Extract description from eventDescription or payloadJson
+// Extract description from eventDescription or generate from event type
 const getEventDescription = (log: any): string => {
   if (log.eventDescription) return log.eventDescription;
+  
   const payload = (log as any).payloadJson || (log as any).payload_json;
-  return payload?.description ?? 'N/A';
+  if (payload?.description) return payload.description;
+  
+  // Generate meaningful descriptions based on event type
+  switch (log.eventType) {
+    case 'ESCROW.VIEWED':
+      if (log.resourceType === 'escrow_disbursements') {
+        return 'Viewed escrow disbursements list';
+      } else if (log.resourceType === 'escrow_disbursement') {
+        return 'Viewed escrow disbursement details';
+      } else if (log.resourceType === 'escrow_summary') {
+        return 'Viewed escrow account summary';
+      }
+      return 'Viewed escrow information';
+      
+    case 'ESCROW.DISBURSEMENT_CREATED':
+      return 'Created new escrow disbursement';
+      
+    case 'ESCROW.DISBURSEMENT_UPDATED':
+      return 'Updated escrow disbursement';
+      
+    case 'ESCROW.DISBURSEMENT_DELETED':
+      return 'Deleted escrow disbursement';
+      
+    case 'ESCROW.ACCOUNT_CREATED':
+      return 'Created escrow account';
+      
+    case 'ESCROW.PAYMENT_PROCESSED':
+      return 'Processed escrow payment';
+      
+    case 'ESCROW.HOLD_APPLIED':
+      return 'Applied hold to disbursement';
+      
+    case 'ESCROW.HOLD_RELEASED':
+      return 'Released hold on disbursement';
+      
+    case 'CRM.NOTE_ADDED':
+      return 'Added CRM note';
+      
+    case 'CRM.CALL_LOGGED':
+      return 'Logged phone call';
+      
+    case 'CRM.EMAIL_SENT':
+      return 'Sent email communication';
+      
+    case 'CRM.SMS_SENT':
+      return 'Sent SMS message';
+      
+    case 'LOAN.CREATED':
+      return 'Created loan record';
+      
+    case 'LOAN.UPDATED':
+      return 'Updated loan information';
+      
+    case 'DOCUMENT.UPLOADED':
+      return 'Uploaded document';
+      
+    case 'DOCUMENT.VIEWED':
+      return 'Viewed document';
+      
+    default:
+      return log.eventType.replace(/\./g, ' ').toLowerCase().replace(/^\w/, (c: string) => c.toUpperCase());
+  }
 };
 
 // Insert hyperlink around the loan number within the description
