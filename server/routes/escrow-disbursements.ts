@@ -353,13 +353,7 @@ router.patch("/api/escrow-disbursements/:id", async (req: any, res) => {
       userAgent: req.headers?.['user-agent'],
       previousValues: existingDisbursement,
       newValues: updatedDisbursement,
-      changedFields: Object.keys(cleanedData),
-      description: `Updated escrow disbursement ${id}`,
-      metadata: {
-        action: 'update_escrow_disbursement',
-        disbursementId: id,
-        updatedFields: Object.keys(cleanedData)
-      }
+      changedFields: Object.keys(cleanedData)
     });
     
     res.json(updatedDisbursement);
