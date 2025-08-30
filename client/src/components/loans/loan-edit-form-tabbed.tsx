@@ -87,7 +87,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   const { data: loan, isLoading } = useQuery({
     queryKey: [`/api/loans/${loanId}`],
     enabled: !!loanId
-  });
+  }) as { data: any; isLoading: boolean };
 
   // Fetch escrow disbursements for payment calculations
   const { data: escrowDisbursements = [] } = useQuery({
@@ -545,7 +545,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
 
         {/* Escrows Tab */}
         <TabsContent value="escrows" className="space-y-6">
-          <EscrowDisbursementsTab loanId={parseInt(loanId)} />
+          <EscrowDisbursementsTab loanId={loanId} />
         </TabsContent>
 
         {/* Document Management Tab */}
@@ -652,7 +652,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         <TabsContent value="settings" className="space-y-6">
           <CommunicationPreferences 
             borrowerId={formData?.borrowerId?.toString() || '1'} 
-            loanId={loanId}
+            loanId={parseInt(loanId) || 0}
           />
         </TabsContent>
 
