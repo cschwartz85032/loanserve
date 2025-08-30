@@ -686,7 +686,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           {new Date(log.eventTsUtc).toLocaleString()}
                         </TableCell>
                         <TableCell className="font-medium">
-                          {log.actorId || 'System'}
+                          {log.actorFullName || log.actorName || log.actorId || 'System'}
                         </TableCell>
                         <TableCell className="whitespace-pre-wrap">
                           {renderDescriptionWithLink(getEventDescription(log), log, loan?.loanNumber)}

@@ -13,9 +13,10 @@ import {
   legalHold,
   processTimer,
   noticeDeliveryLog,
-  dataSubjectRequest
+  dataSubjectRequest,
+  users
 } from '@shared/schema';
-import { eq, desc, and, gte, lte, or } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 const router = Router();
@@ -58,14 +59,50 @@ router.get('/api/compliance/audit-log', async (req, res) => {
     
     const entries = conditions.length > 0
       ? await db
-          .select()
+          .select({
+            id: complianceAuditLog.id,
+            correlationId: complianceAuditLog.correlationId,
+            accountId: complianceAuditLog.accountId,
+            actorType: complianceAuditLog.actorType,
+            actorId: complianceAuditLog.actorId,
+            actorName: users.username,
+            actorFullName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+            eventType: complianceAuditLog.eventType,
+            eventTsUtc: complianceAuditLog.eventTsUtc,
+            resourceType: complianceAuditLog.resourceType,
+            resourceId: complianceAuditLog.resourceId,
+            loanId: complianceAuditLog.loanId,
+            payloadJson: complianceAuditLog.payloadJson,
+            ipAddr: complianceAuditLog.ipAddr,
+            userAgent: complianceAuditLog.userAgent,
+            recordHash: complianceAuditLog.recordHash
+          })
           .from(complianceAuditLog)
+          .leftJoin(users, sql`${users.id}::text = ${complianceAuditLog.actorId}`)
           .where(and(...conditions))
           .orderBy(desc(complianceAuditLog.eventTsUtc))
           .limit(Number(limit))
       : await db
-          .select()
+          .select({
+            id: complianceAuditLog.id,
+            correlationId: complianceAuditLog.correlationId,
+            accountId: complianceAuditLog.accountId,
+            actorType: complianceAuditLog.actorType,
+            actorId: complianceAuditLog.actorId,
+            actorName: users.username,
+            actorFullName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+            eventType: complianceAuditLog.eventType,
+            eventTsUtc: complianceAuditLog.eventTsUtc,
+            resourceType: complianceAuditLog.resourceType,
+            resourceId: complianceAuditLog.resourceId,
+            loanId: complianceAuditLog.loanId,
+            payloadJson: complianceAuditLog.payloadJson,
+            ipAddr: complianceAuditLog.ipAddr,
+            userAgent: complianceAuditLog.userAgent,
+            recordHash: complianceAuditLog.recordHash
+          })
           .from(complianceAuditLog)
+          .leftJoin(users, sql`${users.id}::text = ${complianceAuditLog.actorId}`)
           .orderBy(desc(complianceAuditLog.eventTsUtc))
           .limit(Number(limit));
     
