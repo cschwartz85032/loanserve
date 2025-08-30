@@ -1,0 +1,562 @@
+LoanServe — Phase 10 (Rewritten)
+Security Hardening & Zero-Trust with First-Party Evidence Retention
+Executive Summary
+
+Phase 10 delivers Zero-Trust security, immutable auditability, and first-party custody of all executed agreements. We integrate DocuSign for e-signature, but we always store completed envelopes (PDF + certificate + hashes) in our own loan document store, with tamper-evident audit chains, retention, consent, SLA timers, and SOC 2 evidence. Works on Kubernetes or a simpler managed runtime (ECS Fargate / Cloud Run). Where [AI] is used (anomaly detection, classification, NLP preference parsing, SLA risk) we provide deterministic rules and human-in-the-loop.
+
+System Architecture (Zero-Trust + Evidence Flow)
+
+Identity & Access: OIDC/SAML SSO + MFA, SCIM, ABAC (device posture, region, clearance).
+
+Network: TLS 1.3 on edge, mTLS service-to-service, micro-segmentation.
+
+Secrets: Vault/Cloud KMS with HSM-backed KEKs, rotation policies.
+
+Evidence Control: DocuSign Connect → Webhook Intake → Doc Store ingest → Hash and receipt → Immutable audit_log.
+
+Replay & Packs: Audit-driven replay + Audit Pack builder (JSON/PDF + manifest + SHA-256).
+
+Database Schemas & Migrations (Postgres 15+, RLS)
+
+Notes
+
+Multi-tenant isolation with RLS; set app.tenant_id on connection.
+
+Envelope encryption (field-level) via app; DB stores ciphertext; equality lookups via HMAC tokens.
+
+Examples are additive and safe to run in order.
+
+0) Extensions
+-- 0000_extensions.sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+1) Core Security (RBAC/ABAC) — unchanged from prior draft, included for completeness
+-- 0100_rbac_abac.sql
+-- (same structure as before; roles, permissions, user-role, abac_* tables)
+
+2) Immutable Audit Log (hash-chain)
+-- 0200_audit_log.sql
+CREATE TABLE IF NOT EXISTS audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id UUID NOT NULL,
+  correlation_id UUID NOT NULL,
+  event_id UUID NOT NULL,
+  event_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+  event_type TEXT NOT NULL,
+  actor_id UUID,
+  actor_type TEXT NOT NULL, -- 'user'|'service'|'system'
+  resource_urn TEXT NOT NULL, -- e.g., urn:loan:<id>, urn:doc:<id>
+  event_seq BIGINT NOT NULL,
+  payload_hash BYTEA NOT NULL,   -- SHA-256(payload)
+  payload_locator TEXT,          -- s3://... or gs://...
+  prev_hash BYTEA,
+  chain_hash BYTEA NOT NULL,     -- SHA-256(prev.chain_hash || row_hash)
+  signature BYTEA,
+  ip INET, user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (resource_urn, event_seq)
+);
+ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY audit_log_rls ON audit_log
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+3) Loan Document Store (first-party evidence custody)
+-- 0300_doc_store.sql
+CREATE TABLE IF NOT EXISTS loan_document (
+  doc_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  loan_urn TEXT NOT NULL,                 -- urn:loan:<uuid|id>
+  doc_type TEXT NOT NULL,                 -- 'executed_agreement','disclosure','notice', etc.
+  provider TEXT NOT NULL,                 -- 'docusign','internal','upload'
+  provider_ref TEXT,                      -- e.g., DocuSign Envelope ID
+  version INT NOT NULL DEFAULT 1,
+  content_hash BYTEA NOT NULL,            -- SHA-256 of stored PDF
+  content_locator TEXT NOT NULL,          -- object store URL
+  certificate_hash BYTEA,                 -- SHA-256 of DocuSign certificate of completion (if any)
+  certificate_locator TEXT,               -- object store URL for certificate
+  mime_type TEXT NOT NULL DEFAULT 'application/pdf',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  metadata JSONB NOT NULL DEFAULT '{}'    -- signers, timestamps, tab data (no PII beyond necessity)
+);
+CREATE INDEX IF NOT EXISTS idx_loan_document_loan ON loan_document(loan_urn, created_at DESC);
+ALTER TABLE loan_document ENABLE ROW LEVEL SECURITY;
+CREATE POLICY loan_document_rls ON loan_document
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+4) Consent & Communication Preferences (with external source fields)
+-- 0400_consent_prefs.sql
+CREATE TABLE IF NOT EXISTS consent_record (
+  consent_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  subject_urn TEXT NOT NULL,              -- urn:person:<id> / urn:borrower:<id>
+  consent_type TEXT NOT NULL,             -- 'e-sign','privacy_notice','marketing'
+  consent_version TEXT NOT NULL,
+  granted BOOLEAN NOT NULL,
+  purpose TEXT[],                         -- {"servicing","marketing"}
+  channel TEXT[],                         -- {"email","sms","portal"}
+  evidence_locator TEXT,                  -- our doc/cert pointer
+  obtained_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  immutable_hash BYTEA NOT NULL,          -- hash of evidence snapshot (PDF/cert)
+  source TEXT NOT NULL DEFAULT 'internal',-- 'docusign'|'internal'|'other'
+  external_reference TEXT,                -- DocuSign Envelope ID
+  external_status TEXT,                   -- 'created'|'sent'|'completed'|'declined'|'voided'
+  provider_payload_hash BYTEA             -- hash of signed provider payload
+);
+ALTER TABLE consent_record ENABLE ROW LEVEL SECURITY;
+CREATE POLICY consent_record_rls ON consent_record
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE TABLE IF NOT EXISTS communication_preference (
+  pref_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  subject_urn TEXT NOT NULL,
+  channel TEXT NOT NULL,                   -- 'email'|'sms'|'phone'|'mail'|'portal'
+  frequency TEXT NOT NULL,                 -- 'immediate'|'daily'|'weekly'|'optout'
+  purpose TEXT NOT NULL,                   -- 'servicing'|'marketing'|'alerts'
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, subject_urn, channel, purpose)
+);
+ALTER TABLE communication_preference ENABLE ROW LEVEL SECURITY;
+CREATE POLICY communication_preference_rls ON communication_preference
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+5) Retention & Deletion Receipts
+-- 0500_retention.sql
+CREATE TABLE IF NOT EXISTS retention_policy (
+  policy_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  regulator TEXT NOT NULL,                 -- 'GLBA','GDPR','CCPA','US_MORTGAGE'
+  data_class TEXT NOT NULL,                -- 'PII','FINANCIAL','CONSENT','DOC'
+  min_age_days INT NOT NULL,
+  max_age_days INT,
+  legal_hold BOOLEAN NOT NULL DEFAULT FALSE,
+  last_reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  policy_doc_locator TEXT
+);
+ALTER TABLE retention_policy ENABLE ROW LEVEL SECURITY;
+CREATE POLICY retention_policy_rls ON retention_policy
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE TABLE IF NOT EXISTS retention_binding (
+  binding_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  object_urn TEXT NOT NULL,
+  policy_id UUID NOT NULL REFERENCES retention_policy(policy_id) ON DELETE CASCADE,
+  bound_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, object_urn)
+);
+ALTER TABLE retention_binding ENABLE ROW LEVEL SECURITY;
+CREATE POLICY retention_binding_rls ON retention_binding
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE TABLE IF NOT EXISTS deletion_receipt (
+  receipt_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  object_urn TEXT NOT NULL,
+  deleted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  proof_hash BYTEA NOT NULL,
+  actor_id UUID,
+  reason TEXT NOT NULL,
+  immutable BOOLEAN NOT NULL DEFAULT TRUE
+);
+ALTER TABLE deletion_receipt ENABLE ROW LEVEL SECURITY;
+CREATE POLICY deletion_receipt_rls ON deletion_receipt
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+6) Timing Windows (SLA/Regulatory)
+-- 0600_timers.sql
+CREATE TABLE IF NOT EXISTS process_timer (
+  timer_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  subject_urn TEXT NOT NULL,
+  timer_type TEXT NOT NULL,                -- 'adverse_action','escrow_analysis','privacy_notice'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  due_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',     -- 'open','alerted','retrying','done','breached'
+  attempts INT NOT NULL DEFAULT 0,
+  retry_after TIMESTAMPTZ
+);
+ALTER TABLE process_timer ENABLE ROW LEVEL SECURITY;
+CREATE POLICY process_timer_rls ON process_timer
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+CREATE TABLE IF NOT EXISTS process_timer_rule (
+  rule_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  timer_type TEXT NOT NULL,
+  window_days INT NOT NULL,
+  alert_threshold_pct INT NOT NULL DEFAULT 80,
+  max_retries INT NOT NULL DEFAULT 5,
+  retry_backoff_ms BIGINT NOT NULL DEFAULT 60000
+);
+ALTER TABLE process_timer_rule ENABLE ROW LEVEL SECURITY;
+CREATE POLICY process_timer_rule_rls ON process_timer_rule
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+7) Audit Pack Manifest
+-- 0700_audit_pack.sql
+CREATE TABLE IF NOT EXISTS audit_pack_manifest (
+  pack_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  account_urn TEXT NOT NULL,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  manifest_locator TEXT NOT NULL,
+  archive_locator TEXT NOT NULL,
+  bundle_hash BYTEA NOT NULL
+);
+ALTER TABLE audit_pack_manifest ENABLE ROW LEVEL SECURITY;
+CREATE POLICY audit_pack_manifest_rls ON audit_pack_manifest
+  USING (tenant_id = current_setting('app.tenant_id')::uuid);
+
+Queues & Messaging (RabbitMQ)
+# rabbitmq_definitions.yaml
+exchanges:
+  - { name: audit.events,         type: topic, durable: true }
+  - { name: retention.triggers,   type: topic, durable: true }
+  - { name: compliance.timers,    type: topic, durable: true }
+  - { name: security.anomaly,     type: topic, durable: true }
+  - { name: docusign.events,      type: topic, durable: true }
+
+queues:
+  - name: audit_event_queue
+    durable: true
+    arguments: { x-dead-letter-exchange: "audit.events.dlq" }
+  - { name: audit_event_queue.dlq, durable: true }
+
+  - name: retention_queue
+    durable: true
+    arguments: { x-dead-letter-exchange: "retention.triggers.dlq" }
+  - { name: retention_queue.dlq, durable: true }
+
+  - name: compliance_timer_queue
+    durable: true
+    arguments: { x-dead-letter-exchange: "compliance.timers.dlq" }
+  - { name: compliance_timer_queue.dlq, durable: true }
+
+  - { name: security_anomaly_queue, durable: true }
+
+  - name: docusign_connect_queue
+    durable: true
+    arguments: { x-dead-letter-exchange: "docusign.events.dlq" }
+  - { name: docusign_connect_queue.dlq, durable: true }
+
+bindings:
+  - { source: audit.events,       destination: audit_event_queue,       routing_key: "audit.*" }
+  - { source: retention.triggers, destination: retention_queue,         routing_key: "retention.*" }
+  - { source: compliance.timers,  destination: compliance_timer_queue,  routing_key: "timer.*" }
+  - { source: security.anomaly,   destination: security_anomaly_queue,  routing_key: "anomaly.*" }
+  - { source: docusign.events,    destination: docusign_connect_queue,  routing_key: "connect.*" }
+
+
+Retry/Idempotency: exponential backoff ≤6 tries → DLQ; consumers dedupe on msg_id.
+
+API (OpenAPI 3.1) — key endpoints
+openapi: 3.1.0
+info: { title: LoanServe Compliance & Evidence APIs, version: "10.1.0" }
+servers: [{ url: https://api.loanserve.example.com }]
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://idp.example.com/oauth2/token
+          scopes:
+            audit.read: Read audit logs
+            audit.replay: Replay entity state
+            compliance.auditpack: Generate audit packs
+            consent.manage: Manage consent
+    mtls: { type: mutualTLS }
+  schemas:
+    ConsentRecord: { $ref: "#/components/schemas/_ConsentRecord" }
+    _ConsentRecord:
+      type: object
+      required: [subject_urn, consent_type, consent_version, granted, obtained_at]
+      properties:
+        consent_id: { type: string, format: uuid }
+        subject_urn: { type: string }
+        consent_type: { type: string }
+        consent_version: { type: string }
+        granted: { type: boolean }
+        purpose: { type: array, items: { type: string } }
+        channel: { type: array, items: { type: string } }
+        evidence_locator: { type: string }
+        obtained_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        immutable_hash: { type: string }
+        source: { type: string, enum: [internal, docusign, other], default: internal }
+        external_reference: { type: string }
+        external_status: { type: string, enum: [created,sent,completed,declined,voided], nullable: true }
+        provider_payload_hash: { type: string, nullable: true }
+    LoanDocument:
+      type: object
+      properties:
+        doc_id: { type: string, format: uuid }
+        loan_urn: { type: string }
+        doc_type: { type: string }
+        provider: { type: string }
+        provider_ref: { type: string }
+        version: { type: integer }
+        content_hash: { type: string }
+        content_locator: { type: string }
+        certificate_hash: { type: string, nullable: true }
+        certificate_locator: { type: string, nullable: true }
+        mime_type: { type: string }
+        metadata: { type: object }
+paths:
+  /audit/logs/search:
+    get:
+      security: [{ oauth2: [audit.read] }, { mtls: [] }]
+      parameters:
+        - { in: query, name: resource_urn, schema: { type: string } }
+        - { in: query, name: correlation_id, schema: { type: string, format: uuid } }
+        - { in: query, name: from, schema: { type: string, format: date-time } }
+        - { in: query, name: to, schema: { type: string, format: date-time } }
+        - { in: query, name: limit, schema: { type: integer, default: 100 } }
+      responses: { "200": { description: OK } }
+
+  /audit/logs/replay:
+    post:
+      security: [{ oauth2: [audit.replay] }, { mtls: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [resource_urn], properties: { resource_urn: { type: string }, at_time: { type: string, format: date-time } } }
+      responses: { "200": { description: Replayed state } }
+
+  /docs/loan/{loanUrn}:
+    get:
+      security: [{ oauth2: [audit.read] }]
+      parameters:
+        - { in: path, name: loanUrn, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Loan documents
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/LoanDocument" } } } }
+
+  /docs/loan/{loanUrn}/executed:
+    post:
+      security: [{ oauth2: [audit.read] }, { mtls: [] }]
+      description: Ingest executed agreement (PDF) and optional certificate into first-party store.
+      parameters:
+        - { in: path, name: loanUrn, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [pdf]
+              properties:
+                pdf: { type: string, format: binary }
+                certificate: { type: string, format: binary }
+                provider: { type: string, default: docusign }
+                provider_ref: { type: string, description: "Envelope ID" }
+                metadata: { type: string, description: "JSON string" }
+      responses:
+        "201": { description: Stored; returns doc_id }
+
+  /webhooks/docusign:
+    post:
+      security: [{ mtls: [] }]  # validate DocuSign HMAC/JWS internally
+      responses: { "202": { description: Accepted } }
+
+  /compliance/consent:
+    post:
+      security: [{ oauth2: [consent.manage] }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "#/components/schemas/ConsentRecord" } }
+      responses: { "201": { description: Created } }
+
+  /compliance/auditpack/{accountId}:
+    post:
+      security: [{ oauth2: [compliance.auditpack] }, { mtls: [] }]
+      parameters: [ { in: path, name: accountId, required: true, schema: { type: string } } ]
+      responses:
+        "202": { description: Generation started }
+        "200": { description: Ready }
+
+Deterministic Rules & Parameterization
+DocuSign Intake → Evidence & Consent
+on webhook(connect_event):
+  verify_hmac_or_jws(connect_event) else reject
+  env = parse_envelope(connect_event)
+  if env.status == 'completed':
+     // 1) Persist PDF + Certificate in our doc store
+     pdf_bytes, cert_bytes = fetch_docusign_docs(env.envelopeId)
+     pdf_hash  = sha256(pdf_bytes)
+     cert_hash = sha256(cert_bytes)
+     pdf_loc   = put_object("loan-docs/...", pdf_bytes)
+     cert_loc  = put_object("loan-docs/...", cert_bytes)
+
+     INSERT loan_document(
+       tenant_id, loan_urn, doc_type='executed_agreement',
+       provider='docusign', provider_ref=envelopeId, content_hash=pdf_hash,
+       content_locator=pdf_loc, certificate_hash=cert_hash, certificate_locator=cert_loc,
+       metadata={signers, completed_at, ...}
+     )
+
+     // 2) Mirror consent
+     UPSERT consent_record with source='docusign',
+       external_reference=envelopeId, external_status='completed',
+       evidence_locator=cert_loc, immutable_hash=cert_hash, obtained_at=env.completedTime, granted=true
+
+     // 3) Audit event
+     append_audit(resource_urn=loan_urn, event_type='consent.esign.completed', payload_hash=sha256(env.summary), payload_locator=put_object(...env.summary...))
+
+Retention (table-driven)
+regulator	data_class	min_age_days	max_age_days	legal_hold
+US_MORTGAGE	DOC	2555	null	false
+GLBA	PII	2555	null	false
+GDPR	CONSENT	365	3650	false
+for each object_urn bound to policy:
+  if !legal_hold and age_days(object) >= min_age_days:
+     delete_secure(object)
+     write deletion_receipt(proof_hash=previous_hash, reason="retention_expired")
+     append_audit(event_type="retention.purged", resource_urn=object_urn, ...)
+
+SLA Timers (adverse action, escrow analysis, privacy notices)
+timer_type	window_days	alert_threshold_pct	max_retries	backoff_ms
+adverse_action	30	80	5	60000
+escrow_analysis	45	80	5	60000
+privacy_notice	365	90	3	300000
+if now >= due_at: attempt_delivery()
+elif now >= created_at + window_days*alert_threshold_pct%:
+  alert_compliance()
+
+ABAC Decision (OPA/Rego excerpt)
+package loanserve.authz
+default allow = false
+allow {
+  input.user.perms["audit.read"]
+  input.user.attrs.device_compliant == true
+  input.request.mtls == true
+  input.object.region == input.user.attrs.region
+}
+
+[AI] Usage (with deterministic fallbacks)
+
+[AI] Anomaly detection on audit/event streams → fallback: rules (duplicate seq, geo-velocity, off-hours).
+
+[AI] Document auto-classification (map doc_type/data_class) → fallback: filename/route heuristics.
+
+[AI] NLP preference parsing (e.g., “stop texting me”) → fallback: regex keyword rules, human review queue.
+
+[AI] SLA breach prediction → fallback: heuristic risk score (attempts, bounce rate, time-left).
+
+All [AI] actions are advisory, require human confirm for irreversible changes, and always write to audit_log.
+
+Security & Privacy Controls
+
+Identity: OIDC/SAML SSO, MFA mandatory; SCIM for provisioning; quarterly access reviews.
+
+Crypto: TLS 1.3 edge; STRICT mTLS between services; envelope encryption for PII; HSM-backed KEK; DEK rotation on write; annual re-encrypt of long-lived PII.
+
+Secrets: Vault/KMS + CSI (or provider-native); short-lived DB creds; automatic rotation.
+
+Network: NetPolicies (or managed equivalents), least-privilege egress; WAF & HSTS.
+
+Webhook Security (DocuSign): Verify Connect HMAC/JWS; IP allowlist; rate-limit; idempotent by envelopeId + eventId.
+
+RLS: All tenant-scoped tables have policies; app.tenant_id must be set.
+
+Kubernetes manifests from the prior draft still apply if you run k8s; for managed runtimes, map the same policies to gateway/mTLS/secrets.
+
+UX Copy (WCAG 2.2 AA)
+
+Consent (Portal, read-only when DocuSign drives evidence)
+
+Title: Electronic Records & Signatures
+
+Body: “Your e-signature consent is recorded via DocuSign. You may withdraw consent at any time.”
+
+Actions: View agreement (opens our stored executed PDF), View completion certificate (from our doc store), Withdraw consent (if supported).
+
+Purge Confirmation (Subject Request)
+
+We completed your deletion request on {date/time}. A cryptographic Deletion Receipt (ID {receipt_id}) has been added to our immutable log. Legal retention requirements may limit deletions for certain documents.
+
+Acceptance Tests
+
+Gherkin — DocuSign → First-party Evidence
+
+Feature: Executed DocuSign agreements are stored in our own doc store
+  Scenario: Envelope completed
+    Given a DocuSign Connect webhook for envelope "ENV-123" with status "completed"
+    When the webhook is POSTed to /webhooks/docusign
+    Then a loan_document exists for loan "urn:loan:abc" with provider_ref "ENV-123"
+    And content_hash equals SHA-256 of the stored PDF
+    And certificate_locator is present
+    And a consent_record with source "docusign" and external_status "completed" is recorded
+    And an audit_log event "consent.esign.completed" is present
+
+
+Gherkin — Audit Pack Contains Evidence
+
+Feature: Audit pack fidelity
+  Scenario: Pack includes executed agreement and cert
+    Given loan "urn:loan:abc" has executed_agreement docs and consent records
+    When I POST /compliance/auditpack/account-123
+    Then the manifest lists the executed agreement PDF and completion certificate
+    And bundle_hash verifies
+    And replayed balances match canonical totals
+
+
+Gherkin — Retention & Deletion Receipt
+
+Feature: Retention purge
+  Scenario: Expired non-critical doc is purged
+    Given a doc bound to policy "US_MORTGAGE/DOC/2555" older than 2555 days
+    When the retention job runs
+    Then the doc is deleted and a deletion_receipt is created
+    And an audit_log "retention.purged" is written
+
+Penetration Test Plan (scope excerpt)
+
+Webhooks: HMAC/JWS validation, replay protection, idempotency, SSRF/file-type checks on fetched PDFs.
+
+Evidence Tamper: verify stored hash vs. retrieved bytes; mutation attempts must fail chain verification.
+
+AuthZ: RBAC/ABAC bypass attempts; RLS escape attempts.
+
+Secrets/Keys: key misuse, rotation validation, least privilege to object store.
+
+SOC 2 Mapping (delta highlights)
+
+CC2.1 Access Controls: SSO/MFA, SCIM, quarterly reviews.
+
+CC6.x Change & Network: IaC-controlled mTLS, net segmentation, webhook verification.
+
+CC7.x Monitoring: [AI]+rules on anomalies; DLQ alerts; webhook failure alerts.
+
+P.x Privacy: consent records + evidence (DocuSign) stored in our system; retention controls; subject-rights workflows.
+
+What changes operationally from the previous Phase 10
+
+DocuSign is the capture tool, not the evidence store — we ingest and own the executed PDFs + completion certificates.
+
+Consent mirrors DocuSign status but points to our stored evidence (hash + locator).
+
+Audit packs are self-contained—no external fetch required to prove execution.
+
+Existing queues/APIs extend to cover /webhooks/docusign and /docs/loan/{loanUrn}/executed.
+
+Deploy Checklist (now)
+
+Run SQL migrations 0000 → 0700.
+
+Provision object storage bucket loan-docs with SSE-KMS and bucket policies.
+
+Configure DocuSign Connect (HMAC/JWS), point to /webhooks/docusign.
+
+Deploy webhook intake with idempotency + PDF/certificate fetch + doc store write + audit append.
+
+Wire consent mirror to envelope status; expose documents via /docs/loan/{loanUrn}.
+
+Enable timers, retention jobs, anomaly jobs; set alerts.
+
+Execute acceptance tests and smoke generate an audit pack for a sample loan.
