@@ -24,6 +24,7 @@ router.get("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
       actorId: userId?.toString(),
       resourceType: 'escrow_disbursements',
       resourceId: loanId.toString(),
+      loanId: loanId,
       details: {
         action: 'view_escrow_disbursements',
         loanId,
@@ -61,6 +62,7 @@ router.get("/api/escrow-disbursements/:id", async (req: any, res) => {
       actorId: userId?.toString(),
       resourceType: 'escrow_disbursement',
       resourceId: id.toString(),
+      loanId: disbursement.loanId,
       details: {
         action: 'view_disbursement_detail',
         disbursementId: id,
@@ -105,6 +107,7 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
         actorId: userId?.toString(),
         resourceType: 'escrow_account',
         resourceId: escrowAccount.id.toString(),
+        loanId: loanId,
         details: {
           action: 'create_escrow_account',
           loanId,
@@ -238,6 +241,7 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
       actorId: userId?.toString(),
       resourceType: 'escrow_disbursement',
       resourceId: disbursement.id.toString(),
+      loanId: loanId,
       details: {
         action: 'create_escrow_disbursement',
         disbursementId: disbursement.id,
@@ -336,6 +340,7 @@ router.patch("/api/escrow-disbursements/:id", async (req: any, res) => {
       actorId: userId?.toString(),
       resourceType: 'escrow_disbursement',
       resourceId: id.toString(),
+      loanId: existingDisbursement.loanId,
       details: {
         action: 'update_escrow_disbursement',
         disbursementId: id,
@@ -377,6 +382,7 @@ router.delete("/api/escrow-disbursements/:id", async (req: any, res) => {
         actorId: userId?.toString(),
         resourceType: 'escrow_disbursement',
         resourceId: id.toString(),
+        loanId: disbursement.loanId,
         details: {
           action: 'delete_escrow_disbursement',
           disbursementId: id,
@@ -485,6 +491,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
       actorId: userId?.toString(),
       resourceType: 'escrow_payment',
       resourceId: result.id.toString(),
+      loanId: disbursement.loanId,
       details: {
         action: 'process_escrow_payment',
         paymentId: result.id,
@@ -527,6 +534,7 @@ router.get("/api/loans/:loanId/escrow-summary", async (req: any, res) => {
       actorId: userId?.toString(),
       resourceType: 'escrow_summary',
       resourceId: loanId.toString(),
+      loanId: loanId,
       details: {
         action: 'view_escrow_summary',
         loanId,
@@ -578,6 +586,7 @@ router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
       actorId: userId?.toString(),
       resourceType: 'escrow_disbursement',
       resourceId: id.toString(),
+      loanId: disbursement.loanId,
       details: {
         action: action === 'hold' ? 'hold_escrow_disbursement' : 'release_escrow_disbursement',
         disbursementId: id,
