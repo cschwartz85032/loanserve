@@ -1,0 +1,49 @@
+After reviewing the loanserve repository via the GitHub connector, I compared the current codebase against the detailed runbook we produced. Several improvements were indeed merged (safe logging, topology validation, metrics and improved RabbitMQ reconnection), but other critical items remain unaddressed. Below is a summary of what I found with supporting citations.
+
+Implemented items
+Item	Evidence	Notes
+Safe logging middleware masks sensitive fields such as account_number, routing_number, ssn, token, etc.	safe-logger.ts recursively masks these keys
+GitHub
+.	Good implementation; used when logging request bodies.
+RabbitMQ reconnection respects a maximum attempt count.	EnhancedRabbitMQService defines maxReconnectAttempts and aborts reconnect loop once attempts are reached
+GitHub
+.	Aligns with spec.
+Prometheus metrics counters for published and consumed messages exist.	prometheus-metrics.ts registers mq_publish_total and mq_consume_total counters
+GitHub
+.	This matches the runbook’s metrics section.
+Topology validation script checks live queues/exchanges and warns about x-max-priority on quorum queues.	scripts/validate-topology.ts enumerates expected queues and explicitly flags priority on quorum queues
+GitHub
+.	Provides pre‑deploy safety guard.
+Convenience publishMessage helper wraps payloads in envelopes and uses the existing publish method.	At the end of rabbitmq-enhanced.ts, publishMessage constructs an envelope and calls rabbit.publish
+GitHub
+.	Helpful, but not widely used yet.
+Health endpoints avoid infinite redirect and return JSON responses.	server/http/routes/health.ts returns {status:"live"} and a readiness check without redirect.	Readiness still stubbed (see below).
+Outstanding issues (runbook tasks not fully implemented)
+
+Late-fee calculation bug remains: servicing-cycle-service.ts still computes days late using parseISO(loan.paymentDueDay || '15')
+GitHub
+, which treats a day-of-month string as a full ISO date. The runbook prescribed building a due date from the current month.
+
+ACH and PII masking: The payment submission route continues to accept and store unmasked routing_number and account_number
+GitHub
+, even though the logs use maskSensitive. The runbook specified computing account_number_masked/routing_number_masked, disallowing full PAN storage and adding a trace_number.
+
+Canonical envelope schema: The repository still uses the existing MessageEnvelope interface (fields like schema, message_id, correlation_id, data)
+GitHub
+; we do not see the new packages/shared/messaging/envelope.ts with version: "v1", idempotency_key, or producer objects. Consumers still refer to the old envelope shape.
+
+Input validation improvements: There is no ACHSubmissionSchema, redactPayment helper or payments/types.ts as specified in the runbook. Payment routes use a single PaymentSubmissionSchema and manually build paymentData, missing Zod validation of masked account fields and SEC codes.
+
+Readiness check lacks Rabbit check: /health/ready returns a static checks.rabbit = { ok: true } (not shown here but present), and does not attempt a passive check on RabbitMQ.
+
+Column webhook: A webhook handler exists (column-webhooks.ts), but it uses a custom columnClient.verifyWebhookSignature rather than the raw-HMAC verification described in the runbook. There is no services/payments/column-webhook.ts with normalized envelopes or idempotency.
+
+Late-fee and other migrations: We did not find the migrations to add escrow status fields or create the outbox table. Without those migrations the schema remains unchanged.
+
+Refactoring to unify publish/consume APIs: Many services still call rabbitmq.publish(envelope, { exchange, routingKey, ... }) and pass MessageEnvelope directly (e.g., payment submission at lines 180–192
+GitHub
+). The recommended publishMessage helper and unified envelope validation are not broadly adopted.
+
+Conclusion
+
+While the engineering team made progress on logging, metrics and RabbitMQ topology, several high‑priority runbook items remain incomplete. In particular, the late-fee computation bug, proper masking and validation of ACH data, adoption of the new canonical envelope type, and readiness checks still need to be addressed before the system meets the enterprise‑quality bar laid out in the runbook.

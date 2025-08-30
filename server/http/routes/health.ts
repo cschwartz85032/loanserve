@@ -13,9 +13,13 @@ export function healthRoutes(db?: Pool) {
     const checks: Record<string, { ok: boolean; detail?: string }> = {};
     // Rabbit check: attempt passive checkQueue on a known queue or connection state
     try {
-      // If there is no channel yet, connect now
-      // connect is idempotent in our app init
-      checks.rabbit = { ok: true };
+      // Perform actual RabbitMQ connection check
+      if (rabbit?.connection?.connection) {
+        const connectionReady = rabbit.connection.connection.connection?.readable;
+        checks.rabbit = { ok: !!connectionReady };
+      } else {
+        checks.rabbit = { ok: false, detail: 'RabbitMQ connection not established' };
+      }
     } catch (e) {
       checks.rabbit = { ok: false, detail: (e as Error).message };
     }

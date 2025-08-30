@@ -552,7 +552,15 @@ export class ServicingCycleService {
 
       // Check for late fees
       const paymentDate = parseISO(valuationDate);
-      const dueDate = parseISO(loan.paymentDueDay || '15');
+      // Build proper due date from current month and payment due day
+      const paymentDueDay = parseInt(loan.paymentDueDay || '15', 10);
+      const dueDate = new Date(paymentDate.getFullYear(), paymentDate.getMonth(), paymentDueDay);
+      
+      // If due date is in the future, use previous month's due date
+      if (dueDate > paymentDate) {
+        dueDate.setMonth(dueDate.getMonth() - 1);
+      }
+      
       const daysLate = differenceInDays(paymentDate, dueDate);
 
       if (daysLate > loan.gracePeriodDays && parseFloat(loan.currentBalance) > 0) {

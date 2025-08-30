@@ -18,6 +18,7 @@ import {
   Download, Eye, Users, ClipboardList, History, Building2,
   Phone, Mail, MapPin, User, Info, Plus
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { DocumentUploader } from "@/components/documents/document-uploader";
 import { DocumentPreviewModal } from "@/components/documents/document-preview-modal";
 import { LoanAccountingLedger } from "@/components/loans/loan-accounting-ledger";
@@ -46,12 +47,37 @@ interface PaymentCalculation {
   };
 }
 
+// Helper functions for audit log display
+const getEventDescription = (log: any): string => {
+  if (log.eventDescription) return log.eventDescription;
+  const payload = (log as any).payloadJson || (log as any).payload_json;
+  return payload?.description ?? 'N/A';
+};
+
+// Insert hyperlink around the loan number within the description
+const renderDescriptionWithLink = (description: string) => {
+  const match = description.match(/Loan ([A-Z0-9-]+)/);
+  if (!match) return description;
+  const loanNumber = match[1];
+  const [before, after] = description.split(match[0]);
+  return (
+    <>
+      {before}
+      <a href={`/loan/${loanNumber}`} className="text-blue-500 underline">
+        Loan {loanNumber}
+      </a>
+      {after}
+    </>
+  );
+};
+
 export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   const { toast } = useToast();
   const [formData, setFormData] = useState<any>({});
   const [calculations, setCalculations] = useState<PaymentCalculation | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [, setLocation] = useLocation();
 
   // Fetch loan data
   const { data: loan, isLoading } = useQuery({
@@ -658,8 +684,8 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                         <TableCell className="font-medium">
                           {getUserName(log.actorId) || 'System'}
                         </TableCell>
-                        <TableCell className="text-sm">
-                          {formatAuditDetails(log)}
+                        <TableCell className="whitespace-pre-wrap">
+                          {renderDescriptionWithLink(getEventDescription(log))}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-gray-500">
                           {log.ipAddr || 'N/A'}
