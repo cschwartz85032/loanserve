@@ -67,13 +67,9 @@ export async function initializeEscrowQueues(): Promise<void> {
       }
     ];
     
-    for (const queue of queues) {
-      await rabbitmq.assertQueue(queue.name, {
-        durable: queue.durable,
-        arguments: queue.arguments
-      });
-      console.log(`[EscrowInit] Queue created: ${queue.name}`);
-    }
+    // Queue creation removed - now handled by OptimizedTopologyManager
+    // to ensure single source of truth and prevent 406 PRECONDITION_FAILED errors
+    console.log('[EscrowInit] Queue creation delegated to OptimizedTopologyManager');
     
     // Create bindings
     const bindings = [

@@ -228,8 +228,8 @@ export async function setupConsumer(
   // Set QoS
   await channel.prefetch(prefetch);
   
-  // Assert queue exists
-  await channel.assertQueue(queue, { durable: true });
+  // Queue assertion removed - queues must be defined in OptimizedTopologyManager
+  // to ensure single source of truth and prevent 406 PRECONDITION_FAILED errors
   
   // Start consuming
   await channel.consume(

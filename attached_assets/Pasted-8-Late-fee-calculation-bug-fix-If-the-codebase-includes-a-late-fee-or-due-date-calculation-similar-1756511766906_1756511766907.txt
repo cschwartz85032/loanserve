@@ -1,0 +1,60 @@
+8. Late‑fee calculation bug fix
+
+If the codebase includes a late‑fee or due‑date calculation similar to parseISO(loan.paymentDueDay || '15'), replace it with a function that constructs a date based on the valuation date and due‑day integer. For example:
+
+// server/services/date-utils.ts
+export function computeDaysLate(currentISO: string, dueDay: number = 15): number {
+  const currentDate = new Date(currentISO);
+  const dueDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay);
+  const diff = (currentDate.getTime() - dueDate.getTime()) / (24 * 3600 * 1000);
+  return Math.floor(diff);
+}
+
+
+Use computeDaysLate in your servicing or fee module instead of parsing the due day as if it were an ISO date.
+
+Add unit tests in server/services/__tests__/date-utils.test.ts to validate month wrap‑around and leap‑year cases.
+
+9. ACH message schema alignment
+
+Update the ACHPaymentData interface in server/messaging/payment-envelope.ts to remove the plain account_number field if it still exists. Use only account_number_masked, routing_number_masked, and trace_number.
+
+When creating ACH messages, never include full account numbers. Always derive the masked value from the last four digits of the account number and include trace_number assigned by your ACH gateway.
+
+Validate incoming ACH messages using a Zod schema (see section 2.2) to enforce that account_number_masked matches /^\*{4}\d{4}$/ and routing_number_masked matches /^\*{5}\d{4}$/.
+
+10. Database migrations
+
+Use idempotent migrations so repeated runs do not error out.
+
+10.1 Escrow ledger enhancements
+
+Create a migration file (e.g. 20250901_add_escrow_fields.sql) under your migration directory:
+
+-- 20250901_add_escrow_fields.sql
+DO $$ BEGIN
+  ALTER TYPE escrow_status ADD VALUE IF NOT EXISTS 'posted';
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+ALTER TABLE escrow_ledger
+  ADD COLUMN IF NOT EXISTS status escrow_status NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS paid_at timestamptz,
+  ADD COLUMN IF NOT EXISTS trace_number text;
+
+10.2 Transactional outbox (if missing)
+
+If you do not already have an outbox table, add:
+
+-- 20250901_create_outbox.sql
+CREATE TABLE IF NOT EXISTS outbox (
+  id bigserial PRIMARY KEY,
+  topic text NOT NULL,
+  payload jsonb NOT NULL,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  published_at timestamptz,
+  attempts int NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_outbox_unpublished ON outbox (published_at) WHERE published_at IS NULL;
+
+
+Apply these migrations using your existing migration tooling (Drizzle, sql scripts, etc.).

@@ -53,7 +53,7 @@ export class OptimizedTopologyManager extends TopologyManager {
       performance: {
         servicingShards: 2, // Reduced from 8 to 2
         useConsolidatedQueues: true,
-        usePriorityQueues: true,
+        usePriorityQueues: false, // Disabled: quorum queues don't support x-max-priority
       },
       ...config,
     };

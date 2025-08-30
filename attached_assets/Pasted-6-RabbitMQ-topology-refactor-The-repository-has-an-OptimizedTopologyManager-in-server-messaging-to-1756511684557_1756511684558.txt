@@ -1,0 +1,108 @@
+6. RabbitMQ topology refactor
+
+The repository has an OptimizedTopologyManager in server/messaging/topology.ts. There are two concerns:
+
+Quorum queues with priority: RabbitMQ ignores x-max-priority on quorum queues. The current topology already places priority queues in a separate branch but still sets usePriorityQueues to true by default.
+
+Multiple definitions for the same queue may cause 406 PRECONDITION_FAILED errors when arguments differ.
+
+6.1 Remove x-max-priority on quorum queues
+
+Audit server/messaging/topology.ts and ensure no queue definition includes 'x-max-priority' when 'x-queue-type': 'quorum'. In the current file lines 340–356 show this has already been removed, but double‑check any other additions.
+
+If any classic queue requires priority, define it without 'x-queue-type': 'quorum' and set 'x-max-priority': <N> accordingly. For example:
+
+this.addQueue({
+  name: 'investor.calc.p10',
+  durable: true,
+  arguments: {
+    'x-max-priority': 10,
+    'x-dead-letter-exchange': 'dlx.main',
+  },
+  bindings: [ { exchange: 'investor.direct', routingKey: 'calc.p10' } ],
+});
+
+
+Consolidate or remove the feature flag usePriorityQueues if your organization has decided on a single approach (either separate queues per priority or consolidated queues with a service‑side priority strategy).
+
+6.2 Single source of truth
+
+Do not re‑declare queues in service code. Ensure that features (escrow, CRM notifications, etc.) obtain their queues from the TopologyManager and do not call channel.assertQueue with differing arguments. Remove any assertQueue calls outside of topology.ts.
+
+Add a pre‑deploy validation script to verify the live topology via the RabbitMQ HTTP API. For example, create scripts/validate-topology.ts:
+
+import axios from 'axios';
+
+const mgmt = process.env.RABBIT_MGMT_URL; // e.g. 'http://user:pass@host:15672/api'
+const vhost = encodeURIComponent(process.env.RABBIT_VHOST || '/');
+
+const expected = [
+  { name: 'payments.intake', args: { 'x-queue-type': 'quorum' } },
+  { name: 'investor.calc.p10', args: { 'x-max-priority': 10 } },
+  // add all other required queues here
+];
+
+(async () => {
+  const { data: queues } = await axios.get(`${mgmt}/queues/${vhost}`);
+  for (const exp of expected) {
+    const found = queues.find((q: any) => q.name === exp.name);
+    if (!found) throw new Error(`Queue ${exp.name} is missing`);
+    for (const [k,v] of Object.entries(exp.args)) {
+      if (!found.arguments || found.arguments[k] !== v) {
+        throw new Error(`Queue ${exp.name} argument ${k} mismatch`);
+      }
+    }
+  }
+  console.log('RabbitMQ topology validated OK');
+})().catch(err => { console.error(err); process.exit(1); });
+
+
+Add this script to your CI pipeline to prevent accidental queue argument drift.
+
+7. Payment submission API – PII masking and validation
+
+If your project exposes an endpoint to submit payments (e.g. POST /api/payments/submit), follow these steps. If such an endpoint does not yet exist, you can skip this section or adapt it to your ingestion service.
+
+Create a Zod schema for the inbound payment submission. For example:
+
+// server/routes/schemas/payment-submission.ts
+import { z } from 'zod';
+
+export const PaymentSubmissionSchema = z.object({
+  amount_cents: z.number().int().positive(),
+  account_holder: z.string().min(1),
+  account_number_last4: z.string().regex(/^\d{4}$/),
+  routing_number: z.string().regex(/^\d{9}$/),
+  account_type: z.enum(['checking','savings']),
+  customer_id: z.string(),
+  loan_id: z.string(),
+  source: z.enum(['ach','wire','check','card','lockbox','cashier','money_order']),
+});
+export type PaymentSubmission = z.infer<typeof PaymentSubmissionSchema>;
+
+
+In the route handler, validate the request body and mask sensitive fields before logging:
+
+import { PaymentSubmissionSchema } from './schemas/payment-submission';
+import { publishMessage } from '../services/rabbitmq-enhanced';
+import { maskSensitive } from '../middleware/safe-logger';
+// ...
+router.post('/api/payments/submit', requireAuth('payments:write'), async (req, res) => {
+  try {
+    const body = PaymentSubmissionSchema.parse(req.body);
+    // never log the raw body
+    req.log.info({ event: 'payment.submit', body: maskSensitive(body) });
+    const messageData = {
+      ...body,
+      account_number_masked: `****${body.account_number_last4}`,
+      routing_number_masked: `*****${body.routing_number.slice(5)}`,
+    };
+    await publishMessage(rabbit, 'payments.topic', 'payment.received', 'loanserve.v1.payment.received', messageData);
+    res.status(202).json({ status: 'accepted' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+
+Ensure the message envelope uses the canonical MessageEnvelope with data containing the above messageData.

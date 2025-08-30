@@ -68,96 +68,11 @@ export async function bootstrapRMQ(url: string): Promise<{ conn: Connection; ch:
     console.log('[RabbitMQ Bootstrap] Exchanges created including escrow subsystem');
     
     // ========================================
-    // DECLARE QUEUES
+    // QUEUES NOW MANAGED BY TOPOLOGY MANAGER
     // ========================================
-    
-    // Validation queue - receives all inbound payments for validation
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.validate", { durable: true });
-    
-    // Classification queue - classifies validated payments
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.classify", { durable: true });
-    
-    // Rules posting queue - applies business rules
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.rules.post", { durable: true });
-    
-    // Poster queue - transactional posting with outbox
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.post", { durable: true });
-    
-    // Poster outbox queue - stages messages for posting
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.poster.outbox", { durable: true });
-    
-    // Outbox dispatch queue - dispatches outbox messages
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.outbox.dispatch", { durable: true });
-    
-    // Daily reconciliation queue
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.reconcile.daily", { durable: true });
-    
-    // Exception handling queue
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.exceptions", { durable: true });
-    
-    // Notifications queue
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.notifications", { durable: true });
-    
-    // Audit trail queue
-    // TEMPORARILY: Only assert durable, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.audit", { durable: true });
-    
-    // Dead letter queue
-    // TEMPORARILY: Only assert durable and TTL, no quorum args to match existing CloudAMQP queue
-    await ch.assertQueue("q.dlq", { 
-      durable: true,
-      arguments: {
-        "x-message-ttl": 7 * 24 * 60 * 60 * 1000 // 7 days
-      }
-    });
-    
-    // ========================================
-    // PHASE 3: ESCROW SUBSYSTEM QUEUES
-    // ========================================
-    
-    // Escrow forecast queue
-    await ch.assertQueue("q.forecast", { 
-      durable: true,
-      arguments: {
-        "x-dead-letter-exchange": "escrow.dlq",
-        "x-dead-letter-routing-key": "forecast.failed"
-      }
-    });
-    
-    // Escrow disbursement scheduling queue
-    await ch.assertQueue("q.schedule.disbursement", { 
-      durable: true,
-      arguments: {
-        "x-dead-letter-exchange": "escrow.dlq",
-        "x-dead-letter-routing-key": "disbursement.failed"
-      }
-    });
-    
-    // Escrow analysis queue
-    await ch.assertQueue("q.escrow.analysis.v2", { 
-      durable: true,
-      arguments: {
-        "x-dead-letter-exchange": "escrow.dlq",
-        "x-dead-letter-routing-key": "analysis.failed"
-      }
-    });
-    
-    // Escrow DLQ
-    await ch.assertQueue("q.escrow.dlq", { 
-      durable: true,
-      arguments: {
-        "x-message-ttl": 86400000 // 24 hours
-      }
-    });
+    // All queue declarations removed to establish single source of truth.
+    // Queue topology is now managed exclusively by OptimizedTopologyManager
+    // in server/messaging/topology.ts to prevent 406 PRECONDITION_FAILED errors.
     
     console.log('[RabbitMQ Bootstrap] Queues created including escrow subsystem');
     

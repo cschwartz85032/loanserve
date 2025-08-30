@@ -13,6 +13,7 @@ import { hasPermission } from '../auth/policy-engine';
 import { logActivity, CRM_CONSTANTS } from '../utils/crm-utils';
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 import { getMessageFactory } from '../messaging/message-factory';
+import { maskSensitive } from '../middleware/safe-logger';
 import {
   PaymentData,
   ACHPaymentData,
@@ -59,7 +60,12 @@ const PaymentSubmissionSchema = z.object({
  */
 router.post('/payments', requireAuth, async (req, res) => {
   try {
-    console.log('[API] Payment submission received');
+    // Log payment submission with masked sensitive data
+    console.log('[API] Payment submission received', { 
+      body: maskSensitive(req.body),
+      user: req.user.id,
+      ip: req.ip 
+    });
     
     // Check user permissions for payment operations
     if (!await hasPermission(req.user.id, 'payments', 'write', { userId: req.user.id })) {

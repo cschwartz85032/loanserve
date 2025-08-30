@@ -55,12 +55,8 @@ export class NotificationsConsumer {
   async start(): Promise<void> {
     console.log('[NotificationsConsumer] Starting consumer');
 
-    // Define the notifications queue
-    await this.rabbitmq.assertQueue('q.notifications', {
-      durable: true,
-      deadLetterExchange: 'dlx.main',
-      deadLetterRoutingKey: 'dlq.notifications'
-    });
+    // Queue definition removed - now handled by OptimizedTopologyManager
+    // to ensure single source of truth and prevent 406 PRECONDITION_FAILED errors
 
     // Bind to payment events
     await this.rabbitmq.bindQueue('q.notifications', 'payments.topic', 'payment.posted');
