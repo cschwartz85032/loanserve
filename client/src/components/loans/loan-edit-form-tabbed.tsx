@@ -48,14 +48,21 @@ interface PaymentCalculation {
 }
 
 // Helper functions for audit log display
-const getEventDescription = (log: any): string => {
+const getEventDescription = (log: any, currentLoanNumber?: string): string => {
   if (log.eventDescription) return log.eventDescription;
   const payload = (log as any).payloadJson || (log as any).payload_json;
-  return payload?.description ?? 'N/A';
+  const baseDescription = payload?.description ?? 'N/A';
+  
+  // If we have a description and loan ID, append the loan number
+  if (baseDescription !== 'N/A' && log.loanId && currentLoanNumber) {
+    return `${baseDescription} on Loan ${currentLoanNumber}`;
+  }
+  
+  return baseDescription;
 };
 
 // Insert hyperlink around the loan number within the description
-const renderDescriptionWithLink = (description: string) => {
+const renderDescriptionWithLink = (description: string, loanId?: string) => {
   const match = description.match(/Loan ([A-Z0-9-]+)/);
   if (!match) return description;
   const loanNumber = match[1];
@@ -63,12 +70,33 @@ const renderDescriptionWithLink = (description: string) => {
   return (
     <>
       {before}
-      <a href={`/loan/${loanNumber}`} className="text-blue-500 underline">
+      <a 
+        href={`/loans/${loanId || 'unknown'}/crm`} 
+        className="text-blue-500 underline hover:text-blue-700"
+        onClick={(e) => {
+          e.preventDefault();
+          window.location.href = `/loans/${loanId || 'unknown'}/crm`;
+        }}
+      >
         Loan {loanNumber}
       </a>
       {after}
     </>
   );
+};
+
+// Get user name from ID (simplified version)
+const getUserName = (actorId: string | null): string => {
+  if (!actorId) return 'System';
+  // In a real app, you'd look this up from user data
+  if (actorId === '1') return 'loanatik';
+  return `User ${actorId}`;
+};
+
+// Format audit details for display
+const formatAuditDetails = (log: any, currentLoanNumber?: string): React.ReactNode => {
+  const description = getEventDescription(log, currentLoanNumber);
+  return renderDescriptionWithLink(description, log.loanId?.toString());
 };
 
 export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
@@ -685,7 +713,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
                           {getUserName(log.actorId) || 'System'}
                         </TableCell>
                         <TableCell className="whitespace-pre-wrap">
-                          {renderDescriptionWithLink(getEventDescription(log))}
+                          {formatAuditDetails(log, loan?.loanNumber)}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-gray-500">
                           {log.ipAddr || 'N/A'}
