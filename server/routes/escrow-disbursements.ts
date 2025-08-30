@@ -331,25 +331,28 @@ router.patch("/api/escrow-disbursements/:id", async (req: any, res) => {
     const updatedDisbursement = await storage.updateEscrowDisbursement(id, cleanedData);
     
     // Log individual audit entries for each field change (like investor updates)
-    const changedFields = Object.keys(cleanedData);
-    for (const field of changedFields) {
+    const potentialFields = Object.keys(cleanedData);
+    for (const field of potentialFields) {
       const oldValue = (existingDisbursement as any)[field];
       const newValue = (updatedDisbursement as any)[field];
       
-      await complianceAudit.logEvent({
-        eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_UPDATED,
-        actorType: 'user',
-        actorId: userId?.toString(),
-        resourceType: 'escrow_disbursement',
-        resourceId: id.toString(),
-        loanId: existingDisbursement.loanId,
-        ipAddr: getRealUserIP(req),
-        userAgent: req.headers?.['user-agent'],
-        description: `Escrow disbursement field '${field}' updated from '${oldValue}' to '${newValue}' on LN-2025-001`,
-        previousValues: { [field]: oldValue },
-        newValues: { [field]: newValue },
-        changedFields: [field]
-      });
+      // Only log if the value actually changed (use String conversion for comparison)
+      if (String(oldValue) !== String(newValue)) {
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_UPDATED,
+          actorType: 'user',
+          actorId: userId?.toString(),
+          resourceType: 'escrow_disbursement',
+          resourceId: id.toString(),
+          loanId: existingDisbursement.loanId,
+          ipAddr: getRealUserIP(req),
+          userAgent: req.headers?.['user-agent'],
+          description: `Escrow disbursement field '${field}' updated from '${oldValue}' to '${newValue}' on LN-2025-001`,
+          previousValues: { [field]: oldValue },
+          newValues: { [field]: newValue },
+          changedFields: [field]
+        });
+      }
     }
     
     res.json(updatedDisbursement);
