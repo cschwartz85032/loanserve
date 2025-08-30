@@ -263,7 +263,7 @@ export class InvestorRepository {
           for (const field of result.changedFields) {
             await createAuditEvent(client, {
               actorId,
-              eventType: 'CRM.INVESTOR.FIELD_UPDATED',
+              eventType: 'INVESTOR.FIELD_UPDATED',
               resourceType: 'investor_loan',
               resourceId: `${loanId}:${result.investorId}`,
               loanId,

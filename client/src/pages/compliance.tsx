@@ -56,7 +56,8 @@ const getEventTypeColor = (eventType: string) => {
     USER: "text-indigo-600 bg-indigo-50",
     ESCROW: "text-teal-600 bg-teal-50",
     CRM: "text-pink-600 bg-pink-50",
-    FEE: "text-amber-600 bg-amber-50"
+    FEE: "text-amber-600 bg-amber-50",
+    INVESTOR: "text-purple-600 bg-purple-50"
   };
   return colors[category] || "text-gray-600 bg-gray-50";
 };
@@ -392,6 +393,7 @@ export default function CompliancePage() {
                           <SelectItem value="LOAN">Loans</SelectItem>
                           <SelectItem value="PAYMENT">Payments</SelectItem>
                           <SelectItem value="DOCUMENT">Documents</SelectItem>
+                          <SelectItem value="INVESTOR">Investors</SelectItem>
                         </SelectContent>
                       </Select>
                       <Select value={actorTypeFilter} onValueChange={setActorTypeFilter}>

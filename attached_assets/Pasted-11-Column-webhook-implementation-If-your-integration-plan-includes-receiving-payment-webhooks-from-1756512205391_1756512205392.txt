@@ -1,0 +1,136 @@
+11. Column webhook implementation
+
+If your integration plan includes receiving payment webhooks from Column, implement the following:
+
+Create server/routes/webhook-column.ts with an express router that uses a raw body for HMAC verification:
+
+import express from 'express';
+import crypto from 'crypto';
+import { publishMessage } from '../services/rabbitmq-enhanced';
+
+const COLUMN_SECRET = process.env.COLUMN_WEBHOOK_SECRET!;
+const router = express.Router();
+
+router.post('/webhook/column', express.raw({ type: 'application/json' }), async (req, res) => {
+  const signature = req.header('X-Signature') || '';
+  const expectedSig = crypto.createHmac('sha256', COLUMN_SECRET).update(req.body).digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+    return res.status(401).send('Invalid signature');
+  }
+  const event = JSON.parse(req.body.toString('utf8'));
+  const idempotencyKey = event.id;
+  // Normalize event as needed; example for payment settled
+  const normalized = {
+    event_type: event.type,
+    occurred_at: event.occurred_at || new Date().toISOString(),
+    resource: event.resource,
+  };
+  await publishMessage(rabbit, 'payments.topic', 'payment.column.event', 'loanserve.v1.payment.column_event', normalized, { persistent: true, headers: { 'x-idempotency-key': idempotencyKey } });
+  res.sendStatus(200);
+});
+
+export default router;
+
+
+Mount this router in server/routes/index.ts before your JSON parser so the raw body is preserved:
+
+import columnWebhook from './webhook-column';
+// ...
+app.use(columnWebhook);
+
+
+Add the COLUMN_WEBHOOK_SECRET to your environment variables and deployment secrets.
+
+12. Health and readiness endpoints
+
+The existing server/http/routes/health.ts already implements /health/live and /health/ready. Verify and adjust as follows:
+
+/health/live should simply return { status: 'live' } with HTTP 200.
+
+/health/ready should perform two checks:
+
+Database: execute a simple SELECT 1 using the pool provided.
+
+RabbitMQ: ensure there is an active connection by invoking a cheap operation (e.g., rabbit.getPublisherChannel()) or performing a passive queue check on a known queue. If either check fails, respond with HTTP 503 and a JSON body { status: 'degraded', checks: { db: { ok: false }, rabbit: { ok: false } } }.
+
+Do not redirect /health/live to itself.
+
+13. Reconnect ceiling configuration
+
+The RabbitService has a reconnection loop in server/messaging/rabbit.ts. Ensure that the loop respects the configured maximum:
+
+The code currently checks this.attempts >= this.cfg.rabbitReconnectMax before scheduling another reconnection. Verify that rabbitReconnectMax is set in your configuration (.env or config/schema.json). If not present, add a reasonable default such as 8.
+
+When the maximum is reached, log a fatal error and either:
+
+Transition the health check to degraded (see section 12), or
+
+Exit the process if you prefer Kubernetes to restart the pod.
+
+Document this behavior in your runbooks and configuration examples.
+
+14. Metrics and observability
+
+Use prom-client to collect default and custom metrics. Create server/observability/metrics.ts:
+
+import client from 'prom-client';
+export const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+export const mqPublishTotal = new client.Counter({ name: 'mq_publish_total', help: 'Messages published', labelNames: ['exchange','routing_key'] });
+export const mqConsumeTotal = new client.Counter({ name: 'mq_consume_total', help: 'Messages consumed', labelNames: ['queue'] });
+register.registerMetric(mqPublishTotal);
+register.registerMetric(mqConsumeTotal);
+
+
+In your Rabbit publish and consume wrappers, increment these counters:
+
+mqPublishTotal.inc({ exchange: opts.exchange, routing_key: opts.routingKey });
+mqConsumeTotal.inc({ queue: opts.queue });
+
+
+Expose a /metrics endpoint in your HTTP server:
+
+import { register } from './observability/metrics';
+app.get('/metrics', async (_req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+
+
+Configure Prometheus to scrape this endpoint. Set up alerts for:
+
+health_ready = 0 (HTTP 503)
+
+mq_consume_total stagnating (indicates consumer stalls)
+
+mq_publish_total - mq_consume_total backlog growing
+
+DLQ queue length > threshold
+
+15. Rollout and verification checklist
+
+Run all unit and integration tests (npm test), adding new tests for envelope validation, late‑fee logic, and webhook signature verification.
+
+Apply database migrations on a staging environment. Verify that rerunning the migrations does not produce errors (idempotent).
+
+Deploy the updated topology by running a script that calls topologyManager.applyTopology() (or the appropriate provisioning command). Ensure that new queues are created alongside old ones during migration. Do not delete old queues until there is no consumer bound to them and they are drained.
+
+Deploy the code to staging. Monitor logs and health endpoints. Check that:
+
+There is no PII logged (grep for account or routing numbers).
+
+/health/ready returns HTTP 200 with both checks true when DB and Rabbit are reachable.
+
+RabbitMQ queues exist as defined; the validation script passes.
+
+Publishing and consuming messages with payload fails and dead‑letters; publishing with data succeeds.
+
+Payment submission endpoint accepts valid input and rejects invalid input with 400.
+
+Column webhooks are accepted only if the signature matches.
+
+Switch traffic from old queues to the new versioned queues (*.v2). Drain old queues and delete them.
+
+Monitor metrics. Tune alert thresholds and add dashboards for queue depths and error rates.
+
+Once staging is stable, promote to production following your deployment process.
