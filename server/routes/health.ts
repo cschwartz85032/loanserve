@@ -106,8 +106,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/live', (req, res) => {
   res.status(200).json({ 
-    status: 'ok',
-    timestamp: new Date().toISOString()
+    status: 'live'
   });
 });
 
@@ -117,38 +116,43 @@ router.get('/live', (req, res) => {
  * Used by load balancers to determine if instance should receive requests
  */
 router.get('/ready', async (req, res) => {
-  let isReady = true;
-  const checks: any = {};
+  const checks: { db?: { ok: boolean }, rabbit?: { ok: boolean } } = {};
 
-  // Quick database check
+  // Database check: execute a simple SELECT 1 using the pool provided
   try {
     await db.execute(sql`SELECT 1`);
-    checks.database = 'ready';
+    checks.db = { ok: true };
   } catch (error) {
-    checks.database = 'not_ready';
-    isReady = false;
+    checks.db = { ok: false };
   }
 
-  // Quick RabbitMQ check
+  // RabbitMQ check: ensure there is an active connection
   try {
     const rabbitmq = getEnhancedRabbitMQService();
     const connectionInfo = rabbitmq.getConnectionInfo();
     if (connectionInfo.connected) {
-      checks.rabbitmq = 'ready';
+      checks.rabbit = { ok: true };
     } else {
-      checks.rabbitmq = 'not_ready';
-      isReady = false;
+      checks.rabbit = { ok: false };
     }
   } catch (error) {
-    checks.rabbitmq = 'not_ready';
-    isReady = false;
+    checks.rabbit = { ok: false };
   }
 
-  res.status(isReady ? 200 : 503).json({
-    ready: isReady,
-    timestamp: new Date().toISOString(),
-    checks
-  });
+  // If either check fails, respond with HTTP 503 
+  const allOk = checks.db?.ok && checks.rabbit?.ok;
+  
+  if (allOk) {
+    res.status(200).json({
+      status: 'ready',
+      checks
+    });
+  } else {
+    res.status(503).json({
+      status: 'degraded', 
+      checks
+    });
+  }
 });
 
 export default router;

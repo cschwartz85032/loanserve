@@ -92,6 +92,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const healthRoutes = (await import('./routes/health')).default;
   app.use('/healthz', healthRoutes);
 
+  // Mount Column webhook BEFORE JSON parser (needs raw body for signature verification)
+  const columnWebhookHandler = await import('./routes/webhook-column');
+  app.use(columnWebhookHandler.default);
+
   // Setup authentication
   await setupAuth(app);
 

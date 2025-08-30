@@ -43,7 +43,7 @@ export class EnhancedRabbitMQService {
   private url: string;
   private isConnected: boolean = false;
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
+  private maxReconnectAttempts: number = parseInt(process.env.RABBITMQ_MAX_RECONNECT_ATTEMPTS || '8');
   private reconnectDelay: number = 5000;
   private reconnectTimer: NodeJS.Timeout | null = null;
 
