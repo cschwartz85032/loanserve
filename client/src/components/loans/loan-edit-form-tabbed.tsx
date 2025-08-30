@@ -69,7 +69,7 @@ const renderDescriptionWithLink = (description: string, log?: any, loanNumber?: 
   return (
     <>
       {before}
-      <a href={`/loan/${extractedLoanNumber}`} className="text-blue-500 underline">{extractedLoanNumber}</a>
+      <a href={`/loans/${log?.loanId}`} className="text-blue-500 underline">{extractedLoanNumber}</a>
       {after}
     </>
   );
