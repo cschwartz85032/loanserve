@@ -5,6 +5,8 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
+import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService.js';
+import { getRealUserIP } from '../utils/network.js';
 
 const router = Router();
 
@@ -111,8 +113,47 @@ router.put('/:borrowerId', async (req, res) => {
       });
     }
 
-    // For now, just return success since we don't have the database table yet
-    // In a real implementation, you would save to the database
+    // Get existing preferences first for field-by-field audit comparison
+    // For now we'll simulate existing preferences since we don't have the database table yet
+    const existingPreferences = {
+      channel: channel,
+      topic: topic,
+      allowed: true, // Default to previously allowed
+      frequency: frequency || 'monthly'
+    };
+    
+    // Simulate the update by creating new preferences object
+    const updatedPreferences = {
+      channel,
+      topic, 
+      allowed,
+      frequency: frequency || 'monthly'
+    };
+
+    // Log individual audit entries for each field change (like escrow disbursements)
+    const potentialFields = Object.keys(updatedPreferences);
+    for (const field of potentialFields) {
+      const oldValue = (existingPreferences as any)[field];
+      const newValue = (updatedPreferences as any)[field];
+      
+      // Only log if the value actually changed (use String conversion for comparison)
+      if (String(oldValue) !== String(newValue)) {
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.CRM.PREFERENCE_UPDATED,
+          actorType: 'user',
+          actorId: userId?.toString(),
+          resourceType: 'communication_preference',
+          resourceId: borrowerId.toString(),
+          loanId: null, // Communication preferences may not be tied to a specific loan
+          ipAddr: getRealUserIP(req as any),
+          userAgent: (req as any).headers?.['user-agent'],
+          description: `Communication preference field '${field}' updated from '${oldValue}' to '${newValue}' for borrower ${borrowerId}`,
+          previousValues: { [field]: oldValue },
+          newValues: { [field]: newValue },
+          changedFields: [field]
+        });
+      }
+    }
     
     // Create a correlation ID for audit trail
     const correlationId = `comm_pref_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

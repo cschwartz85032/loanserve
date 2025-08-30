@@ -12,6 +12,8 @@ import { sendSuccess, sendError, ErrorResponses } from '../utils/response-utils'
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
+import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService.js';
+import { getRealUserIP } from '../utils/network.js';
 
 const router = Router();
 
@@ -107,6 +109,32 @@ router.post('/notice-templates/upload', requireAuth, upload.single('template'), 
       uploadedBy: (req as any).user?.id || null
     }).returning();
 
+    // Log individual audit entries for each field in the uploaded template (like escrow disbursements)
+    const templateFields = Object.keys(template[0]);
+    for (const field of templateFields) {
+      const newValue = (template[0] as any)[field];
+      
+      // Skip internal fields that don't need audit logging
+      if (['id', 'createdAt', 'updatedAt'].includes(field)) {
+        continue;
+      }
+      
+      await complianceAudit.logEvent({
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.UPLOADED,
+        actorType: 'user',
+        actorId: ((req as any).user?.id || null)?.toString(),
+        resourceType: 'notice_template',
+        resourceId: template[0].id.toString(),
+        loanId: null, // Templates are not tied to specific loans
+        ipAddr: getRealUserIP(req),
+        userAgent: req.headers?.['user-agent'],
+        description: `Template field '${field}' set to '${newValue}' on template upload`,
+        previousValues: { [field]: null },
+        newValues: { [field]: newValue },
+        changedFields: [field]
+      });
+    }
+
     return sendSuccess(res, template[0], 'Template uploaded successfully');
   } catch (error) {
     console.error('Error uploading template:', error);
@@ -140,6 +168,32 @@ router.delete('/notice-templates/:id', requireAuth, async (req, res) => {
       } catch (err) {
         console.warn('Could not delete file:', filePath);
       }
+    }
+    
+    // Log individual audit entries for each field in the deleted template (like escrow disbursements)
+    const templateFields = Object.keys(template);
+    for (const field of templateFields) {
+      const oldValue = (template as any)[field];
+      
+      // Skip internal fields that don't need audit logging
+      if (['id', 'createdAt', 'updatedAt'].includes(field)) {
+        continue;
+      }
+      
+      await complianceAudit.logEvent({
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.DELETED,
+        actorType: 'user',
+        actorId: ((req as any).user?.id || null)?.toString(),
+        resourceType: 'notice_template',
+        resourceId: template.id.toString(),
+        loanId: null, // Templates are not tied to specific loans
+        ipAddr: getRealUserIP(req),
+        userAgent: req.headers?.['user-agent'],
+        description: `Template field '${field}' with value '${oldValue}' deleted on template deletion`,
+        previousValues: { [field]: oldValue },
+        newValues: { [field]: null },
+        changedFields: [field]
+      });
     }
     
     // Delete from database

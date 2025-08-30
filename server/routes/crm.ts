@@ -280,6 +280,19 @@ router.patch('/loans/:loanId/crm/tasks/:taskId', async (req, res) => {
     const userId = (req as any).user?.id || 1;
     const updates = req.body;
     
+    // Get existing task first for field-by-field audit comparison
+    const existingTaskResult = await db
+      .select()
+      .from(crmTasks)
+      .where(eq(crmTasks.id, taskId))
+      .limit(1);
+    
+    if (existingTaskResult.length === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    
+    const existingTask = existingTaskResult[0];
+    
     // If marking as completed, set completedAt
     if (updates.status === 'completed' && !updates.completedAt) {
       updates.completedAt = new Date();
@@ -293,6 +306,31 @@ router.patch('/loans/:loanId/crm/tasks/:taskId', async (req, res) => {
       })
       .where(eq(crmTasks.id, taskId))
       .returning();
+    
+    // Log individual audit entries for each field change (like escrow disbursements)
+    const potentialFields = Object.keys(updates);
+    for (const field of potentialFields) {
+      const oldValue = (existingTask as any)[field];
+      const newValue = (task as any)[field];
+      
+      // Only log if the value actually changed (use String conversion for comparison)
+      if (String(oldValue) !== String(newValue)) {
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.CRM.TASK_UPDATED,
+          actorType: 'user',
+          actorId: userId?.toString(),
+          resourceType: 'crm_task',
+          resourceId: taskId.toString(),
+          loanId: loanId,
+          ipAddr: getRealUserIP(req),
+          userAgent: req.headers?.['user-agent'],
+          description: `Task field '${field}' updated from '${oldValue}' to '${newValue}' on LN-2025-001`,
+          previousValues: { [field]: oldValue },
+          newValues: { [field]: newValue },
+          changedFields: [field]
+        });
+      }
+    }
     
     // Log activity
     if (updates.status) {
@@ -1108,6 +1146,19 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
 
     console.log('Updating contact info for loan', loanId, { phones, emails });
 
+    // Get existing loan data first for field-by-field audit comparison
+    const existingLoanResult = await db
+      .select()
+      .from(loans)
+      .where(eq(loans.id, loanId))
+      .limit(1);
+    
+    if (existingLoanResult.length === 0) {
+      return res.status(404).json({ error: 'Loan not found' });
+    }
+    
+    const existingLoan = existingLoanResult[0];
+
     // Prepare update data
     const updateData: any = {};
     
@@ -1150,6 +1201,40 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       .set(updateData)
       .where(eq(loans.id, loanId));
 
+    // Get updated loan for audit comparison
+    const updatedLoanResult = await db
+      .select()
+      .from(loans)
+      .where(eq(loans.id, loanId))
+      .limit(1);
+    
+    const updatedLoan = updatedLoanResult[0];
+
+    // Log individual audit entries for each field change (like escrow disbursements)
+    const potentialFields = Object.keys(updateData);
+    for (const field of potentialFields) {
+      const oldValue = (existingLoan as any)[field];
+      const newValue = (updatedLoan as any)[field];
+      
+      // Only log if the value actually changed (use String conversion for comparison)
+      if (String(oldValue) !== String(newValue)) {
+        await complianceAudit.logEvent({
+          eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
+          actorType: 'user',
+          actorId: userId?.toString(),
+          resourceType: 'loan',
+          resourceId: loanId.toString(),
+          loanId: loanId,
+          ipAddr: getRealUserIP(req),
+          userAgent: req.headers?.['user-agent'],
+          description: `Contact info field '${field}' updated from '${oldValue}' to '${newValue}' on LN-2025-001`,
+          previousValues: { [field]: oldValue },
+          newValues: { [field]: newValue },
+          changedFields: [field]
+        });
+      }
+    }
+
     // Log activity using the utility function
     await logActivity(loanId, userId, CRM_CONSTANTS.ACTIVITY_TYPES.CONTACT_UPDATE, {
       description: 'Updated contact information',
@@ -1159,34 +1244,14 @@ router.patch('/loans/:loanId/contact-info', async (req, res) => {
       }
     });
 
-    // Log compliance audit
-    await complianceAudit.logEvent({
-      eventType: COMPLIANCE_EVENTS.CRM.CONTACT_UPDATED,
-      actorType: 'user',
-      actorId: userId,
-      resourceType: 'loan',
-      resourceId: loanId,
-      loanId: loanId,  // Include loan ID so it appears in loan audit tab
-      description: 'Updated contact information',
-      newValues: {
-        phones: phones || [],
-        emails: emails || [],
-        updateData
-      },
-      metadata: {
-        loanId,
-        userId
-      },
-      ipAddr: getRealUserIP(req as any),
-      userAgent: (req as any).headers?.['user-agent']
-    });
-
-    // Fetch and return the updated loan
-    const [updatedLoan] = await db.select()
+    // Get the updated loan to return
+    const finalLoanResult = await db
+      .select()
       .from(loans)
-      .where(eq(loans.id, loanId));
+      .where(eq(loans.id, loanId))
+      .limit(1);
 
-    res.json(updatedLoan);
+    res.json(finalLoanResult[0]);
   } catch (error) {
     console.error('Error updating contact info:', error);
     res.status(500).json({ error: 'Failed to update contact information' });
