@@ -330,20 +330,27 @@ router.patch("/api/escrow-disbursements/:id", async (req: any, res) => {
     
     const updatedDisbursement = await storage.updateEscrowDisbursement(id, cleanedData);
     
-    // Log disbursement update with changed fields
-    await complianceAudit.logEvent({
-      eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_UPDATED,
-      actorType: 'user',
-      actorId: userId?.toString(),
-      resourceType: 'escrow_disbursement',
-      resourceId: id.toString(),
-      loanId: existingDisbursement.loanId,
-      ipAddr: getRealUserIP(req),
-      userAgent: req.headers?.['user-agent'],
-      previousValues: existingDisbursement,
-      newValues: updatedDisbursement,
-      changedFields: Object.keys(cleanedData)
-    });
+    // Log individual audit entries for each field change (like investor updates)
+    const changedFields = Object.keys(cleanedData);
+    for (const field of changedFields) {
+      const oldValue = (existingDisbursement as any)[field];
+      const newValue = (updatedDisbursement as any)[field];
+      
+      await complianceAudit.logEvent({
+        eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_UPDATED,
+        actorType: 'user',
+        actorId: userId?.toString(),
+        resourceType: 'escrow_disbursement',
+        resourceId: id.toString(),
+        loanId: existingDisbursement.loanId,
+        ipAddr: getRealUserIP(req),
+        userAgent: req.headers?.['user-agent'],
+        description: `Escrow disbursement field '${field}' updated from '${oldValue}' to '${newValue}' on LN-2025-001`,
+        previousValues: { [field]: oldValue },
+        newValues: { [field]: newValue },
+        changedFields: [field]
+      });
+    }
     
     res.json(updatedDisbursement);
   } catch (error) {
