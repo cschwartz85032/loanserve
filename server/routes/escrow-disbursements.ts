@@ -5,6 +5,7 @@ import { escrowDisbursementPayments, escrowAccounts, loanLedger } from "../../sh
 import { eq } from "drizzle-orm";
 import { insertEscrowDisbursementSchema, insertEscrowDisbursementPaymentSchema } from "../../shared/schema";
 import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
+import { getRealUserIP } from '../utils/audit-helper.js';
 
 const router = Router();
 
@@ -30,7 +31,7 @@ router.get("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
         userId
       },
       userId,
-      ipAddress: req.ip,
+      ipAddress: getRealUserIP(req),
       userAgent: req.headers['user-agent']
     });
     
@@ -68,7 +69,7 @@ router.get("/api/escrow-disbursements/:id", async (req: any, res) => {
         userId
       },
       userId,
-      ipAddress: req.ip,
+      ipAddress: getRealUserIP(req),
       userAgent: req.headers['user-agent']
     });
     
@@ -111,7 +112,7 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
           userId
         },
         userId,
-        ipAddress: req.ip,
+        ipAddress: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
     }
@@ -252,7 +253,7 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
       },
       newValues: disbursement,
       userId,
-      ipAddress: req.ip,
+      ipAddress: getRealUserIP(req),
       userAgent: req.headers['user-agent']
     });
     
@@ -346,7 +347,7 @@ router.patch("/api/escrow-disbursements/:id", async (req: any, res) => {
       newValues: updatedDisbursement,
       changedFields: Object.keys(cleanedData),
       userId,
-      ipAddress: req.ip,
+      ipAddress: getRealUserIP(req),
       userAgent: req.headers['user-agent']
     });
     
@@ -387,7 +388,7 @@ router.delete("/api/escrow-disbursements/:id", async (req: any, res) => {
         },
         previousValues: disbursement,
         userId,
-        ipAddress: req.ip,
+        ipAddress: getRealUserIP(req),
         userAgent: req.headers['user-agent']
       });
     }
@@ -499,7 +500,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
       },
       newValues: result,
       userId,
-      ipAddress: req.ip,
+      ipAddress: getRealUserIP(req),
       userAgent: req.headers['user-agent']
     });
     
@@ -536,7 +537,7 @@ router.get("/api/loans/:loanId/escrow-summary", async (req: any, res) => {
         userId
       },
       userId,
-      ipAddress: req.ip,
+      ipAddress: getRealUserIP(req),
       userAgent: req.headers['user-agent']
     });
     
@@ -589,7 +590,7 @@ router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
       },
       newValues: result,
       userId,
-      ipAddress: req.ip,
+      ipAddress: getRealUserIP(req),
       userAgent: req.headers['user-agent']
     });
     
