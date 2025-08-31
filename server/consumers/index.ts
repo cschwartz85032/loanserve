@@ -13,7 +13,7 @@ import { PaymentDistributionConsumer } from './payment-distribution-consumer';
 import { PaymentReversalSaga } from './payment-reversal-saga';
 import { notificationsConsumer } from './notifications-consumer';
 import { CRMEmailConsumer } from './crm-email-consumer';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { getOutboxPublisher } from '../services/outbox-publisher';
 import { getEscrowManager } from '../escrow/escrow-manager';
 
@@ -22,12 +22,10 @@ export async function startPaymentConsumers(): Promise<void> {
 
   try {
     // Initialize RabbitMQ connection
-    const rabbitmq = getEnhancedRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     
-    // Wait for connection to be ready
-    console.log('[Consumers] Waiting for RabbitMQ connection...');
-    await rabbitmq.waitForConnection();
-    console.log('[Consumers] RabbitMQ connected');
+    // Connection is lazy, will be established when first needed
+    console.log('[Consumers] Using unified RabbitMQ client');
 
     // Start outbox publisher for transactional messaging
     const outboxPublisher = getOutboxPublisher();

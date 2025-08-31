@@ -109,25 +109,13 @@ app.use((req, res, next) => {
     // Continue server startup even if validations fail (non-fatal)
   }
   
-  // Initialize CRM email topology first
-  try {
-    const { crmTopologySetup } = await import('./crm/topology-setup');
-    await crmTopologySetup.initialize();
-    console.log('[Server] CRM email topology initialized successfully');
-  } catch (error) {
-    console.error('[Server] Failed to initialize CRM topology:', error);
-    // Continue server startup even if topology setup fails
-  }
+  // DISABLED: CRM topology setup temporarily disabled during RabbitMQ migration
+  // Will be re-enabled once unified client topology management is complete
+  console.log('[Server] CRM topology setup disabled during RabbitMQ migration');
 
-  // Start payment processing consumers with idempotency
-  try {
-    const { startPaymentConsumers } = await import('./consumers/index');
-    await startPaymentConsumers();
-    console.log('[Server] Payment consumers started successfully');
-  } catch (error) {
-    console.error('[Server] Failed to start payment consumers:', error);
-    // Continue server startup even if consumers fail
-  }
+  // DISABLED: Payment consumers temporarily disabled during RabbitMQ migration
+  // Individual consumers will be started via unified client once migration is complete
+  console.log('[Server] Payment consumers disabled during RabbitMQ migration');
   
   // Start metrics collection
   startMetricsCollection();

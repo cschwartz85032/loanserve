@@ -273,7 +273,9 @@ router.post('/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('
       // Create connections up to CloudAMQP's limit to force closure of old ones
       for (let i = 0; i < 50; i++) {
         try {
-          const conn = await amqp.connect(url, { heartbeat: 1 });
+          // Use unified client for connection testing
+          const { rabbitmqClient } = await import('../services/rabbitmq-unified');
+          const conn = await rabbitmqClient.getAdminConnection();
           connections.push(conn);
           console.log(`[Admin] Created pressure connection ${i + 1}`);
         } catch (error) {
@@ -282,10 +284,12 @@ router.post('/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('
         }
       }
       
-      // Immediately close all pressure connections
+      // Immediately close all pressure connections  
       for (const conn of connections) {
         try {
-          await conn.close();
+          if (conn !== (await import('../services/rabbitmq-unified')).rabbitmqClient.getAdminConnection()) {
+            await conn.close();
+          }
         } catch (error) {
           // Ignore close errors
         }

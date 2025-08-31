@@ -147,7 +147,9 @@ router.post('/purge-dlq', requireRole('admin'), async (req, res) => {
       return res.status(500).json({ error: 'RabbitMQ URL not configured' });
     }
     
-    const connection = await amqp.connect(url);
+    // Use unified client for admin operations
+    const { rabbitmqClient } = await import('../services/rabbitmq-unified');
+    const connection = await rabbitmqClient.getAdminConnection();
     const channel = await connection.createChannel();
     
     // Get queue stats before purging
@@ -158,7 +160,7 @@ router.post('/purge-dlq', requireRole('admin'), async (req, res) => {
     await channel.purgeQueue(queueName);
     
     await channel.close();
-    await connection.close();
+    // Don't close unified client connection - it's pooled
     
     console.log(`[QueueMonitor] Purged ${messageCount} messages from ${queueName}`);
     

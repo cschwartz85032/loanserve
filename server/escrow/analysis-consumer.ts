@@ -6,7 +6,7 @@
 
 import type { ConsumeMessage } from 'amqplib';
 import * as crypto from 'crypto';
-import { getEnhancedRabbitMQService as getRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { EscrowAnalysisService } from './analysis-service';
 import type { EscrowAnalysisRequest, EscrowAnalysisResponse } from './types';
 import type { MessageEnvelope } from '../messaging/contracts';
@@ -22,16 +22,16 @@ export class EscrowAnalysisConsumer {
   async start(): Promise<void> {
     console.log('[EscrowAnalysis] Starting analysis consumer');
     
-    const rabbitmq = getRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     
     try {
       await rabbitmq.consume<EscrowAnalysisRequest>(
+        'q.escrow.analysis.v2',
+        this.handleMessage.bind(this),
         {
-          queue: 'q.escrow.analysis.v2',
-          prefetch: 5, // Lower prefetch for analysis operations
+          prefetch: 5,
           consumerTag: this.consumerTag
-        },
-        this.handleMessage.bind(this)
+        }
       );
       
       console.log('[EscrowAnalysis] Consumer started successfully');
@@ -48,7 +48,7 @@ export class EscrowAnalysisConsumer {
   
   private async handleMessage(envelope: MessageEnvelope<EscrowAnalysisRequest>, message: ConsumeMessage): Promise<void> {
     const startTime = Date.now();
-    const rabbitmq = getRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     
     try {
       // Extract request from envelope
@@ -74,12 +74,14 @@ export class EscrowAnalysisConsumer {
         priority: 5
       };
       
-      await rabbitmq.publish(responseEnvelope, {
-        exchange: 'escrow.events',
-        routingKey: 'analysis.completed',
-        correlationId: request.correlation_id,
-        persistent: true
-      });
+      await rabbitmq.publishJSON(
+        'escrow.events',
+        'analysis.completed',
+        responseEnvelope,
+        {
+          correlationId: request.correlation_id
+        }
+      );
       
       // Generate statement if requested
       if (request.generate_statement) {
@@ -99,11 +101,11 @@ export class EscrowAnalysisConsumer {
           priority: 5
         };
         
-        await rabbitmq.publish(statementEnvelope, {
-          exchange: 'escrow.events',
-          routingKey: 'statement.generate',
-          persistent: true
-        });
+        await rabbitmq.publishJSON(
+          'escrow.events',
+          'statement.generate',
+          statementEnvelope
+        );
       }
       
       const duration = Date.now() - startTime;

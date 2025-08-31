@@ -1,6 +1,6 @@
 import { ConsumeMessage } from 'amqplib';
 import { rulesEngine, PaymentRail, WaterfallInput } from '../services/rules-engine';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { PaymentEventService } from '../services/payment-event';
 import { db } from '../db';
 import { loans, payments } from '@shared/schema';
@@ -10,7 +10,7 @@ import { PaymentEnvelope } from '../services/payment-envelope';
 export class RulesEngineConsumer {
   private consumerTag: string | null = null;
   private paymentEventService: PaymentEventService;
-  private rabbitmq = getEnhancedRabbitMQService();
+  private rabbitmq = rabbitmqClient;
 
   constructor() {
     this.paymentEventService = new PaymentEventService();
@@ -138,7 +138,7 @@ export class RulesEngineConsumer {
       const postingDecision = rulesEngine.getPostingDecision(rail, event);
 
       if (postingDecision.shouldPost) {
-        await this.rabbitmq.publish(
+        await this.rabbitmq.publishJSON(
           'payments.topic',
           'payment.post',
           {
@@ -225,11 +225,7 @@ export class RulesEngineConsumer {
     // The queue and bindings are created by the topology manager
     // Consume from the rules posting queue
     const consumerTag = await this.rabbitmq.consume(
-      {
-        queue: 'q.rules.post',
-        prefetch: 10,
-        consumerTag: 'rules-engine-consumer'
-      },
+      'q.rules.post',
       async (message: any, msg: any) => {
         if (!msg) return;
 
@@ -264,6 +260,10 @@ export class RulesEngineConsumer {
             console.error('[RulesEngine] Permanent error:', error);
           }
         }
+      },
+      {
+        prefetch: 10,
+        consumerTag: 'rules-engine-consumer'
       }
     );
 

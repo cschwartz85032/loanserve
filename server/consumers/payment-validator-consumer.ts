@@ -3,7 +3,7 @@ import { db } from '../db';
 import { loans, paymentEvents, exceptionCases, paymentIngestions } from '@shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import { PaymentEnvelope } from '../services/payment-envelope';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { PaymentEventService } from '../services/payment-event';
 import { ExceptionCaseService } from '../services/exception-case';
 import { randomUUID } from 'crypto';
@@ -54,7 +54,7 @@ export class PaymentValidatorConsumer {
   private consumerTag: string | null = null;
   private paymentEventService: PaymentEventService;
   private exceptionCaseService: ExceptionCaseService;
-  private rabbitmq = getEnhancedRabbitMQService();
+  private rabbitmq = rabbitmqClient;
 
   constructor() {
     this.paymentEventService = new PaymentEventService();

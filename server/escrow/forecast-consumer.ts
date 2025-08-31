@@ -5,7 +5,7 @@
  */
 
 import type { ConsumeMessage } from 'amqplib';
-import { getEnhancedRabbitMQService as getRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { EscrowForecastService } from './forecast-service';
 import type { EscrowForecastRequest, EscrowForecastResponse, MessageEnvelope } from './types';
 
@@ -20,16 +20,16 @@ export class EscrowForecastConsumer {
   async start(): Promise<void> {
     console.log('[EscrowForecast] Starting forecast consumer');
     
-    const rabbitmq = getRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     
     try {
       await rabbitmq.consume<EscrowForecastRequest>(
+        'q.forecast.v2',
+        this.handleMessage.bind(this),
         {
-          queue: 'q.forecast.v2',
           prefetch: 10,
           consumerTag: this.consumerTag
-        },
-        this.handleMessage.bind(this)
+        }
       );
       
       console.log('[EscrowForecast] Consumer started successfully');
@@ -41,13 +41,12 @@ export class EscrowForecastConsumer {
   
   async stop(): Promise<void> {
     console.log('[EscrowForecast] Stopping forecast consumer');
-    const rabbitmq = getRabbitMQService();
-    await rabbitmq.cancel(this.consumerTag);
+    await rabbitmqClient.cancelConsumer(this.consumerTag);
   }
   
   private async handleMessage(envelope: MessageEnvelope<EscrowForecastRequest>, message: ConsumeMessage): Promise<void> {
     const startTime = Date.now();
-    const rabbitmq = getRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     
     try {
       // Extract request from envelope
@@ -64,15 +63,14 @@ export class EscrowForecastConsumer {
       const response = await this.forecastService.generateForecast(request);
       
       // Publish response to escrow.events exchange
-      await rabbitmq.publish({
-        exchange: 'escrow.events',
-        routingKey: 'forecast.generated',
-        message: response,
-        options: {
-          correlationId: request.correlation_id,
-          persistent: true
+      await rabbitmq.publishJSON(
+        'escrow.events',
+        'forecast.generated',
+        response,
+        {
+          correlationId: request.correlation_id
         }
-      });
+      );
       
       const duration = Date.now() - startTime;
       console.log(`[EscrowForecast] Forecast generated for loan ${request.loan_id} in ${duration}ms`);

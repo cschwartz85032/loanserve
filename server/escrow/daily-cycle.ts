@@ -8,7 +8,7 @@
  * - Annual analysis (when required)
  */
 
-import { getEnhancedRabbitMQService as getRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { EscrowForecastService } from './forecast-service';
 import { EscrowDisbursementService } from './disbursement-service';
 import { EscrowAnalysisService } from './analysis-service';
@@ -65,21 +65,20 @@ export class EscrowDailyCycle {
       stats.loansProcessed = loansResult.rows.length;
       console.log(`[EscrowCycle] Processing ${stats.loansProcessed} loans with active escrow accounts`);
       
-      const rabbitmq = getRabbitMQService();
+      const rabbitmq = rabbitmqClient;
       
       // Step 3: Generate forecasts for each loan
       console.log('[EscrowCycle] Step 2: Generating forecasts');
       for (const loan of loansResult.rows) {
         try {
-          await rabbitmq.publishMessage(
+          await rabbitmq.publishJSON(
             'escrow.saga',
             'forecast.request',
             {
               loan_id: loan.id,
               as_of_date: cycleDate,
               correlation_id: `cycle_forecast_${loan.id}_${cycleDate}`
-            },
-            { persistent: true }
+            }
           );
           stats.forecastsGenerated++;
         } catch (error) {
@@ -92,15 +91,14 @@ export class EscrowDailyCycle {
       console.log('[EscrowCycle] Step 3: Scheduling disbursements');
       for (const loan of loansResult.rows) {
         try {
-          await rabbitmq.publishMessage(
+          await rabbitmq.publishJSON(
             'escrow.saga',
             'disbursement.schedule',
             {
               loan_id: loan.id,
               effective_date: cycleDate,
               correlation_id: `cycle_disbursement_${loan.id}_${cycleDate}`
-            },
-            { persistent: true }
+            }
           );
           stats.disbursementsScheduled++;
         } catch (error) {
@@ -136,7 +134,7 @@ export class EscrowDailyCycle {
       
       for (const loan of analysisDueResult.rows) {
         try {
-          await rabbitmq.publishMessage(
+          await rabbitmq.publishJSON(
             'escrow.saga',
             'analysis.request',
             {
@@ -144,8 +142,7 @@ export class EscrowDailyCycle {
               as_of_date: cycleDate,
               generate_statement: true,
               correlation_id: `cycle_analysis_${loan.id}_${cycleDate}`
-            },
-            { persistent: true }
+            }
           );
           stats.analysesPerformed++;
           console.log(`[EscrowCycle] Queued annual analysis for loan ${loan.loan_number}`);
@@ -174,15 +171,14 @@ export class EscrowDailyCycle {
       console.log('[EscrowCycle] ========================================');
       
       // Publish cycle completion event
-      await rabbitmq.publishMessage(
+      await rabbitmq.publishJSON(
         'escrow.events',
         'cycle.completed',
         {
           cycleDate,
           stats,
           timestamp: new Date().toISOString()
-        },
-        { persistent: true }
+        }
       );
       
     } catch (error) {
