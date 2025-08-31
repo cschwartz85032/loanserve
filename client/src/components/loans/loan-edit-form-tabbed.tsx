@@ -482,20 +482,49 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     return beneficiaryFields.some(field => formData[field] !== originalBeneficiaryData[field]);
   };
 
-  // Handle tab changes with beneficiary cache invalidation
+  // Check if any other tab has potential unsaved changes (placeholder for future expansion)
+  const hasUnsavedChanges = (tabName: string) => {
+    switch (tabName) {
+      case 'beneficiaries':
+        return hasBeneficiaryChanges();
+      case 'crm':
+      case 'escrows':
+      case 'documents':
+      case 'accounting':
+      case 'settings':
+        // These tabs use separate components that manage their own state
+        // For now, we'll always refresh cache when leaving these tabs to ensure data consistency
+        return false; // They save immediately or manage their own state
+      case 'audit':
+        return false; // Read-only tab
+      default:
+        return false;
+    }
+  };
+
+  // Handle tab changes with comprehensive cache invalidation for ALL tabs
   const handleTabChange = (newTab: string) => {
-    if (activeTab === 'beneficiaries' && newTab !== 'beneficiaries' && hasBeneficiaryChanges()) {
-      // User is leaving beneficiary tab with unsaved changes
+    // Always invalidate cache when switching tabs to ensure fresh data across all tabs
+    const shouldNotifyUnsaved = activeTab === 'beneficiaries' && newTab !== 'beneficiaries' && hasBeneficiaryChanges();
+    
+    if (shouldNotifyUnsaved) {
+      // Special handling for beneficiary tab with unsaved changes - notify user
       toast({
         title: "Unsaved Changes",
         description: "Beneficiary changes discarded. Refreshing data from server.",
         variant: "default"
       });
-      
-      // Invalidate cache and refresh data to clear unsaved changes
-      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
-      queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}`] });
     }
+    
+    // Always invalidate cache when switching tabs to ensure data consistency
+    // This handles any changes made in CRM, Escrows, or other tabs that save immediately
+    queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+    queryClient.invalidateQueries({ queryKey: ['/api/loans'] });
+    queryClient.invalidateQueries({ queryKey: [`/api/compliance/audit-log`, { entityType: 'loan', entityId: loanId }] });
+    queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}`] });
+    
+    console.log(`[Cache] Invalidated cache when switching from ${activeTab} to ${newTab} tab`);
+    
     setActiveTab(newTab);
   };
 
