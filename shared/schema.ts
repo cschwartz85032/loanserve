@@ -4493,3 +4493,76 @@ export const insertDataSubjectRequestSchema = createInsertSchema(dataSubjectRequ
 });
 export type InsertDataSubjectRequest = z.infer<typeof insertDataSubjectRequestSchema>;
 export type DataSubjectRequest = typeof dataSubjectRequest.$inferSelect;
+
+// ========================================
+// MISSING TABLES - Add schema definitions for existing database tables
+// ========================================
+
+// Notice Status Enum
+export const noticeStatusEnum = pgEnum("notice_status", [
+  "scheduled",
+  "sent",
+  "canceled",
+]);
+
+// Notice Schedule Table
+export const noticeSchedule = pgTable("notice_schedule", {
+  noticeId: uuid("notice_id").primaryKey().defaultRandom(),
+  loanId: integer("loan_id").references(() => loans.id, { onDelete: "cascade" }).notNull(),
+  noticeTemplateId: uuid("notice_template_id").notNull(), // References notice_template_v2
+  triggerCode: text("trigger_code").notNull(),
+  params: jsonb("params").notNull().default("{}"),
+  scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+  status: noticeStatusEnum("status").notNull().default("scheduled"),
+  sentDocId: uuid("sent_doc_id"), // References document_artifact
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  uniqueSchedule: unique().on(table.loanId, table.noticeTemplateId, table.scheduledFor),
+}));
+
+// Saga Step History Table  
+export const sagaStepHistory = pgTable("saga_step_history", {
+  id: serial("id").primaryKey(),
+  sagaId: uuid("saga_id").notNull(), // References saga_states
+  stepName: varchar("step_name", { length: 100 }).notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  inputData: jsonb("input_data"),
+  outputData: jsonb("output_data"),
+  errorMessage: text("error_message"),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }),
+}, (table) => ({
+  uniqueSagaStep: unique().on(table.sagaId, table.stepName, table.idempotencyKey),
+}));
+
+// Remittance Export Table
+export const remittanceExport = pgTable("remittance_export", {
+  exportId: uuid("export_id").primaryKey().defaultRandom(),
+  cycleId: uuid("cycle_id").notNull(), // References remittance_cycle
+  format: text("format").notNull(), // 'csv' or 'xml'
+  fileHash: varchar("file_hash", { length: 64 }).notNull(),
+  bytes: text("bytes").notNull(), // BYTEA stored as text in Drizzle
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Insert Schemas for missing tables
+export const insertNoticeScheduleSchema = createInsertSchema(noticeSchedule).omit({
+  noticeId: true,
+  createdAt: true,
+});
+export type InsertNoticeSchedule = z.infer<typeof insertNoticeScheduleSchema>;
+export type NoticeSchedule = typeof noticeSchedule.$inferSelect;
+
+export const insertSagaStepHistorySchema = createInsertSchema(sagaStepHistory).omit({
+  id: true,
+  startedAt: true,
+});
+export type InsertSagaStepHistory = z.infer<typeof insertSagaStepHistorySchema>;
+export type SagaStepHistory = typeof sagaStepHistory.$inferSelect;
+
+export const insertRemittanceExportSchema = createInsertSchema(remittanceExport).omit({
+  exportId: true,
+  createdAt: true,
+});
+export type InsertRemittanceExport = z.infer<typeof insertRemittanceExportSchema>;
+export type RemittanceExport = typeof remittanceExport.$inferSelect;
