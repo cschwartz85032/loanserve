@@ -3,7 +3,7 @@
  * Consumes crm.email.requested.v1 events and processes email sending
  */
 
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { CRMNotificationService } from '../crm/notification-service';
 import { complianceAudit, COMPLIANCE_EVENTS } from '../compliance/auditService';
 import { logActivity, CRM_CONSTANTS } from '../utils/crm-utils';
@@ -39,7 +39,7 @@ interface CRMEmailRequestedEvent {
 }
 
 export class CRMEmailConsumer {
-  private rabbitmq = getEnhancedRabbitMQService();
+  private rabbitmq = rabbitmqClient;
   private notificationService = new CRMNotificationService();
 
   /**

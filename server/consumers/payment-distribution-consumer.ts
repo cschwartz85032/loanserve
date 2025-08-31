@@ -11,7 +11,7 @@ import {
   DistributionData
 } from '../messaging/payment-envelope';
 import { IdempotencyService, createIdempotentHandler } from '../services/payment-idempotency';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { getMessageFactory } from '../messaging/message-factory';
 import { db } from '../db';
 
@@ -21,7 +21,7 @@ interface InvestorPosition {
 }
 
 export class PaymentDistributionConsumer {
-  private rabbitmq = getEnhancedRabbitMQService();
+  private rabbitmq = rabbitmqClient;
   private messageFactory = getMessageFactory();
 
   /**

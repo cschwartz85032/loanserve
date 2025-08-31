@@ -11,7 +11,7 @@ import { getEscrowManager } from './escrow-manager';
 import { EscrowForecastService } from './forecast-service';
 import { EscrowDisbursementService } from './disbursement-service';
 import { EscrowAnalysisService } from './analysis-service';
-import { getEnhancedRabbitMQService as getRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient as getRabbitMQService } from '../services/rabbitmq-unified';
 import { pool } from '../db';
 
 const router = Router();

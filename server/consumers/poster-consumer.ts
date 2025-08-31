@@ -1,22 +1,18 @@
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { posterService } from '../services/poster-service';
 import { PaymentEnvelope } from '../services/payment-envelope';
 import { WaterfallResult } from '../services/rules-engine';
 
 export class PosterConsumer {
   private readonly consumerTag = 'poster-consumer';
-  private rabbitmqService = getEnhancedRabbitMQService();
+  private rabbitmqService = rabbitmqClient;
 
   async start(): Promise<void> {
     console.log('[Poster] Starting poster consumer');
 
     try {
-      await this.rabbitmqService.consume(
-        {
-          queue: 'q.post',
-          consumerTag: this.consumerTag,
-          prefetch: 10
-        },
+      const consumerTag = await this.rabbitmqService.consume(
+        'q.post',
         async (envelope) => {
           const message = envelope.payload as {
             envelope: PaymentEnvelope;
@@ -46,7 +42,9 @@ export class PosterConsumer {
               console.log(`[Poster] ✓ Payment ${result.paymentId} posted successfully`);
               
               // Publish ledger.posted event
-              await this.rabbitmqService.publish(
+              await this.rabbitmqService.publishJSON(
+                'x.ledger',
+                'ledger.posted',
                 {
                   message_id: envelope.message_id,
                   correlation_id: envelope.correlation_id,
@@ -58,10 +56,6 @@ export class PosterConsumer {
                     timestamp: new Date().toISOString()
                   },
                   timestamp: new Date().toISOString()
-                },
-                {
-                  exchange: 'x.ledger',
-                  routingKey: 'ledger.posted'
                 }
               );
             } else {
@@ -73,7 +67,9 @@ export class PosterConsumer {
             console.error('[Poster] Error posting payment:', error);
             
             // Publish to exception queue
-            await this.rabbitmqService.publish(
+            await this.rabbitmqService.publishJSON(
+              'x.exception',
+              'exception.posting.failed',
               {
                 message_id: envelope.message_id,
                 correlation_id: envelope.correlation_id,
@@ -86,10 +82,6 @@ export class PosterConsumer {
                   timestamp: new Date().toISOString()
                 },
                 timestamp: new Date().toISOString()
-              },
-              {
-                exchange: 'x.exception',
-                routingKey: 'exception.posting.failed'
               }
             );
 
