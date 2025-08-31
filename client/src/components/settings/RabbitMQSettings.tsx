@@ -254,6 +254,34 @@ export default function RabbitMQSettings() {
     }
   });
 
+  // Force disconnect RabbitMQ connections mutation
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/admin/rabbitmq/force-disconnect", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to disconnect RabbitMQ connections");
+      }
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Connections Closed",
+        description: `${data.message}. Active connections: ${data.connectionStats?.activeConnections || 0}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Disconnect Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
   const handleInputChange = (key: keyof ConsumerPrefetchConfig, value: string) => {
     const numValue = parseInt(value, 10);
     if (!isNaN(numValue) && numValue >= 1 && numValue <= 1000) {
@@ -269,6 +297,12 @@ export default function RabbitMQSettings() {
   
   const handleSessionSave = () => {
     saveSessionMutation.mutate(sessionSettings);
+  };
+
+  const handleForceDisconnect = () => {
+    if (confirm("Are you sure you want to force close all RabbitMQ connections? This will temporarily disrupt message processing.")) {
+      disconnectMutation.mutate();
+    }
   };
 
   const handleSave = () => {
@@ -369,13 +403,20 @@ export default function RabbitMQSettings() {
             </div>
           </div>
           
-          <div className="flex justify-end pt-4 border-t">
+          <div className="flex justify-end gap-2 pt-4 border-t">
             <Button 
               onClick={handleSessionSave} 
               disabled={!sessionDirty || saveSessionMutation.isPending}
             >
               <Save className="h-4 w-4 mr-2" />
               {saveSessionMutation.isPending ? "Saving..." : "Save Session Settings"}
+            </Button>
+            <Button 
+              onClick={handleForceDisconnect} 
+              variant="destructive"
+              disabled={disconnectMutation.isPending}
+            >
+              {disconnectMutation.isPending ? 'Disconnecting...' : 'Force Close All Connections'}
             </Button>
           </div>
         </CardContent>

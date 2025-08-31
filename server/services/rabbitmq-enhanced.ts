@@ -660,6 +660,63 @@ export class EnhancedRabbitMQService {
   }
 
   /**
+   * Force disconnect all connections immediately (emergency cleanup)
+   */
+  async forceDisconnectAll(): Promise<void> {
+    console.log('[RabbitMQ] FORCE DISCONNECT: Closing all connections immediately...');
+    
+    // Stop all reconnection attempts
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    
+    // Reset connection tracking
+    this.isConnected = false;
+    this.reconnectAttempts = this.maxReconnectAttempts; // Prevent further reconnection
+    
+    // Force close all connections without waiting
+    const forceCloseConnection = async (conn: amqp.Connection, name: string) => {
+      try {
+        // Close without graceful shutdown
+        if (conn && typeof conn.close === 'function') {
+          conn.close();
+          console.log(`[RabbitMQ] Force closed connection: ${name}`);
+        }
+      } catch (error) {
+        console.log(`[RabbitMQ] Force closed connection: ${name} (with error, expected)`);
+      }
+    };
+    
+    // Force close all pooled connections
+    for (const [purpose, connection] of this.connectionPool) {
+      await forceCloseConnection(connection, `pooled-${purpose}`);
+    }
+    
+    // Force close direct connections
+    if (this.publisherConnection) {
+      await forceCloseConnection(this.publisherConnection, 'publisher');
+    }
+    if (this.consumerConnection) {
+      await forceCloseConnection(this.consumerConnection, 'consumer');
+    }
+    
+    // Clear all data structures
+    this.connectionPool.clear();
+    this.channelPool.clear();
+    this.consumerChannels.clear();
+    this.idleTimers.clear();
+    this.activeConnectionCount = 0;
+    
+    // Clear references
+    this.publisherConnection = null;
+    this.consumerConnection = null;
+    this.publisherChannel = null;
+    
+    console.log('[RabbitMQ] FORCE DISCONNECT: All connections cleared');
+  }
+
+  /**
    * Graceful shutdown
    */
   async shutdown(): Promise<void> {

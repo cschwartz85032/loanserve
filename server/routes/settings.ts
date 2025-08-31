@@ -10,6 +10,9 @@ const storage = new DatabaseStorage();
 const databaseUrl = process.env.DATABASE_URL || '';
 const sql = neon(databaseUrl);
 
+// Import RabbitMQ service for connection management
+import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+
 // Get system settings
 router.get('/api/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
@@ -227,6 +230,27 @@ router.get('/api/password-policy', async (req, res) => {
       requireSpecialChars: false,
       rejectWeakPasswords: false
     });
+  }
+});
+
+// Emergency endpoint to force close all RabbitMQ connections
+router.post('/api/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
+  try {
+    console.log('[Admin] Emergency RabbitMQ connection cleanup requested');
+    
+    const rabbitmqService = getEnhancedRabbitMQService();
+    await rabbitmqService.forceDisconnectAll();
+    
+    const stats = rabbitmqService.getConnectionPoolStats();
+    console.log('[Admin] Post-cleanup connection stats:', stats);
+    
+    return sendSuccess(res, { 
+      message: 'All RabbitMQ connections forcefully closed',
+      connectionStats: stats
+    });
+  } catch (error) {
+    console.error('[Admin] Failed to force disconnect RabbitMQ connections:', error);
+    return sendError(res, 'Failed to force disconnect connections', 500);
   }
 });
 
