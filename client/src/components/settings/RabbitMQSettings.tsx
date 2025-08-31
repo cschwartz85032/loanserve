@@ -4,9 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Loader2, RotateCcw, Info, Zap } from "lucide-react";
+import { Loader2, RotateCcw, Info, Zap, Shield, Save } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Tooltip,
@@ -127,11 +128,26 @@ export default function RabbitMQSettings() {
   const { toast } = useToast();
   const [config, setConfig] = useState<ConsumerPrefetchConfig | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  
+  // Session management state
+  const [sessionSettings, setSessionSettings] = useState({
+    sessionTimeoutMinutes: 30,
+    extendSessionOnActivity: true,
+    requireReauthForSensitive: true,
+    allowMultipleSessions: false
+  });
+  const [sessionDirty, setSessionDirty] = useState(false);
 
   // Fetch current configuration
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/admin/rabbitmq/config"],
     refetchInterval: 30000, // Refresh every 30 seconds
+  });
+  
+  // Fetch session settings
+  const { data: adminSettings } = useQuery({
+    queryKey: ["/api/admin/settings"],
+    enabled: true
   });
 
   useEffect(() => {
@@ -139,6 +155,12 @@ export default function RabbitMQSettings() {
       setConfig(data.config);
     }
   }, [data]);
+  
+  useEffect(() => {
+    if (adminSettings?.sessionSettings) {
+      setSessionSettings(adminSettings.sessionSettings);
+    }
+  }, [adminSettings]);
 
   // Save configuration mutation
   const saveMutation = useMutation({
@@ -201,6 +223,35 @@ export default function RabbitMQSettings() {
       });
     },
   });
+  
+  // Save session settings mutation
+  const saveSessionMutation = useMutation({
+    mutationFn: async (sessionData: any) => {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionSettings: sessionData })
+      });
+      if (!response.ok) throw new Error("Failed to update session settings");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
+      toast({
+        title: "Session settings updated",
+        description: "Session management settings have been saved successfully.",
+      });
+      setSessionDirty(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Update failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
 
   const handleInputChange = (key: keyof ConsumerPrefetchConfig, value: string) => {
     const numValue = parseInt(value, 10);
@@ -208,6 +259,15 @@ export default function RabbitMQSettings() {
       setConfig(prev => prev ? { ...prev, [key]: numValue } : null);
       setIsDirty(true);
     }
+  };
+  
+  const handleSessionInputChange = (key: string, value: any) => {
+    setSessionSettings(prev => ({ ...prev, [key]: value }));
+    setSessionDirty(true);
+  };
+  
+  const handleSessionSave = () => {
+    saveSessionMutation.mutate(sessionSettings);
   };
 
   const handleSave = () => {
@@ -245,6 +305,65 @@ export default function RabbitMQSettings() {
 
   return (
     <div className="space-y-6">
+      {/* Session Management */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Session Management
+          </CardTitle>
+          <CardDescription>Configure session timeout and security settings</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="session-timeout">Session Timeout (minutes)</Label>
+            <Input
+              id="session-timeout"
+              type="number"
+              value={sessionSettings.sessionTimeoutMinutes}
+              onChange={(e) => handleSessionInputChange('sessionTimeoutMinutes', parseInt(e.target.value))}
+              min="5"
+              max="1440"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Extend Session on Activity</Label>
+              <Switch
+                checked={sessionSettings.extendSessionOnActivity}
+                onCheckedChange={(checked) => handleSessionInputChange('extendSessionOnActivity', checked)}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label>Require Re-authentication for Sensitive Operations</Label>
+              <Switch
+                checked={sessionSettings.requireReauthForSensitive}
+                onCheckedChange={(checked) => handleSessionInputChange('requireReauthForSensitive', checked)}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label>Allow Multiple Sessions</Label>
+              <Switch
+                checked={sessionSettings.allowMultipleSessions}
+                onCheckedChange={(checked) => handleSessionInputChange('allowMultipleSessions', checked)}
+              />
+            </div>
+          </div>
+          
+          <div className="flex justify-end pt-4 border-t">
+            <Button 
+              onClick={handleSessionSave} 
+              disabled={!sessionDirty || saveSessionMutation.isPending}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saveSessionMutation.isPending ? "Saving..." : "Save Session Settings"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* RabbitMQ Consumer Configuration */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

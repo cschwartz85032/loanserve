@@ -38,12 +38,6 @@ export default function SecuritySettings() {
     lockoutStrategy: "progressive"
   });
 
-  const [sessionSettings, setSessionSettings] = useState({
-    sessionTimeoutMinutes: 30,
-    extendSessionOnActivity: true,
-    requireReauthForSensitive: true,
-    allowMultipleSessions: false
-  });
 
   const [callerVerification, setCallerVerification] = useState({
     enabled: false,
@@ -82,9 +76,6 @@ export default function SecuritySettings() {
       if (settings.lockoutPolicy) {
         setLockoutPolicy(settings.lockoutPolicy);
       }
-      if (settings.sessionSettings) {
-        setSessionSettings(settings.sessionSettings);
-      }
       if (settings.callerVerification) {
         setCallerVerification(settings.callerVerification);
       }
@@ -122,7 +113,6 @@ export default function SecuritySettings() {
     updateSettingsMutation.mutate({
       passwordPolicy,
       lockoutPolicy,
-      sessionSettings,
       callerVerification
     });
   };
@@ -460,53 +450,6 @@ export default function SecuritySettings() {
         </CardContent>
       </Card>
 
-      {/* Session Management */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            Session Management
-          </CardTitle>
-          <CardDescription>Configure session timeout and security settings</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="session-timeout">Session Timeout (minutes)</Label>
-            <Input
-              id="session-timeout"
-              type="number"
-              value={sessionSettings.sessionTimeoutMinutes}
-              onChange={(e) => setSessionSettings({ ...sessionSettings, sessionTimeoutMinutes: parseInt(e.target.value) })}
-              min="5"
-              max="1440"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Extend Session on Activity</Label>
-              <Switch
-                checked={sessionSettings.extendSessionOnActivity}
-                onCheckedChange={(checked) => setSessionSettings({ ...sessionSettings, extendSessionOnActivity: checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label>Require Re-authentication for Sensitive Operations</Label>
-              <Switch
-                checked={sessionSettings.requireReauthForSensitive}
-                onCheckedChange={(checked) => setSessionSettings({ ...sessionSettings, requireReauthForSensitive: checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label>Allow Multiple Sessions</Label>
-              <Switch
-                checked={sessionSettings.allowMultipleSessions}
-                onCheckedChange={(checked) => setSessionSettings({ ...sessionSettings, allowMultipleSessions: checked })}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Save Button */}
       <div className="flex justify-end">
