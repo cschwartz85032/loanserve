@@ -416,7 +416,7 @@ export default function RabbitMQSettings() {
               variant="destructive"
               disabled={disconnectMutation.isPending}
             >
-              {disconnectMutation.isPending ? 'Disconnecting...' : 'Force Close All Connections'}
+              {disconnectMutation.isPending ? 'Shutting Down...' : 'Shutdown MQ'}
             </Button>
           </div>
         </CardContent>
