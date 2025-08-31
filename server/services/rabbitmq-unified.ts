@@ -76,12 +76,15 @@ export class RabbitMQClient {
     });
     conn.on('blocked', (reason) => {
       console.warn('[RabbitMQ] connection blocked:', reason);
+      this.isBlocked = true;
     });
     conn.on('unblocked', () => {
       console.log('[RabbitMQ] connection unblocked');
+      this.isBlocked = false;
     });
 
     this.conn = conn;
+    this.connectionStartTime = Date.now();
     console.log(`[RabbitMQ] Connected as ${connectionName}`);
   }
 
@@ -278,6 +281,40 @@ export class RabbitMQClient {
       reconnecting: this.reconnecting,
       reconnectAttempts: this.reconnectAttempts
     };
+  }
+
+  /**
+   * Get connection information for monitoring/debugging.
+   */
+  async getConnectionInfo() {
+    return {
+      connected: !!this.conn,
+      reconnectAttempts: this.reconnectAttempts,
+      totalReconnects: this.totalReconnects,
+      publisherConnected: !!this.publisherChannel,
+      consumerConnected: this.consumerChannels.size > 0,
+      activeConsumers: this.consumerChannels.size,
+      uptime: this.connectionStartTime ? Date.now() - this.connectionStartTime : 0,
+      isBlocked: this.isBlocked,
+    };
+  }
+
+  /**
+   * Get queue statistics for monitoring
+   */
+  async getQueueStats(queueName: string) {
+    await this.connect();
+    const ch = await this.conn!.createChannel();
+    try {
+      const queueInfo = await ch.checkQueue(queueName);
+      return {
+        queue: queueName,
+        messageCount: queueInfo.messageCount,
+        consumerCount: queueInfo.consumerCount,
+      };
+    } finally {
+      await ch.close();
+    }
   }
 
   /**
