@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { DatabaseStorage } from '../storage';
 import { neon } from '@neondatabase/serverless';
 import { sendSuccess, sendError } from '../utils/response-utils';
+import { requireAuth, requirePermission } from '../auth/middleware';
+import { PermissionLevel } from '../auth/policy-engine';
 
 const router = Router();
 const storage = new DatabaseStorage();
@@ -9,7 +11,7 @@ const databaseUrl = process.env.DATABASE_URL || '';
 const sql = neon(databaseUrl);
 
 // Get system settings
-router.get('/api/admin/settings', async (req, res) => {
+router.get('/api/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     // Get all settings from system_settings table
     const settings = await sql`
@@ -105,11 +107,11 @@ router.get('/api/admin/settings', async (req, res) => {
 });
 
 // Update system settings
-router.put('/api/admin/settings', async (req, res) => {
+router.put('/api/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     const { passwordPolicy, lockoutPolicy, sessionSettings, callerVerification } = req.body;
     
-    const promises = [];
+    const promises: Promise<any>[] = [];
     
     // Save password policy settings
     if (passwordPolicy) {
@@ -117,7 +119,7 @@ router.put('/api/admin/settings', async (req, res) => {
         const settingValue = typeof value === 'object' ? value : String(value);
         promises.push(sql`
           INSERT INTO system_settings (category, key, value, updated_by, updated_at)
-          VALUES ('password_policy', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          VALUES ('password_policy', ${key}, ${JSON.stringify(settingValue)}, ${(req as any).user?.id || 1}, NOW())
           ON CONFLICT (category, key) DO UPDATE
           SET value = EXCLUDED.value,
               updated_by = EXCLUDED.updated_by,
@@ -132,7 +134,7 @@ router.put('/api/admin/settings', async (req, res) => {
         const settingValue = typeof value === 'object' ? value : String(value);
         promises.push(sql`
           INSERT INTO system_settings (category, key, value, updated_by, updated_at)
-          VALUES ('lockout_policy', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          VALUES ('lockout_policy', ${key}, ${JSON.stringify(settingValue)}, ${(req as any).user?.id || 1}, NOW())
           ON CONFLICT (category, key) DO UPDATE
           SET value = EXCLUDED.value,
               updated_by = EXCLUDED.updated_by,
@@ -147,7 +149,7 @@ router.put('/api/admin/settings', async (req, res) => {
         const settingValue = typeof value === 'object' ? value : String(value);
         promises.push(sql`
           INSERT INTO system_settings (category, key, value, updated_by, updated_at)
-          VALUES ('session_settings', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          VALUES ('session_settings', ${key}, ${JSON.stringify(settingValue)}, ${(req as any).user?.id || 1}, NOW())
           ON CONFLICT (category, key) DO UPDATE
           SET value = EXCLUDED.value,
               updated_by = EXCLUDED.updated_by,
@@ -162,7 +164,7 @@ router.put('/api/admin/settings', async (req, res) => {
         const settingValue = typeof value === 'object' ? value : String(value);
         promises.push(sql`
           INSERT INTO system_settings (category, key, value, updated_by, updated_at)
-          VALUES ('caller_verification', ${key}, ${JSON.stringify(settingValue)}, ${req.user?.id || 1}, NOW())
+          VALUES ('caller_verification', ${key}, ${JSON.stringify(settingValue)}, ${(req as any).user?.id || 1}, NOW())
           ON CONFLICT (category, key) DO UPDATE
           SET value = EXCLUDED.value,
               updated_by = EXCLUDED.updated_by,
