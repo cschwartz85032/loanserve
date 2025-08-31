@@ -3,7 +3,7 @@
  * Wraps RabbitMQ operations with OpenTelemetry tracing and metrics
  */
 
-import { EnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { RabbitMQClient } from '../services/rabbitmq-unified';
 import { 
   createSpan, 
   withSpan, 
@@ -21,7 +21,7 @@ import {
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { extractCorrelationId, attachCorrelationId } from '../middleware/correlation-id';
 
-export class InstrumentedRabbitMQService extends EnhancedRabbitMQService {
+export class InstrumentedRabbitMQService extends RabbitMQClient {
   
   /**
    * Publish a message with tracing and metrics

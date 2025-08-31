@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { sql } from 'drizzle-orm';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
+import { queueMonitor } from '../services/queue-monitor';
 
 const router = Router();
 
@@ -68,11 +69,40 @@ router.get('/', async (req, res) => {
     health.status = 'error';
   }
 
-  // Check RabbitMQ connectivity
+  // Check RabbitMQ connectivity with queue depths
   try {
-    const rabbitmq = getEnhancedRabbitMQService();
-    const connectionInfo = rabbitmq.getConnectionInfo();
-    health.checks.rabbitmq.connected = connectionInfo.connected;
+    const connectionInfo = await rabbitmqClient.getConnectionInfo();
+    const monitor = queueMonitor;
+    const queueMetrics = await monitor.getQueueMetrics();
+    
+    // Calculate DLQ depths
+    const dlqQueues = queueMetrics.filter(q => q.name.startsWith('dlq.'));
+    const totalDlqDepth = dlqQueues.reduce((sum, q) => sum + q.messages, 0);
+    
+    // Calculate total queue depth
+    const totalQueueDepth = queueMetrics.reduce((sum, q) => sum + q.messages, 0);
+    
+    health.checks.rabbitmq = {
+      status: 'ok',
+      connected: connectionInfo.connected,
+      queues: {
+        total: queueMetrics.length,
+        totalDepth: totalQueueDepth,
+        dlqCount: dlqQueues.length,
+        dlqDepth: totalDlqDepth,
+        topQueues: queueMetrics
+          .sort((a, b) => b.messages - a.messages)
+          .slice(0, 5)
+          .map(q => ({ name: q.name, depth: q.messages }))
+      }
+    };
+    
+    // Mark unhealthy if DLQ depth is too high
+    if (totalDlqDepth > 100) {
+      health.checks.rabbitmq.status = 'error';
+      health.checks.rabbitmq.error = `High DLQ depth: ${totalDlqDepth} messages`;
+      health.status = 'error';
+    }
     
     if (!connectionInfo.connected) {
       health.checks.rabbitmq.status = 'error';
@@ -128,8 +158,7 @@ router.get('/ready', async (req, res) => {
 
   // RabbitMQ check: ensure there is an active connection
   try {
-    const rabbitmq = getEnhancedRabbitMQService();
-    const connectionInfo = rabbitmq.getConnectionInfo();
+    const connectionInfo = await rabbitmqClient.getConnectionInfo();
     if (connectionInfo.connected) {
       checks.rabbit = { ok: true };
     } else {

@@ -4,7 +4,7 @@
  */
 
 import { pool } from '../db';
-import { getEnhancedRabbitMQService } from './rabbitmq-enhanced';
+import { rabbitmqClient } from './rabbitmq-unified';
 import { PaymentEnvelope } from '../messaging/payment-envelope';
 
 export class OutboxPublisher {

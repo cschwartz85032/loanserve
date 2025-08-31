@@ -3,7 +3,7 @@
  * Collects and stores queue metrics over time for visualization
  */
 
-import { getEnhancedRabbitMQService } from './rabbitmq-enhanced';
+import { rabbitmqClient } from './rabbitmq-unified';
 import { topologyManager } from '../messaging/topology';
 
 interface MetricSnapshot {
@@ -32,11 +32,11 @@ class QueueMetricsHistory {
   private maxHistorySize = 60; // Keep last 60 snapshots (5 minutes at 5-second intervals)
   private lastSnapshot: MetricSnapshot | null = null;
   private collectionInterval: NodeJS.Timeout | null = null;
-  private rabbitmq = getEnhancedRabbitMQService();
+  private rabbitmq = rabbitmqClient;
 
   constructor() {
-    // DISABLED: Temporarily disable automatic metrics collection to reduce CloudAMQP connection load
-    // this.startCollection();
+    // Re-enabled with unified client - stable connection management
+    this.startCollection();
   }
 
   /**

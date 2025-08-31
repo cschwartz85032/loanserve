@@ -4,7 +4,7 @@
  */
 
 import crypto from 'crypto';
-import { getEnhancedRabbitMQService } from '../rabbitmq-enhanced';
+import { rabbitmqClient } from '../rabbitmq-unified';
 import { createCanonicalEnvelope } from '../../../packages/shared/messaging/envelope';
 
 export interface ColumnWebhookEvent {

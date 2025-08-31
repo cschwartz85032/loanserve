@@ -4,7 +4,7 @@
  * Handles template rendering, provider calls, and artifact persistence
  */
 
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { EmailVariableResolver } from './email-variable-resolver';
 import { sendEmail } from '../auth/email-service';
 import { db } from '../db';
@@ -17,7 +17,7 @@ import Handlebars from 'handlebars';
 import type { CRMEmailRequestedEvent, CRMEmailSentEvent, CRMEmailFailedEvent } from './email-types';
 
 export class CRMEmailConsumer {
-  private rabbitmq = getEnhancedRabbitMQService();
+  private rabbitmq = rabbitmqClient;
   private variableResolver = new EmailVariableResolver();
   private consumerTag?: string;
 

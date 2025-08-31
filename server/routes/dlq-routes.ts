@@ -1,12 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced.js';
+import { rabbitmqClient } from '../services/rabbitmq-unified.js';
 import { requireAuth } from '../auth/middleware.js';
 import { db } from '../db.js';
 import { loans, payments } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 
 const router = Router();
-const rabbitmq = getEnhancedRabbitMQService();
+const rabbitmq = rabbitmqClient;
 
 // Browse messages in a DLQ
 router.get('/dlq/:queueName/messages', requireAuth, async (req: Request, res: Response) => {

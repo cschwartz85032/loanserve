@@ -3,7 +3,7 @@
  */
 
 import { Router } from 'express';
-import { getEnhancedRabbitMQService, EnhancedRabbitMQService } from '../services/rabbitmq-enhanced.js';
+import { rabbitmqClient, RabbitMQClient } from '../services/rabbitmq-unified.js';
 import { getMessageFactory } from '../messaging/message-factory.js';
 import { createIdempotentHandler } from '../messaging/idempotent-consumer.js';
 import { topologyManager } from '../messaging/topology.js';

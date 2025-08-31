@@ -1,13 +1,13 @@
 import { Router } from 'express';
 // Using EnhancedRabbitMQService for proper publisher confirms and payment safety
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced.js';
+import { rabbitmqClient } from '../services/rabbitmq-unified.js';
 
 const router = Router();
 
 // Test RabbitMQ connection
 router.get('/test-connection', async (req, res) => {
   try {
-    const rabbitmq = getEnhancedRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     const info = await rabbitmq.getConnectionInfo();
     
     res.json({
@@ -28,7 +28,7 @@ router.get('/test-connection', async (req, res) => {
 // Test publishing a message
 router.post('/test-publish', async (req, res) => {
   try {
-    const rabbitmq = getEnhancedRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     const { queue = 'test-queue', message = 'Hello from LoanServe Pro!' } = req.body;
     
     const success = await rabbitmq.sendToQueue(queue, {
@@ -55,7 +55,7 @@ router.post('/test-publish', async (req, res) => {
 // Test consuming messages (this will consume one message and return it)
 router.get('/test-consume', async (req, res) => {
   try {
-    const rabbitmq = getEnhancedRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     const { queue = 'test-queue' } = req.query;
     
     let messageReceived: any = null;
@@ -109,7 +109,7 @@ router.get('/test-consume', async (req, res) => {
 // Initialize RabbitMQ connection on server start
 router.get('/initialize', async (req, res) => {
   try {
-    const rabbitmq = getEnhancedRabbitMQService();
+    const rabbitmq = rabbitmqClient;
     await rabbitmq.connect();
     
     // Create test exchange and queue

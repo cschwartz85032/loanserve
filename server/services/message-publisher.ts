@@ -4,7 +4,7 @@
  */
 
 import { Pool, PoolClient } from 'pg';
-import { EnhancedRabbitMQService } from './rabbitmq-enhanced';
+import { rabbitmqClient, RabbitMQClient } from './rabbitmq-unified';
 import { randomUUID } from 'crypto';
 
 export interface PublishOptions {
@@ -17,16 +17,16 @@ export interface PublishOptions {
 }
 
 export class MessagePublisher {
-  private rabbitmq: EnhancedRabbitMQService | null = null;
+  private rabbitmq: RabbitMQClient | null = null;
 
   constructor(private pool: Pool) {}
 
   /**
    * Get or create RabbitMQ connection
    */
-  private async getRabbitMQ(): Promise<EnhancedRabbitMQService> {
+  private async getRabbitMQ(): Promise<RabbitMQClient> {
     if (!this.rabbitmq) {
-      this.rabbitmq = await EnhancedRabbitMQService.getInstance();
+      this.rabbitmq = rabbitmqClient;
     }
     return this.rabbitmq;
   }

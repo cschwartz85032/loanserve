@@ -12,7 +12,7 @@ import { hasPermission } from '../auth/policy-engine';
 import { ulid } from 'ulid';
 import { sql, eq, and, desc, asc } from 'drizzle-orm';
 import { sendSuccess, sendError, ErrorResponses } from '../utils/response-utils';
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 import { maskSensitive } from '../middleware/safe-logger';
 import { PaymentData, ACHPaymentData, WirePaymentData, CheckPaymentData, CardPaymentData } from '../services/payment-processor';
 import { SecureACHPaymentData, generateTraceNumber, maskAccountNumber, maskRoutingNumber } from '../payments/types';

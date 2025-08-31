@@ -11,7 +11,7 @@ const databaseUrl = process.env.DATABASE_URL || '';
 const sql = neon(databaseUrl);
 
 // Import RabbitMQ service for connection management
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 
 // Get system settings
 router.get('/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
@@ -238,30 +238,13 @@ router.post('/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('
   try {
     console.log('[Admin] Emergency RabbitMQ connection cleanup requested');
     
-    // 1. Shutdown enhanced RabbitMQ service
-    const rabbitmqService = getEnhancedRabbitMQService();
-    await rabbitmqService.forceDisconnectAll();
+    // 1. Shutdown unified RabbitMQ service
+    const { rabbitmqClient } = await import('../services/rabbitmq-unified');
+    await rabbitmqClient.shutdown();
     
-    // 2. Shutdown the main rabbit service
-    try {
-      const { rabbit } = await import('../messaging/index');
-      await rabbit.shutdown();
-      console.log('[Admin] Main rabbit service shutdown complete');
-    } catch (error) {
-      console.log('[Admin] Main rabbit service shutdown error (expected):', error.message);
-    }
+    // 2. Already handled above
     
-    // 3. Shutdown the old RabbitMQ service if it exists
-    try {
-      const { getRabbitMQService } = await import('../services/rabbitmq');
-      const legacyService = getRabbitMQService();
-      if (legacyService) {
-        await legacyService.disconnect();
-        console.log('[Admin] Legacy RabbitMQ service shutdown complete');
-      }
-    } catch (error) {
-      console.log('[Admin] Legacy RabbitMQ service shutdown error (expected):', error.message);
-    }
+    // 3. Legacy services already deleted during migration
     
     // 4. Nuclear option: Create maximum connections to force CloudAMQP to close idle ones
     console.log('[Admin] Forcing CloudAMQP connection limit to close stale connections...');

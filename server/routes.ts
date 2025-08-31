@@ -27,6 +27,7 @@ import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { emailTemplatesRouter } from "./routes/email-templates";
 import paymentRoutes from "./routes/payment-routes";
 import rabbitmqConfigRoutes from "./routes/rabbitmq-config";
+import metricsRoutes from "./routes/metrics";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -92,6 +93,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Health check routes (no auth required - must be accessible for monitoring)
   const healthRoutes = (await import('./routes/health')).default;
   app.use('/healthz', healthRoutes);
+  app.use('/', metricsRoutes); // Prometheus metrics endpoint at /metrics
 
   // Mount Column webhook BEFORE JSON parser (needs raw body for signature verification)
   const columnWebhookHandler = await import('./routes/webhook-column');

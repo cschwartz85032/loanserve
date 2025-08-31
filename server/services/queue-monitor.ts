@@ -3,7 +3,7 @@
  * Provides real-time metrics and status for RabbitMQ queues
  */
 
-import { getEnhancedRabbitMQService } from './rabbitmq-enhanced.js';
+import { rabbitmqClient } from './rabbitmq-unified.js';
 import { topologyManager } from '../messaging/topology.js';
 
 export interface QueueMetrics {
@@ -47,7 +47,7 @@ export interface QueueHealth {
 }
 
 export class QueueMonitorService {
-  private rabbitmq = getEnhancedRabbitMQService();
+  private rabbitmq = rabbitmqClient;
   private startTime = Date.now();
 
   /**

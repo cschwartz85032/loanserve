@@ -6,10 +6,10 @@
 import { db } from '../db';
 import { outboxMessages } from '@shared/schema';
 import { eq, sql, and, or, isNull, lt } from 'drizzle-orm';
-import { getEnhancedRabbitMQService } from './rabbitmq-enhanced';
+import { rabbitmqClient } from './rabbitmq-unified';
 import { exceptionCaseService } from './exception-case';
 
-const enhancedRabbitMQService = getEnhancedRabbitMQService();
+const enhancedRabbitMQService = rabbitmqClient;
 
 // Configuration
 const MAX_ATTEMPTS = 5;

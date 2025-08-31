@@ -4,12 +4,12 @@
  * Creates all necessary RabbitMQ queues, exchanges, and bindings for the escrow subsystem
  */
 
-import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient } from '../services/rabbitmq-unified';
 
 export async function initializeEscrowQueues(): Promise<void> {
   console.log('[EscrowInit] Initializing escrow queues and exchanges...');
   
-  const rabbitmq = getEnhancedRabbitMQService();
+  const rabbitmq = rabbitmqClient;
   
   try {
     // Wait for connection

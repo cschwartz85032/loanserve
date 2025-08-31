@@ -2,7 +2,7 @@ import { db } from '../db';
 import { outboxMessages } from '@shared/schema';
 import { eq, isNull, and, lte } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
-import { getEnhancedRabbitMQService } from '../rabbitmq/enhanced-rabbitmq-service';
+import { rabbitmqClient } from './rabbitmq-unified';
 
 export interface OutboxMessage {
   id?: string;

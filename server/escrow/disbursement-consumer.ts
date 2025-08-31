@@ -5,7 +5,7 @@
  */
 
 import type { ConsumeMessage } from 'amqplib';
-import { getEnhancedRabbitMQService as getRabbitMQService } from '../services/rabbitmq-enhanced';
+import { rabbitmqClient as getRabbitMQService } from '../services/rabbitmq-unified';
 import { EscrowDisbursementService } from './disbursement-service';
 import type { 
   EscrowDisbursementScheduleRequest, 
@@ -24,7 +24,7 @@ export class EscrowDisbursementConsumer {
   async start(): Promise<void> {
     console.log('[EscrowDisbursement] Starting disbursement consumer');
     
-    const rabbitmq = getRabbitMQService();
+    const rabbitmq = getRabbitMQService;
     
     try {
       await rabbitmq.consume<EscrowDisbursementScheduleRequest>(

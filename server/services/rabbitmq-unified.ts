@@ -1,5 +1,6 @@
 import amqplib, { Connection, Channel, ConfirmChannel, Options, ConsumeMessage } from 'amqplib';
 import os from 'os';
+import { mqPublishTotal, mqConsumeTotal } from '../observability/prometheus-metrics';
 
 /**
  * A high–level RabbitMQ client that manages a single connection per process.
@@ -22,6 +23,11 @@ export class RabbitMQClient {
   private readonly maxReconnectAttempts: number;
   private readonly heartbeat: number;
   private readonly url: string;
+  
+  // Connection tracking metrics
+  private connectionStartTime: number = 0;
+  private totalReconnects = 0;
+  private isBlocked = false;
 
   private constructor() {
     this.url = process.env.CLOUDAMQP_URL || '';
@@ -67,6 +73,12 @@ export class RabbitMQClient {
       if (!this.reconnecting) {
         this.scheduleReconnect();
       }
+    });
+    conn.on('blocked', (reason) => {
+      console.warn('[RabbitMQ] connection blocked:', reason);
+    });
+    conn.on('unblocked', () => {
+      console.log('[RabbitMQ] connection unblocked');
     });
 
     this.conn = conn;
@@ -126,6 +138,14 @@ export class RabbitMQClient {
    */
   async publish(exchange: string, routingKey: string, content: Buffer, options?: Options.Publish): Promise<void> {
     const ch = await this.getPublisherChannel();
+    
+    // Increment metrics counter
+    try {
+      mqPublishTotal.inc({ exchange, routing_key: routingKey });
+    } catch (error) {
+      console.warn('[RabbitMQ] Failed to increment publish metric:', error);
+    }
+    
     await new Promise<void>((resolve, reject) => {
       ch.publish(
         exchange,
@@ -192,6 +212,14 @@ export class RabbitMQClient {
       queue,
       async (msg) => {
         if (!msg) return;
+        
+        // Increment metrics counter
+        try {
+          mqConsumeTotal.inc({ queue });
+        } catch (error) {
+          console.warn('[RabbitMQ] Failed to increment consume metric:', error);
+        }
+        
         try {
           const body = JSON.parse(msg.content.toString());
           await handler(body, msg, ch);
