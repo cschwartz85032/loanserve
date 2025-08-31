@@ -159,9 +159,43 @@ export class RabbitService {
   }
 
   async shutdown(): Promise<void> {
-    try { if (this.pubCh) await this.pubCh.close(); } catch {}
-    try { if (this.pubConn) await this.pubConn.close(); } catch {}
-    try { if (this.conConn) await this.conConn.close(); } catch {}
-    this.pubCh = null; this.pubConn = null; this.conConn = null;
+    console.log('[RabbitService] Shutting down...');
+    
+    // Stop reconnection attempts
+    this.reconnecting = false;
+    this.attempts = this.cfg.rabbitReconnectMax; // Prevent further reconnections
+    
+    try { 
+      if (this.pubCh) {
+        await this.pubCh.close(); 
+        console.log('[RabbitService] Publisher channel closed');
+      }
+    } catch (e) {
+      console.log('[RabbitService] Publisher channel close error (expected)');
+    }
+    
+    try { 
+      if (this.pubConn) {
+        await this.pubConn.close(); 
+        console.log('[RabbitService] Publisher connection closed');
+      }
+    } catch (e) {
+      console.log('[RabbitService] Publisher connection close error (expected)');
+    }
+    
+    try { 
+      if (this.conConn) {
+        await this.conConn.close(); 
+        console.log('[RabbitService] Consumer connection closed');
+      }
+    } catch (e) {
+      console.log('[RabbitService] Consumer connection close error (expected)');
+    }
+    
+    this.pubCh = null; 
+    this.pubConn = null; 
+    this.conConn = null;
+    
+    console.log('[RabbitService] Shutdown complete');
   }
 }

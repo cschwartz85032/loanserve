@@ -14,7 +14,7 @@ const sql = neon(databaseUrl);
 import { getEnhancedRabbitMQService } from '../services/rabbitmq-enhanced';
 
 // Get system settings
-router.get('/api/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
+router.get('/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     // Get all settings from system_settings table
     const settings = await sql`
@@ -111,7 +111,7 @@ router.get('/api/admin/settings', requireAuth, requirePermission('system_setting
 });
 
 // Update system settings
-router.put('/api/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
+router.put('/admin/settings', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     const { passwordPolicy, lockoutPolicy, sessionSettings, callerVerification } = req.body;
     
@@ -187,7 +187,7 @@ router.put('/api/admin/settings', requireAuth, requirePermission('system_setting
 });
 
 // Get current password policy (for validation)
-router.get('/api/password-policy', async (req, res) => {
+router.get('/password-policy', async (req, res) => {
   try {
     const settings = await sql`
       SELECT key, value 
@@ -234,12 +234,22 @@ router.get('/api/password-policy', async (req, res) => {
 });
 
 // Emergency endpoint to force close all RabbitMQ connections
-router.post('/api/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
+router.post('/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('system_settings', PermissionLevel.ADMIN), async (req, res) => {
   try {
     console.log('[Admin] Emergency RabbitMQ connection cleanup requested');
     
+    // Shutdown enhanced RabbitMQ service
     const rabbitmqService = getEnhancedRabbitMQService();
     await rabbitmqService.forceDisconnectAll();
+    
+    // Also shutdown the main rabbit service
+    try {
+      const { rabbit } = await import('../messaging/index');
+      await rabbit.shutdown();
+      console.log('[Admin] Main rabbit service shutdown complete');
+    } catch (error) {
+      console.log('[Admin] Main rabbit service shutdown error (expected):', error.message);
+    }
     
     const stats = rabbitmqService.getConnectionPoolStats();
     console.log('[Admin] Post-cleanup connection stats:', stats);
