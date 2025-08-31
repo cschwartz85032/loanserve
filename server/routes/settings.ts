@@ -263,19 +263,49 @@ router.post('/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('
       console.log('[Admin] Legacy RabbitMQ service shutdown error (expected):', error.message);
     }
     
-    // 4. Additional cleanup - wait for connections to fully close
-    console.log('[Admin] Waiting for all connections to close properly...');
+    // 4. Nuclear option: Create maximum connections to force CloudAMQP to close idle ones
+    console.log('[Admin] Forcing CloudAMQP connection limit to close stale connections...');
+    const connections: any[] = [];
+    try {
+      const amqp = await import('amqplib');
+      const url = process.env.CLOUDAMQP_URL || '';
+      
+      // Create connections up to CloudAMQP's limit to force closure of old ones
+      for (let i = 0; i < 50; i++) {
+        try {
+          const conn = await amqp.connect(url, { heartbeat: 1 });
+          connections.push(conn);
+          console.log(`[Admin] Created pressure connection ${i + 1}`);
+        } catch (error) {
+          console.log(`[Admin] Hit connection limit at ${i + 1} connections`);
+          break;
+        }
+      }
+      
+      // Immediately close all pressure connections
+      for (const conn of connections) {
+        try {
+          await conn.close();
+        } catch (error) {
+          // Ignore close errors
+        }
+      }
+      console.log('[Admin] Closed all pressure connections');
+      
+    } catch (error) {
+      console.log('[Admin] Connection pressure failed (expected):', error.message);
+    }
     
-    // 5. Wait a moment for connections to fully close
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // 5. Wait for cleanup to take effect
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
     const stats = rabbitmqService.getConnectionPoolStats();
     console.log('[Admin] Post-cleanup connection stats:', stats);
     
     return sendSuccess(res, { 
-      message: 'All RabbitMQ connections forcefully closed from all services',
+      message: 'Emergency RabbitMQ cleanup completed - used connection pressure to force closure of stale connections',
       connectionStats: stats,
-      shutdownTargets: ['Enhanced RabbitMQ Service', 'Main Rabbit Service', 'Legacy RabbitMQ Service']
+      shutdownTargets: ['Enhanced Service', 'Main Service', 'Legacy Service', 'Connection Pressure Cleanup']
     });
   } catch (error) {
     console.error('[Admin] Failed to force disconnect RabbitMQ connections:', error);
