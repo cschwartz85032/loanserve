@@ -44,6 +44,10 @@ export class RabbitMQClient {
   static getInstance(): RabbitMQClient {
     if (!this._instance) {
       this._instance = new RabbitMQClient();
+      // Start initial connection attempt
+      this._instance.connect().catch(err => {
+        console.error('[RabbitMQ] Initial connection failed:', err);
+      });
     }
     return this._instance;
   }
@@ -287,6 +291,15 @@ export class RabbitMQClient {
    * Get connection information for monitoring/debugging.
    */
   async getConnectionInfo() {
+    // Try to connect if not already connected (for monitoring)
+    if (!this.conn && !this.reconnecting) {
+      try {
+        await this.connect();
+      } catch (error) {
+        console.error('[RabbitMQ] Connection attempt failed during monitoring check:', error);
+      }
+    }
+    
     return {
       connected: !!this.conn,
       reconnectAttempts: this.reconnectAttempts,
