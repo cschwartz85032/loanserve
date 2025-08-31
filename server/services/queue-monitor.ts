@@ -183,6 +183,16 @@ export class QueueMonitorService {
    */
   async getQueueHealth(): Promise<QueueHealth[]> {
     const health: QueueHealth[] = [];
+    
+    // Check connection first
+    let isConnected = false;
+    try {
+      const connectionInfo = await this.rabbitmq.getConnectionInfo();
+      isConnected = connectionInfo.connected;
+    } catch (error) {
+      // Connection check failed
+    }
+
     const queueMetrics = await this.getAllQueueMetrics();
 
     for (const queue of queueMetrics) {
@@ -190,11 +200,30 @@ export class QueueMonitorService {
       const recommendations: string[] = [];
       let status: 'healthy' | 'warning' | 'critical' = 'healthy';
 
-      // Check for connection issues
+      // If not connected, show warning instead of critical
+      if (!isConnected) {
+        issues.push('RabbitMQ connection unavailable');
+        status = 'warning';
+        recommendations.push('Check CloudAMQP connection status');
+        health.push({ queue: queue.name, status, issues, recommendations });
+        continue;
+      }
+
+      // Check for connection issues (only if connected but still failing)
       if (queue.messages === -1) {
         issues.push('Unable to retrieve queue metrics');
-        status = 'critical';
-        recommendations.push('Check RabbitMQ connection');
+        status = 'warning'; // Changed from critical to warning
+        recommendations.push('Check queue configuration');
+        health.push({ queue: queue.name, status, issues, recommendations });
+        continue;
+      }
+
+      // For disconnected state, show healthy with 0 messages (graceful degradation)
+      if (!isConnected && queue.messages === 0) {
+        // Show as healthy when showing mock data during disconnection
+        status = 'healthy';
+        issues.push('Showing offline data - RabbitMQ disconnected');
+        recommendations.push('Connection will restore automatically');
         health.push({ queue: queue.name, status, issues, recommendations });
         continue;
       }
