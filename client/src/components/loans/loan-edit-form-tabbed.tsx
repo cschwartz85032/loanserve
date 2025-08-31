@@ -140,6 +140,8 @@ const renderDescriptionWithLink = (description: string, log?: any, loanNumber?: 
 export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
   const { toast } = useToast();
   const [formData, setFormData] = useState<any>({});
+  const [originalBeneficiaryData, setOriginalBeneficiaryData] = useState<any>({});
+  const [activeTab, setActiveTab] = useState('crm');
   const [calculations, setCalculations] = useState<PaymentCalculation | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -322,6 +324,19 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
       };
       console.log('Form data with defaults:', formDataWithDefaults);
       setFormData(formDataWithDefaults);
+      
+      // Store original beneficiary data for change detection
+      setOriginalBeneficiaryData({
+        beneficiaryName: loan.beneficiaryName,
+        beneficiaryCompanyName: loan.beneficiaryCompanyName,
+        beneficiaryPhone: loan.beneficiaryPhone,
+        beneficiaryEmail: loan.beneficiaryEmail,
+        beneficiaryStreetAddress: loan.beneficiaryStreetAddress,
+        beneficiaryCity: loan.beneficiaryCity,
+        beneficiaryState: loan.beneficiaryState,
+        beneficiaryZipCode: loan.beneficiaryZipCode
+      });
+      
       calculatePayments(loan, escrowDisbursements);
     }
   }, [loan, escrowDisbursements]);
@@ -461,6 +476,29 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
     }
   });
 
+  // Check if beneficiary data has unsaved changes
+  const hasBeneficiaryChanges = () => {
+    const beneficiaryFields = ['beneficiaryName', 'beneficiaryCompanyName', 'beneficiaryPhone', 'beneficiaryEmail', 'beneficiaryStreetAddress', 'beneficiaryCity', 'beneficiaryState', 'beneficiaryZipCode'];
+    return beneficiaryFields.some(field => formData[field] !== originalBeneficiaryData[field]);
+  };
+
+  // Handle tab changes with beneficiary cache invalidation
+  const handleTabChange = (newTab: string) => {
+    if (activeTab === 'beneficiaries' && newTab !== 'beneficiaries' && hasBeneficiaryChanges()) {
+      // User is leaving beneficiary tab with unsaved changes
+      toast({
+        title: "Unsaved Changes",
+        description: "Beneficiary changes discarded. Refreshing data from server.",
+        variant: "default"
+      });
+      
+      // Invalidate cache and refresh data to clear unsaved changes
+      queryClient.invalidateQueries({ queryKey: [`/api/loans/${loanId}`] });
+      queryClient.refetchQueries({ queryKey: [`/api/loans/${loanId}`] });
+    }
+    setActiveTab(newTab);
+  };
+
   const handleInputChange = (field: string, value: any) => {
     console.log(`Field changed: ${field} = ${value}`);
     setFormData((prev: any) => ({ ...prev, [field]: value }));
@@ -525,7 +563,7 @@ export function LoanEditForm({ loanId, onSave, onCancel }: LoanEditFormProps) {
         </div>
       </div>
 
-      <Tabs defaultValue="crm" className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="crm">CRM</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiary</TabsTrigger>

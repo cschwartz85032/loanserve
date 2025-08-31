@@ -7,6 +7,31 @@ import { PoolClient } from '@neondatabase/serverless';
 import { auditAndRun, setRequestContext, createAuditEvent } from '../utils/audit-helper';
 import { outboxService } from '../messaging/outbox-service';
 
+/**
+ * Normalize values for comparison to handle numeric equivalence
+ * Examples: 25.0 vs 25, "25.00" vs "25", null vs undefined
+ */
+function normalizeValue(value: any): any {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  
+  // Handle numeric strings and numbers
+  if (typeof value === 'string' || typeof value === 'number') {
+    const numValue = Number(value);
+    if (!isNaN(numValue) && isFinite(numValue)) {
+      return numValue;
+    }
+  }
+  
+  // Handle strings - trim whitespace
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  
+  return value;
+}
+
 export interface BeneficiaryUpdateParams {
   loanId: string;
   actorId: string;
@@ -89,7 +114,8 @@ export class BeneficiaryRepository {
             const dbField = fieldMapping[key as keyof typeof fieldMapping];
             const oldValue = oldValues[dbField];
             
-            if (oldValue !== value) {
+            // Smart comparison that handles numeric equivalence (25.0 vs 25)
+            if (normalizeValue(oldValue) !== normalizeValue(value)) {
               updateFields.push(`${dbField} = $${paramIndex}`);
               updateValues.push(value);
               changedFields.push(key);
