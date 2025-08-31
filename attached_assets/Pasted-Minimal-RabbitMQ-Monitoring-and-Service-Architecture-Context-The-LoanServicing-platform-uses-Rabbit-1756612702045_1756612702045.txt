@@ -1,0 +1,120 @@
+Minimal RabbitMQ Monitoring and Service Architecture
+Context
+
+The LoanServicing platform uses RabbitMQ extensively for queueing and pub/sub messaging. During a review of the existing implementation there were several independent RabbitMQ client classes and scripts. These classes often create their own connections and channels, and there is limited centralised monitoring of queue depths or consumer performance. For example, the enhanced service opens separate publisher and consumer connections for every instance
+GitHub
+ and the alternate messaging service does the same
+GitHub
+. While there is a disabled queue‐metrics collector, it is not currently running and the platform lacks a unified metrics pipeline.
+
+To operate RabbitMQ reliably in production—especially for payment and escrow workflows—the engineering team must implement minimal but effective monitoring and management. This document outlines the required metrics and the services to collect and expose them.
+
+Minimal Monitoring Requirements
+
+Monitoring should focus on both broker health and application behaviour. At a minimum, the following data needs to be collected and exported to a monitoring system (e.g. Prometheus):
+
+Queue depth and DLQ depth. Knowing the number of messages in each main queue and associated dead letter queues is critical for identifying backlogs. The existing metrics module contains gauges that observe queue depths using callback functions
+GitHub
+. These should be activated and extended to cover all critical queues.
+
+Consumer throughput and publish rate. Measure how quickly each consumer is processing messages and how fast producers are publishing. The queue metrics history service calculates publish and delivery rates by comparing consecutive snapshots
+GitHub
+; these rates should be exported as metrics.
+
+Processing latency and error counts. Record the time between message receipt and completion. A histogram of processing latency and counters for processed and failed messages already exist in the metrics module
+GitHub
+ and should be integrated.
+
+Dead‑letter rate. Count how often messages are routed to the DLQ. A dlqRateCounter exists
+GitHub
+ but is not wired up.
+
+Connection and channel counts. Track the number of active connections and channels to detect leaks. The instrumentation should record these counts and expose them via metrics.
+
+Broker events. Listen for blocked/unblocked events from the broker; a high number of blocks indicates memory or resource pressure. These events should increment counters and trigger alerts.
+
+Critical queue lag metrics. For payment and escrow services, record the time between when a payment is enqueued and when it is processed (outbox lag). The metrics module defines an outboxLagGauge and collectors, but they must be hooked up
+GitHub
+.
+
+Services to Implement
+
+To support these monitoring requirements and manage the messaging architecture, engineering should implement the following services and modifications:
+
+1. Unified RabbitMQ Client
+
+Use a single shared client across all services instead of multiple independent classes. The new RabbitMQClient introduced earlier manages a single connection and confirm channel, lazily creates per‑consumer channels and supports reconnection. Extend this client to emit metrics:
+
+Increment mq_publish_total and mq_consume_total counters on every publish and delivery, using the Prometheus counters already defined in prometheus‑metrics.ts
+GitHub
+.
+
+Register callbacks for blocked and unblocked events to increment a counter and log warnings.
+
+Expose connection and channel counts as gauges.
+
+2. Metrics Collector Service
+
+Create a dedicated metrics-collector service (or extend the existing metrics-collector.ts). It should:
+
+Call instrumentedRabbitMQ.getQueueStatsForMetrics() regularly (e.g. every 30 s) to fetch queue depths and DLQ depths
+GitHub
+. Store these values in the appropriate Prometheus gauges (rabbitmq_queue_depth, rabbitmq_dlq_depth).
+
+Use the unified client to compute consumer throughput and publish rates by comparing successive snapshots, similar to the current collectSnapshot() implementation
+GitHub
+.
+
+Collect outbox lag and reconcile variance metrics from database calls and set the appropriate gauges
+GitHub
+.
+
+Export metrics via an HTTP endpoint (/metrics) for Prometheus scraping.
+
+3. Queue Metrics History Service
+
+Re‑enable the QueueMetricsHistory service to maintain a sliding window of queue snapshots. This service provides historical insight into throughput and backlogs; it computes publish and deliver rates for each queue
+GitHub
+. To reduce broker load, call getQueueStats less frequently (e.g. every 30 s) and rely on the metrics collector for detailed metrics.
+
+4. Health‑Check and Alerting Service
+
+Implement a health‑check route (already exists for RabbitMQ in health.ts with getEnhancedRabbitMQService().getConnectionInfo()) and extend it to return the latest queue depths and DLQ depths. This route should return 503 when the RabbitMQ client is disconnected or when certain queue thresholds are exceeded. Configure alerts in your monitoring stack to fire when:
+
+Queue depth exceeds service‑specific thresholds.
+
+DLQ depth grows non‑zero or above a low threshold.
+
+Publish or consume rates drop below expected levels.
+
+Connection counts or channel counts exceed safe limits.
+
+Broker reports blocked state.
+
+5. Administrative and Topology Services
+
+Keep the existing topology manager and bootstrap scripts for creating exchanges, queues and bindings. Provide a queue‑management service that exposes actions to purge DLQs, rebind queues, or migrate queue names. This service should use the unified client’s admin channel helper rather than creating new connections in the HTTP route
+GitHub
+.
+
+6. Integrate with Observability Stack
+
+Ensure the metrics endpoint is scraped by Prometheus and visualised in Grafana dashboards. Create panels for queue depth, DLQ depth, message throughput, processing latency and dead‑letter rate. Add panels showing connection counts and blocked events. Use alert rules to notify the on‑call team when thresholds are breached.
+
+Summary of Required Modifications
+
+Replace multiple RabbitMQ services with the unified client. Remove the deprecated rabbitmq.ts and the alternative rabbit.ts implementations. Update all consumers and publishers to import the new client.
+
+Enable metrics collection. Activate the queue‑depth and DLQ metrics by registering callbacks and schedule collection via the metrics collector service
+GitHub
+. Hook the mq_publish_total and mq_consume_total counters into the unified client.
+
+Implement the metrics collector and history services. Use the existing metrics.ts, metrics‑collector.ts and queue‑metrics-history.ts files as a starting point; adjust collection intervals and expand to cover all queues and DLQs.
+
+Add instrumentation to track connection and channel counts and broker events. Expose gauges for active connections/channels and counters for blocked/unblocked events.
+
+Expose health and metrics endpoints. Extend the existing /healthz endpoint to check queue metrics and RabbitMQ connectivity, and ensure a /metrics endpoint returns Prometheus‑formatted metrics.
+
+Configure alerting. Define thresholds for queue backlogs, DLQ depth and processing latency. Integrate with your alerting platform to notify operations when these thresholds are exceeded.
+
+By implementing these changes, the LoanServicing platform will have a clear, centralised view of RabbitMQ health and performance. This monitoring foundation will help detect connection leaks, backlogs and processing issues early and support proactive scaling and maintenance.
