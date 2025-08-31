@@ -303,17 +303,39 @@ export class RabbitMQClient {
    * Get queue statistics for monitoring
    */
   async getQueueStats(queueName: string) {
-    await this.connect();
-    const ch = await this.conn!.createChannel();
     try {
-      const queueInfo = await ch.checkQueue(queueName);
-      return {
-        queue: queueName,
-        messageCount: queueInfo.messageCount,
-        consumerCount: queueInfo.consumerCount,
-      };
-    } finally {
-      await ch.close();
+      await this.connect();
+      const ch = await this.conn!.createChannel();
+      try {
+        const queueInfo = await ch.checkQueue(queueName);
+        return {
+          queue: queueName,
+          messageCount: queueInfo.messageCount,
+          consumerCount: queueInfo.consumerCount,
+        };
+      } finally {
+        try {
+          await ch.close();
+        } catch (closeError) {
+          console.error('[RabbitMQ] Error closing stats channel:', closeError);
+        }
+      }
+    } catch (error) {
+      console.error(`[RabbitMQ] Failed to get queue stats for ${queueName}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get DLQ channel for Dead Letter Queue operations
+   */
+  async getDLQChannel(): Promise<Channel | null> {
+    try {
+      await this.connect();
+      return await this.conn!.createChannel();
+    } catch (error) {
+      console.error('[RabbitMQ] Failed to create DLQ channel:', error);
+      return null;
     }
   }
 

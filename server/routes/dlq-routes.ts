@@ -45,25 +45,24 @@ router.get('/dlq/:queueName/info', requireAuth, async (req: Request, res: Respon
       });
     }
 
-    const channel = await rabbitmq.getDLQChannel();
-    if (!channel) {
-      return res.json({
-        queue: queueName,
-        messageCount: 0,
-        consumerCount: 0,
-        originalQueue: queueName.replace('dlq.', ''),
-        info: {
-          status: 'offline',
-          message: 'DLQ channel unavailable'
-        }
-      });
-    }
-
+    let channel;
     try {
+      channel = await rabbitmq.getDLQChannel();
+      if (!channel) {
+        return res.json({
+          queue: queueName,
+          messageCount: 0,
+          consumerCount: 0,
+          originalQueue: queueName.replace('dlq.', ''),
+          info: {
+            status: 'offline',
+            message: 'DLQ channel unavailable'
+          }
+        });
+      }
+
       // Get queue statistics
       const stats = await channel.checkQueue(queueName);
-      
-      await channel.close();
       
       res.json({
         queue: queueName,
@@ -77,8 +76,6 @@ router.get('/dlq/:queueName/info', requireAuth, async (req: Request, res: Respon
         }
       });
     } catch (error) {
-      await channel.close();
-      
       // Queue might not exist - return empty stats
       res.json({
         queue: queueName,
@@ -90,6 +87,15 @@ router.get('/dlq/:queueName/info', requireAuth, async (req: Request, res: Respon
           message: 'Queue does not exist'
         }
       });
+    } finally {
+      // Always close channel in finally block
+      if (channel) {
+        try {
+          await channel.close();
+        } catch (closeError) {
+          console.error('Error closing DLQ channel:', closeError);
+        }
+      }
     }
   } catch (error) {
     console.error('Error getting DLQ info:', error);
@@ -136,18 +142,20 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req: Request, res: Re
       });
     }
 
-    const channel = await rabbitmq.getDLQChannel();
-    if (!channel) {
-      return res.json({
-        queue: queueName,
-        messages: [],
-        totalFetched: 0,
-        info: { status: 'offline', message: 'DLQ channel unavailable' }
-      });
-    }
+    let channel;
+    try {
+      channel = await rabbitmq.getDLQChannel();
+      if (!channel) {
+        return res.json({
+          queue: queueName,
+          messages: [],
+          totalFetched: 0,
+          info: { status: 'offline', message: 'DLQ channel unavailable' }
+        });
+      }
 
-    // Get messages without acknowledging them (browse mode)
-    const messages = [];
+      // Get messages without acknowledging them (browse mode)
+      const messages = [];
     let message;
     let count = 0;
     const maxMessages = Math.min(parseInt(limit as string, 10), 100);
@@ -222,22 +230,37 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req: Request, res: Re
       }
     }
 
-    // Close the channel after we're done
-    await channel.close();
-    
-    res.json({
-      queue: queueName,
-      messages,
-      totalFetched: messages.length
-    });
+      res.json({
+        queue: queueName,
+        messages,
+        totalFetched: messages.length
+      });
 
+    } catch (error) {
+      console.error('Error fetching DLQ messages:', error);
+      res.json({
+        queue: req.params.queueName,
+        messages: [],
+        totalFetched: 0,
+        info: { status: 'error', message: 'Failed to fetch DLQ messages' }
+      });
+    } finally {
+      // Always close channel in finally block
+      if (channel) {
+        try {
+          await channel.close();
+        } catch (closeError) {
+          console.error('Error closing DLQ channel:', closeError);
+        }
+      }
+    }
   } catch (error) {
-    console.error('Error fetching DLQ messages:', error);
+    console.error('Error in DLQ messages endpoint:', error);
     res.json({
       queue: req.params.queueName,
       messages: [],
       totalFetched: 0,
-      info: { status: 'error', message: 'Failed to fetch DLQ messages' }
+      info: { status: 'error', message: 'Connection error' }
     });
   }
 });
