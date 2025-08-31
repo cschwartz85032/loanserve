@@ -44,7 +44,8 @@ router.get('/api/admin/settings', requireAuth, requirePermission('system_setting
       sessionTimeoutMinutes: 30,
       extendSessionOnActivity: true,
       requireReauthForSensitive: true,
-      allowMultipleSessions: false
+      allowMultipleSessions: false,
+      maxConcurrentSessions: 1
     };
 
     const callerVerification: any = {

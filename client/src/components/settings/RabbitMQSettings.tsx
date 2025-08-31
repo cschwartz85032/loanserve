@@ -134,7 +134,8 @@ export default function RabbitMQSettings() {
     sessionTimeoutMinutes: 30,
     extendSessionOnActivity: true,
     requireReauthForSensitive: true,
-    allowMultipleSessions: false
+    allowMultipleSessions: false,
+    maxConcurrentSessions: 1
   });
   const [sessionDirty, setSessionDirty] = useState(false);
 
@@ -315,16 +316,33 @@ export default function RabbitMQSettings() {
           <CardDescription>Configure session timeout and security settings</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <Label htmlFor="session-timeout">Session Timeout (minutes)</Label>
-            <Input
-              id="session-timeout"
-              type="number"
-              value={sessionSettings.sessionTimeoutMinutes}
-              onChange={(e) => handleSessionInputChange('sessionTimeoutMinutes', parseInt(e.target.value))}
-              min="5"
-              max="1440"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="session-timeout">Session Timeout (minutes)</Label>
+              <Input
+                id="session-timeout"
+                type="number"
+                value={sessionSettings.sessionTimeoutMinutes}
+                onChange={(e) => handleSessionInputChange('sessionTimeoutMinutes', parseInt(e.target.value))}
+                min="5"
+                max="1440"
+              />
+            </div>
+            <div>
+              <Label htmlFor="max-sessions">Max Concurrent Sessions</Label>
+              <Input
+                id="max-sessions"
+                type="number"
+                value={sessionSettings.maxConcurrentSessions}
+                onChange={(e) => handleSessionInputChange('maxConcurrentSessions', parseInt(e.target.value))}
+                min="1"
+                max="10"
+                disabled={!sessionSettings.allowMultipleSessions}
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                Maximum concurrent sessions per user
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2">
