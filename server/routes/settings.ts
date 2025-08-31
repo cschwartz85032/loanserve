@@ -238,11 +238,11 @@ router.post('/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('
   try {
     console.log('[Admin] Emergency RabbitMQ connection cleanup requested');
     
-    // Shutdown enhanced RabbitMQ service
+    // 1. Shutdown enhanced RabbitMQ service
     const rabbitmqService = getEnhancedRabbitMQService();
     await rabbitmqService.forceDisconnectAll();
     
-    // Also shutdown the main rabbit service
+    // 2. Shutdown the main rabbit service
     try {
       const { rabbit } = await import('../messaging/index');
       await rabbit.shutdown();
@@ -251,12 +251,42 @@ router.post('/admin/rabbitmq/force-disconnect', requireAuth, requirePermission('
       console.log('[Admin] Main rabbit service shutdown error (expected):', error.message);
     }
     
+    // 3. Shutdown the old RabbitMQ service if it exists
+    try {
+      const { getRabbitMQService } = await import('../services/rabbitmq');
+      const legacyService = getRabbitMQService();
+      if (legacyService) {
+        await legacyService.disconnect();
+        console.log('[Admin] Legacy RabbitMQ service shutdown complete');
+      }
+    } catch (error) {
+      console.log('[Admin] Legacy RabbitMQ service shutdown error (expected):', error.message);
+    }
+    
+    // 4. Force process exit to terminate any remaining connections
+    try {
+      console.log('[Admin] Forcing process restart to clear all lingering connections...');
+      
+      // Give the client time to receive the response
+      setTimeout(() => {
+        console.log('[Admin] Exiting process to force close all connections');
+        process.exit(0);
+      }, 1000);
+      
+    } catch (error) {
+      console.log('[Admin] Process restart error (expected):', error.message);
+    }
+    
+    // 5. Wait a moment for connections to fully close
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     const stats = rabbitmqService.getConnectionPoolStats();
     console.log('[Admin] Post-cleanup connection stats:', stats);
     
     return sendSuccess(res, { 
-      message: 'All RabbitMQ connections forcefully closed',
-      connectionStats: stats
+      message: 'All RabbitMQ connections forcefully closed - server will restart to clear any lingering connections',
+      connectionStats: stats,
+      shutdownTargets: ['Enhanced RabbitMQ Service', 'Main Rabbit Service', 'Legacy RabbitMQ Service', 'Process Restart']
     });
   } catch (error) {
     console.error('[Admin] Failed to force disconnect RabbitMQ connections:', error);

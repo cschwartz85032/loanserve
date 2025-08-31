@@ -19,9 +19,13 @@ export class RabbitMQService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 5000; // 5 seconds
   private retryTracker = new RetryTracker(5); // Max 5 retries per message
+  
+  // Static instance for emergency shutdown
+  public static instance: RabbitMQService | null = null;
 
   constructor(private connectionUrl: string) {
     console.warn('[DEPRECATION WARNING] RabbitMQService is deprecated. Use EnhancedRabbitMQService for payment processing.');
+    RabbitMQService.instance = this;
   }
 
   async connect(): Promise<void> {
@@ -273,6 +277,36 @@ export class RabbitMQService {
     } catch (error) {
       console.error('[RabbitMQ] Error closing connection:', error);
     }
+  }
+  // Emergency disconnect method for admin shutdown
+  async disconnect(): Promise<void> {
+    console.log('[Legacy RabbitMQ] Emergency disconnecting...');
+    
+    // Stop further reconnection attempts
+    this.reconnectAttempts = this.maxReconnectAttempts;
+    
+    try {
+      if (this.channel) {
+        await this.channel.close();
+        console.log('[Legacy RabbitMQ] Channel closed');
+      }
+    } catch (error) {
+      console.log('[Legacy RabbitMQ] Channel close error (expected)');
+    }
+    
+    try {
+      if (this.connection) {
+        await this.connection.close();
+        console.log('[Legacy RabbitMQ] Connection closed');
+      }
+    } catch (error) {
+      console.log('[Legacy RabbitMQ] Connection close error (expected)');
+    }
+    
+    this.channel = null;
+    this.connection = null;
+    
+    console.log('[Legacy RabbitMQ] Emergency disconnect complete');
   }
 }
 
