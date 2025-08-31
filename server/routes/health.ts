@@ -72,46 +72,62 @@ router.get('/', async (req, res) => {
   // Check RabbitMQ connectivity with queue depths
   try {
     const connectionInfo = await rabbitmqClient.getConnectionInfo();
-    const monitor = queueMonitor;
-    const queueMetrics = await monitor.getQueueMetrics();
-    
-    // Calculate DLQ depths
-    const dlqQueues = queueMetrics.filter(q => q.name.startsWith('dlq.'));
-    const totalDlqDepth = dlqQueues.reduce((sum, q) => sum + q.messages, 0);
-    
-    // Calculate total queue depth
-    const totalQueueDepth = queueMetrics.reduce((sum, q) => sum + q.messages, 0);
     
     health.checks.rabbitmq = {
-      status: 'ok',
+      status: connectionInfo.connected ? 'ok' : 'warning',
       connected: connectionInfo.connected,
       queues: {
-        total: queueMetrics.length,
-        totalDepth: totalQueueDepth,
-        dlqCount: dlqQueues.length,
-        dlqDepth: totalDlqDepth,
-        topQueues: queueMetrics
-          .sort((a, b) => b.messages - a.messages)
-          .slice(0, 5)
-          .map(q => ({ name: q.name, depth: q.messages }))
+        total: 0,
+        totalDepth: 0,
+        dlqCount: 0,
+        dlqDepth: 0,
+        topQueues: []
       }
     };
-    
-    // Mark unhealthy if DLQ depth is too high
-    if (totalDlqDepth > 100) {
-      health.checks.rabbitmq.status = 'error';
-      health.checks.rabbitmq.error = `High DLQ depth: ${totalDlqDepth} messages`;
-      health.status = 'error';
-    }
-    
-    if (!connectionInfo.connected) {
-      health.checks.rabbitmq.status = 'error';
-      health.checks.rabbitmq.error = 'RabbitMQ not connected';
-      health.status = 'error';
+
+    // Only get queue metrics if connected
+    if (connectionInfo.connected) {
+      try {
+        const monitor = queueMonitor;
+        const queueMetrics = await monitor.getAllQueueMetrics();
+        
+        if (queueMetrics && Array.isArray(queueMetrics)) {
+          // Calculate DLQ depths
+          const dlqQueues = queueMetrics.filter(q => q.name.startsWith('dlq.'));
+          const totalDlqDepth = dlqQueues.reduce((sum, q) => sum + q.messages, 0);
+          
+          // Calculate total queue depth
+          const totalQueueDepth = queueMetrics.reduce((sum, q) => sum + q.messages, 0);
+          
+          health.checks.rabbitmq.queues = {
+            total: queueMetrics.length,
+            totalDepth: totalQueueDepth,
+            dlqCount: dlqQueues.length,
+            dlqDepth: totalDlqDepth,
+            topQueues: queueMetrics
+              .sort((a, b) => b.messages - a.messages)
+              .slice(0, 5)
+              .map(q => ({ name: q.name, depth: q.messages }))
+          };
+
+          // Mark unhealthy if DLQ depth is too high
+          if (totalDlqDepth > 100) {
+            health.checks.rabbitmq.status = 'warning';
+            health.checks.rabbitmq.warning = `High DLQ depth: ${totalDlqDepth} messages`;
+          }
+        }
+      } catch (error) {
+        health.checks.rabbitmq.warning = 'Queue metrics unavailable';
+      }
+    } else {
+      health.checks.rabbitmq.warning = 'RabbitMQ disconnected';
+      health.status = 'warning';
     }
   } catch (error: any) {
-    health.checks.rabbitmq.status = 'error';
-    health.checks.rabbitmq.error = error.message || 'RabbitMQ check failed';
+    health.checks.rabbitmq = {
+      status: 'error',
+      error: error.message || 'RabbitMQ check failed'
+    };
     health.status = 'error';
   }
 

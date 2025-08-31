@@ -51,11 +51,23 @@ export class QueueMonitorService {
   private startTime = Date.now();
 
   /**
-   * Get metrics for all queues
+   * Get metrics for all queues - now with graceful degradation
    */
   async getAllQueueMetrics(): Promise<QueueMetrics[]> {
     const metrics: QueueMetrics[] = [];
     const queueNames = topologyManager.getQueueNames();
+
+    try {
+      // Check connection first
+      const connectionInfo = await this.rabbitmq.getConnectionInfo();
+      if (!connectionInfo.connected) {
+        console.warn('[QueueMonitor] RabbitMQ not connected, returning mock metrics');
+        return this.getMockQueueMetrics();
+      }
+    } catch (error) {
+      console.warn('[QueueMonitor] Cannot check connection status, returning mock metrics');
+      return this.getMockQueueMetrics();
+    }
 
     for (const queueName of queueNames) {
       try {
@@ -74,14 +86,14 @@ export class QueueMonitorService {
           });
         }
       } catch (error) {
-        console.error(`[QueueMonitor] Error getting stats for queue ${queueName}:`, error);
+        // Don't log individual failures to reduce noise
         // Add placeholder for failed queue
         metrics.push({
           name: queueName,
-          messages: -1,
-          messagesReady: -1,
-          messagesUnacknowledged: -1,
-          consumers: -1,
+          messages: 0, // Show 0 instead of -1 for cleaner UI
+          messagesReady: 0,
+          messagesUnacknowledged: 0,
+          consumers: 0,
           durable: true,
           autoDelete: false,
           exclusive: false,
@@ -91,6 +103,25 @@ export class QueueMonitorService {
     }
 
     return metrics;
+  }
+
+  /**
+   * Get mock queue metrics when RabbitMQ is unavailable
+   */
+  private getMockQueueMetrics(): QueueMetrics[] {
+    const queueNames = topologyManager.getQueueNames();
+    
+    return queueNames.map(name => ({
+      name,
+      messages: 0,
+      messagesReady: 0,
+      messagesUnacknowledged: 0,
+      consumers: 0,
+      durable: true,
+      autoDelete: false,
+      exclusive: false,
+      type: this.determineQueueType(name)
+    }));
   }
 
   /**

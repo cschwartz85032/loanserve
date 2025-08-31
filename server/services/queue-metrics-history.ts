@@ -35,8 +35,8 @@ class QueueMetricsHistory {
   private rabbitmq = rabbitmqClient;
 
   constructor() {
-    // Re-enabled with unified client - stable connection management
-    this.startCollection();
+    // TEMPORARILY DISABLED: CloudAMQP connection issues - reduce connection pressure
+    // this.startCollection();
   }
 
   /**
@@ -88,8 +88,8 @@ class QueueMetricsHistory {
           if (stats) {
             snapshot.queues[queueName] = {
               messages: stats.messageCount,
-              ready: stats.readyCount || 0,
-              unacknowledged: stats.unackedCount || 0,
+              ready: stats.messageCount, // Use messageCount for both ready and total for now
+              unacknowledged: 0, // Will be 0 until we have detailed stats
               consumers: stats.consumerCount
             };
 
@@ -105,8 +105,8 @@ class QueueMetricsHistory {
 
             // Update totals
             snapshot.totals.messages += stats.messageCount;
-            snapshot.totals.ready += stats.readyCount || 0;
-            snapshot.totals.unacknowledged += stats.unackedCount || 0;
+            snapshot.totals.ready += stats.messageCount;
+            snapshot.totals.unacknowledged += 0; // Will be 0 until we have detailed stats
             snapshot.totals.consumers += stats.consumerCount;
           }
         } catch (error) {
