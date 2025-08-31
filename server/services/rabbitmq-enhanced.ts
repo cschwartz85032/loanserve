@@ -1,5 +1,17 @@
 /**
  * Enhanced RabbitMQ Service with Publisher Confirms and Connection Pooling
+ * 
+ * Environment Variables for CloudAMQP Connection Management:
+ * - RABBITMQ_MAX_CONNECTIONS: Maximum concurrent connections (default: 2, CloudAMQP limit: 30)
+ * - RABBITMQ_IDLE_TIMEOUT_MS: Idle connection timeout in milliseconds (default: 300000 = 5 minutes)
+ * - RABBITMQ_MAX_RECONNECT_ATTEMPTS: Maximum reconnection attempts (default: 8)
+ * - CLOUDAMQP_URL: CloudAMQP connection string (required)
+ * 
+ * Connection Pool Features:
+ * - Automatic connection reuse to prevent hitting CloudAMQP's 30 connection limit
+ * - Idle timeout cleanup to release unused connections
+ * - Connection limit enforcement with graceful fallback to existing connections
+ * - Pool statistics and monitoring via getConnectionPoolStats()
  */
 
 import amqp from 'amqplib';
@@ -40,12 +52,24 @@ export class EnhancedRabbitMQService {
   private consumerChannels: Map<string, amqp.Channel> = new Map();
   private retryTracker = new RetryTracker(5); // Max 5 retries per message
   
+  // ========================================
+  // CONNECTION POOLING CONFIGURATION
+  // ========================================
   private url: string;
   private isConnected: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = parseInt(process.env.RABBITMQ_MAX_RECONNECT_ATTEMPTS || '8');
   private reconnectDelay: number = 5000;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  
+  // CloudAMQP Connection Limits Management
+  private maxConcurrentConnections: number = parseInt(process.env.RABBITMQ_MAX_CONNECTIONS || '2');
+  private activeConnectionCount: number = 0;
+  private connectionReuse: boolean = true;
+  private connectionPool: Map<string, amqp.Connection> = new Map();
+  private channelPool: Map<string, amqp.Channel> = new Map();
+  private idleTimeout: number = parseInt(process.env.RABBITMQ_IDLE_TIMEOUT_MS || '300000'); // 5 minutes
+  private idleTimers: Map<string, NodeJS.Timeout> = new Map();
 
   constructor() {
     this.url = process.env.CLOUDAMQP_URL || '';
@@ -64,19 +88,11 @@ export class EnhancedRabbitMQService {
    */
   private async connect(): Promise<void> {
     try {
-      console.log('[RabbitMQ] Establishing connections...');
+      console.log(`[RabbitMQ] Establishing connections (max: ${this.maxConcurrentConnections})...`);
       
-      // Create publisher connection with confirms
-      this.publisherConnection = await amqp.connect(this.url, {
-        heartbeat: 30,
-        connectionTimeout: 5000,
-      });
-      
-      // Create consumer connection
-      this.consumerConnection = await amqp.connect(this.url, {
-        heartbeat: 30,
-        connectionTimeout: 5000,
-      });
+      // Use pooled connections to respect CloudAMQP limits
+      this.publisherConnection = await this.getPooledConnection('publisher');
+      this.consumerConnection = await this.getPooledConnection('consumer');
 
       // Setup connection error handlers
       this.setupConnectionHandlers(this.publisherConnection, 'publisher');
@@ -439,6 +455,9 @@ export class EnhancedRabbitMQService {
     publisherConnected: boolean;
     consumerConnected: boolean;
     activeConsumers: number;
+    connectionPoolSize: number;
+    channelPoolSize: number;
+    activeConnections: number;
   } {
     return {
       connected: this.isConnected,
@@ -446,6 +465,146 @@ export class EnhancedRabbitMQService {
       publisherConnected: !!this.publisherConnection,
       consumerConnected: !!this.consumerConnection,
       activeConsumers: this.consumerChannels.size,
+      connectionPoolSize: this.connectionPool.size,
+      channelPoolSize: this.channelPool.size,
+      activeConnections: this.activeConnectionCount,
+    };
+  }
+
+  // ========================================
+  // CONNECTION POOLING METHODS
+  // ========================================
+
+  /**
+   * Get or create a reusable connection from the pool
+   */
+  private async getPooledConnection(purpose: string): Promise<amqp.Connection> {
+    // Check if we can reuse an existing connection
+    if (this.connectionReuse && this.connectionPool.has(purpose)) {
+      const existingConnection = this.connectionPool.get(purpose)!;
+      console.log(`[RabbitMQ] Reusing pooled connection for ${purpose}`);
+      return existingConnection;
+    }
+
+    // Check connection limit before creating new connection
+    if (this.activeConnectionCount >= this.maxConcurrentConnections) {
+      console.warn(`[RabbitMQ] Connection limit reached (${this.maxConcurrentConnections}). Reusing existing connection.`);
+      // Return the first available connection if we hit the limit
+      const firstConnection = Array.from(this.connectionPool.values())[0];
+      if (firstConnection) {
+        return firstConnection;
+      }
+      throw new Error(`Connection limit of ${this.maxConcurrentConnections} exceeded and no connections available for reuse`);
+    }
+
+    // Create new connection
+    const connection = await amqp.connect(this.url, {
+      heartbeat: 30,
+      connectionTimeout: 5000,
+    });
+
+    this.activeConnectionCount++;
+    this.connectionPool.set(purpose, connection);
+    
+    // Setup idle timeout for automatic cleanup
+    this.setupConnectionIdleTimeout(purpose);
+
+    // Setup error handlers for pooled connection
+    connection.on('error', (error) => {
+      console.error(`[RabbitMQ] Pooled connection error for ${purpose}:`, error);
+      this.releaseConnection(purpose);
+    });
+
+    connection.on('close', () => {
+      console.log(`[RabbitMQ] Pooled connection closed for ${purpose}`);
+      this.releaseConnection(purpose);
+    });
+
+    console.log(`[RabbitMQ] Created new pooled connection for ${purpose} (${this.activeConnectionCount}/${this.maxConcurrentConnections})`);
+    return connection;
+  }
+
+  /**
+   * Setup idle timeout for connection cleanup
+   */
+  private setupConnectionIdleTimeout(purpose: string): void {
+    // Clear existing timer
+    const existingTimer = this.idleTimers.get(purpose);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    // Set new timer
+    const timer = setTimeout(() => {
+      console.log(`[RabbitMQ] Connection ${purpose} idle timeout reached, releasing...`);
+      this.releaseConnection(purpose);
+    }, this.idleTimeout);
+
+    this.idleTimers.set(purpose, timer);
+  }
+
+  /**
+   * Release a connection from the pool when no longer needed
+   */
+  async releaseConnection(purpose: string): Promise<void> {
+    const connection = this.connectionPool.get(purpose);
+    if (connection) {
+      try {
+        await connection.close();
+        console.log(`[RabbitMQ] Released connection for ${purpose}`);
+      } catch (error) {
+        console.error(`[RabbitMQ] Error releasing connection for ${purpose}:`, error);
+      }
+      
+      this.connectionPool.delete(purpose);
+      this.activeConnectionCount = Math.max(0, this.activeConnectionCount - 1);
+    }
+
+    // Clear idle timer
+    const timer = this.idleTimers.get(purpose);
+    if (timer) {
+      clearTimeout(timer);
+      this.idleTimers.delete(purpose);
+    }
+  }
+
+  /**
+   * Release unused connections when under memory pressure
+   */
+  async releaseUnusedConnections(): Promise<void> {
+    const unusedConnections: string[] = [];
+    
+    // Find connections that haven't been used recently
+    for (const [purpose] of this.connectionPool) {
+      if (purpose !== 'publisher' && purpose !== 'consumer') {
+        unusedConnections.push(purpose);
+      }
+    }
+
+    // Release unused connections
+    for (const purpose of unusedConnections) {
+      await this.releaseConnection(purpose);
+    }
+
+    console.log(`[RabbitMQ] Released ${unusedConnections.length} unused connections`);
+  }
+
+  /**
+   * Get connection pool statistics
+   */
+  getConnectionPoolStats(): {
+    maxConnections: number;
+    activeConnections: number;
+    pooledConnections: number;
+    utilizationPercent: number;
+  } {
+    const utilizationPercent = Math.round((this.activeConnectionCount / this.maxConcurrentConnections) * 100);
+    
+    return {
+      maxConnections: this.maxConcurrentConnections,
+      activeConnections: this.activeConnectionCount,
+      pooledConnections: this.connectionPool.size,
+      utilizationPercent,
     };
   }
 
@@ -504,13 +663,20 @@ export class EnhancedRabbitMQService {
    * Graceful shutdown
    */
   async shutdown(): Promise<void> {
-    console.log('[RabbitMQ] Shutting down...');
+    console.log('[RabbitMQ] Shutting down with connection pool cleanup...');
     
     // Cancel reconnection timer
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+
+    // Clear all idle timers
+    for (const [purpose, timer] of this.idleTimers) {
+      clearTimeout(timer);
+      console.log(`[RabbitMQ] Cleared idle timer for ${purpose}`);
+    }
+    this.idleTimers.clear();
 
     // Close consumer channels
     for (const [tag, channel] of this.consumerChannels) {
@@ -533,7 +699,13 @@ export class EnhancedRabbitMQService {
       }
     }
 
-    // Close connections
+    // Close all pooled connections
+    const connectionPurposes = Array.from(this.connectionPool.keys());
+    for (const purpose of connectionPurposes) {
+      await this.releaseConnection(purpose);
+    }
+
+    // Close any remaining direct connections
     if (this.publisherConnection) {
       try {
         await this.publisherConnection.close();
@@ -552,8 +724,23 @@ export class EnhancedRabbitMQService {
       }
     }
 
+    // Clear channel pool
+    for (const [channelId, channel] of this.channelPool) {
+      try {
+        await channel.close();
+        console.log(`[RabbitMQ] Closed pooled channel: ${channelId}`);
+      } catch (error) {
+        console.error(`[RabbitMQ] Error closing pooled channel ${channelId}:`, error);
+      }
+    }
+    this.channelPool.clear();
+
+    // Reset state
+    this.activeConnectionCount = 0;
     this.isConnected = false;
-    console.log('[RabbitMQ] Shutdown complete');
+    
+    const stats = this.getConnectionPoolStats();
+    console.log('[RabbitMQ] Shutdown complete. Final connection stats:', stats);
   }
 }
 
