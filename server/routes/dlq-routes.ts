@@ -8,6 +8,104 @@ import { eq } from 'drizzle-orm';
 const router = Router();
 const rabbitmq = rabbitmqClient;
 
+// Get DLQ info (queue stats)
+router.get('/dlq/:queueName/info', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { queueName } = req.params;
+    
+    if (!queueName.startsWith('dlq.')) {
+      return res.status(400).json({ error: 'Queue name must start with dlq.' });
+    }
+
+    // Check connection first - graceful degradation
+    try {
+      const connectionInfo = await rabbitmq.getConnectionInfo();
+      if (!connectionInfo.connected) {
+        return res.json({
+          queue: queueName,
+          messageCount: 0,
+          consumerCount: 0,
+          originalQueue: queueName.replace('dlq.', ''),
+          info: {
+            status: 'offline',
+            message: 'RabbitMQ connection unavailable'
+          }
+        });
+      }
+    } catch (error) {
+      return res.json({
+        queue: queueName,
+        messageCount: 0,
+        consumerCount: 0,
+        originalQueue: queueName.replace('dlq.', ''),
+        info: {
+          status: 'offline',
+          message: 'Connection check failed'
+        }
+      });
+    }
+
+    const channel = await rabbitmq.getDLQChannel();
+    if (!channel) {
+      return res.json({
+        queue: queueName,
+        messageCount: 0,
+        consumerCount: 0,
+        originalQueue: queueName.replace('dlq.', ''),
+        info: {
+          status: 'offline',
+          message: 'DLQ channel unavailable'
+        }
+      });
+    }
+
+    try {
+      // Get queue statistics
+      const stats = await channel.checkQueue(queueName);
+      
+      await channel.close();
+      
+      res.json({
+        queue: queueName,
+        messageCount: stats.messageCount,
+        consumerCount: stats.consumerCount,
+        originalQueue: queueName.replace('dlq.', ''),
+        info: {
+          status: 'connected',
+          durable: true,
+          arguments: stats.arguments || {}
+        }
+      });
+    } catch (error) {
+      await channel.close();
+      
+      // Queue might not exist - return empty stats
+      res.json({
+        queue: queueName,
+        messageCount: 0,
+        consumerCount: 0,
+        originalQueue: queueName.replace('dlq.', ''),
+        info: {
+          status: 'not_found',
+          message: 'Queue does not exist'
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error getting DLQ info:', error);
+    res.json({
+      queue: req.params.queueName,
+      messageCount: 0,
+      consumerCount: 0,
+      originalQueue: req.params.queueName.replace('dlq.', ''),
+      info: {
+        status: 'error',
+        message: 'Failed to retrieve queue information'
+      }
+    });
+  }
+});
+
 // Browse messages in a DLQ
 router.get('/dlq/:queueName/messages', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -18,9 +116,34 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req: Request, res: Re
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
     }
 
+    // Check connection first - graceful degradation
+    try {
+      const connectionInfo = await rabbitmq.getConnectionInfo();
+      if (!connectionInfo.connected) {
+        return res.json({
+          queue: queueName,
+          messages: [],
+          totalFetched: 0,
+          info: { status: 'offline', message: 'RabbitMQ connection unavailable' }
+        });
+      }
+    } catch (error) {
+      return res.json({
+        queue: queueName,
+        messages: [],
+        totalFetched: 0,
+        info: { status: 'offline', message: 'Connection check failed' }
+      });
+    }
+
     const channel = await rabbitmq.getDLQChannel();
     if (!channel) {
-      return res.status(503).json({ error: 'Message broker not connected' });
+      return res.json({
+        queue: queueName,
+        messages: [],
+        totalFetched: 0,
+        info: { status: 'offline', message: 'DLQ channel unavailable' }
+      });
     }
 
     // Get messages without acknowledging them (browse mode)
@@ -110,14 +233,20 @@ router.get('/dlq/:queueName/messages', requireAuth, async (req: Request, res: Re
 
   } catch (error) {
     console.error('Error fetching DLQ messages:', error);
-    res.status(500).json({ error: 'Failed to fetch DLQ messages' });
+    res.json({
+      queue: req.params.queueName,
+      messages: [],
+      totalFetched: 0,
+      info: { status: 'error', message: 'Failed to fetch DLQ messages' }
+    });
   }
 });
 
-// Get DLQ queue info
-router.get('/dlq/:queueName/info', requireAuth, async (req: Request, res: Response) => {
+// Retry a message from DLQ (move back to original queue)
+router.post('/dlq/:queueName/retry', requireAuth, async (req, res) => {
   try {
     const { queueName } = req.params;
+    const { messageCount = 1, editedMessage, resolution } = req.body;
     
     if (!queueName.startsWith('dlq.')) {
       return res.status(400).json({ error: 'Queue name must start with dlq.' });
