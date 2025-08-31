@@ -1,0 +1,51 @@
+I reviewed the RabbitMQ integration across the loanserve repository. Several separate implementations exist—server/services/rabbitmq.ts (deprecated), server/messaging/rabbit.ts, server/services/rabbitmq-enhanced.ts, and server/observability/instrumented‑rabbitmq.ts. Each of these classes creates its own AMQP connections; for example the enhanced service opens two separate connections (a publisher and consumer) during startup
+GitHub
+. The older “rabbit” service also opens a pair of connections every time connect() is called
+GitHub
+. Although rabbitmq-enhanced exposes a singleton factory, consumers often instantiate their own service classes, so connection counts scale with the number of Node processes. This explains why engineering’s attempt to kill connections failed—the services immediately reconnect on error or on external termination. Scripts and some routes (e.g., queue‑monitor purge endpoints) still call amqplib.connect() directly
+GitHub
+, further increasing the number of open connections.
+
+The current approach also mixes several anti‑patterns: per‑request connections, per‑consumer ad‑hoc channels, and manual reconnection logic scattered across multiple files. While some of these classes close their connections on shutdown
+GitHub
+, connection churn is inevitable when there are many instances. For high‑throughput financial messaging, it’s best to use a single long‑lived connection with a confirm channel for publishing, dedicated channels per consumer (with prefetch) and strict reconnection/backoff logic. Connections should advertise a connection_name so they can be tracked in the RabbitMQ management UI.
+
+Recommended redesign
+
+Consolidate all AMQP access behind a single client. Remove or deprecate the legacy rabbit.ts and rabbitmq.ts classes. Replace direct amqplib.connect() calls in routes/scripts with calls to this client.
+
+Use one connection per process. Within the client, lazily open a single AMQP connection (set a heartbeat and a descriptive connection_name) and share it across publisher and consumer channels. Create one confirm channel for all publishing, and lazily create individual channels per consumer with configurable prefetch.
+
+Centralise reconnection and shutdown. Implement exponential‑backoff reconnection with a maximum attempt count. Add SIGINT/SIGTERM handlers that gracefully cancel consumers, close channels and finally close the connection.
+
+Encapsulate JSON envelope handling. Provide helper methods for publishing JSON and for parsing messages in consumers. Include options for persistence, mandatory delivery and custom headers.
+
+Instrumentation and admin operations. If tracing or metrics are required, build a thin wrapper around the unified client. Use the RabbitMQ HTTP management API for queue‑monitoring rather than opening ad‑hoc AMQP connections from HTTP routes.
+
+Implementation
+
+I created a new file, loanserve-improved-rabbitmq.ts, that implements these best practices. It exposes a RabbitMQClient class and a singleton instance (rabbitmqClient). Key features include:
+
+Lazy connection and channel management: connect() opens a single connection with a heartbeat and sets a connection_name. getPublisherChannel() and getConsumerChannel() lazily create (and reuse) channels.
+
+Publisher confirms: Publishing uses a confirm channel; publish() returns a promise that resolves only when the broker acknowledges the message.
+
+Per‑consumer channels with prefetch: consume() sets a prefetch count per consumer and automatically acknowledges messages. Handler errors result in a nack (and dead‑lettering).
+
+Exponential backoff reconnection: The client automatically retries connections up to a configurable maximum; each attempt backoffs with an increasing delay.
+
+Graceful shutdown: The client exposes a shutdown() method and registers process signal handlers to cancel consumers, close channels, and close the connection before exit.
+
+Helper for JSON publishing: publishJSON() serialises payloads and sets appropriate headers.
+
+You can find the full TypeScript implementation here: loanserve-improved-rabbitmq.ts To adopt it:
+
+Import rabbitmqClient from this file instead of using getEnhancedRabbitMQService or instantiating RabbitService.
+
+For publishing, call rabbitmqClient.publish(exchange, routingKey, Buffer.from(JSON.stringify(payload))) or use publishJSON().
+
+For consuming, call rabbitmqClient.consume(queue, async (data, raw, ch) => { … }) with a unique consumerTag if needed.
+
+Remove direct amqplib.connect() calls in routes and scripts; if you need a one‑off admin channel, use a helper similar to withAdminChannel() but built on the unified connection.
+
+This redesign reduces the number of concurrent connections, centralises error handling and reconnect logic, and simplifies instrumentation. Updating the consumer and publisher services to use this client will prevent the connection leaks you are observing and make it easier to manage RabbitMQ across your application.
