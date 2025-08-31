@@ -23,6 +23,7 @@ import crmEmailRoutes from "./crm/email-routes";
 import communicationPreferencesRoutes from "./routes/communication-preferences";
 import { registerBorrowerRoutes } from "./routes/borrower";
 import { settingsRouter } from "./routes/settings";
+import phase10Routes from "./routes/phase10-routes";
 import { noticeTemplatesRouter } from "./routes/notice-templates";
 import { emailTemplatesRouter } from "./routes/email-templates";
 import paymentRoutes from "./routes/payment-routes";
@@ -114,6 +115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/admin/users', adminUsersRouter);
   app.use('/api/ip-allowlist', ipAllowlistRouter);
   app.use('/api', settingsRouter);
+  app.use('/api', phase10Routes);
   app.use('/api', noticeTemplatesRouter);
   app.use('/api', emailTemplatesRouter);
   app.use('/api', rabbitmqConfigRoutes);
