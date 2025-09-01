@@ -22,6 +22,7 @@ import {
 import { db } from "../db";
 import { requireAuth, requirePermission } from "../auth/middleware";
 import { AppError, ErrorCode } from "../utils/error-handler";
+import { publishImportMessage } from "../import-system/rabbitmq-topology";
 
 const router = express.Router();
 
@@ -87,8 +88,23 @@ router.post("/imports",
         createdBy
       }).returning();
 
-      // TODO: Publish to RabbitMQ for async processing
-      // await mq.publish("import." + type, "received", { importId: imp.id, tenantId });
+      // Publish to appropriate validation queue based on import type
+      if (type === "pdf") {
+        await publishImportMessage(
+          'validate.pdf',
+          {
+            importId: newImport[0].id,
+            filePath: req.file.path,
+            type: type as any,
+            tenantId,
+            correlationId: crypto.randomUUID()
+          },
+          'validation'
+        );
+      } else {
+        // TODO: Implement other import type publishing
+        console.log(`TODO: Implement RabbitMQ publishing for ${type} imports`);
+      }
 
       res.status(202)
         .location(`/api/imports/${newImport[0].id}`)

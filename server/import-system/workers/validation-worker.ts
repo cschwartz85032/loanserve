@@ -363,13 +363,13 @@ export class ValidationWorker {
       IMPORT_TOPOLOGY.queues.validatePdf,
       this.handlePDFValidation.bind(this),
       {
-        prefetch: 2, // Lower prefetch for PDF processing
+        prefetch: 1, // Lower prefetch for resource-intensive PDF OCR processing
         consumerTag: 'pdf-validation-worker'
       }
     );
     
     this.consumerTags.push(consumerTag);
-    console.log('[ValidationWorker] PDF validation worker started');
+    console.log('[ValidationWorker] PDF validation worker started with OCR support');
   }
 
   /**
