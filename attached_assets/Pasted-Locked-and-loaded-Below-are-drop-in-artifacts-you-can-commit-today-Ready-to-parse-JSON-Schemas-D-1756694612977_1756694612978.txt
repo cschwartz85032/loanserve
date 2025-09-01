@@ -1,0 +1,427 @@
+Locked and loaded. Below are drop-in artifacts you can commit today:
+
+Ready-to-parse JSON Schemas (Draft 2020-12) for each prompt output (Note, CD, HOI, Flood, Appraisal) + a union schema.
+
+A SQL migration adding prompt_version and extractor_version to loan_datapoints (with helpful indexes) for full lineage.
+
+
+I’ve kept the response structure identical across all doc types:
+
+{
+  "docType": "NOTE|CD|HOI|FLOOD|APPRAISAL",
+  "promptVersion": "vYYYY-MM-DD.tag",
+  "data": { /* doc-specific keys */ },
+  "evidence": {
+    "FieldName": { "docId":"uuid", "page":1, "bbox":[x1,y1,x2,y2], "textHash":"sha256", "snippet":"..." }
+  }
+}
+
+Additional properties are not allowed; nullability is explicit; numbers are typed.
+
+
+---
+
+1) JSON Schemas
+
+1.1 Union schema
+
+File: schemas/prompt-outputs/union.schema.json
+
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/union.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LLM Prompt Output (Union)",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "note.schema.json" },
+    { "$ref": "cd.schema.json" },
+    { "$ref": "hoi.schema.json" },
+    { "$ref": "flood.schema.json" },
+    { "$ref": "appraisal.schema.json" }
+  ]
+}
+
+Evidence definition (reused via $defs)
+
+Copy this $defs block into each doc-specific schema (shown below once for readability):
+
+"$defs": {
+  "Evidence": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "docId":   { "type": "string", "format": "uuid" },
+      "page":    { "type": "integer", "minimum": 1 },
+      "bbox":    { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+      "textHash":{ "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+      "snippet": { "type": "string", "maxLength": 1000 }
+    },
+    "required": ["docId", "page", "textHash"]
+  }
+}
+
+
+---
+
+1.2 Note schema
+
+File: schemas/prompt-outputs/note.schema.json
+
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/note.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Promissory Note Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docId":   { "type": "string", "format": "uuid" },
+        "page":    { "type": "integer", "minimum": 1 },
+        "bbox":    { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "textHash":{ "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "snippet": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["docId", "page", "textHash"]
+    }
+  },
+  "properties": {
+    "docType": { "const": "NOTE" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}(?:[.-][A-Za-z0-9]+)?$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "NoteAmount":          { "type": ["number","null"], "minimum": 0 },
+        "InterestRate":        { "type": ["number","null"], "minimum": 0, "maximum": 100 },
+        "AmortTermMonths":     { "type": ["integer","null"], "minimum": 1, "maximum": 480 },
+        "FirstPaymentDate":    { "type": ["string","null"], "format": "date" },
+        "MaturityDate":        { "type": ["string","null"], "format": "date" },
+        "LateChargePct":       { "type": ["number","null"], "minimum": 0, "maximum": 100 },
+        "LateChargeGraceDays": { "type": ["integer","null"], "minimum": 0, "maximum": 60 },
+        "BorrowerFullName":    { "type": ["string","null"], "minLength": 1, "maxLength": 200 }
+      },
+      "required": ["NoteAmount","InterestRate","AmortTermMonths","FirstPaymentDate","MaturityDate","BorrowerFullName"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "NoteAmount":          { "$ref": "#/$defs/Evidence" },
+        "InterestRate":        { "$ref": "#/$defs/Evidence" },
+        "AmortTermMonths":     { "$ref": "#/$defs/Evidence" },
+        "FirstPaymentDate":    { "$ref": "#/$defs/Evidence" },
+        "MaturityDate":        { "$ref": "#/$defs/Evidence" },
+        "LateChargePct":       { "$ref": "#/$defs/Evidence" },
+        "LateChargeGraceDays": { "$ref": "#/$defs/Evidence" },
+        "BorrowerFullName":    { "$ref": "#/$defs/Evidence" }
+      }
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+
+---
+
+1.3 Closing Disclosure (CD) schema
+
+File: schemas/prompt-outputs/cd.schema.json
+
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/cd.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Closing Disclosure Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "CD" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}(?:[.-][A-Za-z0-9]+)?$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "TotalLoanAmount":        { "type": ["number","null"], "minimum": 0 },
+        "PAndIAmount":            { "type": ["number","null"], "minimum": 0 },
+        "EscrowRequired":         { "type": ["boolean","null"] },
+        "TaxEscrowMonthly":       { "type": ["number","null"], "minimum": 0 },
+        "InsuranceEscrowMonthly": { "type": ["number","null"], "minimum": 0 },
+        "HOICarrier":             { "type": ["string","null"], "minLength": 1, "maxLength": 200 },
+        "HOIPolicyNumber":        { "type": ["string","null"], "minLength": 1, "maxLength": 120 },
+        "PropertyAddress":        { "type": ["string","null"], "minLength": 1, "maxLength": 300 }
+      },
+      "required": ["TotalLoanAmount","PAndIAmount","EscrowRequired","PropertyAddress"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "TotalLoanAmount":        { "$ref": "note.schema.json#/$defs/Evidence" },
+        "PAndIAmount":            { "$ref": "note.schema.json#/$defs/Evidence" },
+        "EscrowRequired":         { "$ref": "note.schema.json#/$defs/Evidence" },
+        "TaxEscrowMonthly":       { "$ref": "note.schema.json#/$defs/Evidence" },
+        "InsuranceEscrowMonthly": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOICarrier":             { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIPolicyNumber":        { "$ref": "note.schema.json#/$defs/Evidence" },
+        "PropertyAddress":        { "$ref": "note.schema.json#/$defs/Evidence" }
+      }
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+
+---
+
+1.4 HOI (Declarations) schema
+
+File: schemas/prompt-outputs/hoi.schema.json
+
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/hoi.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Homeowners Insurance Declarations Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "HOI" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}(?:[.-][A-Za-z0-9]+)?$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "HomeownersInsCarrier": { "type": ["string","null"], "minLength": 1, "maxLength": 200 },
+        "HOIPolicyNumber":      { "type": ["string","null"], "minLength": 1, "maxLength": 120 },
+        "HOIEffectiveDate":     { "type": ["string","null"], "format": "date" },
+        "HOIExpirationDate":    { "type": ["string","null"], "format": "date" },
+        "HOIPhone":             { "type": ["string","null"], "maxLength": 40 },
+        "HOIEmail":             { "type": ["string","null"], "format": "email" }
+      },
+      "required": ["HomeownersInsCarrier","HOIPolicyNumber","HOIEffectiveDate","HOIExpirationDate"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "HomeownersInsCarrier": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIPolicyNumber":      { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIEffectiveDate":     { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIExpirationDate":    { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIPhone":             { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIEmail":             { "$ref": "note.schema.json#/$defs/Evidence" }
+      }
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+
+---
+
+1.5 Flood schema
+
+File: schemas/prompt-outputs/flood.schema.json
+
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/flood.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flood Determination Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "FLOOD" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}(?:[.-][A-Za-z0-9]+)?$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "FloodZone":             { "type": ["string","null"], "minLength": 1, "maxLength": 40 },
+        "FloodInsRequired":      { "type": ["boolean","null"] },
+        "DeterminationIdentifier": { "type": ["string","null"], "maxLength": 120 }
+      },
+      "required": ["FloodZone","FloodInsRequired"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "FloodZone":               { "$ref": "note.schema.json#/$defs/Evidence" },
+        "FloodInsRequired":        { "$ref": "note.schema.json#/$defs/Evidence" },
+        "DeterminationIdentifier": { "$ref": "note.schema.json#/$defs/Evidence" }
+      }
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+
+---
+
+1.6 Appraisal schema
+
+File: schemas/prompt-outputs/appraisal.schema.json
+
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/appraisal.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Appraisal Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "APPRAISAL" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}(?:[.-][A-Za-z0-9]+)?$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "AppraisalDate":    { "type": ["string","null"], "format": "date" },
+        "AppraisedValue":   { "type": ["number","null"], "minimum": 0 },
+        "AppraisalFormType":{ "type": ["string","null"], "maxLength": 120 }
+      },
+      "required": ["AppraisalDate","AppraisedValue"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "AppraisalDate":     { "$ref": "note.schema.json#/$defs/Evidence" },
+        "AppraisedValue":    { "$ref": "note.schema.json#/$defs/Evidence" },
+        "AppraisalFormType": { "$ref": "note.schema.json#/$defs/Evidence" }
+      }
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+
+---
+
+(Optional) AJV validator snippet
+
+File: src/validation/promptOutputValidator.ts
+
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
+import unionSchema from "../../schemas/prompt-outputs/union.schema.json";
+import noteSchema from "../../schemas/prompt-outputs/note.schema.json";
+import cdSchema from "../../schemas/prompt-outputs/cd.schema.json";
+import hoiSchema from "../../schemas/prompt-outputs/hoi.schema.json";
+import floodSchema from "../../schemas/prompt-outputs/flood.schema.json";
+import appraisalSchema from "../../schemas/prompt-outputs/appraisal.schema.json";
+
+const ajv = new Ajv({ allErrors: true, strict: true });
+addFormats(ajv);
+
+[ noteSchema, cdSchema, hoiSchema, floodSchema, appraisalSchema ].forEach(s => ajv.addSchema(s));
+const validate = ajv.compile(unionSchema);
+
+export function assertValidPromptOutput(obj: unknown) {
+  const ok = validate(obj);
+  if (!ok) {
+    const err = new Error("PromptOutputValidationError");
+    (err as any).details = validate.errors;
+    throw err;
+  }
+}
+
+
+---
+
+2) SQL Migration — lineage columns in loan_datapoints
+
+File: migrations/002_add_prompt_extractor_version.sql
+
+-- 002_add_prompt_extractor_version.sql
+-- Purpose: add prompt_version + extractor_version to loan_datapoints for full lineage,
+-- and helpful indexes for analytics.
+
+BEGIN;
+
+-- Add columns if absent
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='loan_datapoints' AND column_name='prompt_version'
+  ) THEN
+    ALTER TABLE loan_datapoints
+      ADD COLUMN prompt_version text NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='loan_datapoints' AND column_name='extractor_version'
+  ) THEN
+    ALTER TABLE loan_datapoints
+      ADD COLUMN extractor_version text NULL;
+  END IF;
+
+  -- Optional: who/when the prompt/extractor produced this row
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='loan_datapoints' AND column_name='produced_at'
+  ) THEN
+    ALTER TABLE loan_datapoints
+      ADD COLUMN produced_at timestamptz NULL DEFAULT now();
+  END IF;
+END $$;
+
+-- Helpful partial indexes
+CREATE INDEX IF NOT EXISTS idx_ldp_key_extractor
+  ON loan_datapoints (key, extractor_version);
+
+CREATE INDEX IF NOT EXISTS idx_ldp_prompt_version
+  ON loan_datapoints (prompt_version)
+  WHERE prompt_version IS NOT NULL;
+
+-- (Optional) tighten NOT NULL later, after backfill:
+-- ALTER TABLE loan_datapoints ALTER COLUMN extractor_version SET NOT NULL;
+
+COMMIT;
+
+Persistence convention (use in your ExtractWorker)
+
+When writing LLM results:
+
+loan_datapoints.prompt_version = payload.promptVersion
+
+loan_datapoints.extractor_version = process.env.EXTRACTOR_VERSION (e.g., v2025.09.01)
+
+loan_datapoints.produced_at = now()
+
+
+For deterministic extracts:
+
+prompt_version = NULL
+
+extractor_version = EXTRACTOR_VERSION
+
+
+For imports (payload/MISMO/CSV/JSON):
+
+Set extractor_version = 'payload' (or a fixed tag)
+
+prompt_version = NULL
+
+
+
+
+---
+
+Where to wire this
+
+ExtractWorker: after schema validation of LLM JSON, persist prompt_version and extractor_version.
+
+repo.mergeByAuthority / persistDatapoints: accept and store these two fields.
+
+Exports/QC lineage: include versions in lineage metadata so you can reproduce outputs exactly.
+
+
+If you want, I can also generate a TypeScript type for the union response (using json-schema-to-ts) and a tiny backfill script that sets extractor_version for historic rows (e.g., v2025.09.01 or payload) so you can safely flip the column to NOT NULL later.
+
