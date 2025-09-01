@@ -50,7 +50,7 @@ const upload = multer({
   }
 });
 
-// POST /imports - Start an import (MISMO, CSV, JSON)
+// POST /imports - Start an import (MISMO, CSV, JSON, PDF)
 router.post("/imports", 
   requireAuth,
   requirePermission("imports.write"),
@@ -63,7 +63,7 @@ router.post("/imports",
         return res.status(400).json({ error: "File is required" });
       }
 
-      if (!["mismo", "csv", "json", "api"].includes(type)) {
+      if (!["mismo", "csv", "json", "pdf", "api"].includes(type)) {
         return res.status(400).json({ error: "Invalid import type" });
       }
 

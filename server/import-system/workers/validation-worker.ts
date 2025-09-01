@@ -7,7 +7,7 @@ import path from "path";
 export interface ValidationMessage {
   importId: string;
   filePath: string;
-  type: "mismo" | "csv" | "json";
+  type: "mismo" | "csv" | "json" | "pdf";
   tenantId: string;
   correlationId: string;
 }
@@ -35,6 +35,9 @@ export class ValidationWorker {
       
       // Start JSON validation worker
       await this.startJSONWorker();
+      
+      // Start PDF validation worker
+      await this.startPDFWorker();
 
       console.log('[ValidationWorker] All validation workers started successfully');
     } catch (error) {
@@ -343,6 +346,94 @@ export class ValidationWorker {
           importId: message.importId,
           error: error.message,
           type: 'json',
+          originalMessage: message
+        },
+        'dlq'
+      );
+      
+      throw error; // This will trigger message nack
+    }
+  }
+
+  /**
+   * Start PDF validation worker
+   */
+  private async startPDFWorker(): Promise<void> {
+    const consumerTag = await rabbitmqClient.consume<ValidationMessage>(
+      IMPORT_TOPOLOGY.queues.validatePdf,
+      this.handlePDFValidation.bind(this),
+      {
+        prefetch: 2, // Lower prefetch for PDF processing
+        consumerTag: 'pdf-validation-worker'
+      }
+    );
+    
+    this.consumerTags.push(consumerTag);
+    console.log('[ValidationWorker] PDF validation worker started');
+  }
+
+  /**
+   * Handle PDF validation message
+   */
+  private async handlePDFValidation(message: ValidationMessage, rawMessage: ConsumeMessage): Promise<void> {
+    const startTime = Date.now();
+    console.log(`[ValidationWorker] Processing PDF validation for import ${message.importId}`);
+    
+    try {
+      // Perform PDF validation
+      const result = await this.validationService.validatePDF(message.filePath);
+      
+      // Save validation results to database
+      await this.validationService.processValidationResult(message.importId, result);
+      
+      // Publish next step based on validation result
+      if (result.success) {
+        // Move to mapping stage
+        await publishImportMessage(
+          'map.canonical',
+          {
+            importId: message.importId,
+            tenantId: message.tenantId,
+            correlationId: message.correlationId,
+            validationResult: result
+          },
+          'mapping'
+        );
+        console.log(`[ValidationWorker] PDF validation succeeded for import ${message.importId}, moved to mapping`);
+      } else {
+        // Check if errors are fatal
+        const fatalErrors = result.errors.filter(e => e.severity === 'fatal');
+        if (fatalErrors.length > 0) {
+          console.log(`[ValidationWorker] PDF validation failed with fatal errors for import ${message.importId}`);
+        } else {
+          // Move to mapping with warnings
+          await publishImportMessage(
+            'map.canonical',
+            {
+              importId: message.importId,
+              tenantId: message.tenantId,
+              correlationId: message.correlationId,
+              validationResult: result
+            },
+            'mapping'
+          );
+          console.log(`[ValidationWorker] PDF validation completed with warnings for import ${message.importId}, moved to mapping`);
+        }
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`[ValidationWorker] PDF validation completed in ${duration}ms`);
+
+    } catch (error) {
+      console.error(`[ValidationWorker] PDF validation failed:`, error);
+      
+      // Send to error queue
+      await publishImportMessage(
+        'validation.failed',
+        {
+          importId: message.importId,
+          error: error.message,
+          type: 'pdf',
           originalMessage: message
         },
         'dlq'

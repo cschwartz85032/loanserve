@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
-type ImportType = "mismo" | "csv" | "json" | "api";
+type ImportType = "mismo" | "csv" | "json" | "pdf" | "api";
 type ImportStatus = "received" | "validating" | "errors" | "accepted" | "ingested" | "failed";
 
 interface ImportRecord {
@@ -141,6 +141,9 @@ export default function CreateLoan() {
         case 'json':
           setImportType("json");
           break;
+        case 'pdf':
+          setImportType("pdf");
+          break;
         default:
           setImportType("csv");
       }
@@ -154,6 +157,7 @@ export default function CreateLoan() {
       'application/json': ['.json'],
       'text/xml': ['.xml'],
       'application/xml': ['.xml'],
+      'application/pdf': ['.pdf'],
     },
     maxSize: 200 * 1024 * 1024, // 200MB
     multiple: false,
@@ -237,7 +241,7 @@ export default function CreateLoan() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Import Loans</h1>
         <p className="text-gray-600">
-          Upload loan data via MISMO 3.4 XML, CSV, or JSON formats. Files are validated and mapped to canonical format with full audit trails.
+          Upload loan data via MISMO 3.4 XML, CSV, JSON, or PDF formats. Files are validated and mapped to canonical format with full audit trails.
         </p>
       </div>
 
@@ -257,7 +261,7 @@ export default function CreateLoan() {
                   Upload Loan Data
                 </CardTitle>
                 <CardDescription>
-                  Upload MISMO 3.4 XML, CSV, or JSON files (max 200MB)
+                  Upload MISMO 3.4 XML, CSV, JSON, or PDF files (max 200MB)
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -288,7 +292,7 @@ export default function CreateLoan() {
                         {isDragActive ? "Drop the file here" : "Drop file here or click to browse"}
                       </p>
                       <p className="text-sm text-gray-500">
-                        Supports MISMO XML, CSV, and JSON files
+                        Supports MISMO XML, CSV, JSON, and PDF files
                       </p>
                     </div>
                   )}
@@ -307,6 +311,7 @@ export default function CreateLoan() {
                           <SelectItem value="mismo">MISMO 3.4 XML</SelectItem>
                           <SelectItem value="csv">CSV Bulk Import</SelectItem>
                           <SelectItem value="json">JSON Format</SelectItem>
+                          <SelectItem value="pdf">PDF Documents</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
