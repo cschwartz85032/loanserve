@@ -232,6 +232,47 @@ export const collectionStatusEnum = pgEnum("collection_status", [
 ]);
 
 // ========================================
+// LOAN IMPORT SYSTEM ENUMS
+// ========================================
+
+export const importTypeEnum = pgEnum("import_type", [
+  "mismo",
+  "csv", 
+  "json",
+  "api",
+]);
+
+export const importStatusEnum = pgEnum("import_status", [
+  "received",
+  "validating",
+  "errors",
+  "accepted",
+  "ingested", 
+  "failed",
+]);
+
+export const errorSeverityEnum = pgEnum("error_severity", [
+  "fatal",
+  "error",
+  "warning",
+  "info",
+]);
+
+export const ingestSourceEnum = pgEnum("ingest_source", [
+  "document",
+  "vendor", 
+  "user",
+  "payload",
+]);
+
+export const autofilledFromEnum = pgEnum("autofilled_from", [
+  "document",
+  "vendor",
+  "user", 
+  "payload",
+]);
+
+// ========================================
 // CORE TABLES
 // ========================================
 
@@ -4545,6 +4586,93 @@ export const remittanceExport = pgTable("remittance_export", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ========================================
+// LOAN IMPORT SYSTEM TABLES  
+// ========================================
+
+// Imports - Track file uploads and processing status
+export const imports = pgTable("imports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull(),
+  type: importTypeEnum("type").notNull(),
+  filename: text("filename").notNull(),
+  size: bigint("size", { mode: "number" }).notNull(),
+  sha256: text("sha256").notNull(),
+  status: importStatusEnum("status").notNull().default("received"),
+  errorCount: integer("error_count").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid("created_by").notNull(),
+}, (table) => ({
+  tenantStatusIdx: index("imports_tenant_status_idx").on(table.tenantId, table.status, table.createdAt),
+}));
+
+// Import Errors - Validation and processing errors
+export const importErrors = pgTable("import_errors", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  importId: uuid("import_id").references(() => imports.id, { onDelete: "cascade" }).notNull(),
+  code: text("code").notNull(),
+  severity: errorSeverityEnum("severity").notNull(),
+  pointer: text("pointer"), // XPath/CSV column/JSON path
+  message: text("message").notNull(),
+  rawFragment: jsonb("raw_fragment"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  importIdx: index("import_errors_import_idx").on(table.importId),
+  fragmentIdx: index("import_errors_fragment_idx").using("gin", table.rawFragment),
+}));
+
+// Import Mappings - Map source data to canonical keyspace
+export const importMappings = pgTable("import_mappings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  importId: uuid("import_id").references(() => imports.id, { onDelete: "cascade" }).notNull(),
+  canonicalKey: text("canonical_key").notNull(),
+  sourcePointer: text("source_pointer").notNull(),
+  normalizedValue: text("normalized_value"),
+  evidenceHash: text("evidence_hash").notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  autofilledFrom: autofilledFromEnum("autofilled_from").notNull(),
+}, (table) => ({
+  importKeyIdx: index("import_mappings_import_key_idx").on(table.importId, table.canonicalKey),
+}));
+
+// Loan Candidates - Potential loans from imports before final creation
+export const loanCandidates = pgTable("loan_candidates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull(),
+  sourceImportId: uuid("source_import_id").references(() => imports.id),
+  loanNumber: text("loan_number"),
+  status: loanStatusEnum("status").default("application"),
+  originalAmount: decimal("original_amount", { precision: 15, scale: 2 }),
+  interestRate: decimal("interest_rate", { precision: 6, scale: 4 }),
+  loanType: loanTypeEnum("loan_type"),
+  // Additional fields can be added as needed
+  candidateData: jsonb("candidate_data"), // Store all mapped data as JSON
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  tenantIdx: index("loan_candidates_tenant_idx").on(table.tenantId),
+  importIdx: index("loan_candidates_import_idx").on(table.sourceImportId),
+}));
+
+// Loan Datapoints - Store canonical data with lineage
+export const loanDatapoints = pgTable("loan_datapoints", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  loanId: integer("loan_id").references(() => loans.id, { onDelete: "cascade" }),
+  loanCandidateId: uuid("loan_candidate_id").references(() => loanCandidates.id, { onDelete: "cascade" }),
+  canonicalKey: text("canonical_key").notNull(),
+  value: text("value"),
+  normalizedValue: text("normalized_value"),
+  evidenceHash: text("evidence_hash").notNull(),
+  confidence: decimal("confidence", { precision: 5, scale: 4 }),
+  ingestSource: ingestSourceEnum("ingest_source").notNull().default("payload"),
+  autofilledFrom: autofilledFromEnum("autofilled_from").notNull().default("payload"),
+  sourcePointer: text("source_pointer"), // Lineage tracking
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  loanKeyIdx: index("loan_datapoints_loan_key_idx").on(table.loanId, table.canonicalKey),
+  candidateKeyIdx: index("loan_datapoints_candidate_key_idx").on(table.loanCandidateId, table.canonicalKey),
+}));
+
 // Insert Schemas for missing tables
 export const insertNoticeScheduleSchema = createInsertSchema(noticeSchedule).omit({
   noticeId: true,
@@ -4566,3 +4694,42 @@ export const insertRemittanceExportSchema = createInsertSchema(remittanceExport)
 });
 export type InsertRemittanceExport = z.infer<typeof insertRemittanceExportSchema>;
 export type RemittanceExport = typeof remittanceExport.$inferSelect;
+
+// ========================================
+// LOAN IMPORT SYSTEM INSERT SCHEMAS
+// ========================================
+
+export const insertImportsSchema = createInsertSchema(imports).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertImports = z.infer<typeof insertImportsSchema>;
+export type Imports = typeof imports.$inferSelect;
+
+export const insertImportErrorsSchema = createInsertSchema(importErrors).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertImportErrors = z.infer<typeof insertImportErrorsSchema>;
+export type ImportErrors = typeof importErrors.$inferSelect;
+
+export const insertImportMappingsSchema = createInsertSchema(importMappings).omit({
+  id: true,
+});
+export type InsertImportMappings = z.infer<typeof insertImportMappingsSchema>;
+export type ImportMappings = typeof importMappings.$inferSelect;
+
+export const insertLoanCandidatesSchema = createInsertSchema(loanCandidates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertLoanCandidates = z.infer<typeof insertLoanCandidatesSchema>;
+export type LoanCandidates = typeof loanCandidates.$inferSelect;
+
+export const insertLoanDatapointsSchema = createInsertSchema(loanDatapoints).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertLoanDatapoints = z.infer<typeof insertLoanDatapointsSchema>;
+export type LoanDatapoints = typeof loanDatapoints.$inferSelect;
