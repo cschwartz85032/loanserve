@@ -50,7 +50,7 @@ declare global {
 }
 
 export class Phase10SecurityService {
-  private defaultTenantId = '00000000-0000-0000-0000-000000000001';
+  private defaultTenantId = 1;
 
   /**
    * Extract security context from request
@@ -176,7 +176,7 @@ export class Phase10SecurityService {
           AND sp.action = $2
           AND sap.is_active = true
           AND sp.is_active = true
-          AND sap.tenant_id = $3::uuid
+          AND sap.tenant_id = $3
       `, [resourceType, action, context.tenantId]);
 
       client.release();
