@@ -232,6 +232,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('[Routes] Application will continue without enhanced security features');
   }
 
+  // Initialize Finalization System (Step 13)
+  try {
+    console.log('[Routes] Registering finalization routes...');
+    const { finalizeRouter } = await import('../src/finalize/routes');
+    app.use(finalizeRouter);
+    console.log('[Routes] Finalization routes registered');
+  } catch (error) {
+    console.error('[Routes] Failed to register finalization routes:', error);
+    console.warn('[Routes] Finalization features will not be available');
+  }
+
   // Serve observability dashboard
   app.get('/observability', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'server/observability/dashboard-ui.html'));

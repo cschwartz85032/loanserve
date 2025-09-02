@@ -438,3 +438,19 @@ export async function getText(docId: string): Promise<string> {
   
   return await storage.getText(tenantId, loanId, docId);
 }
+
+/**
+ * Store bytes to S3-compatible storage for finalization artifacts
+ */
+export async function putBytes(bucket: string, key: string, data: Uint8Array): Promise<string> {
+  const storage = new AIPipelineStorageManager();
+  await storage.s3Service.ensureBucket();
+  
+  // Upload PDF to S3
+  const uploadResult = await storage.s3Service.uploadFile(key, Buffer.from(data), 'application/pdf', {
+    'generated-by': 'finalization-engine',
+    'timestamp': new Date().toISOString()
+  });
+  
+  return uploadResult.location;
+}
