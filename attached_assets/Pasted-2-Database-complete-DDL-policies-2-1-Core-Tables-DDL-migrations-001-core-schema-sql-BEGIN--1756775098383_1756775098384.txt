@@ -1,0 +1,202 @@
+2) Database (complete DDL & policies)
+2.1 Core Tables (DDL)
+
+migrations/001_core_schema.sql
+
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Tenancy (assumes you already have tenants & users tables)
+
+-- Loan shells (candidates)
+CREATE TABLE IF NOT EXISTS loan_candidates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  status text NOT NULL DEFAULT 'new',
+  investor_id uuid NULL,
+  escrow_id uuid NULL,
+  property_id uuid NULL,
+  source_import_id uuid NULL,        -- link to imports
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Documents
+CREATE TABLE IF NOT EXISTS loan_documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  storage_uri text NOT NULL,
+  sha256 text NOT NULL,
+  doc_type text NULL,
+  page_range int4range NULL,
+  class_confidence numeric(5,4) NULL,
+  ocr_status text NULL,
+  version integer NOT NULL DEFAULT 1,
+  lineage_parent_id uuid NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Canonical datapoints + lineage + versions
+CREATE TABLE IF NOT EXISTS loan_datapoints (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  key text NOT NULL,
+  value text NULL,
+  normalized_value text NULL,
+  confidence numeric(5,4) NULL,
+  autofilled_from text NOT NULL DEFAULT 'payload' CHECK (autofilled_from IN ('payload','document','vendor','user')),
+  ingest_source  text NOT NULL DEFAULT 'payload' CHECK (ingest_source  IN ('payload','document','vendor','user')),
+  evidence_doc_id uuid NULL REFERENCES loan_documents(id) ON DELETE SET NULL,
+  evidence_page integer NULL,
+  evidence_text_hash text NULL,
+  extractor_version text NULL,
+  prompt_version text NULL,
+  produced_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (loan_id, key)
+);
+
+-- Conflicts (for ties or disagreeing sources)
+CREATE TABLE IF NOT EXISTS loan_conflicts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  key text NOT NULL,
+  candidates jsonb NOT NULL,         -- [{value, source, docType, confidence, score, evidence...}]
+  selected_value text NULL,
+  resolver_id uuid NULL,
+  rationale text NULL,
+  status text NOT NULL DEFAULT 'open', -- open|resolved|waived
+  created_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz NULL
+);
+
+-- Imports & mapping preview
+CREATE TABLE IF NOT EXISTS imports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  type text NOT NULL CHECK (type IN ('mismo','csv','json','pdf','zip')),
+  filename text NOT NULL,
+  size_bytes bigint NOT NULL CHECK (size_bytes >= 0),
+  sha256 text NOT NULL,
+  docset_id uuid NULL,
+  status text NOT NULL CHECK (status IN ('received','validating','errors','accepted','ingested','failed')),
+  error_count integer NOT NULL DEFAULT 0,
+  progress jsonb NOT NULL DEFAULT '{}'::jsonb,    -- {"split":%,"ocr":%,"extract":%}
+  mapping_version text NULL,
+  created_by uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS import_errors (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  import_id uuid NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+  code text NOT NULL,
+  severity text NOT NULL CHECK (severity IN ('fatal','warn')),
+  pointer text NOT NULL,
+  message text NOT NULL,
+  raw_fragment jsonb NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS import_mappings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  import_id uuid NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+  canonical_key text NOT NULL,
+  normalized_value text NULL,
+  source_pointer text NULL,       -- XPath/CSV col/JSON path or "pdf:docId:page"
+  evidence_hash text NULL,
+  confidence numeric(5,4) NULL,
+  autofilled_from text NOT NULL DEFAULT 'payload' CHECK (autofilled_from IN ('payload','document','vendor','user')),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- QC Rules & Defects
+CREATE TABLE IF NOT EXISTS qc_rules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text UNIQUE NOT NULL,
+  name text NOT NULL,
+  severity text NOT NULL CHECK (severity IN ('Low','Medium','High','Critical')),
+  engine_type text NOT NULL CHECK (engine_type IN ('deterministic','ai_assisted')),
+  params jsonb NOT NULL DEFAULT '{}'::jsonb,
+  enabled boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS qc_defects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  rule_id uuid NOT NULL REFERENCES qc_rules(id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'open', -- open|resolved|waived
+  message text NOT NULL,
+  evidence_doc_id uuid NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  resolved_at timestamptz NULL,
+  waiver_id uuid NULL
+);
+
+-- Audit Log
+CREATE TABLE IF NOT EXISTS audits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id uuid NULL,
+  action text NOT NULL,
+  target_type text NOT NULL,
+  target_id uuid NULL,
+  metadata jsonb NULL,
+  ts timestamptz NOT NULL DEFAULT now()
+);
+
+-- Event Outbox (reliable publish)
+CREATE TABLE IF NOT EXISTS event_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  aggregate_id uuid NOT NULL,
+  type text NOT NULL,
+  payload jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'pending', -- pending|sent|failed
+  retries int NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Monitoring events
+CREATE TABLE IF NOT EXISTS monitoring_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  metric text NOT NULL,
+  dim jsonb NOT NULL DEFAULT '{}'::jsonb,
+  value numeric NOT NULL,
+  ts timestamptz NOT NULL DEFAULT now()
+);
+
+-- Helpful indexes
+CREATE INDEX IF NOT EXISTS idx_imports_tenant_status_created ON imports (tenant_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_errors_import ON import_errors(import_id);
+CREATE INDEX IF NOT EXISTS idx_import_mappings_import ON import_mappings(import_id);
+CREATE INDEX IF NOT EXISTS idx_ldp_key_extractor ON loan_datapoints (key, extractor_version);
+CREATE INDEX IF NOT EXISTS idx_ldp_prompt_version ON loan_datapoints (prompt_version) WHERE prompt_version IS NOT NULL;
+
+COMMIT;
+
+2.2 RLS & ABAC (enable and sample policies)
+
+migrations/003_rls_policies.sql
+
+BEGIN;
+ALTER TABLE loan_candidates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE loan_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE loan_datapoints ENABLE ROW LEVEL SECURITY;
+ALTER TABLE loan_conflicts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE imports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_errors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_mappings ENABLE ROW LEVEL SECURITY;
+
+-- Assume app.tenant_id is set per connection/session
+CREATE POLICY p_lc_tenant ON loan_candidates USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY p_ld_tenant ON loan_documents  USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_ldp_tenant ON loan_datapoints USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_lconf_tenant ON loan_conflicts USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+CREATE POLICY p_imp_tenant ON imports USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY p_impe_tenant ON import_errors USING (import_id IN (SELECT id FROM imports WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_impm_tenant ON import_mappings USING (import_id IN (SELECT id FROM imports WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+COMMIT;

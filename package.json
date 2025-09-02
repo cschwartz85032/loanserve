@@ -11,6 +11,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@aws-sdk/client-textract": "^3.879.0",
     "@google-cloud/storage": "^7.16.0",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
@@ -84,6 +85,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/ui": "^3.2.4",
     "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "amqplib": "^0.10.8",
     "argon2": "^0.44.0",
     "autoprefixer": "^10.4.21",
@@ -97,6 +99,7 @@
     "cors": "^2.8.5",
     "crypto-js": "^4.2.0",
     "date-fns": "^3.6.0",
+    "dayjs": "^1.11.18",
     "decimal.js": "^10.6.0",
     "dotenv": "^17.2.1",
     "drizzle-orm": "^0.39.1",
@@ -110,6 +113,7 @@
     "groq-sdk": "^0.30.0",
     "handlebars": "^4.7.8",
     "input-otp": "^1.4.2",
+    "js-yaml": "^4.1.0",
     "json2csv": "^6.0.0-alpha.2",
     "lucide-react": "^0.453.0",
     "memorystore": "^1.6.7",
@@ -149,6 +153,7 @@
     "vitest": "^3.2.4",
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
+    "xlsx": "^0.18.5",
     "zod": "^3.24.2",
     "zod-validation-error": "^3.4.0"
   },

@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Document Extraction Output",
+  "description": "Schema for AI document extraction results with explainable lineage",
+  "type": "object",
+  "properties": {
+    "extractorVersion": {
+      "type": "string",
+      "pattern": "^v\\d{4}\\.\\d{2}\\.\\d{2}$",
+      "description": "Version of the extraction model used"
+    },
+    "documentId": {
+      "type": "string",
+      "description": "Unique identifier for the source document"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Overall extraction confidence score"
+    },
+    "extractedFields": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ExtractedField"
+      }
+    },
+    "documentClassification": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["loan_application", "credit_report", "income_verification", "appraisal", "title_insurance", "closing_disclosure", "promissory_note", "deed_of_trust", "unknown"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lineage": {
+          "$ref": "#/definitions/Lineage"
+        }
+      },
+      "required": ["type", "confidence", "lineage"]
+    },
+    "processedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": ["extractorVersion", "documentId", "confidence", "extractedFields", "documentClassification", "processedAt"],
+  "definitions": {
+    "ExtractedField": {
+      "type": "object",
+      "properties": {
+        "fieldName": {
+          "type": "string",
+          "description": "Standardized field name (e.g., 'borrower_name', 'loan_amount')"
+        },
+        "value": {
+          "description": "Extracted value (string, number, or object)"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence in this specific extraction"
+        },
+        "lineage": {
+          "$ref": "#/definitions/Lineage"
+        },
+        "validationStatus": {
+          "type": "string",
+          "enum": ["validated", "flagged", "pending", "rejected"]
+        },
+        "authorityDecision": {
+          "type": "object",
+          "properties": {
+            "winner": {
+              "type": "string",
+              "description": "Winning source when conflicts exist"
+            },
+            "reason": {
+              "type": "string",
+              "description": "Reason for authority decision"
+            },
+            "conflictingSources": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "required": ["fieldName", "value", "confidence", "lineage", "validationStatus"]
+    },
+    "Lineage": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["ai_extraction", "ocr", "manual_entry", "vendor_api", "document_parse"]
+        },
+        "documentId": {
+          "type": "string",
+          "description": "Source document identifier"
+        },
+        "pageNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Page number where value was found"
+        },
+        "textHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 hash of source text for tamper detection"
+        },
+        "boundingBox": {
+          "type": "object",
+          "properties": {
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "width": {"type": "number"},
+            "height": {"type": "number"}
+          },
+          "description": "Bounding box coordinates for OCR extractions"
+        },
+        "promptVersion": {
+          "type": "string",
+          "description": "Version of the prompt used for AI extraction"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["source", "documentId", "textHash", "timestamp"]
+    }
+  }
+}
