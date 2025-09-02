@@ -138,7 +138,7 @@
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
     "pdf2pic": "^3.2.0",
-    "pdfjs-dist": "^3.11.174",
+    "pdfjs-dist": "^5.4.149",
     "pdfkit": "^0.17.2",
     "pino": "^9.9.0",
     "pino-pretty": "^13.1.1",
