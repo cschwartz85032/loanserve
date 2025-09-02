@@ -372,8 +372,23 @@
             options: chartOptions
         });
         
-        // Mock data generation (replace with real API calls)
-        function generateMockData() {
+        // Fetch real metrics data from API
+        async function fetchDashboardData() {
+            try {
+                const response = await fetch('/api/observability/dashboard-data');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Failed to fetch dashboard data:', error);
+                // Fallback to mock data on error
+                return generateFallbackData();
+            }
+        }
+        
+        // Fallback data generation for when API is unavailable
+        function generateFallbackData() {
             const now = new Date();
             const labels = [];
             for (let i = 59; i >= 0; i--) {
@@ -399,8 +414,8 @@
             };
         }
         
-        function updateMetrics() {
-            const data = generateMockData();
+        async function updateMetrics() {
+            const data = await fetchDashboardData();
             
             // Update metric cards
             document.getElementById('queueDepth').textContent = data.queueDepth;
@@ -440,14 +455,22 @@
         }
         
         function refreshMetrics() {
-            updateMetrics();
+            updateMetrics().catch(error => {
+                console.error('Failed to refresh metrics:', error);
+            });
         }
         
         // Initial load
-        updateMetrics();
+        updateMetrics().catch(error => {
+            console.error('Failed to load initial metrics:', error);
+        });
         
         // Auto-refresh every 30 seconds
-        setInterval(updateMetrics, 30000);
+        setInterval(() => {
+            updateMetrics().catch(error => {
+                console.error('Failed to refresh metrics:', error);
+            });
+        }, 30000);
     </script>
 </body>
 </html>

@@ -56,9 +56,11 @@ export class Phase10SecurityService {
    * Extract security context from request
    */
   async extractSecurityContext(req: Request): Promise<SecurityContext> {
-    const userId = req.user?.id || req.headers['x-user-id'] as string;
+    const rawUserId = req.user?.id || req.headers['x-user-id'] as string;
+    // Convert user ID to UUID format if it's a simple integer
+    const userId = rawUserId ? this.normalizeUserId(rawUserId.toString()) : undefined;
     const tenantId = req.headers['x-tenant-id'] as string || this.defaultTenantId;
-    const sessionId = req.sessionID || req.headers['x-session-id'] as string || randomUUID();
+    const sessionId = (req as any).sessionID || req.headers['x-session-id'] as string || randomUUID();
     const correlationId = req.headers['x-correlation-id'] as string || randomUUID();
 
     const context: SecurityContext = {
@@ -255,6 +257,28 @@ export class Phase10SecurityService {
     const hour = date.getHours();
     const day = date.getDay();
     return day >= 1 && day <= 5 && hour >= 9 && hour <= 17; // Mon-Fri 9AM-5PM
+  }
+
+  /**
+   * Normalize user ID to UUID format
+   * Handles case where auth system returns integer IDs
+   */
+  private normalizeUserId(userId: string): string {
+    // If it's already a UUID format, return as-is
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      return userId;
+    }
+    
+    // If it's a simple integer, pad to create a deterministic UUID
+    if (/^\d+$/.test(userId)) {
+      const paddedId = userId.padStart(8, '0');
+      return `00000000-0000-0000-0000-${paddedId.padStart(12, '0')}`;
+    }
+    
+    // For other formats, create a deterministic UUID from the string
+    const crypto = require('crypto');
+    const hash = crypto.createHash('md5').update(userId).digest('hex');
+    return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
   }
 }
 
