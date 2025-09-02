@@ -1,0 +1,443 @@
+1) src/utils/deterministic-regex.ts
+
+Deterministic, auditable, regex/positional extractors + normalizers for Note, CD, HOI, Flood, and common identifiers.
+
+// src/utils/deterministic-regex.ts
+// Deterministic extractors for common fields. No AI. Safe, auditable, repeatable.
+
+export type DetHit = {
+  key: string;
+  value: string | number | boolean | null;
+  evidenceText: string; // human-readable snippet; system will attach doc/page/textHash lineage
+};
+
+// ---------------------- Normalizers ----------------------
+const moneyNorm = (s: string) =>
+  Number(s.replace(/[^\d.]/g, "").replace(/(?<=\..*)\./g, "")); // drop $, commas, extra dots
+
+const pctNorm = (s: string) => Number(s.replace(/[^\d.]/g, "")); // "7.125%" -> 7.125
+
+const intNorm = (s: string) => Number((s.match(/\d+/)?.[0] ?? "0"));
+
+const yesNoNorm = (s: string) => {
+  const t = s.toLowerCase();
+  if (/(^|\b)(yes|y|true|required)\b/.test(t)) return true;
+  if (/(^|\b)(no|n|false|not required)\b/.test(t)) return false;
+  return null;
+};
+
+// Month names to numbers for date normalization
+const MONTHS: Record<string, string> = {
+  jan: "01", january: "01", feb: "02", february: "02", mar: "03", march: "03", apr: "04", april: "04",
+  may: "05", jun: "06", june: "06", jul: "07", july: "07", aug: "08", august: "08",
+  sep: "09", sept: "09", september: "09", oct: "10", october: "10", nov: "11", november: "11",
+  dec: "12", december: "12"
+};
+
+function pad2(n: string) { return n.length === 1 ? "0" + n : n; }
+
+// Accepts "YYYY-MM-DD", "MM/DD/YYYY", "Month DD, YYYY", "DD-Mon-YYYY"
+export function toISODate(raw: string): string | null {
+  const s = raw.trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  //  MM/DD/YYYY or M/D/YY(YY)
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    const mm = pad2(m[1]);
+    const dd = pad2(m[2]);
+    const yyyy = (m[3].length === 2) ? ("20" + m[3]) : m[3];
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  // Month DD, YYYY (e.g., September 1, 2025)
+  m = s.match(/^([A-Za-z]{3,12})\.?\s+(\d{1,2}),\s*(\d{4})$/);
+  if (m) {
+    const mon = MONTHS[m[1].toLowerCase()]; if (!mon) return null;
+    return `${m[3]}-${mon}-${pad2(m[2])}`;
+  }
+
+  // DD Mon YYYY or DD-Mon-YYYY
+  m = s.match(/^(\d{1,2})[\s\-]([A-Za-z]{3,9})[\s\-](\d{4})$/);
+  if (m) {
+    const mon = MONTHS[m[2].toLowerCase()]; if (!mon) return null;
+    return `${m[3]}-${mon}-${pad2(m[1])}`;
+  }
+  return null;
+}
+
+// ---------------------- Regexes ----------------------
+// Currency like $200,000.00 or 200000
+const CURRENCY = /(?:\$?\s*[\d]{1,3}(?:[,\s]\d{3})*(?:\.\d+)?|\$?\s*\d+(?:\.\d+)?)/;
+
+// Percentage like 7.125% or 7.125
+const PERCENT = /(?:\d{1,3}(?:\.\d+)?\s*%?)/;
+
+// Dates (we'll normalize after)
+const DATE_ANY = /(?:\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|[A-Za-z]{3,12}\s+\d{1,2},\s*\d{4}|\d{1,2}[-\s][A-Za-z]{3,9}[-\s]\d{4})/;
+
+// Policy numbers: allow letters/digits + dashes/slashes, 6–40 chars
+const POLICY = /[A-Z0-9][A-Z0-9\-\/]{5,40}/i;
+
+// Flood zone codes (FEMA): AE, A, AH, AO, X, VE, V, D, etc. (with optional suffixes)
+const FLOOD_ZONE = /\b(?:A|AE|AH|AO|AR|A99|V|VE|X|D)(?:\d+)?\b/;
+
+// UCDP SSR IDs - typically 8–24 alphanumerics
+const SSR_ID = /\b[0-9A-Z]{8,24}\b/;
+
+// MIN (MERS MIN) 18 digits possibly with hyphen formatting
+const MERS_MIN = /\b\d{7}-\d{7}-\d{1}\b|\b\d{18}\b/;
+
+// Late charge grace days (e.g., "after 15 days", "more than 10 days late")
+const GRACE_DAYS = /\b(?:after|more than|beyond)\s+(\d{1,2})\s+days?\b/i;
+
+// Amortization term months
+const TERM_MONTHS = /\b(\d{2,3})\s*(?:months|mos|mo)\b/i;
+
+// Borrower full name near label or signature lines
+const BORROWER_NAME_LINE = /(?:Borrower|Borrower\(s\)|Signature of Borrower)[:\s]*([A-Z][A-Za-z'’.\-]+(?:\s+[A-Z][A-Za-z'’.\-]+){0,3})/;
+
+// ---------------------- Field Extractors ----------------------
+export function findNoteAmount(text: string): DetHit | null {
+  const window = /(?:PROMISSORY\s+NOTE|NOTE\s+AMOUNT|PRINCIPAL\s+SUM)[\s\S]{0,400}?/i;
+  const m = text.match(new RegExp(window.source + "(" + CURRENCY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "NoteAmount", value: moneyNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findInterestRate(text: string): DetHit | null {
+  const window = /(?:ANNUAL\s+INTEREST\s+RATE|INTEREST\s+RATE|RATE\s*\(FIXED|RATE\s*\(VARIABLE)[\s\S]{0,200}?/i;
+  const m = text.match(new RegExp(window.source + "(" + PERCENT.source + ")", "i"));
+  if (!m) return null;
+  return { key: "InterestRate", value: pctNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findAmortTermMonths(text: string): DetHit | null {
+  const m = text.match(TERM_MONTHS);
+  if (!m) return null;
+  return { key: "AmortTermMonths", value: intNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findFirstPaymentDate(text: string): DetHit | null {
+  const window = /(?:FIRST\s+PAYMENT\s+DATE|FIRST\s+INSTALLMENT)[\s\S]{0,120}?/i;
+  const m = text.match(new RegExp(window.source + "(" + DATE_ANY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "FirstPaymentDate", value: toISODate(m[1]), evidenceText: m[0] };
+}
+
+export function findMaturityDate(text: string): DetHit | null {
+  const window = /(?:MATURITY\s+DATE|FINAL\s+PAYMENT\s+DATE)[\s\S]{0,120}?/i;
+  const m = text.match(new RegExp(window.source + "(" + DATE_ANY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "MaturityDate", value: toISODate(m[1]), evidenceText: m[0] };
+}
+
+export function findLateChargePct(text: string): DetHit | null {
+  const window = /(?:LATE\s+CHARGE|LATE\s+FEE)[\s\S]{0,160}?/i;
+  const m = text.match(new RegExp(window.source + "(" + PERCENT.source + ")", "i"));
+  if (!m) return null;
+  return { key: "LateChargePct", value: pctNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findLateChargeGraceDays(text: string): DetHit | null {
+  const m = text.match(GRACE_DAYS);
+  if (!m) return null;
+  return { key: "LateChargeGraceDays", value: intNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findBorrowerFullName(text: string): DetHit | null {
+  const m = text.match(BORROWER_NAME_LINE);
+  if (!m) return null;
+  return { key: "BorrowerFullName", value: m[1].trim(), evidenceText: m[0] };
+}
+
+// ---------- CD fields ----------
+export function findCD_TotalLoanAmount(text: string): DetHit | null {
+  const window = /(?:Closing\s+Disclosure|Loan\s+Terms|Loan\s+Amount)[\s\S]{0,400}?/i;
+  const m = text.match(new RegExp(window.source + "(" + CURRENCY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "TotalLoanAmount", value: moneyNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findCD_PandI(text: string): DetHit | null {
+  const window = /(?:P&I|Principal\s*&\s*Interest|Principal\s+and\s+Interest)[\s\S]{0,160}?/i;
+  const m = text.match(new RegExp(window.source + "(" + CURRENCY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "PAndIAmount", value: moneyNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findCD_EscrowRequired(text: string): DetHit | null {
+  const window = /(?:Escrow|In\s+Escrow|Escrow\s+Account)[\s\S]{0,120}?/i;
+  const m = text.match(new RegExp(window.source + "(Yes|No|Not Required)", "i"));
+  if (!m) return null;
+  return { key: "EscrowRequired", value: yesNoNorm(m[1])!, evidenceText: m[0] };
+}
+
+export function findCD_TaxEscrowMonthly(text: string): DetHit | null {
+  const window = /(?:Estimated\s+Taxes|Property\s+Taxes)[\s\S]{0,140}?/i;
+  const m = text.match(new RegExp(window.source + "(" + CURRENCY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "TaxEscrowMonthly", value: moneyNorm(m[1]), evidenceText: m[0] };
+}
+
+export function findCD_InsEscrowMonthly(text: string): DetHit | null {
+  const window = /(?:Homeowner'?s?\s+Insurance|Hazard\s+Insurance)[\s\S]{0,140}?/i;
+  const m = text.match(new RegExp(window.source + "(" + CURRENCY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "InsuranceEscrowMonthly", value: moneyNorm(m[1]), evidenceText: m[0] };
+}
+
+// ---------- HOI fields ----------
+export function findHOI_Carrier(text: string): DetHit | null {
+  const window = /(?:Insurance\s+Company|Carrier|Insurer)[\s\S]{0,120}?([A-Za-z][A-Za-z0-9 &.,'-]{2,})/i;
+  const m = text.match(window);
+  if (!m) return null;
+  return { key: "HomeownersInsCarrier", value: m[1].trim(), evidenceText: m[0] };
+}
+
+export function findHOI_Policy(text: string): DetHit | null {
+  const window = /(?:Policy\s+Number|Policy\s+No\.?)[\s\S]{0,40}?/i;
+  const m = text.match(new RegExp(window.source + "(" + POLICY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "HOIPolicyNumber", value: m[1].trim(), evidenceText: m[0] };
+}
+
+export function findHOI_Effective(text: string): DetHit | null {
+  const window = /(?:Effective\s+Date|Policy\s+Effective)[\s\S]{0,40}?/i;
+  const m = text.match(new RegExp(window.source + "(" + DATE_ANY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "HOIEffectiveDate", value: toISODate(m[1]), evidenceText: m[0] };
+}
+
+export function findHOI_Expiration(text: string): DetHit | null {
+  const window = /(?:Expiration\s+Date|Policy\s+Expiration)[\s\S]{0,40}?/i;
+  const m = text.match(new RegExp(window.source + "(" + DATE_ANY.source + ")", "i"));
+  if (!m) return null;
+  return { key: "HOIExpirationDate", value: toISODate(m[1]), evidenceText: m[0] };
+}
+
+// ---------- Flood fields ----------
+export function findFloodZone(text: string): DetHit | null {
+  // Prefer lines that mention "Zone" or "SFHA"
+  const m = text.match(new RegExp("(?:Zone\\s*:"+ "\\s*)?("+FLOOD_ZONE.source+")", "i"));
+  if (!m) return null;
+  return { key: "FloodZone", value: m[1].toUpperCase(), evidenceText: m[0] };
+}
+
+export function findFloodInsRequired(text: string): DetHit | null {
+  // Look for "Insurance Required: Yes/No" or "IN/OUT OF SFHA"
+  const m1 = text.match(/Insurance\s+Required[:\s]+(Yes|No)/i);
+  if (m1) return { key: "FloodInsRequired", value: yesNoNorm(m1[1])!, evidenceText: m1[0] };
+  const m2 = text.match(/\b(IN|OUT)\s+OF\s+SFHA\b/i);
+  if (m2) return { key: "FloodInsRequired", value: m2[1].toUpperCase() === "IN", evidenceText: m2[0] };
+  return null;
+}
+
+// ---------- Misc ----------
+export function findUCDP_SSR(text: string): DetHit | null {
+  const window = /(?:SSR|UCDP|Submission\s+Summary\s+Report)[\s\S]{0,200}?/i;
+  const m = text.match(new RegExp(window.source + "(" + SSR_ID.source + ")", "i"));
+  if (!m) return null;
+  return { key: "UCDPSSRStatus", value: m[1], evidenceText: m[0] };
+}
+
+export function findMersMIN(text: string): DetHit | null {
+  const m = text.match(MERS_MIN);
+  if (!m) return null;
+  return { key: "MERSMin", value: m[0].replace(/-/g, ""), evidenceText: m[0] };
+}
+
+2) src/utils/extractors.ts
+
+A thin utility that:
+
+Loads reflowed OCR text for a docId (from text/{docId}.txt in S3).
+
+Runs deterministic rules for the doc’s docType.
+
+Returns a normalized list of items for persistence (you’ll attach lineage fields at the worker).
+
+// src/utils/extractors.ts
+import {
+  findNoteAmount, findInterestRate, findAmortTermMonths, findFirstPaymentDate, findMaturityDate,
+  findLateChargePct, findLateChargeGraceDays, findBorrowerFullName,
+  findCD_TotalLoanAmount, findCD_PandI, findCD_EscrowRequired, findCD_TaxEscrowMonthly, findCD_InsEscrowMonthly,
+  findHOI_Carrier, findHOI_Policy, findHOI_Effective, findHOI_Expiration,
+  findFloodZone, findFloodInsRequired, findUCDP_SSR, findMersMIN
+} from "./deterministic-regex";
+import { getText as s3GetText } from "../utils/storage";
+
+/** Load reflowed OCR text saved at text/{docId}.txt in your S3 layout */
+async function getOcrText(docId: string): Promise<string> {
+  // NOTE: Your storage layer should save reflowed text at: s3://bucket/.../text/{docId}.txt
+  // If your key structure differs, adjust here in one place.
+  const key = `text/${docId}.txt`;
+  try {
+    return await s3GetText(key);
+  } catch {
+    return ""; // fail-safe: no text -> no hits
+  }
+}
+
+// Map doc types to deterministic functions (ordered by specificity)
+const DET_RULES: Record<string, Array<(t: string) => any>> = {
+  "NOTE": [
+    findNoteAmount, findInterestRate, findAmortTermMonths, findFirstPaymentDate, findMaturityDate,
+    findLateChargePct, findLateChargeGraceDays, findBorrowerFullName, findMersMIN
+  ],
+  "CD": [
+    findCD_TotalLoanAmount, findCD_PandI, findCD_EscrowRequired, findCD_TaxEscrowMonthly, findCD_InsEscrowMonthly
+  ],
+  "HOI": [
+    findHOI_Carrier, findHOI_Policy, findHOI_Effective, findHOI_Expiration
+  ],
+  "FLOOD": [
+    findFloodZone, findFloodInsRequired
+  ],
+  "APPRAISAL": [
+    findUCDP_SSR // extend as needed
+  ],
+  "DEED": [
+    findMersMIN
+  ]
+};
+
+/**
+ * Deterministic extraction from a given docId + docType.
+ * Returns unique highest-confidence deterministic values per key.
+ */
+export async function deterministicExtract(docId: string, docType: string) {
+  const text = await getOcrText(docId);
+  return deterministicExtractFromText(docType, text);
+}
+
+/**
+ * Deterministic extraction directly from raw text (used for tests).
+ */
+export function deterministicExtractFromText(docType: string, text: string) {
+  const rules = DET_RULES[docType] || [];
+  const hits = new Map<string, any>();
+
+  for (const fn of rules) {
+    try {
+      const h = fn(text);
+      if (!h) continue;
+      // prefer first deterministic hit per key (ordered rules)
+      if (!hits.has(h.key)) {
+        hits.set(h.key, {
+          key: h.key,
+          value: h.value,
+          evidenceText: h.evidenceText,
+          source: "deterministic"
+        });
+      }
+    } catch { /* swallow rule exceptions */ }
+  }
+
+  // shape expected by ExtractWorker (it will attach lineage + versions)
+  return Array.from(hits.values()).map(h => ({
+    key: h.key,
+    value: h.value,
+    confidence: 1,              // deterministic = 1 (authority matrix still decides final winner across sources)
+    source: "deterministic",
+    evidenceText: h.evidenceText
+  }));
+}
+
+// OPTIONAL: [AI] placeholder – populated in Step 7+, not used in Step 6.
+export async function runPromptPack(_docId: string, _docType: string, _keys: string[]) {
+  return []; // Left intentionally empty for deterministic-only Step 6.
+}
+
+3) Minimal Unit Test (proves Step 6 works)
+
+You can expand later; this confirms regexes hit realistic strings.
+
+tests/deterministic-extract.test.ts
+
+import { deterministicExtractFromText } from "../src/utils/extractors";
+
+describe("Deterministic Extractors", () => {
+  it("extracts core Note fields from text", async () => {
+    const text = `
+      PROMISSORY NOTE
+      PRINCIPAL SUM $200,000.00
+      ANNUAL INTEREST RATE 7.125%
+      FIRST PAYMENT DATE 10/01/2025
+      MATURITY DATE September 1, 2055
+      LATE CHARGE 5% after 15 days
+      Borrower: John Q. Public
+    `;
+    const items = deterministicExtractFromText("NOTE", text);
+    const map = new Map(items.map(i => [i.key, i.value]));
+    expect(map.get("NoteAmount")).toBe(200000);
+    expect(map.get("InterestRate")).toBe(7.125);
+    expect(map.get("FirstPaymentDate")).toBe("2025-10-01");
+    expect(map.get("MaturityDate")).toBe("2055-09-01");
+    expect(map.get("LateChargePct")).toBe(5);
+    expect(map.get("LateChargeGraceDays")).toBe(15);
+    expect(map.get("BorrowerFullName")).toBe("John Q. Public");
+  });
+
+  it("extracts CD escrow fields", async () => {
+    const text = `
+      Closing Disclosure
+      Loan Amount $200,000
+      Principal & Interest $1,350.22
+      Escrow: Yes
+      Estimated Taxes $250.00
+      Homeowner's Insurance $120.50
+    `;
+    const items = deterministicExtractFromText("CD", text);
+    const map = new Map(items.map(i => [i.key, i.value]));
+    expect(map.get("TotalLoanAmount")).toBe(200000);
+    expect(map.get("PAndIAmount")).toBe(1350.22);
+    expect(map.get("EscrowRequired")).toBe(true);
+    expect(map.get("TaxEscrowMonthly")).toBe(250);
+    expect(map.get("InsuranceEscrowMonthly")).toBe(120.5);
+  });
+
+  it("extracts HOI policy facts", async () => {
+    const text = `
+      DECLARATIONS
+      Insurance Company: ACME Mutual
+      Policy Number: ABC-123-XYZ
+      Effective Date: 09/15/2025
+      Expiration Date: 09/15/2026
+    `;
+    const items = deterministicExtractFromText("HOI", text);
+    const map = new Map(items.map(i => [i.key, i.value]));
+    expect(map.get("HomeownersInsCarrier")).toBe("ACME Mutual");
+    expect(map.get("HOIPolicyNumber")).toBe("ABC-123-XYZ");
+    expect(map.get("HOIEffectiveDate")).toBe("2025-09-15");
+    expect(map.get("HOIExpirationDate")).toBe("2026-09-15");
+  });
+
+  it("extracts Flood facts", async () => {
+    const text = `
+      FLOOD HAZARD DETERMINATION
+      Zone: AE
+      Insurance Required: Yes
+    `;
+    const items = deterministicExtractFromText("FLOOD", text);
+    const map = new Map(items.map(i => [i.key, i.value]));
+    expect(map.get("FloodZone")).toBe("AE");
+    expect(map.get("FloodInsRequired")).toBe(true);
+  });
+});
+
+
+(Add a test runner if you don’t have one yet, e.g., Jest; or adapt to your existing test framework.)
+
+4) How Engineering Wires Step 6 Into the Worker
+
+(You already have the ExtractWorker scaffold; this is just the precise call.)
+
+// Inside src/workers/ExtractWorker.ts, in the per-cluster loop:
+import { deterministicExtract } from "../utils/extractors";
+
+// ...
+const detItems = await deterministicExtract(c.docId, c.docType);
+// For each detItems element, your worker should attach lineage (evidence_doc_id/evidence_page/evidence_text_hash)
+// based on your OCR/segmentation index, then persist with repo.persistDatapoints(...).
