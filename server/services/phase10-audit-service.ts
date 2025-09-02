@@ -8,7 +8,7 @@ import type { PoolClient } from '@neondatabase/serverless';
 import { randomUUID } from 'crypto';
 
 export interface Phase10AuditEvent {
-  tenantId: string | number;
+  tenantId: string;
   correlationId?: string;
   eventType: string;
   actorId?: string;
@@ -28,7 +28,7 @@ export interface AuditChainVerification {
 }
 
 export class Phase10AuditService {
-  private defaultTenantId = 1;
+  private defaultTenantId = '00000000-0000-0000-0000-000000000001';
 
   /**
    * Add an immutable audit event with hash chain verification
@@ -44,7 +44,7 @@ export class Phase10AuditService {
 
       const eventId = await client.query(`
         SELECT add_phase10_audit_event(
-          $1, $2::uuid, $3, $4, $5, $6, $7::jsonb, $8::inet, $9, $10
+          $1::uuid, $2::uuid, $3, $4::uuid, $5, $6, $7::jsonb, $8::inet, $9, $10
         ) as event_id
       `, [
         event.tenantId || this.defaultTenantId,
@@ -71,7 +71,7 @@ export class Phase10AuditService {
   /**
    * Verify the integrity of an audit chain for a resource
    */
-  async verifyAuditChain(resourceUrn: string, tenantId?: string | number): Promise<AuditChainVerification> {
+  async verifyAuditChain(resourceUrn: string, tenantId?: string): Promise<AuditChainVerification> {
     const client = await pool.connect();
     try {
       // Set tenant context
@@ -83,7 +83,7 @@ export class Phase10AuditService {
       }
 
       const result = await client.query(`
-        SELECT * FROM verify_audit_chain($1, $2)
+        SELECT * FROM verify_audit_chain($1, $2::uuid)
       `, [resourceUrn, tenantId || null]);
 
       const row = result.rows[0];

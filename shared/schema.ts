@@ -239,7 +239,6 @@ export const importTypeEnum = pgEnum("import_type", [
   "mismo",
   "csv", 
   "json",
-  "pdf",
   "api",
 ]);
 

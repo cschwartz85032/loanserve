@@ -22,7 +22,6 @@ import {
 import { db } from "../db";
 import { requireAuth, requirePermission } from "../auth/middleware";
 import { AppError, ErrorCode } from "../utils/error-handler";
-import { publishImportMessage } from "../import-system/rabbitmq-topology";
 
 const router = express.Router();
 
@@ -51,7 +50,7 @@ const upload = multer({
   }
 });
 
-// POST /imports - Start an import (MISMO, CSV, JSON, PDF)
+// POST /imports - Start an import (MISMO, CSV, JSON)
 router.post("/imports", 
   requireAuth,
   requirePermission("imports.write"),
@@ -64,7 +63,7 @@ router.post("/imports",
         return res.status(400).json({ error: "File is required" });
       }
 
-      if (!["mismo", "csv", "json", "pdf", "api"].includes(type)) {
+      if (!["mismo", "csv", "json", "api"].includes(type)) {
         return res.status(400).json({ error: "Invalid import type" });
       }
 
@@ -88,23 +87,8 @@ router.post("/imports",
         createdBy
       }).returning();
 
-      // Publish to appropriate validation queue based on import type
-      if (type === "pdf") {
-        await publishImportMessage(
-          'validate.pdf',
-          {
-            importId: newImport[0].id,
-            filePath: req.file.path,
-            type: type as any,
-            tenantId,
-            correlationId: crypto.randomUUID()
-          },
-          'validation'
-        );
-      } else {
-        // TODO: Implement other import type publishing
-        console.log(`TODO: Implement RabbitMQ publishing for ${type} imports`);
-      }
+      // TODO: Publish to RabbitMQ for async processing
+      // await mq.publish("import." + type, "received", { importId: imp.id, tenantId });
 
       res.status(202)
         .location(`/api/imports/${newImport[0].id}`)

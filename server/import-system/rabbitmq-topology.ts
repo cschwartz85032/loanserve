@@ -15,11 +15,6 @@ export interface ImportTopology {
     validateMismo: string;
     validateCsv: string;
     validateJson: string;
-    validatePdf: string;
-    
-    // PDF processing queues
-    pdfOcr: string;
-    pdfClassification: string;
     
     // Mapping queues
     mapCanonical: string;
@@ -51,11 +46,6 @@ export const IMPORT_TOPOLOGY: ImportTopology = {
     validateMismo: "imports.validate.mismo.v2",
     validateCsv: "imports.validate.csv.v2",
     validateJson: "imports.validate.json.v2",
-    validatePdf: "imports.validate.pdf.v2",
-    
-    // PDF processing queues
-    pdfOcr: "imports.pdf.ocr.v2",
-    pdfClassification: "imports.pdf.classify.v2",
     
     // Mapping queues
     mapCanonical: "imports.map.canonical.v2",
@@ -183,34 +173,6 @@ async function setupQueues(): Promise<void> {
       }
     });
     
-    await channel.assertQueue(queues.validatePdf, {
-      durable: true,
-      arguments: {
-        "x-dead-letter-exchange": exchanges.dlq,
-        "x-dead-letter-routing-key": "validation.failed",
-        "x-max-retries": 2
-      }
-    });
-    
-    // PDF processing queues
-    await channel.assertQueue(queues.pdfOcr, {
-      durable: true,
-      arguments: {
-        "x-dead-letter-exchange": exchanges.dlq,
-        "x-dead-letter-routing-key": "pdf.ocr.failed",
-        "x-max-retries": 1
-      }
-    });
-    
-    await channel.assertQueue(queues.pdfClassification, {
-      durable: true,
-      arguments: {
-        "x-dead-letter-exchange": exchanges.dlq,
-        "x-dead-letter-routing-key": "pdf.classification.failed",
-        "x-max-retries": 1
-      }
-    });
-    
     // Mapping queues
     await channel.assertQueue(queues.mapCanonical, {
       durable: true,
@@ -290,11 +252,6 @@ async function setupBindings(): Promise<void> {
     await channel.bindQueue(queues.validateMismo, exchanges.validation, "validate.mismo");
     await channel.bindQueue(queues.validateCsv, exchanges.validation, "validate.csv");
     await channel.bindQueue(queues.validateJson, exchanges.validation, "validate.json");
-    await channel.bindQueue(queues.validatePdf, exchanges.validation, "validate.pdf");
-    
-    // PDF processing bindings
-    await channel.bindQueue(queues.pdfOcr, exchanges.validation, "pdf.ocr");
-    await channel.bindQueue(queues.pdfClassification, exchanges.validation, "pdf.classify");
     
     // Mapping exchange bindings
     await channel.bindQueue(queues.mapCanonical, exchanges.mapping, "map.canonical");

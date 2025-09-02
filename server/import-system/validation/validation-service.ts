@@ -13,7 +13,6 @@ import {
   type ImportMappings 
 } from "../../../shared/schema";
 import { eq } from "drizzle-orm";
-import { PDFValidationService } from "./pdf-validation-service";
 
 export interface ValidationResult {
   success: boolean;
@@ -82,11 +81,6 @@ const csvLoanSchema = z.object({
 });
 
 export class ValidationService {
-  private pdfValidationService: PDFValidationService;
-
-  constructor() {
-    this.pdfValidationService = new PDFValidationService();
-  }
   
   /**
    * Validate a CSV file
@@ -230,13 +224,6 @@ export class ValidationService {
         }]
       };
     }
-  }
-
-  /**
-   * Validate a PDF file
-   */
-  async validatePDF(filePath: string): Promise<ValidationResult> {
-    return await this.pdfValidationService.validatePDF(filePath);
   }
 
   /**
