@@ -1,0 +1,676 @@
+tep 12 — Security, Privacy & Compliance Hardening (complete, paste-ready) so engineering only codes and runs. This step delivers end-to-end Zero-Trust guardrails: SSO/OIDC, RBAC + ABAC, Postgres RLS enforcement at runtime, field-level encryption (KMS/Vault envelope), wire-fraud protections, legal hold & retention, tamper-evident audit hash-chain, PII masking, security headers & CSP, service-to-service mTLS stubs, and acceptance tests. No decisions required.
+
+Principles: least privilege; secrets out of code; all access through claims-driven RBAC/ABAC; encrypt PII at rest; redact PII in logs/metrics; immutable/auditable state transitions; explicit approvals for wire instructions; no outreach when evidence exists (Do-Not-Ping already enforced in Step 10).
+
+0) Environment (add/confirm)
+
+.env
+
+# SSO / OIDC
+OIDC_ISSUER_URL=https://YOUR_IDP/.well-known/openid-configuration
+OIDC_CLIENT_ID=loanserve-app
+OIDC_CLIENT_SECRET=xxxx
+OIDC_REDIRECT_URI=https://app.loanserve.io/oauth/callback
+OIDC_SCOPES=openid email profile groups
+
+# JWT verification for API (service tokens)
+JWKS_URL=https://YOUR_ISSUER/.well-known/jwks.json
+JWT_AUDIENCE=loanserve-api
+JWT_ISSUER=https://YOUR_ISSUER/
+
+# RBAC/ABAC policies
+DEFAULT_TENANT_ROLE=viewer
+
+# Vault + KMS (Envelope)
+VAULT_ADDR=https://vault.internal:8200
+VAULT_TOKEN=s.xxxxxx
+VAULT_KV_PATH=kv/data/loanserve
+KMS_KEY_ARN=arn:aws:kms:us-east-1:123456789012:key/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# mTLS (between services; optional if using service mesh)
+MTLS_CA_FILE=/etc/ssl/mtls/ca.crt
+MTLS_CERT_FILE=/etc/ssl/mtls/tls.crt
+MTLS_KEY_FILE=/etc/ssl/mtls/tls.key
+
+# Security headers
+CSP_DEFAULT_SRC='self'
+CSP_IMG_SRC='self data:'
+CSP_CONNECT_SRC='self https://api.openai.com https://vault.internal'
+
+# Data retention
+RETENTION_JOB_CRON=*/15 * * * *
+DEFAULT_RETENTION_DAYS=3650
+
+# DLP/AV (optional ClamAV)
+CLAMAV_HOST=clamav
+CLAMAV_PORT=3310
+
+1) Identity: OIDC SSO and JWT service tokens
+1.1 OIDC login for the web app (Express middleware)
+
+Install
+
+npm i openid-client
+
+
+src/security/oidc.ts
+
+import { Issuer, generators } from "openid-client";
+
+let _client:any;
+export async function getOidcClient() {
+  if (_client) return _client;
+  const issuer = await Issuer.discover(process.env.OIDC_ISSUER_URL!);
+  _client = new issuer.Client({
+    client_id: process.env.OIDC_CLIENT_ID!,
+    client_secret: process.env.OIDC_CLIENT_SECRET!,
+    redirect_uris: [process.env.OIDC_REDIRECT_URI!],
+    response_types: ["code"]
+  });
+  return _client;
+}
+
+export async function startLogin(req:any,res:any) {
+  const client = await getOidcClient();
+  const state = generators.state(); const nonce = generators.nonce();
+  req.session.oidc_state = state; req.session.oidc_nonce = nonce;
+  const url = client.authorizationUrl({
+    scope: process.env.OIDC_SCOPES || "openid email profile",
+    state, nonce
+  });
+  res.redirect(url);
+}
+
+export async function callback(req:any,res:any) {
+  const client = await getOidcClient();
+  const params = client.callbackParams(req);
+  const tokenSet = await client.callback(process.env.OIDC_REDIRECT_URI!, params, {
+    state: req.session.oidc_state,
+    nonce: req.session.oidc_nonce
+  });
+  req.session.user = tokenSet.claims(); // contains sub, email, groups, etc.
+  res.redirect("/app");
+}
+
+
+Wire routes (web auth only; API uses JWT below):
+
+src/routes/oidc.routes.ts
+
+import { Router } from "express";
+import { startLogin, callback } from "../security/oidc";
+export const oidcRouter = Router();
+oidcRouter.get("/auth/login", startLogin);
+oidcRouter.get("/oauth/callback", callback);
+
+1.2 API JWT verification (for service tokens & SPA bearer)
+
+Install
+
+npm i jwks-rsa jsonwebtoken
+
+
+src/security/jwt.ts
+
+import jwksClient from "jwks-rsa";
+import jwt from "jsonwebtoken";
+
+const client = jwksClient({ jwksUri: process.env.JWKS_URL! });
+
+function getKey(header:any, callback:any){
+  client.getSigningKey(header.kid, (err, key)=>{
+    if (err) return callback(err);
+    const signingKey = (key as any).getPublicKey();
+    callback(null, signingKey);
+  });
+}
+
+export function verifyJwt(token:string){
+  return new Promise((resolve,reject)=>{
+    jwt.verify(token, getKey, {
+      audience: process.env.JWT_AUDIENCE,
+      issuer: process.env.JWT_ISSUER,
+      algorithms: ["RS256"]
+    }, (err, decoded)=> err ? reject(err) : resolve(decoded));
+  });
+}
+
+// Express middleware
+export function requireAuth() {
+  return async (req:any,res:any,next:any)=>{
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    if (!token) return res.status(401).json({ error:"missing token" });
+    try {
+      const claims:any = await verifyJwt(token);
+      req.user = { sub: claims.sub, email: claims.email, roles: claims.roles || claims["https://loanserve.io/roles"] || [], groups: claims.groups || [] };
+      next();
+    } catch (e) {
+      res.status(401).json({ error:"invalid token" });
+    }
+  };
+}
+
+2) RBAC + ABAC + RLS: enforce at API & DB
+2.1 Roles matrix (no decisions: fixed)
+
+admin: full access within tenant.
+
+investor.admin: manage exports/templates/webhooks for tenant.
+
+investor.operator: resolve conflicts, run QC/exports.
+
+investor.viewer: read-only.
+
+escrow.operator: upload docs, view extraction/QC, cannot export.
+
+borrower: limited self-service (upload missing items if enabled).
+
+src/security/rbac.ts
+
+type Role = "admin"|"investor.admin"|"investor.operator"|"investor.viewer"|"escrow.operator"|"borrower";
+
+const PERMS: Record<string, Role[]> = {
+  "loan:read": ["admin","investor.admin","investor.operator","investor.viewer","escrow.operator"],
+  "loan:write": ["admin","investor.admin","investor.operator","escrow.operator"],
+  "export:run": ["admin","investor.admin","investor.operator"],
+  "qc:run": ["admin","investor.admin","investor.operator"],
+  "notify:request": ["admin","investor.admin","investor.operator","escrow.operator"],
+  "docs:upload": ["admin","investor.admin","escrow.operator"]
+};
+
+export function hasPerm(user:any, perm:string){ 
+  const roles:Role[] = user?.roles || [];
+  const allowed = PERMS[perm] || [];
+  return roles.some((r:Role)=> allowed.includes(r));
+}
+
+export function requirePerm(perm:string){
+  return (req:any,res:any,next:any)=>{
+    if (!hasPerm(req.user, perm)) return res.status(403).json({ error:"forbidden" });
+    next();
+  };
+}
+
+2.2 ABAC policies (data-attribute checks)
+
+Tenant scoping: every request must specify tenant_id (from JWT claims or session) and set app.tenant_id prior to DB use (RLS is already in place from earlier steps).
+
+Ownership: restrict certain actions to loans a user “owns” via loan_acl.
+
+migrations/012_abac_acl.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS loan_acl (
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  user_sub text NOT NULL,                 -- from OIDC/JWT sub
+  roles text[] NOT NULL DEFAULT ARRAY['viewer'],
+  PRIMARY KEY (tenant_id, loan_id, user_sub)
+);
+
+-- Optional RLS policy examples (if you want additional guard beyond tenant)
+-- Example: only allow read if user is in ACL for that loan
+-- (requires setting app.user_sub as well as app.tenant_id if you enable)
+-- ALTER TABLE loan_candidates ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY p_lc_user_acl ON loan_candidates
+--   USING (id IN (SELECT loan_id FROM loan_acl WHERE user_sub = current_setting('app.user_sub', true)));
+COMMIT;
+
+
+src/security/abac.ts
+
+export function setTenantAndUserContext() {
+  return async (req:any,_res:any,next:any)=>{
+    // set req.tenant.id earlier from your tenancy resolver
+    req.dbContext = { tenantId: req.tenant.id, userSub: req.user?.sub || "system" };
+    next();
+  };
+}
+
+
+Use when you acquire DB connections (you already do for app.tenant_id):
+
+await client.query(`SET LOCAL app.tenant_id = $1`, [req.dbContext.tenantId]);
+// Optional if enabling per-user ACL RLS:
+// await client.query(`SET LOCAL app.user_sub = $1`, [req.dbContext.userSub]);
+
+3) Field-level encryption (Envelope: KMS KEK + Vault-stored DEK)
+
+Install
+
+npm i @aws-sdk/client-kms axios
+
+
+src/security/crypto.ts
+
+import { KMSClient, GenerateDataKeyCommand, DecryptCommand } from "@aws-sdk/client-kms";
+import axios from "axios";
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+
+const kms = new KMSClient({ region: process.env.AWS_REGION });
+
+/** Retrieve or create a per-tenant DEK encrypted by KMS (store in Vault). */
+export async function getTenantDEK(tenantId:string): Promise<{ plaintext:Buffer, ciphertext:Buffer }> {
+  // 1) Try Vault
+  const path = `${process.env.VAULT_ADDR}/v1/${process.env.VAULT_KV_PATH}/tenants/${tenantId}/dek`;
+  try {
+    const r = await axios.get(path,{ headers:{ "X-Vault-Token": process.env.VAULT_TOKEN }});
+    const ct = Buffer.from(r.data.data.data.ciphertext, "base64");
+    // decrypt DEK via KMS
+    const dec = await kms.send(new DecryptCommand({ CiphertextBlob: ct }));
+    return { plaintext: Buffer.from(dec.Plaintext as Uint8Array), ciphertext: ct };
+  } catch {
+    // 2) Generate new DEK
+    const gen = await kms.send(new GenerateDataKeyCommand({ KeyId: process.env.KMS_KEY_ARN!, KeySpec: "AES_256" }));
+    const pt = Buffer.from(gen.Plaintext as Uint8Array);
+    const ct = Buffer.from(gen.CiphertextBlob as Uint8Array);
+    // store ciphertext in Vault
+    await axios.post(path, { data: { ciphertext: ct.toString("base64") } }, { headers:{ "X-Vault-Token": process.env.VAULT_TOKEN }});
+    return { plaintext: pt, ciphertext: ct };
+  }
+}
+
+/** AEAD (AES-256-GCM) encrypt a string; returns base64 payload: iv.ciphertext.tag */
+export async function enc(tenantId:string, plaintext:string, aad:string){
+  const { plaintext: dek } = await getTenantDEK(tenantId);
+  const key = dek; // 32 bytes
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+  cipher.setAAD(Buffer.from(aad));
+  const ct = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf-8")), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, ct, tag]).toString("base64");
+}
+
+/** Decrypt a base64 payload produced by enc() */
+export async function dec(tenantId:string, b64:string, aad:string){
+  const { plaintext: dek } = await getTenantDEK(tenantId);
+  const key = dek;
+  const raw = Buffer.from(b64, "base64");
+  const iv = raw.subarray(0,12); const tag = raw.subarray(raw.length-16);
+  const ct = raw.subarray(12, raw.length-16);
+  const decipher = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+  decipher.setAAD(Buffer.from(aad)); decipher.setAuthTag(tag);
+  const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+  return pt.toString("utf-8");
+}
+
+/** Tokenize: get SHA-256 for deterministic matching (e.g., SSN last4) without revealing value */
+export function tokenize(value:string){ return createHash("sha256").update(value).digest("hex"); }
+
+3.1 Encrypt PII columns
+
+Add encrypted columns where needed (e.g., SSN, DOB, emails, phones). You already added fields to loan_datapoints; for more structured PII tables, use:
+
+migrations/013_encrypt_pii.sql
+
+BEGIN;
+-- Example borrower PII table
+CREATE TABLE IF NOT EXISTS pii_borrowers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  email_enc text NULL,    -- enc() base64
+  email_tok text NULL,    -- tokenize(email) for search
+  phone_enc text NULL,
+  phone_tok text NULL,
+  ssn_last4_enc text NULL,
+  ssn_last4_tok text NULL,
+  dob_enc text NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE pii_borrowers ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_pii_tenant ON pii_borrowers
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE INDEX IF NOT EXISTS idx_pii_borrowers_tok_email ON pii_borrowers(email_tok);
+CREATE INDEX IF NOT EXISTS idx_pii_borrowers_tok_phone ON pii_borrowers(phone_tok);
+COMMIT;
+
+
+src/repo.pii.ts
+
+import { Pool } from "pg";
+import { enc, tokenize } from "./security/crypto";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function upsertBorrowerPII(tenantId:string, loanId:string, input:{ email?:string, phone?:string, ssn_last4?:string, dob?:string }) {
+  const email_enc = input.email ? await enc(tenantId, input.email, `email:${loanId}`) : null;
+  const phone_enc = input.phone ? await enc(tenantId, input.phone, `phone:${loanId}`) : null;
+  const ssn_enc = input.ssn_last4 ? await enc(tenantId, input.ssn_last4, `ssn:${loanId}`) : null;
+  const dob_enc = input.dob ? await enc(tenantId, input.dob, `dob:${loanId}`) : null;
+
+  const email_tok = input.email ? tokenize(input.email.toLowerCase()) : null;
+  const phone_tok = input.phone ? tokenize(input.phone.replace(/[^\d]/g,"")) : null;
+  const ssn_tok = input.ssn_last4 ? tokenize(input.ssn_last4) : null;
+
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    await client.query(`
+      INSERT INTO pii_borrowers (tenant_id, loan_id, email_enc, email_tok, phone_enc, phone_tok, ssn_last4_enc, ssn_last4_tok, dob_enc)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ON CONFLICT (loan_id) DO UPDATE SET
+        email_enc=COALESCE(EXCLUDED.email_enc,pii_borrowers.email_enc),
+        email_tok=COALESCE(EXCLUDED.email_tok,pii_borrowers.email_tok),
+        phone_enc=COALESCE(EXCLUDED.phone_enc,pii_borrowers.phone_enc),
+        phone_tok=COALESCE(EXCLUDED.phone_tok,pii_borrowers.phone_tok),
+        ssn_last4_enc=COALESCE(EXCLUDED.ssn_last4_enc,pii_borrowers.ssn_last4_enc),
+        ssn_last4_tok=COALESCE(EXCLUDED.ssn_last4_tok,pii_borrowers.ssn_last4_tok),
+        dob_enc=COALESCE(EXCLUDED.dob_enc,pii_borrowers.dob_enc)
+    `, [tenantId, loanId, email_enc, email_tok, phone_enc, phone_tok, ssn_enc, ssn_tok, dob_enc]);
+  } finally { client.release(); }
+}
+
+4) Wire-fraud protections (immutable wire instructions + approvals)
+4.1 Data model & trigger to block edits after approval
+
+migrations/014_wire_instructions.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS wire_instructions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  routing_number text NOT NULL,
+  account_number_enc text NOT NULL,   -- encrypted via enc()
+  account_number_tok text NOT NULL,   -- tokenize(account_number) for fraud heuristics
+  beneficiary_name text NOT NULL,
+  bank_name text NOT NULL,
+  status text NOT NULL CHECK (status IN ('draft','approved','locked')) DEFAULT 'draft',
+  approved_by uuid NULL,
+  approved_at timestamptz NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE wire_instructions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_wire_tenant ON wire_instructions USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+-- Block updates once locked (except auditing fields)
+CREATE OR REPLACE FUNCTION deny_wire_edits_when_locked() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status='locked' THEN
+    RAISE EXCEPTION 'Wires are immutable after lock';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_deny_wire_edits WHEN ON wire_instructions;
+CREATE TRIGGER trg_deny_wire_edits BEFORE UPDATE ON wire_instructions
+FOR EACH ROW EXECUTE FUNCTION deny_wire_edits_when_locked();
+COMMIT;
+
+
+src/repo.wires.ts
+
+import { Pool } from "pg";
+import { enc, tokenize } from "./security/crypto";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function createOrUpdateWire(tenantId:string, loanId:string, input:any){
+  const acctEnc = await enc(tenantId, input.account_number, `wire:${loanId}`);
+  const acctTok = tokenize(input.account_number);
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    const r = await client.query(`
+      INSERT INTO wire_instructions (tenant_id, loan_id, routing_number, account_number_enc, account_number_tok, beneficiary_name, bank_name, status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,'draft')
+      ON CONFLICT (loan_id) DO UPDATE SET
+        routing_number=$3, account_number_enc=$4, account_number_tok=$5, beneficiary_name=$6, bank_name=$7, updated_at=now()
+      RETURNING *
+    `, [tenantId, loanId, input.routing_number, acctEnc, acctTok, input.beneficiary_name, input.bank_name]);
+    return r.rows[0];
+  } finally { client.release(); }
+}
+
+export async function approveWire(tenantId:string, loanId:string, approverId:string){
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    await client.query(`UPDATE wire_instructions SET status='locked', approved_by=$3, approved_at=now() WHERE loan_id=$2`, [tenantId, loanId, approverId]);
+  } finally { client.release(); }
+}
+
+
+QC rule QC043 you added earlier already flags edits after approval; this DB trigger hard-blocks them.
+
+5) Legal hold & retention
+
+migrations/015_legal_hold_retention.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS legal_holds (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  reason text NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS retention_policies (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  table_name text NOT NULL,
+  days integer NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tenant_id, table_name)
+);
+COMMIT;
+
+
+src/jobs/retention.ts
+
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function runRetentionJob() {
+  const client = await pool.connect();
+  try {
+    // Example: delete notification_events older than retention unless loan is under legal hold
+    const pol = await client.query(`SELECT * FROM retention_policies WHERE enabled=true`);
+    for (const p of pol.rows) {
+      const table = p.table_name;
+      const days = Number(p.days);
+      if (table === "notification_events") {
+        await client.query(`
+          DELETE FROM notification_events e
+          USING notifications n
+          LEFT JOIN legal_holds lh ON lh.tenant_id=n.tenant_id AND lh.loan_id=n.loan_id AND lh.active=true
+          WHERE e.notification_id=n.id
+            AND lh.id IS NULL
+            AND e.ts < now() - ($1 || ' days')::interval
+        `, [days]);
+      }
+      // Add more tables as needed…
+    }
+  } finally { client.release(); }
+}
+
+
+Schedule with your job runner/cron using RETENTION_JOB_CRON.
+
+6) Tamper-evident audit log (hash-chain)
+
+migrations/016_audit_hashchain.sql
+
+BEGIN;
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS prev_hash text NULL;
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS entry_hash text NULL;
+
+CREATE OR REPLACE FUNCTION audit_chain() RETURNS trigger AS $$
+DECLARE
+  last_hash text;
+  payload text;
+BEGIN
+  SELECT entry_hash INTO last_hash FROM audits WHERE actor_id = NEW.actor_id ORDER BY ts DESC LIMIT 1;
+  payload := coalesce(NEW.action,'') || '|' || coalesce(NEW.target_type,'') || '|' || coalesce(NEW.target_id::text,'') || '|' || coalesce(NEW.metadata::text,'') || '|' || coalesce(NEW.ts::text,'');
+  NEW.prev_hash := last_hash;
+  NEW.entry_hash := encode(digest(coalesce(last_hash,'') || '|' || payload, 'sha256'), 'hex');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_audit_chain ON audits;
+CREATE TRIGGER trg_audit_chain BEFORE INSERT ON audits
+FOR EACH ROW EXECUTE FUNCTION audit_chain();
+COMMIT;
+
+
+(Use SELECT entry_hash FROM audits ORDER BY ts to verify the chain; any tampering breaks recomputation.)
+
+7) Security headers & CSP
+
+Install
+
+npm i helmet
+
+
+src/security/headers.ts
+
+import helmet from "helmet";
+
+export function secureHeaders(){
+  return helmet({
+    referrerPolicy: { policy: "no-referrer" },
+    frameguard: { action: "deny" },
+    xssFilter: true,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": [ "'self'" ],
+        "img-src": [ "'self'", "data:" ],
+        "connect-src": [ "'self'", "https://api.openai.com", "https://vault.internal" ]
+      }
+    }
+  });
+}
+
+
+In server boot:
+
+import { secureHeaders } from "./security/headers";
+app.use(secureHeaders());
+
+8) Service-to-service mTLS (Node HTTPS agent stub)
+
+src/security/mtls.ts
+
+import fs from "fs";
+import https from "https";
+
+export function mtlsAgent(){
+  const ca = fs.readFileSync(process.env.MTLS_CA_FILE!);
+  const cert = fs.readFileSync(process.env.MTLS_CERT_FILE!);
+  const key = fs.readFileSync(process.env.MTLS_KEY_FILE!);
+  return new https.Agent({ ca, cert, key, rejectUnauthorized: true });
+}
+
+
+Use with fetch to internal services:
+
+const agent = mtlsAgent();
+const res = await fetch("https://internal.service.local/healthz", { dispatcher: agent as any });
+
+
+(If you use a service mesh, this is not needed—leave as no-op.)
+
+9) PII masking in logs & metrics
+
+src/security/redact.ts
+
+export function redactPII(s:string){
+  return s
+    .replace(/([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g, "***@***")
+    .replace(/\b\d{3}[-.\s]?\d{2}[-.\s]?\d{4}\b/g, "***-**-****") // SSN
+    .replace(/\b\d{10,16}\b/g, "************"); // generic numbers
+}
+
+export function safeLog(obj:any){
+  const json = JSON.stringify(obj);
+  console.log(redactPII(json));
+}
+
+
+Replace direct console.log(err) with safeLog({ msg:"error", err }).
+
+10) DLP/AV for uploads (optional ClamAV)
+
+Install
+
+npm i clamav.js
+
+
+src/security/av.ts
+
+import clamav from "clamav.js";
+export async function scanBuffer(buf:Buffer){
+  return new Promise<void>((resolve,reject)=>{
+    clamav.ping(process.env.CLAMAV_PORT || 3310, process.env.CLAMAV_HOST || "clamav", 1000, (err:any)=>{
+      if (err) return reject(new Error("ClamAV not reachable"));
+      clamav.createScanner(process.env.CLAMAV_PORT || 3310, process.env.CLAMAV_HOST || "clamav")
+        .scan(buf, (err:any, object:any, malicious:any)=>{
+          if (err) return reject(err);
+          if (malicious) return reject(new Error("Virus detected"));
+          resolve();
+        });
+    });
+  });
+}
+
+
+Use in upload path before persisting.
+
+11) Acceptance tests (security)
+
+tests/security.acceptance.test.ts
+
+import { enc, dec, tokenize } from "../src/security/crypto";
+import { hasPerm } from "../src/security/rbac";
+
+it("encryption roundtrip works", async ()=>{
+  const tenantId="00000000-0000-0000-0000-000000000000";
+  const ct = await enc(tenantId, "john@example.com", "email:test");
+  const pt = await dec(tenantId, ct, "email:test");
+  expect(pt).toBe("john@example.com");
+  expect(tokenize("john@example.com")).toHaveLength(64);
+});
+
+it("RBAC denies disallowed permissions", ()=>{
+  const user={ roles:["investor.viewer"] };
+  expect(hasPerm(user, "export:run")).toBe(false);
+  expect(hasPerm(user, "loan:read")).toBe(true);
+});
+
+12) What engineering must not change
+
+RBAC permission strings and roles matrix are authoritative.
+
+RLS (SET LOCAL app.tenant_id) MUST be set on every DB operation.
+
+Encryption must use envelope (KMS DEK via Vault); never store plaintext PII.
+
+Wire instructions once locked are immutable (both DB trigger and QC rule enforce).
+
+Audit hash-chain cannot be disabled; every insert must compute entry_hash.
+
+Security headers and PII redaction must remain enabled in all environments (dev/test/prod).
+
+13) Quick verification checklist
+
+OIDC login works; JWT API requests verify with JWKS; RBAC blocks unauthorized actions.
+
+DB connections always set app.tenant_id; RLS rejects cross-tenant access.
+
+PII stored encrypted; tokenized indices support search; logs contain redacted values.
+
+Wire instruction edit after approval → DB error; QC043 flags any attempted change.
+
+Legal hold prevents retention job from deleting records.
+
+Audit log hash-chain recomputes cleanly; any manual tamper breaks it.
+
+CSP/headers present in responses; mTLS agent callable in internal requests.

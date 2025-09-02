@@ -133,39 +133,41 @@ export async function getPaymentStats() {
  */
 export async function getNotificationStats() {
   try {
-    // Query notifications using the actual schema columns
+    // Query notifications using columns that actually exist in the current database
     const result = await db.execute(sql`
       SELECT 
-        COUNT(CASE WHEN sent_at IS NOT NULL THEN 1 END) as sent,
-        COUNT(CASE WHEN sent_at IS NULL AND scheduled_for < NOW() THEN 1 END) as pending,
         COUNT(CASE WHEN email_sent = true THEN 1 END) as emails_sent,
-        COUNT(CASE WHEN sms_sent = true THEN 1 END) as sms_sent
+        COUNT(CASE WHEN sms_sent = true THEN 1 END) as sms_sent,
+        COUNT(CASE WHEN is_read = true THEN 1 END) as read_notifications,
+        COUNT(*) as total_notifications
       FROM notifications
       WHERE created_at > NOW() - INTERVAL '1 hour'
     `);
 
-    const sent = parseInt(result.rows[0]?.sent as string) || 0;
-    const pending = parseInt(result.rows[0]?.pending as string) || 0;
     const emailsSent = parseInt(result.rows[0]?.emails_sent as string) || 0;
     const smsSent = parseInt(result.rows[0]?.sms_sent as string) || 0;
+    const readNotifications = parseInt(result.rows[0]?.read_notifications as string) || 0;
+    const totalNotifications = parseInt(result.rows[0]?.total_notifications as string) || 0;
 
     // Record to counters
-    if (sent > 0) {
-      recordMetric(notificationSentCounter, sent, {});
+    if (emailsSent > 0) {
+      recordMetric(notificationSentCounter, emailsSent, { type: 'email' });
     }
-    if (pending > 0) {
-      recordMetric(notificationFailedCounter, pending, {});
+    if (smsSent > 0) {
+      recordMetric(notificationSentCounter, smsSent, { type: 'sms' });
     }
 
     return { 
-      sent, 
-      failed: pending, // Consider pending as failed for backwards compatibility
+      sent: emailsSent + smsSent, 
+      failed: Math.max(0, totalNotifications - emailsSent - smsSent),
       emailsSent,
-      smsSent 
+      smsSent,
+      readNotifications,
+      totalNotifications
     };
   } catch (error) {
     console.error('[MetricsCollector] Failed to get notification stats:', error);
-    return { sent: 0, failed: 0 };
+    return { sent: 0, failed: 0, emailsSent: 0, smsSent: 0, readNotifications: 0, totalNotifications: 0 };
   }
 }
 
