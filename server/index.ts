@@ -120,6 +120,13 @@ app.use((req, res, next) => {
   // Start metrics collection
   startMetricsCollection();
   console.log('[Server] Metrics collection started');
+
+  // Start RabbitMQ queue monitoring
+  const { startRmqPoller } = await import('../src/monitoring/rmqPoller');
+  if ((process.env.METRICS_ENABLED || "true") === "true") {
+    startRmqPoller();
+    console.log('[Server] RabbitMQ queue monitoring started');
+  }
   
   // Start CRM notification checks (run every hour)
   try {

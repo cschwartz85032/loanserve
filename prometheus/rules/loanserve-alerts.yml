@@ -1,0 +1,42 @@
+groups:
+- name: loanserve-alerts
+  rules:
+  - alert: RMQDLQBacklog
+    expr: sum(loanserve_rmq_dlq_depth) > 0
+    for: 10m
+    labels: { severity: page }
+    annotations:
+      summary: "DLQ backlog detected"
+      description: "One or more DLQs have messages for >10m. Investigate workers."
+
+  - alert: PipelineSlow
+    expr: histogram_quantile(0.95, sum(rate(loanserve_stage_duration_seconds_bucket[10m])) by (le,stage)) > 300
+    for: 15m
+    labels: { severity: page }
+    annotations:
+      summary: "Pipeline stage duration p95 > 5m"
+      description: "Stage {{ $labels.stage }} p95 > 5m for 15m."
+
+  - alert: ExportFailureSpike
+    expr: sum(rate(loanserve_export_failure_total[10m])) > 5
+    for: 10m
+    labels: { severity: page }
+    annotations:
+      summary: "Export failures spiking"
+      description: "More than 5 export failures in 10m."
+
+  - alert: DNPZero
+    expr: increase(loanserve_dnp_prevented_total[24h]) == 0
+    for: 24h
+    labels: { severity: ticket }
+    annotations:
+      summary: "DNP prevented count is zero in 24h"
+      description: "Check Do-Not-Ping guard; may be disabled or malfunctioning."
+
+  - alert: QCHighCritical
+    expr: sum(loanserve_qc_defects_open{severity="Critical"}) > 0
+    for: 30m
+    labels: { severity: page }
+    annotations:
+      summary: "Critical QC defects remain open"
+      description: "Critical defects open for >30m. Assign QC-Ops."

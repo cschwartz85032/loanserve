@@ -1,0 +1,53 @@
+{
+  "title": "LoanServe • Pipeline Health",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Stage Duration (p95 seconds)",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(loanserve_stage_duration_seconds_bucket[5m])) by (le,stage))" }
+      ],
+      "legend": { "show": true }
+    },
+    {
+      "type": "graph",
+      "title": "Queue Depth",
+      "targets": [
+        { "expr": "loanserve_rmq_queue_depth" },
+        { "expr": "loanserve_rmq_dlq_depth" }
+      ],
+      "legend": { "show": true }
+    },
+    {
+      "type": "graph",
+      "title": "Extraction Confidence (p50)",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(loanserve_extract_confidence_bucket[10m])) by (le))" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "DNP Prevented (sum)",
+      "targets": [
+        { "expr": "sum(loanserve_dnp_prevented_total)" }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "QC Defects Open by Severity",
+      "targets": [
+        { "expr": "sum(loanserve_qc_defects_open) by (severity)" }
+      ],
+      "legend": { "show": true }
+    },
+    {
+      "type": "stat",
+      "title": "Export Success Rate (5m)",
+      "targets": [
+        { "expr": "sum(rate(loanserve_export_success_total[5m])) / (sum(rate(loanserve_export_success_total[5m])) + sum(rate(loanserve_export_failure_total[5m])))" }
+      ]
+    }
+  ],
+  "time": { "from": "now-6h", "to": "now" },
+  "schemaVersion": 36
+}

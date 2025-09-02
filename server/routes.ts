@@ -33,6 +33,8 @@ import { qcRouter } from "../src/routes/qc.routes";
 import { exportRouter } from "../src/routes/export.routes";
 import { notificationRouter } from "../src/routes/notification.routes";
 import { storageRoutes } from "../src/routes/storage.routes";
+import { metricsRouter } from "../src/routes/metrics.routes";
+import { withHttpMetrics } from "../src/monitoring/httpMetrics";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -106,6 +108,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Setup authentication
   await setupAuth(app);
+
+  // Add HTTP metrics middleware
+  app.use(withHttpMetrics());
 
   // Apply global middleware for policy engine (must be after auth setup)
   // Only apply to API routes to avoid blocking frontend HTML serving
@@ -1619,6 +1624,9 @@ To implement full file serving:
 
   // Register Storage test routes
   app.use('/api/storage', storageRoutes);
+
+  // Register Prometheus metrics routes
+  app.use('/', metricsRouter);
 
   const httpServer = createServer(app);
   return httpServer;

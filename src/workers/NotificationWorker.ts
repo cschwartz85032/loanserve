@@ -2,6 +2,8 @@
 // Handles retries, dead letter queues, and batch processing
 
 import { requestNotification, type NotificationRequest } from "../notifications/service";
+import { stageStart, stageComplete } from "../monitoring/stage";
+import { dnpPrevented } from "../monitoring/metrics";
 
 /**
  * Notification Worker for processing notification requests
@@ -39,15 +41,28 @@ export class NotificationWorker {
     try {
       console.log(`[NotificationWorker] Processing notification: ${request.templateCode} -> ${request.toAddress}`);
       
+      // Track notification stage start
+      stageStart(request.loanId || "unknown", "notify");
+      
       const result = await requestNotification(request);
       
       if (result) {
         console.log(`[NotificationWorker] Notification ${result.id} ${result.status}`);
+        
+        // Track DNP prevention if notification was suppressed
+        if (result.status === 'suppressed' && result.reason === 'DoNotPingPolicy') {
+          dnpPrevented.labels(request.templateCode).inc();
+        }
+        
         if (result.reason) {
           console.log(`[NotificationWorker] Reason: ${result.reason}`);
         }
+        
+        // Track notification stage completion
+        stageComplete(request.loanId || "unknown", "notify");
       } else {
         console.log(`[NotificationWorker] Notification skipped (duplicate)`);
+        stageComplete(request.loanId || "unknown", "notify");
       }
     } catch (error: any) {
       console.error(`[NotificationWorker] Failed to process notification:`, error);

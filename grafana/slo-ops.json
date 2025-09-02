@@ -1,0 +1,70 @@
+{
+  "title": "LoanServe • SLOs & Ops",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Finalize p50 (days)",
+      "targets": [
+        { "expr": "quantile_over_time(0.50, (vx_finalize_days_to_export)[1d])" }
+      ],
+      "description": "Use a SQL datasource mapped to view vx_pipeline_lead_time; create a Grafana variable or transform named vx_finalize_days_to_export = avg_over_time(days_to_export[1d])"
+    },
+    {
+      "type": "graph",
+      "title": "QC MTTR (hours)",
+      "targets": [
+        { "expr": "avg_over_time(vx_qc_mttr_hours[1d])" }
+      ],
+      "description": "Requires SQL datasource for vx_qc_mttr view"
+    },
+    {
+      "type": "graph",
+      "title": "DNP Savings per Loan",
+      "targets": [
+        { "expr": "avg_over_time(vx_dnp_prevented_per_loan[1d])" }
+      ],
+      "description": "Requires SQL datasource for vx_dnp_savings view"
+    },
+    {
+      "type": "graph",
+      "title": "HTTP Request Duration",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(loanserve_http_request_duration_seconds_bucket[5m])) by (le,method))" }
+      ],
+      "legend": { "show": true }
+    },
+    {
+      "type": "stat",
+      "title": "Open Critical Defects",
+      "targets": [
+        { "expr": "sum(loanserve_qc_defects_open{severity=\"Critical\"})" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "graph",
+      "title": "Queue Health",
+      "targets": [
+        { "expr": "loanserve_rmq_queue_depth" },
+        { "expr": "loanserve_rmq_dlq_depth" }
+      ],
+      "legend": { "show": true },
+      "yAxes": [
+        { "label": "Message Count", "logBase": 1 }
+      ]
+    }
+  ],
+  "time": { "from": "now-24h", "to": "now" },
+  "schemaVersion": 36
+}

@@ -9,6 +9,8 @@ import {
   loadCanonicalWithEvidence 
 } from "../repo/exports";
 import { createHash } from "crypto";
+import { stageStart, stageComplete } from "../monitoring/stage";
+import { exportSuccess, exportFailure } from "../monitoring/metrics";
 
 /**
  * Export Worker for processing loan export requests
@@ -53,6 +55,9 @@ export class ExportWorker {
     try {
       console.log(`[ExportWorker] Processing export request for loan ${loanId}, template ${template}`);
       
+      // Track export stage start
+      stageStart(loanId, "export");
+      
       // Create export record
       const exportRecord = await createExport(tenantId, loanId, template, requestedBy);
       const exportId = exportRecord.id;
@@ -83,6 +88,10 @@ export class ExportWorker {
       // Emit webhook (simplified for now)
       await this.emitWebhook(tenantId, exportId, fileUri, exportResult.sha256, template);
       
+      // Track export success
+      exportSuccess.labels(template).inc();
+      stageComplete(loanId, "export");
+      
       console.log(`[ExportWorker] Export completed for loan ${loanId}:`, {
         exportId,
         template,
@@ -100,6 +109,9 @@ export class ExportWorker {
       
     } catch (error: any) {
       console.error(`[ExportWorker] Export failed for loan ${loanId}:`, error);
+      
+      // Track export failure
+      exportFailure.labels(template).inc();
       
       // Mark as failed
       const exportId = `export-${Date.now()}`;

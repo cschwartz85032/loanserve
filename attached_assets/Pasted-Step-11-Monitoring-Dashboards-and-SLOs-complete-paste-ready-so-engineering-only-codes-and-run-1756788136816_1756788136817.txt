@@ -1,0 +1,572 @@
+Step 11 — Monitoring, Dashboards, and SLOs (complete, paste-ready) so engineering only codes and runs. This step gives you production-grade observability across the whole onboarding pipeline (imports → split → OCR → extract → QC → export → notifications), with Prometheus metrics, Grafana dashboards, alert rules, queue/DLQ monitors, API health, business KPIs, and incident webhooks. No decisions required—just paste and wire.
+
+0) Environment (add/confirm)
+
+.env
+
+# Prometheus scrape is via /metrics; no creds here by default
+METRICS_ENABLED=true
+
+# RabbitMQ Management API for queue depth (read-only user ideal)
+RMQ_MGMT_URL=http://rabbitmq:15672/api
+RMQ_MGMT_USER=monitor
+RMQ_MGMT_PASS=monitor_password
+RMQ_VHOST=/
+
+# Alerting webhooks (Slack/Teams/Email relay)
+ALERT_WEBHOOK_URL=https://example.com/ops-webhook
+
+# SLO targets
+SLO_PIPELINE_FINALIZE_P50_DAYS=2
+SLO_QC_MTTR_HOURS=8
+SLO_DNPS_PREVENTED_PER_LOAN=5
+
+1) Metrics Registry (centralize all counters/gauges/histograms)
+
+Install
+
+npm i prom-client
+
+
+src/monitoring/metrics.ts
+
+import client from "prom-client";
+
+// Enable collection of default Node process metrics
+if ((process.env.METRICS_ENABLED || "true") === "true") {
+  client.collectDefaultMetrics({ prefix: "loanserve_node_" });
+}
+
+// ------------- Pipeline stage metrics -------------
+export const pipelineStageStarted = new client.Counter({
+  name: "loanserve_stage_started_total",
+  help: "Pipeline stages started",
+  labelNames: ["stage"] // import, split, ocr, extract, qc, export, notify
+});
+
+export const pipelineStageCompleted = new client.Counter({
+  name: "loanserve_stage_completed_total",
+  help: "Pipeline stages completed",
+  labelNames: ["stage"]
+});
+
+export const pipelineStageDuration = new client.Histogram({
+  name: "loanserve_stage_duration_seconds",
+  help: "Stage duration seconds (e2e per loan/stage)",
+  labelNames: ["stage"],
+  buckets: [1, 3, 5, 10, 30, 60, 120, 300, 900, 1800]
+});
+
+// ------------- Confidence & HITL -------------
+export const extractConfidence = new client.Histogram({
+  name: "loanserve_extract_confidence",
+  help: "Distribution of extraction confidences",
+  labelNames: ["key","source"], // InterestRate|NoteAmount... + deterministic|ai_doc|payload|vendor
+  buckets: [0.5,0.6,0.7,0.8,0.9,0.95,0.99,1.0]
+});
+
+export const hitlConflicts = new client.Counter({
+  name: "loanserve_hitl_conflicts_total",
+  help: "Count of conflicts requiring HITL",
+  labelNames: ["key"]
+});
+
+// ------------- Quality Control -------------
+export const qcDefectsOpen = new client.Gauge({
+  name: "loanserve_qc_defects_open",
+  help: "Open QC defects",
+  labelNames: ["rule_code","severity"] // QC001..; Low|Medium|High|Critical
+});
+
+// Rolling MTTR timer; record seconds to resolution per defect
+export const qcDefectResolution = new client.Histogram({
+  name: "loanserve_qc_defect_resolution_seconds",
+  help: "Time to resolve QC defects",
+  labelNames: ["rule_code","severity"],
+  buckets: [600,1800,3600,14400,28800,86400,172800] // 10m..2d
+});
+
+// ------------- Do-Not-Ping savings -------------
+export const dnpPrevented = new client.Counter({
+  name: "loanserve_dnp_prevented_total",
+  help: "Count of notifications suppressed by Do-Not-Ping",
+  labelNames: ["template_code"]
+});
+
+// ------------- RabbitMQ queue health -------------
+export const rmqQueueDepth = new client.Gauge({
+  name: "loanserve_rmq_queue_depth",
+  help: "RabbitMQ queue message count",
+  labelNames: ["queue"]
+});
+
+export const rmqQueueDlqDepth = new client.Gauge({
+  name: "loanserve_rmq_dlq_depth",
+  help: "RabbitMQ DLQ message count",
+  labelNames: ["queue"]
+});
+
+// ------------- Exports -------------
+export const exportSuccess = new client.Counter({
+  name: "loanserve_export_success_total",
+  help: "Successful exports",
+  labelNames: ["template"] // fannie|freddie|custom
+});
+
+export const exportFailure = new client.Counter({
+  name: "loanserve_export_failure_total",
+  help: "Failed exports",
+  labelNames: ["template"]
+});
+
+// ------------- API health (requests, latencies) -------------
+export const httpRequestDuration = new client.Histogram({
+  name: "loanserve_http_request_duration_seconds",
+  help: "HTTP request duration",
+  labelNames: ["method","route","code"],
+  buckets: [0.03,0.05,0.1,0.2,0.5,1,2,5]
+});
+
+export { client };
+
+
+Wire an express middleware to record API latencies:
+
+src/monitoring/httpMetrics.ts
+
+import { httpRequestDuration } from "./metrics";
+
+export function withHttpMetrics() {
+  return (req:any,res:any,next:any)=>{
+    const start = process.hrtime.bigint();
+    res.on("finish", ()=>{
+      const dur = Number((process.hrtime.bigint() - start) / BigInt(1e9)); // seconds int
+      httpRequestDuration.labels(req.method, req.route?.path || req.path, String(res.statusCode)).observe(dur);
+    });
+    next();
+  };
+}
+
+
+In your main server boot:
+
+import { withHttpMetrics } from "./monitoring/httpMetrics";
+app.use(withHttpMetrics());
+
+
+Expose metrics:
+
+src/routes/metrics.routes.ts
+
+import { Router } from "express";
+import { client } from "../monitoring/metrics";
+export const metricsRouter = Router();
+
+metricsRouter.get("/metrics", async (_req,res)=>{
+  res.set("Content-Type","text/plain");
+  res.end(await client.register.metrics());
+});
+
+
+Add to main routes:
+
+import { metricsRouter } from "./routes/metrics.routes";
+app.use("/", metricsRouter);
+
+2) Instrument pipeline code (emit stage start/complete + durations)
+
+Add light helpers:
+
+src/monitoring/stage.ts
+
+import { pipelineStageStarted, pipelineStageCompleted, pipelineStageDuration } from "./metrics";
+
+const stageStartCache = new Map<string, number>(); // key: `${loanId}:${stage}`
+
+export function stageStart(loanId:string, stage:"import"|"split"|"ocr"|"extract"|"qc"|"export"|"notify") {
+  const key = `${loanId}:${stage}`;
+  pipelineStageStarted.labels(stage).inc();
+  stageStartCache.set(key, Date.now());
+}
+
+export function stageComplete(loanId:string, stage:"import"|"split"|"ocr"|"extract"|"qc"|"export"|"notify") {
+  const key = `${loanId}:${stage}`;
+  pipelineStageCompleted.labels(stage).inc();
+  const t0 = stageStartCache.get(key);
+  if (t0) {
+    const secs = (Date.now() - t0) / 1000;
+    pipelineStageDuration.labels(stage).observe(secs);
+    stageStartCache.delete(key);
+  }
+}
+
+
+Call in workers, e.g., SplitWorker:
+
+import { stageStart, stageComplete } from "../monitoring/stage";
+// before processing this loan's split:
+stageStart(loanId, "split");
+// after publishing chunked event:
+stageComplete(loanId, "split");
+
+
+Do the same in OCR, EXTRACT, QC, EXPORT, and NOTIFY workers at stage boundaries.
+
+Record extraction confidence where you already select winners per key:
+
+import { extractConfidence } from "../monitoring/metrics";
+// when persisting finalRows:
+extractConfidence.labels(row.key, row.autofilled_from).observe(Number(row.confidence || 1));
+
+
+Increase HITL count when you create conflicts:
+
+import { hitlConflicts } from "../monitoring/metrics";
+hitlConflicts.labels(conflict.key).inc();
+
+
+When a DNP suppression occurs (in notification service):
+
+import { dnpPrevented } from "../monitoring/metrics";
+dnpPrevented.labels(input.template_code).inc();
+
+
+When exporting:
+
+import { exportSuccess, exportFailure } from "../monitoring/metrics";
+// on success:
+exportSuccess.labels(template).inc();
+// on failure:
+exportFailure.labels(template).inc();
+
+
+For QC defects, maintain an up-to-date gauge each engine run:
+
+In runQcForLoan(), after writing defects:
+
+import { qcDefectsOpen } from "../monitoring/metrics";
+// reset (by setting all to 0 is expensive). Instead, set current ones and let scrape reflect.
+for (const d of defects) {
+  const rule = await client.query(`SELECT code, severity FROM qc_rules WHERE id=$1`, [d.rule_id]);
+  qcDefectsOpen.labels(rule.rows[0].code, rule.rows[0].severity).inc();
+}
+
+
+(If you prefer exactness, first dec() previous open snapshot for this loan; or create a view-based exporter—see Section 4.)
+
+3) RabbitMQ Queue Depth Exporter (polls management API → gauges)
+
+src/monitoring/rmqPoller.ts
+
+import { rmqQueueDepth, rmqQueueDlqDepth } from "./metrics";
+
+const queuesToWatch = [
+  "loan.docs.uploaded.q","loan.docs.chunked.q","loan.ocr.completed.q","loan.extract.completed.q",
+  "loan.qc.start.q","loan.qc.completed.q",
+  "loan.export.request.q","loan.export.start.q","loan.export.completed.q",
+  "notify.request.q","notify.send.q","notify.sent.q","notify.failed.q"
+];
+
+export async function startRmqPoller(intervalMs=15000) {
+  if (!process.env.RMQ_MGMT_URL) return;
+  setInterval(async ()=>{
+    try {
+      const res = await fetch(`${process.env.RMQ_MGMT_URL}/queues/${encodeURIComponent(process.env.RMQ_VHOST || "/")}`, {
+        headers: { "Authorization": "Basic " + Buffer.from(`${process.env.RMQ_MGMT_USER}:${process.env.RMQ_MGMT_PASS}`).toString("base64") }
+      });
+      if (!res.ok) return;
+      const data:any[] = await res.json();
+      for (const q of queuesToWatch) {
+        const m = data.find(d => d.name === q);
+        if (m) {
+          rmqQueueDepth.labels(q).set(m.messages ?? 0);
+        }
+        const dlq = `${q}.dlq`;
+        const d = data.find(d0 => d0.name === dlq);
+        if (d) {
+          rmqQueueDlqDepth.labels(q).set(d.messages ?? 0);
+        }
+      }
+    } catch {}
+  }, intervalMs).unref();
+}
+
+
+Start the poller in your service bootstrap:
+
+src/service.ts
+
+import { startRmqPoller } from "./monitoring/rmqPoller";
+if ((process.env.METRICS_ENABLED || "true")==="true") startRmqPoller();
+
+4) SQL Views for Business KPIs (SLO dashboards)
+
+migrations/011_analytics_views.sql
+
+BEGIN;
+
+-- Pipeline finalize lead time (per loan)
+CREATE OR REPLACE VIEW vx_pipeline_lead_time AS
+SELECT
+  lc.tenant_id,
+  lc.id AS loan_id,
+  MIN(CASE WHEN e.type='loan.docs#uploaded' THEN e.ts END) AS uploaded_at,
+  MIN(CASE WHEN e.type='loan.export#completed' THEN e.ts END) AS exported_at,
+  EXTRACT(EPOCH FROM (MIN(CASE WHEN e.type='loan.export#completed' THEN e.ts END) -
+                       MIN(CASE WHEN e.type='loan.docs#uploaded' THEN e.ts END))) / 86400.0 AS days_to_export
+FROM loan_candidates lc
+LEFT JOIN audits e ON e.target_id = lc.id
+GROUP BY lc.tenant_id, lc.id;
+
+-- QC MTTR (per defect)
+CREATE OR REPLACE VIEW vx_qc_mttr AS
+SELECT
+  d.loan_id,
+  r.code AS rule_code,
+  r.severity,
+  d.created_at,
+  d.resolved_at,
+  EXTRACT(EPOCH FROM (COALESCE(d.resolved_at, now()) - d.created_at)) / 3600.0 AS hours_to_resolve,
+  d.status
+FROM qc_defects d JOIN qc_rules r ON r.id = d.rule_id;
+
+-- DNP savings per loan
+CREATE OR REPLACE VIEW vx_dnp_savings AS
+SELECT
+  n.tenant_id,
+  n.loan_id,
+  COUNT(*) FILTER (WHERE n.status='suppressed' AND n.reason='DoNotPingPolicy') AS prevented_contacts
+FROM notifications n
+GROUP BY n.tenant_id, n.loan_id;
+
+COMMIT;
+
+5) Grafana Dashboards (JSON)
+5.1 Pipeline Health (import this JSON)
+
+grafana/pipeline-health.json
+
+{
+  "title": "LoanServe • Pipeline Health",
+  "panels": [
+    {
+      "type": "graph",
+      "title": "Stage Duration (p95 seconds)",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(loanserve_stage_duration_seconds_bucket[5m])) by (le,stage))" }
+      ],
+      "legend": { "show": true }
+    },
+    {
+      "type": "graph",
+      "title": "Queue Depth",
+      "targets": [
+        { "expr": "loanserve_rmq_queue_depth" },
+        { "expr": "loanserve_rmq_dlq_depth" }
+      ],
+      "legend": { "show": true }
+    },
+    {
+      "type": "graph",
+      "title": "Extraction Confidence (p50)",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(loanserve_extract_confidence_bucket[10m])) by (le))" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "DNP Prevented (sum)",
+      "targets": [
+        { "expr": "sum(loanserve_dnp_prevented_total)" }
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "QC Defects Open by Severity",
+      "targets": [
+        { "expr": "sum(loanserve_qc_defects_open) by (severity)" }
+      ],
+      "legend": { "show": true }
+    },
+    {
+      "type": "stat",
+      "title": "Export Success Rate (5m)",
+      "targets": [
+        { "expr": "sum(rate(loanserve_export_success_total[5m])) / (sum(rate(loanserve_export_success_total[5m])) + sum(rate(loanserve_export_failure_total[5m])))" }
+      ]
+    }
+  ],
+  "time": { "from": "now-6h", "to": "now" },
+  "schemaVersion": 36
+}
+
+5.2 SLOs & Ops
+
+grafana/slo-ops.json
+
+{
+  "title": "LoanServe • SLOs & Ops",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Finalize p50 (days)",
+      "targets": [
+        { "expr": "quantile_over_time(0.50, (vx_finalize_days_to_export)[1d])" }
+      ],
+      "description": "Use a SQL datasource mapped to view vx_pipeline_lead_time; create a Grafana variable or transform named vx_finalize_days_to_export = avg_over_time(days_to_export[1d])"
+    },
+    {
+      "type": "graph",
+      "title": "QC MTTR (hours)",
+      "targets": [
+        { "expr": "avg_over_time(vx_qc_mttr_hours_to_resolve[1d])" }
+      ],
+      "description": "Use SQL datasource mapped to view vx_qc_mttr."
+    },
+    {
+      "type": "stat",
+      "title": "DNP Prevented per Loan (avg)",
+      "targets": [
+        { "expr": "avg_over_time(vx_dnp_savings_prevented_contacts[7d])" }
+      ],
+      "description": "Use SQL datasource mapped to view vx_dnp_savings."
+    }
+  ],
+  "time": { "from": "now-7d", "to": "now" },
+  "schemaVersion": 36
+}
+
+
+Note: for Grafana SQL panels, set a Postgres datasource and point panels to the views. If you prefer Prometheus only, export the view values to Prometheus via a small exporter (optional).
+
+6) Alerts (Prometheus Alertmanager rules)
+
+prometheus/rules/loanserve-alerts.yml
+
+groups:
+- name: loanserve-alerts
+  rules:
+  - alert: RMQDLQBacklog
+    expr: sum(loanserve_rmq_dlq_depth) > 0
+    for: 10m
+    labels: { severity: page }
+    annotations:
+      summary: "DLQ backlog detected"
+      description: "One or more DLQs have messages for >10m. Investigate workers."
+
+  - alert: PipelineSlow
+    expr: histogram_quantile(0.95, sum(rate(loanserve_stage_duration_seconds_bucket[10m])) by (le,stage)) > 300
+    for: 15m
+    labels: { severity: page }
+    annotations:
+      summary: "Pipeline stage duration p95 > 5m"
+      description: "Stage {{ $labels.stage }} p95 > 5m for 15m."
+
+  - alert: ExportFailureSpike
+    expr: sum(rate(loanserve_export_failure_total[10m])) > 5
+    for: 10m
+    labels: { severity: page }
+    annotations:
+      summary: "Export failures spiking"
+      description: "More than 5 export failures in 10m."
+
+  - alert: DNPZero
+    expr: increase(loanserve_dnp_prevented_total[24h]) == 0
+    for: 24h
+    labels: { severity: ticket }
+    annotations:
+      summary: "DNP prevented count is zero in 24h"
+      description: "Check Do-Not-Ping guard; may be disabled or malfunctioning."
+
+  - alert: QCHighCritical
+    expr: sum(loanserve_qc_defects_open{severity="Critical"}) > 0
+    for: 30m
+    labels: { severity: page }
+    annotations:
+      summary: "Critical QC defects remain open"
+      description: "Critical defects open for >30m. Assign QC-Ops."
+
+
+Hook Alertmanager to your webhook:
+
+alertmanager/alertmanager.yml (snippet)
+
+route:
+  receiver: default
+receivers:
+- name: default
+  webhook_configs:
+  - url: ${ALERT_WEBHOOK_URL}
+    send_resolved: true
+
+7) Health Checks (readiness/liveness) and Watchdog
+
+src/routes/health.routes.ts
+
+import { Router } from "express";
+export const healthRouter = Router();
+
+healthRouter.get("/healthz", (_req,res)=> res.status(200).json({ ok:true }));
+healthRouter.get("/readyz", async (_req,res)=>{
+  // Simple checks: DB connect, AMQP connect available in your app context
+  try {
+    // Example: await pool.query("select 1");
+    // Example: await mq.ping();
+    return res.status(200).json({ ok:true });
+  } catch {
+    return res.status(503).json({ ok:false });
+  }
+});
+
+
+Wire:
+
+import { healthRouter } from "./routes/health.routes";
+app.use("/", healthRouter);
+
+
+Optional: a watchdog that kills the process if DLQ depth exceeds a max for too long (Kubernetes will restart):
+
+src/monitoring/watchdog.ts
+
+let strikes = 0;
+export function watchdogCheckDlq(max=100, windows=4) {
+  // call this every minute after rmqPoller; use rmqQueueDlqDepth sum
+  const total = globalThis.__lastDlqTotal || 0;
+  if (total > max) strikes++; else strikes = 0;
+  if (strikes >= windows) {
+    // last resort restart to trigger clean-slate
+    process.exit(1);
+  }
+}
+
+
+Call from startRmqPoller interval after updating gauges:
+
+(globalThis as any).__lastDlqTotal = queuesToWatch.reduce((acc,q)=> acc + (rmqQueueDlqDepth.hashMap?.[`${q}`]?.value || 0), 0);
+
+8) What engineering must not change
+
+Metric names are API for dashboards/alerts—do not rename without PR to dashboards & rules.
+
+Stage duration semantics: stageStart/stageComplete MUST bracket the same loan+stage boundary.
+
+Queue list in rmqPoller should include all production queues (extend only, do not remove).
+
+Alert thresholds reflect SLOs; change only via config/PR, not ad-hoc in code.
+
+No PII in metrics or logs (mask emails/phones if needed).
+
+9) Quick verification checklist
+
+/metrics returns Prometheus text including loanserve_node_* defaults and custom metrics.
+
+Grafana imports pipeline-health.json & slo-ops.json; panels show data.
+
+Alerts fire (simulate DLQ >0, export failures).
+
+DNP prevented counter increases when templates are suppressed.
+
+QC defect gauges reflect open issues after running engine.
+
+Stage durations are reasonable and bracketing is correct (no negative or zero spikes).

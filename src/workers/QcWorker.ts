@@ -2,6 +2,8 @@
 // Simplified implementation for immediate integration
 
 import { runQcForLoan } from "../qc/engine";
+import { stageStart, stageComplete } from "../monitoring/stage";
+import { qcDefectsOpen } from "../monitoring/metrics";
 
 /**
  * QC Worker for processing loan quality control
@@ -38,7 +40,21 @@ export class QcWorker {
 
     try {
       console.log(`[QcWorker] Processing QC for loan ${loanId} (tenant: ${tenantId})`);
+      
+      // Track QC stage start
+      stageStart(loanId, "qc");
+      
       const results = await runQcForLoan(tenantId, loanId);
+      
+      // Update QC defects metrics
+      if (results.defects && Array.isArray(results.defects)) {
+        for (const defect of results.defects) {
+          qcDefectsOpen.labels(defect.rule_code || "UNKNOWN", defect.severity || "Medium").inc();
+        }
+      }
+      
+      // Track QC stage completion
+      stageComplete(loanId, "qc");
       
       console.log(`[QcWorker] QC completed for loan ${loanId}:`, {
         total_rules: results.total_rules,
