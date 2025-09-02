@@ -166,6 +166,15 @@ app.use((req, res, next) => {
     console.error('[Server] Failed to initialize compliance scheduler:', error);
   }
   
+  // Start QC Worker
+  try {
+    const { startQcWorker } = await import('../src/workers/QcWorker');
+    await startQcWorker();
+    console.log('[Server] QC worker started successfully');
+  } catch (error) {
+    console.error('[Server] Failed to start QC worker:', error);
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler

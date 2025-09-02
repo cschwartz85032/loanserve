@@ -29,6 +29,7 @@ import { emailTemplatesRouter } from "./routes/email-templates";
 import paymentRoutes from "./routes/payment-routes";
 import rabbitmqConfigRoutes from "./routes/rabbitmq-config";
 import metricsRoutes from "./routes/metrics";
+import { qcRouter } from "../src/routes/qc.routes";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1603,6 +1604,9 @@ To implement full file serving:
   // Register reconciliation routes
   const reconciliationRoutes = await import('./routes/reconciliation');
   app.use('/api/reconciliation', reconciliationRoutes.default);
+
+  // Register QC (Quality Control) routes
+  app.use('/api/qc', qcRouter);
 
   const httpServer = createServer(app);
   return httpServer;

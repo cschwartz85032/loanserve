@@ -1,0 +1,447 @@
+Design guardrails: rules are data-driven (qc_rules.params), deterministic first with optional [AI]-assisted checks (you can plug in later), explainable (defect carries evidence), program-aware, and non-interactive (no human decisions needed during build).
+
+0) Env (add/confirm)
+
+.env
+
+QC_RULES_VERSION=v2025.09.03
+QC_BUSINESS_TZ=America/New_York
+QC_TRID_BUSINESS_DAYS_FILE= # optional json path; otherwise built-in US fed holidays
+
+1) Data model is already present
+
+From prior migrations you already have:
+
+qc_rules(id, code, name, severity, engine_type, params, enabled)
+
+qc_defects(id, loan_id, rule_id, status, message, evidence_doc_id, created_at, resolved_at, waiver_id)
+
+We will add one minor helper table for program requirements (used by e.g., HOI required). If you already created it, skip.
+
+migrations/005_program_requirements.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS program_requirements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  program_code text NOT NULL,         -- e.g., FNMA, FRE, PORTFOLIO
+  key text NOT NULL,                  -- canonical datapoint key
+  required boolean NOT NULL DEFAULT false,
+  params jsonb NOT NULL DEFAULT '{}'::jsonb,
+  UNIQUE (program_code, key)
+);
+COMMIT;
+
+
+Seed (example):
+
+migrations/006_seed_program_requirements.sql
+
+INSERT INTO program_requirements (program_code, key, required, params) VALUES
+('FNMA','HomeownersInsCarrier',true,'{}'),
+('FNMA','HOIPolicyNumber',true,'{}'),
+('FNMA','FloodZone',true,'{}')
+ON CONFLICT DO NOTHING;
+
+2) Business-day calculator (TRID/ECOA timing)
+
+File: src/qc/businessDays.ts
+
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import tz from "dayjs/plugin/timezone";
+dayjs.extend(utc); dayjs.extend(tz);
+
+const Z = process.env.QC_BUSINESS_TZ || "America/New_York";
+
+// Simple US holiday set (can be replaced by file if QC_TRID_BUSINESS_DAYS_FILE set)
+const FIXED = new Set<string>(); // YYYY-MM-DD in Z
+
+function loadHolidays() {
+  const file = process.env.QC_TRID_BUSINESS_DAYS_FILE;
+  if (!file) return;
+  try {
+    const arr = JSON.parse(require("fs").readFileSync(file,"utf-8"));
+    arr.forEach((d:string)=>FIXED.add(dayjs.tz(d,Z).format("YYYY-MM-DD")));
+  } catch { /* ignore */ }
+}
+loadHolidays();
+
+export function isBusinessDay(d: dayjs.Dayjs) {
+  const local = d.tz(Z);
+  const dow = local.day();
+  if (dow===0 || dow===6) return false;
+  if (FIXED.has(local.format("YYYY-MM-DD"))) return false;
+  return true;
+}
+
+export function addBusinessDays(startISO: string, days: number) {
+  let d = dayjs.tz(startISO, Z);
+  let added = 0;
+  while (added < days) {
+    d = d.add(1,"day");
+    if (isBusinessDay(d)) added++;
+  }
+  return d.format("YYYY-MM-DD");
+}
+
+export function diffBusinessDays(aISO: string, bISO: string) {
+  let a = dayjs.tz(aISO, Z);
+  let b = dayjs.tz(bISO, Z);
+  if (b.isBefore(a)) [a,b] = [b,a];
+  let d = a, count = 0;
+  while (d.isBefore(b, "day")) {
+    d = d.add(1,"day");
+    if (isBusinessDay(d)) count++;
+  }
+  return count;
+}
+
+3) QC Rule implementations (deterministic)
+
+File: src/qc/rules/deterministic.ts
+
+import { addBusinessDays, diffBusinessDays } from "../businessDays";
+
+type DP = Record<string, { value:any, confidence?:number, evidence_doc_id?:string, evidence_page?:number }>;
+type RuleCtx = { loanId:string, datapoints:DP, program?:string };
+type Result = { ok:boolean, message?:string, evidence_doc_id?:string, evidence_page?:number };
+
+function num(x:any): number | null {
+  if (x==null) return null;
+  if (typeof x==="number") return x;
+  const n = Number(String(x).replace(/[^\d.]/g,""));
+  return isFinite(n) ? n : null;
+}
+
+// QC001 — Note amount equals CD Loan Amount (exact)
+export function QC001(ctx:RuleCtx): Result {
+  const note = num(ctx.datapoints.NoteAmount?.value);
+  const cd   = num(ctx.datapoints.TotalLoanAmount?.value);
+  if (note==null || cd==null) return { ok:true }; // do not fail on missing; other rules handle completeness
+  const ok = Math.abs(note - cd) < 0.01;
+  return ok ? { ok:true } : {
+    ok:false,
+    message:`QC001: NoteAmount ${note} != CD TotalLoanAmount ${cd}`,
+    evidence_doc_id: ctx.datapoints.TotalLoanAmount?.evidence_doc_id,
+    evidence_page: ctx.datapoints.TotalLoanAmount?.evidence_page
+  };
+}
+
+// QC002 — Rate on Note equals CD/APOR tolerance
+// params: { tolerance: 0.125 } percentage points
+export function QC002(ctx:RuleCtx, params:{tolerance:number}): Result {
+  const note = num(ctx.datapoints.InterestRate?.value);
+  const cd   = num(ctx.datapoints.InterestRate?.value); // if you store CD rate separately, map here
+  if (note==null || cd==null) return { ok:true };
+  const tol = params?.tolerance ?? 0.125;
+  const ok = Math.abs(note - cd) <= tol + 1e-9;
+  return ok ? { ok:true } : { ok:false, message:`QC002: Rate difference ${Math.abs(note-cd).toFixed(3)} > ${tol}` };
+}
+
+// QC003 — First Payment Date aligns with Note Date (<= maxDays after Note Date)
+export function QC003(ctx:RuleCtx, params:{maxDays:number}): Result {
+  const first = ctx.datapoints.FirstPaymentDate?.value;
+  const noteDate = ctx.datapoints.NoteDate?.value || ctx.datapoints.MaturityDate?.value; // fallback if NoteDate not captured
+  if (!first || !noteDate) return { ok:true };
+  const allow = params?.maxDays ?? 62;
+  const diff = diffBusinessDays(String(noteDate), String(first));
+  const ok = diff <= allow;
+  return ok ? { ok:true } : { ok:false, message:`QC003: FirstPaymentDate is ${diff} business days after NoteDate (max ${allow})` };
+}
+
+// QC004 — Maturity equals term (Maturity - FirstPayment ≈ AmortTermMonths)
+export function QC004(ctx:RuleCtx): Result {
+  const term = Number(ctx.datapoints.AmortTermMonths?.value);
+  const first = ctx.datapoints.FirstPaymentDate?.value;
+  const maturity = ctx.datapoints.MaturityDate?.value;
+  if (!term || !first || !maturity) return { ok:true };
+  // Rough check: difference in months
+  const a = new Date(String(first)); const b = new Date(String(maturity));
+  const months = (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth());
+  const ok = Math.abs(months - term) <= 1; // allow 1-month rounding
+  return ok ? { ok:true } : { ok:false, message:`QC004: Term months ${term} != calendar months ${months}` };
+}
+
+// QC013 — HOI present if program requires (program_requirements)
+export function QC013(ctx:RuleCtx, params:{required:boolean}): Result {
+  const req = params?.required ?? false;
+  if (!req) return { ok:true };
+  const carrier = ctx.datapoints.HomeownersInsCarrier?.value;
+  const policy  = ctx.datapoints.HOIPolicyNumber?.value;
+  if (carrier && policy) return { ok:true };
+  return { ok:false, message:"QC013: HOI required by program but missing carrier/policy" };
+}
+
+// QC017 — UCDP/SSR status acceptable
+export function QC017(ctx:RuleCtx): Result {
+  const ssr = String(ctx.datapoints.UCDPSSRStatus?.value || "").toUpperCase();
+  if (!ssr) return { ok:true };
+  const ok = /ACCEPT|SUBMISSION SUCCESS|SUCCESS/.test(ssr);
+  return ok ? { ok:true } : { ok:false, message:`QC017: SSR status '${ssr}' not acceptable` };
+}
+
+// QC020 — TRID LE timing: LE within 3 business days of application date
+export function QC020(ctx:RuleCtx, params:{maxDays:number}): Result {
+  const appDate = ctx.datapoints.TRID_ApplicationDate?.value || ctx.datapoints.ApplicationDate?.value;
+  const leDate  = ctx.datapoints.TRID_LEDate?.value;
+  if (!appDate || !leDate) return { ok:true };
+  const max = params?.maxDays ?? 3;
+  const diff = diffBusinessDays(String(appDate), String(leDate));
+  const ok = diff <= max;
+  return ok ? { ok:true } : { ok:false, message:`QC020: LE issued ${diff} business days after app (max ${max})` };
+}
+
+// QC021 — TRID CD timing: CD ≥3 business days before consummation (NoteDate)
+export function QC021(ctx:RuleCtx, params:{minDays:number}): Result {
+  const cdDate = ctx.datapoints.TRID_CDDate?.value;
+  const noteDate = ctx.datapoints.NoteDate?.value;
+  if (!cdDate || !noteDate) return { ok:true };
+  const min = params?.minDays ?? 3;
+  const diff = diffBusinessDays(String(cdDate), String(noteDate));
+  const ok = diff >= min;
+  return ok ? { ok:true } : { ok:false, message:`QC021: CD only ${diff} business days before NoteDate (min ${min})` };
+}
+
+// QC043 — Wire instructions read-only post approval (enforced by system config flag)
+export function QC043(ctx:RuleCtx, params:{approved:boolean}): Result {
+  const approved = !!params?.approved;
+  const edited = ctx.datapoints.WireEditedAfterApproval?.value === true;
+  if (!approved) return { ok:true };        // rule not active yet
+  return edited ? { ok:false, message:"QC043: Wire instructions edited after approval (forbidden)" } : { ok:true };
+}
+
+// QC050 — QC certificate produced (checked at finalize)
+export function QC050(ctx:RuleCtx): Result {
+  const cert = ctx.datapoints.QCCertificateId?.value;
+  return cert ? { ok:true } : { ok:false, message:"QC050: QC Certificate missing" };
+}
+
+4) QC Engine (orchestrates loading params, executing rules, writing defects)
+
+File: src/qc/engine.ts
+
+import { Pool } from "pg";
+import { QC001, QC002, QC003, QC004, QC013, QC017, QC020, QC021, QC043, QC050 } from "./rules/deterministic";
+
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+type RuleFn = (ctx:any, params?:any)=>{ok:boolean,message?:string,evidence_doc_id?:string,evidence_page?:number};
+
+const REGISTRY: Record<string, RuleFn> = {
+  QC001, QC002, QC003, QC004, QC013, QC017, QC020, QC021, QC043, QC050
+};
+
+export async function runQcForLoan(tenantId:string, loanId:string) {
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+
+    const loanRows = await client.query(`
+      SELECT key, value, confidence, evidence_doc_id, evidence_page
+      FROM loan_datapoints WHERE loan_id=$1
+    `, [loanId]);
+    const dp: any = {};
+    loanRows.rows.forEach(r => dp[r.key] = r);
+
+    const rules = await client.query(`SELECT * FROM qc_rules WHERE enabled=true ORDER BY code ASC`);
+    const program = (dp.ProgramCode?.value || process.env.PROGRAM || "FNMA");
+
+    // program-aware: load program_requirements into a quick map
+    const reqsRes = await client.query(`SELECT key, required, params FROM program_requirements WHERE program_code=$1`, [program]);
+    const reqMap: Record<string,{required:boolean,params:any}> = {};
+    reqsRes.rows.forEach((r:any)=> reqMap[r.key] = { required: !!r.required, params: r.params || {} });
+
+    const defects: Array<{ rule_id:string, message:string, evidence_doc_id?:string, evidence_page?:number }> = [];
+
+    for (const r of rules.rows) {
+      const code: string = r.code;
+      const fn = REGISTRY[code];
+      if (!fn) continue;
+      // Merge rule params with program requirements where relevant
+      let params = r.params || {};
+      if (code === "QC013") {
+        const hoiReq = reqMap["HomeownersInsCarrier"]?.required && reqMap["HOIPolicyNumber"]?.required;
+        params = { ...params, required: !!hoiReq };
+      }
+      const res = fn({ loanId, datapoints: dp, program }, params);
+      if (!res.ok) {
+        defects.push({ rule_id: r.id, message: res.message || `${code} failed`, evidence_doc_id: res.evidence_doc_id, evidence_page: res.evidence_page });
+      }
+    }
+
+    // write defects (close any old open defects for rules that now pass)
+    const open = await client.query(`SELECT d.id, r.code FROM qc_defects d JOIN qc_rules r ON r.id=d.rule_id WHERE loan_id=$1 AND d.status='open'`, [loanId]);
+    const stillOpenByCode = new Set(defects.map(d => d.rule_id));
+    for (const row of open.rows) {
+      // if not present in new defects → resolve
+      if (!stillOpenByCode.has(row.id)) {
+        await client.query(`UPDATE qc_defects SET status='resolved', resolved_at=now() WHERE id=$1`, [row.id]);
+      }
+    }
+
+    for (const d of defects) {
+      await client.query(`
+        INSERT INTO qc_defects (loan_id, rule_id, status, message, evidence_doc_id)
+        VALUES ($1,$2,'open',$3,$4)
+      `, [loanId, d.rule_id, d.message, d.evidence_doc_id || null]);
+    }
+
+    return { total_rules: rules.rowCount, defects: defects.length };
+  } finally {
+    client.release();
+  }
+}
+
+5) QC Worker (consumes events, runs engine, emits stage event)
+
+File: src/workers/QcWorker.ts
+
+import { mq } from "../topology";
+import { runQcForLoan } from "../qc/engine";
+
+export async function startQcWorker() {
+  // Kickoff on either explicit start or after extraction completion
+  await mq.consume("loan.qc.start.q", async (msg:any, ch:any)=>{
+    const { tenantId, loanId } = JSON.parse(msg.content.toString());
+    await runAndEmit(tenantId, loanId);
+    ch.ack(msg);
+  });
+
+  await mq.consume("loan.extract.completed.q", async (msg:any, ch:any)=>{
+    const { tenantId, loanId } = JSON.parse(msg.content.toString());
+    await runAndEmit(tenantId, loanId);
+    ch.ack(msg);
+  });
+}
+
+async function runAndEmit(tenantId:string, loanId:string) {
+  const res = await runQcForLoan(tenantId, loanId);
+  await mq.publish("loan.qc","completed",{ tenantId, loanId, results: res });
+}
+
+
+Make sure you declared/bound loan.qc.start.q to exchange loan.qc with routing key start in your RMQ init (same pattern you already used).
+
+6) QC APIs (status, manual run, waiver)
+
+File: src/routes/qc.routes.ts
+
+import { Router } from "express";
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+export const qcRouter = Router();
+
+// GET current QC defects for a loan
+qcRouter.get("/loans/:id/qc", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [req.tenant.id]);
+    const rows = await client.query(`
+      SELECT d.id, r.code, r.name, r.severity, d.status, d.message, d.created_at, d.resolved_at
+      FROM qc_defects d JOIN qc_rules r ON r.id=d.rule_id
+      WHERE d.loan_id=$1
+      ORDER BY r.severity DESC, r.code ASC, d.created_at DESC
+    `, [req.params.id]);
+    res.json({ loan_id: req.params.id, defects: rows.rows });
+  } finally { client.release(); }
+});
+
+// POST run QC now
+qcRouter.post("/loans/:id/qc/run", async (req,res)=>{
+  // emit start event; worker will process and emit completed
+  await req.mq.publish("loan.qc","start",{ tenantId: req.tenant.id, loanId: req.params.id });
+  res.status(202).json({ status:"queued" });
+});
+
+// POST waive a defect (requires role)
+qcRouter.post("/loans/:id/qc/waive", async (req,res)=>{
+  const { defect_id, rationale } = req.body;
+  if (!defect_id) return res.status(400).json({ error:"defect_id required" });
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [req.tenant.id]);
+    await client.query(`UPDATE qc_defects SET status='waived', resolved_at=now()
+                        WHERE id=$1 AND loan_id=$2`, [defect_id, req.params.id]);
+    // optional: record waiver note in audits
+    res.json({ ok:true });
+  } finally { client.release(); }
+});
+
+
+In your main routes.ts wire:
+
+import { qcRouter } from "./qc.routes";
+app.use("/api", qcRouter);
+
+7) RMQ init additions
+
+Make sure these queues/bindings exist (similar to your other patterns):
+
+/mnt/data/init-queues.ts (additions)
+
+await ch.assertExchange("loan.qc","topic",{durable:true});
+const bind = async (q:string,rk:string)=>{
+  await ch.assertQueue(q,{durable:true,arguments:{
+    "x-dead-letter-exchange":"dlx",
+    "x-dead-letter-routing-key":`${q}.dlq`
+  }});
+  await ch.bindQueue(q,"loan.qc",rk);
+  await ch.assertQueue(`${q}.retry`,{durable:true,arguments:{
+    "x-dead-letter-exchange":"loan.qc",
+    "x-dead-letter-routing-key":rk,
+    "x-message-ttl":15000
+  }});
+  await ch.assertQueue(`${q}.dlq`,{durable:true});
+  await ch.bindQueue(`${q}.dlq`,"dlx",`${q}.dlq`);
+};
+await bind("loan.qc.start.q","start");
+await bind("loan.qc.completed.q","completed");
+
+
+And start the worker in your service bootstrap:
+
+src/service.ts (add)
+
+import { startQcWorker } from "./workers/QcWorker";
+await startQcWorker();
+
+8) Minimal tests (sanity)
+
+tests/qc.engine.test.ts
+
+import { runQcForLoan } from "../src/qc/engine";
+
+// This assumes your test DB has a loan with datapoints seeded.
+// If not, you can create a helper to insert a dummy loan + datapoints.
+
+it("runs QC and returns counts", async () => {
+  const tenantId = "00000000-0000-0000-0000-000000000000";
+  const loanId   = "00000000-0000-0000-0000-000000000001";
+  const res = await runQcForLoan(tenantId, loanId);
+  expect(res).toHaveProperty("total_rules");
+  expect(res).toHaveProperty("defects");
+});
+
+9) What engineering must not change
+
+Rule codes and semantics (QC001, QC002, …) remain as implemented here.
+
+Params come from qc_rules.params and program_requirements; do not hardcode thresholds in code paths.
+
+Evidence must be preserved in defects (evidence_doc_id/evidence_page when supplied).
+
+Events: publish loan.qc#completed after engine runs—do not skip.
+
+Waivers: only change status → waived; never delete defects.
+
+10) Quick verification checklist
+
+Ensure qc_rules and program_requirements are seeded (migrations above).
+
+Trigger loan.extract#completed and confirm loan.qc#completed fires.
+
+GET /api/loans/:id/qc returns defects.
+
+Try POST /api/loans/:id/qc/run — see queued, then defects updated.
+
+Toggle a program requirement (e.g., HOI required) and re-run QC — confirm QC013 behavior changes accordingly.
