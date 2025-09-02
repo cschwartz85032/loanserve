@@ -81,6 +81,24 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
         autoDelete: false
       }
     },
+    // Servicing cycle exchange
+    {
+      name: 'svc.cycle',
+      type: 'topic',
+      options: {
+        durable: true,
+        autoDelete: false
+      }
+    },
+    // Disbursement exchange
+    {
+      name: 'svc.disb',
+      type: 'topic',
+      options: {
+        durable: true,
+        autoDelete: false
+      }
+    },
     // Monitoring and alerting exchange
     {
       name: 'ai.monitoring.v2',
@@ -337,6 +355,58 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
           'x-max-retries': 2
         }
       }
+    },
+
+    // Servicing cycle queues
+    {
+      name: 'svc.cycle.tick.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
+          'x-dead-letter-routing-key': 'svc.cycle.tick.retry',
+          'x-message-ttl': 300000, // 5 minutes for cycle tick
+          'x-max-retries': 2
+        }
+      }
+    },
+    {
+      name: 'svc.cycle.completed.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
+          'x-dead-letter-routing-key': 'svc.cycle.completed.retry',
+          'x-message-ttl': 300000, // 5 minutes for cycle completion
+          'x-max-retries': 2
+        }
+      }
+    },
+
+    // Disbursement queues
+    {
+      name: 'svc.disb.request.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
+          'x-dead-letter-routing-key': 'svc.disb.request.retry',
+          'x-message-ttl': 600000, // 10 minutes for disbursement request
+          'x-max-retries': 3
+        }
+      }
+    },
+    {
+      name: 'svc.disb.completed.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
+          'x-dead-letter-routing-key': 'svc.disb.completed.retry',
+          'x-message-ttl': 300000, // 5 minutes for disbursement completion
+          'x-max-retries': 2
+        }
+      }
     }
   ],
 
@@ -372,7 +442,15 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
     // Loan boarding bindings
     { queue: 'loan.finalize.completed.q', exchange: 'loan.board', routingKey: 'finalize.completed' },
     { queue: 'loan.board.request.q', exchange: 'loan.board', routingKey: 'request' },
-    { queue: 'loan.board.completed.q', exchange: 'loan.board', routingKey: 'completed' }
+    { queue: 'loan.board.completed.q', exchange: 'loan.board', routingKey: 'completed' },
+
+    // Servicing cycle bindings
+    { queue: 'svc.cycle.tick.q', exchange: 'svc.cycle', routingKey: 'tick' },
+    { queue: 'svc.cycle.completed.q', exchange: 'svc.cycle', routingKey: 'completed' },
+
+    // Disbursement bindings
+    { queue: 'svc.disb.request.q', exchange: 'svc.disb', routingKey: 'request' },
+    { queue: 'svc.disb.completed.q', exchange: 'svc.disb', routingKey: 'completed' }
   ]
 };
 

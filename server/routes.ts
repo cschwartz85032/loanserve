@@ -1704,8 +1704,8 @@ To implement full file serving:
   app.use(escrowDisbursementRoutes.default);
 
   // Register servicing cycle routes
-  const servicingCycleRoutes = await import('./routes/servicing-cycle');
-  app.use('/api/servicing-cycle', servicingCycleRoutes.default);
+  const { cycleRouter } = await import('../src/routes/cycle.routes');
+  app.use('/api', cycleRouter);
 
   // Register RabbitMQ test routes
   const rabbitmqTestRoutes = await import('./routes/rabbitmq-test');
