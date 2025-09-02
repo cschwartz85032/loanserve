@@ -1,0 +1,475 @@
+Step 7 – AI Extraction Path (Complete)
+0) Environment
+
+Add these to .env (defaults allow running with the built-in mock):
+
+# LLM provider: mock | openai
+LLM_PROVIDER=mock
+LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=
+
+# AI runtime knobs
+AI_TEMPERATURE=0.0
+AI_MAX_TOKENS=2000
+AI_REQUEST_TIMEOUT_MS=60000
+AI_SLICE_TARGET_CHARS=8000
+AI_MIN_CONFIDENCE=0.60      # below this -> reject
+AI_ACCEPT_CONFIDENCE=0.80   # at/above -> accept
+
+1) Keysets per Doc Type (what AI should extract)
+
+File: src/ai/keysets.ts
+
+// The authoritative keys we ask the AI to extract per docType.
+// Keep this aligned with your prompt packs and Authority Matrix.
+//
+// You can add more keys anytime; the AI runner will only attempt
+// keys not already satisfied by deterministic extraction.
+
+export const DOC_KEYSETS: Record<string, string[]> = {
+  NOTE: [
+    "NoteAmount","InterestRate","AmortTermMonths",
+    "FirstPaymentDate","MaturityDate","LateChargePct","LateChargeGraceDays",
+    "BorrowerFullName"
+  ],
+  CD: [
+    "TotalLoanAmount","PAndIAmount","EscrowRequired",
+    "TaxEscrowMonthly","InsuranceEscrowMonthly","HOICarrier","HOIPolicyNumber",
+    "PropertyAddress"
+  ],
+  HOI: [
+    "HomeownersInsCarrier","HOIPolicyNumber","HOIEffectiveDate","HOIExpirationDate","HOIPhone","HOIEmail"
+  ],
+  FLOOD: [
+    "FloodZone","FloodInsRequired","DeterminationIdentifier"
+  ],
+  APPRAISAL: [
+    "AppraisalDate","AppraisedValue","AppraisalFormType"
+  ],
+  DEED: [
+    // no AI by default for deed; deterministic MIN finder + HITL if needed
+  ]
+};
+
+2) OCR Slicing (safe chunks for the LLM)
+
+File: src/utils/ocr-slices.ts
+
+import { getBytes, getText } from "../utils/storage";
+
+/**
+ * Return text slices for a doc.
+ * Strategy: use pre-reflowed text if available; otherwise read page-text files
+ * (you may extend this to page-by-page slicing if you store per-page text).
+ */
+export async function getDocTextSlices(docId: string, targetChars = Number(process.env.AI_SLICE_TARGET_CHARS || "8000")): Promise<{slice: string, idx: number}[]> {
+  // default: load a single text file text/{docId}.txt
+  try {
+    const text = await getText(`text/${docId}.txt`);
+    return chunk(text, targetChars);
+  } catch {
+    // If not found, fall back to empty; worker will skip AI
+    return [];
+  }
+}
+
+function chunk(s: string, n: number): {slice: string, idx: number}[] {
+  if (s.length <= n) return [{ slice: s, idx: 0 }];
+  const out: {slice: string, idx: number}[] = [];
+  let i = 0, idx = 0;
+  while (i < s.length) {
+    out.push({ slice: s.slice(i, i + n), idx });
+    i += n;
+    idx += 1;
+  }
+  return out;
+}
+
+3) LLM Provider (mock + OpenAI)
+
+File: src/ai/llm.ts
+
+type GenArgs = { prompt: string; model?: string; temperature?: number; maxTokens?: number; timeoutMs?: number; };
+export type LlmOutput = { text: string };
+
+export interface LlmProvider {
+  generate(args: GenArgs): Promise<LlmOutput>;
+}
+
+class MockProvider implements LlmProvider {
+  async generate({ prompt }: GenArgs): Promise<LlmOutput> {
+    // Naive mock that returns a minimally valid JSON skeleton derived from prompt docType.
+    // This is ONLY for local/dev. Real provider is below.
+    const type = /"docType"\s*:\s*"(NOTE|CD|HOI|FLOOD|APPRAISAL)"/i.exec(prompt)?.[1] || "NOTE";
+    const pver = `v${new Date().toISOString().slice(0,10)}.mock.v1`;
+
+    const templates: Record<string,string> = {
+      NOTE: JSON.stringify({
+        docType: "NOTE", promptVersion: pver,
+        data: { NoteAmount: 200000, InterestRate: 7.125, AmortTermMonths: 360, FirstPaymentDate: "2025-10-01", MaturityDate: "2055-10-01", LateChargePct: 5, LateChargeGraceDays: 15, BorrowerFullName: "John Q. Public" },
+        evidence: {
+          NoteAmount: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          InterestRate: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          AmortTermMonths: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          FirstPaymentDate: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          MaturityDate: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          LateChargePct: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          LateChargeGraceDays: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          BorrowerFullName: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) }
+        }
+      }),
+      CD: JSON.stringify({
+        docType: "CD", promptVersion: pver,
+        data: { TotalLoanAmount: 200000, PAndIAmount: 1350.22, EscrowRequired: true, TaxEscrowMonthly: 250, InsuranceEscrowMonthly: 120.5, HOICarrier: "Acme Mutual", HOIPolicyNumber: "ABC-123", PropertyAddress: "123 Main St, Phoenix, AZ 85032" },
+        evidence: {
+          TotalLoanAmount: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          PAndIAmount: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          EscrowRequired: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          TaxEscrowMonthly: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          InsuranceEscrowMonthly: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          HOICarrier: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          HOIPolicyNumber: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          PropertyAddress: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) }
+        }
+      }),
+      HOI: JSON.stringify({
+        docType: "HOI", promptVersion: pver,
+        data: { HomeownersInsCarrier: "Acme Mutual", HOIPolicyNumber: "ABC-123", HOIEffectiveDate: "2025-09-15", HOIExpirationDate: "2026-09-15", HOIPhone: null, HOIEmail: null },
+        evidence: {
+          HomeownersInsCarrier: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          HOIPolicyNumber: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          HOIEffectiveDate: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          HOIExpirationDate: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) }
+        }
+      }),
+      FLOOD: JSON.stringify({
+        docType: "FLOOD", promptVersion: pver,
+        data: { FloodZone: "AE", FloodInsRequired: true, DeterminationIdentifier: "DET-123" },
+        evidence: {
+          FloodZone: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          FloodInsRequired: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) }
+        }
+      }),
+      APPRAISAL: JSON.stringify({
+        docType: "APPRAISAL", promptVersion: pver,
+        data: { AppraisalDate: "2025-09-01", AppraisedValue: 450000, AppraisalFormType: "URAR" },
+        evidence: {
+          AppraisalDate: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) },
+          AppraisedValue: { docId: "00000000-0000-0000-0000-000000000000", page: 1, textHash: "0".repeat(64) }
+        }
+      })
+    };
+    return { text: templates[type] || templates.NOTE };
+  }
+}
+
+class OpenAIProvider implements LlmProvider {
+  async generate({ prompt, model, temperature, maxTokens, timeoutMs }: GenArgs): Promise<LlmOutput> {
+    const apiKey = process.env.OPENAI_API_KEY!;
+    const mdl = model || process.env.LLM_MODEL || "gpt-4o-mini";
+    const controller = new AbortController();
+    const tmo = setTimeout(()=>controller.abort(), timeoutMs || Number(process.env.AI_REQUEST_TIMEOUT_MS || "60000"));
+
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type":"application/json" },
+        body: JSON.stringify({
+          model: mdl,
+          temperature: Number(temperature ?? (process.env.AI_TEMPERATURE || "0")),
+          max_tokens: Number(maxTokens ?? (process.env.AI_MAX_TOKENS || "2000")),
+          messages: [
+            { role: "system", content: "You are a precise data-extraction service. Output STRICT JSON, no commentary." },
+            { role: "user", content: prompt }
+          ]
+        }),
+        signal: controller.signal
+      });
+      if (!res.ok) throw new Error(`OpenAI error: ${res.status} ${await res.text()}`);
+      const json = await res.json();
+      const text = json.choices?.[0]?.message?.content?.trim() || "";
+      return { text };
+    } finally {
+      clearTimeout(tmo);
+    }
+  }
+}
+
+export function getProvider(): LlmProvider {
+  const p = (process.env.LLM_PROVIDER || "mock").toLowerCase();
+  if (p === "openai") return new OpenAIProvider();
+  return new MockProvider();
+}
+
+4) Prompt Renderer + Runner (loads .md, injects slice, validates JSON)
+
+File: src/ai/promptRunner.ts
+
+import fs from "fs";
+import path from "path";
+import { getProvider } from "./llm";
+import { assertValidPromptOutput } from "../utils/validation/promptOutputValidator";
+
+type AiItem = {
+  key: string;
+  value: any;
+  confidence: number;
+  source: "ai_doc";
+  prompt_version: string;
+  // evidence attachment left to worker from returned payload
+};
+
+function loadPrompt(docType: string): string {
+  const p = path.resolve(process.cwd(), `prompts/${docType.toLowerCase()}.md`);
+  return fs.readFileSync(p, "utf-8");
+}
+
+/** Produce a single prompt by injecting the slice into the md template. */
+function renderPrompt(docType: string, slice: string): string {
+  const base = loadPrompt(docType);
+  return base.replace("{{DOC_TEXT_SLICE}}", slice);
+}
+
+/** Light confidence heuristic from evidence richness (bbox/snippet) + key presence. */
+function computeConfidence(validJson: any): number {
+  // Baseline
+  let conf = 0.80;
+  const ev = validJson?.evidence || {};
+  const keys = Object.keys(validJson?.data || {});
+  let enriched = 0;
+  for (const k of keys) {
+    const e = ev[k];
+    if (e && e.textHash) enriched += 1;
+    if (e && e.bbox) enriched += 0.5;
+  }
+  conf += Math.min(0.15, enriched * 0.01); // +1% per evidence, max +15%
+  return Math.max(0.60, Math.min(0.95, conf));
+}
+
+/**
+ * Run AI on a docType + list of text slices.
+ * - We call the LLM per slice until we obtain a valid JSON that passes schema.
+ * - We pick the first valid result (you can extend to multi-slice merge later).
+ */
+export async function runPromptPackOnSlices(docType: string, slices: {slice:string, idx:number}[]): Promise<AiItem[] | null> {
+  const provider = getProvider();
+  for (const s of slices) {
+    const prompt = renderPrompt(docType, s.slice);
+    const out = await provider.generate({
+      prompt,
+      model: process.env.LLM_MODEL,
+      temperature: Number(process.env.AI_TEMPERATURE || "0"),
+      maxTokens: Number(process.env.AI_MAX_TOKENS || "2000"),
+      timeoutMs: Number(process.env.AI_REQUEST_TIMEOUT_MS || "60000")
+    });
+
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(out.text);
+    } catch {
+      continue; // try next slice
+    }
+
+    try {
+      assertValidPromptOutput(parsed);
+    } catch {
+      continue; // try next slice
+    }
+
+    const keys = Object.keys(parsed.data || {});
+    const conf = computeConfidence(parsed);
+    const items: AiItem[] = keys.map(k => ({
+      key: k,
+      value: parsed.data[k],
+      confidence: conf,
+      source: "ai_doc",
+      prompt_version: parsed.promptVersion || null
+    }));
+
+    // Attach evidence docId/page/hash at worker level from parsed.evidence
+    // (we return the parsed object as symbol so worker can keep it)
+    (items as any).__rawPromptOutput = parsed;
+    return items;
+  }
+  return null;
+}
+
+5) Wire AI into the Extract Worker (only for missing keys)
+
+Replace your Step-6 worker with the one below (deterministic + AI). It:
+
+Runs deterministic per cluster.
+
+Identifies missing keys from DOC_KEYSETS.
+
+Slices OCR text; runs prompt; validates JSON; computes confidence.
+
+Merges deterministic + AI candidates and calls your Authority Matrix evaluator (from Step 4).
+
+Persists winners with lineage & versions.
+
+File: src/workers/ExtractWorker.ts
+
+import { mq } from "../topology";
+import { deterministicExtract } from "../utils/extractors";
+import { getDocTextSlices } from "../utils/ocr-slices";
+import { runPromptPackOnSlices } from "../ai/promptRunner";
+import { DOC_KEYSETS } from "../ai/keysets";
+import { loadAuthorityMatrix } from "../utils/authority";
+import { selectAuthoritativeValue } from "../authority/evaluator";
+import { persistDatapoints } from "../repo";
+
+const EXTRACTOR_VERSION = process.env.EXTRACTOR_VERSION || "v2025.09.01";
+const CONF_ACCEPT       = Number(process.env.AI_ACCEPT_CONFIDENCE || "0.80");
+const CONF_MIN          = Number(process.env.AI_MIN_CONFIDENCE || "0.60");
+
+export async function startExtractWorker() {
+  const matrix = loadAuthorityMatrix("config/authority-matrix.v2025-09-03.yaml", process.env.PROGRAM, process.env.INVESTOR_PROFILE);
+
+  await mq.consume("loan.ocr.completed.q", async (msg:any, ch:any)=>{
+    const { tenantId, loanId, importId, clusters, meta } = JSON.parse(msg.content.toString());
+    try {
+      // 1) Collect candidates
+      const candidates: Record<string, any[]> = {};
+      const aiEvidenceByKey: Record<string, {docId?:string,page?:number,textHash?:string}> = {};
+
+      for (const c of clusters) {
+        // deterministic first
+        const det = await deterministicExtract(c.docId, c.docType);
+        for (const it of det) {
+          (candidates[it.key] ||= []).push({
+            key: it.key, value: it.value, confidence: 1.0, source: "deterministic", docType: c.docType, extractor: "deterministic"
+          });
+        }
+
+        // find missing keys for this docType
+        const desired = DOC_KEYSETS[c.docType] || [];
+        const presentKeys = new Set(Object.keys(candidates));
+        const missing = desired.filter(k => !presentKeys.has(k));
+
+        if (missing.length) {
+          // 2) AI runner on slices (we accept first valid slice result)
+          const slices = await getDocTextSlices(c.docId);
+          if (slices.length) {
+            const aiItems = await runPromptPackOnSlices(c.docType, slices);
+            if (aiItems && aiItems.length) {
+              const raw = (aiItems as any).__rawPromptOutput;
+              // pull field-level evidence for lineage
+              for (const ai of aiItems) {
+                if (!missing.includes(ai.key)) continue; // we only use AI for missing keys
+                if (ai.confidence < CONF_MIN) continue;  // discard too weak
+                (candidates[ai.key] ||= []).push({
+                  key: ai.key,
+                  value: ai.value,
+                  confidence: ai.confidence,
+                  source: "ai_doc",
+                  docType: c.docType,
+                  extractor: "ai",
+                  prompt_version: ai.prompt_version
+                });
+
+                const ev = raw?.evidence?.[ai.key];
+                if (ev) aiEvidenceByKey[ai.key] = {
+                  docId: ev.docId, page: ev.page, textHash: ev.textHash
+                };
+              }
+            }
+          }
+        }
+      }
+
+      // 3) Select winners per key via Authority Matrix
+      const finalRows: any[] = [];
+      const conflictsForHITL: any[] = [];
+
+      for (const [key, arr] of Object.entries(candidates)) {
+        const res = selectAuthoritativeValue(matrix, key, arr as any);
+
+        if (!res.winner) continue;
+
+        const ev = aiEvidenceByKey[key] || {}; // present if AI provided evidence; deterministic lineage is attached elsewhere (OCR index)
+        finalRows.push({
+          key,
+          value: res.winner.value,
+          normalized_value: normalizeValue(key, res.winner.value),
+          confidence: Math.max(0, Math.min(1, res.score ?? 1)),
+          autofilled_from: res.winner.source === "ai_doc" ? "document" : res.winner.source,
+          ingest_source: res.winner.source === "ai_doc" ? "document" : res.winner.source,
+          evidence_doc_id: ev.docId || null,
+          evidence_page: ev.page || null,
+          evidence_text_hash: ev.textHash || null,
+          extractor_version: EXTRACTOR_VERSION,
+          prompt_version: (res.winner as any).prompt_version || null
+        });
+
+        // if close tie -> create conflict (optional: handled in Step 4 already)
+        if (res.ties && res.ties.length) {
+          conflictsForHITL.push({
+            key,
+            candidates: arr
+          });
+        }
+      }
+
+      // 4) Persist
+      if (finalRows.length) {
+        await persistDatapoints(tenantId, loanId, finalRows);
+      }
+
+      // publish next stage + ack
+      await mq.publish("loan.extract","completed",{ tenantId, loanId, importId, counts:{ items: finalRows.length }, meta });
+      ch.ack(msg);
+    } catch (e:any) {
+      // log+DLQ as per your topology
+      ch.nack(msg, false, false);
+    }
+  });
+}
+
+function normalizeValue(key: string, v: any) {
+  // hook for light normalization (strip commas for money, unify dates, etc.)
+  if (v == null) return v;
+  if (/Amount|Monthly|Value/i.test(key) && typeof v === "string") return Number(v.replace(/[^\d.]/g, ""));
+  return v;
+}
+
+
+Note: We store prompt_version only for AI-sourced fields. Deterministic fields keep prompt_version=NULL, extractor_version=EXTRACTOR_VERSION.
+
+6) Minimal AI Path Test (uses mock provider)
+
+File: tests/ai-runner.mock.test.ts
+
+import { runPromptPackOnSlices } from "../src/ai/promptRunner";
+
+describe("AI runner mock", () => {
+  it("returns valid NOTE JSON", async () => {
+    const items = await runPromptPackOnSlices("NOTE", [{ slice: "PROMISSORY NOTE ...", idx: 0 }]);
+    expect(items).toBeTruthy();
+    const map = new Map(items!.map(i => [i.key, i.value]));
+    expect(map.get("NoteAmount")).toBe(200000);
+    expect((items as any).__rawPromptOutput).toBeTruthy();
+  });
+});
+
+7) What engineering must not change
+
+No prompting tweaks beyond the .md files already included.
+
+No schema changes—AI outputs must pass the JSON Schemas from Step 5.
+
+No skipping Authority Matrix—always run selectAuthoritativeValue.
+
+No direct notifications—Do-Not-Ping stays enforced server-side.
+
+8) Quick run checklist
+
+LLM_PROVIDER=mock in .env.
+
+Start workers; post a synthetic loan.ocr#completed message or run end-to-end.
+
+Inspect DB loan_datapoints: AI-filled keys should have autofilled_from='document', ingest_source='document', with prompt_version set and extractor_version=EXTRACTOR_VERSION.
+
+Verify /imports/:id mapping preview shows AI-filled fields where deterministic was missing.
+
+That’s Step 7 completely done: prompt rendering → LLM call → strict validation → confidence → merge → lineage → persist. Engineering only needs to paste this in and wire to your existing build. If/when you’re ready to use a real provider, just set LLM_PROVIDER=openai and OPENAI_API_KEY—no code changes required.

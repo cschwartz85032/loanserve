@@ -4,6 +4,7 @@
  */
 
 import { DocumentIntakeWorker } from './workers/document-intake-worker';
+import { ExtractWorker } from './workers/ExtractWorker';
 import { SelfHealingWorker } from './workers/self-healing-worker';
 import { LineageTracker } from './utils/lineage-tracker';
 import { AuthorityMatrix } from './authority/authority-matrix';
@@ -48,6 +49,7 @@ export interface ProcessingResult {
  */
 export class AIPipeline {
   private documentWorker: DocumentIntakeWorker;
+  private extractWorker: ExtractWorker;
   private lineageTracker: LineageTracker;
   private fieldValidators: FieldValidators;
   private monitor: PipelineMonitor;
@@ -70,6 +72,7 @@ export class AIPipeline {
    */
   private initializeComponents(): void {
     this.documentWorker = new DocumentIntakeWorker();
+    this.extractWorker = new ExtractWorker();
     this.lineageTracker = new LineageTracker();
     this.fieldValidators = new FieldValidators();
     

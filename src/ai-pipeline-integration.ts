@@ -8,6 +8,7 @@ import { AIPipelineStorageManager } from './utils/storage';
 import { IdempotencyKeyManager } from './utils/idempotency';
 import { rabbitMQInit } from './messaging/rabbitmq-init';
 import { DocumentIntakeWorker } from './workers/document-intake-worker';
+import { ExtractWorker } from './workers/ExtractWorker';
 
 export interface AIPipelineConfig {
   tenantId: string;
@@ -31,6 +32,7 @@ export class AIPipelineIntegration {
   private storageManager: AIPipelineStorageManager;
   private idempotencyManager: IdempotencyKeyManager;
   private documentWorker: DocumentIntakeWorker;
+  private extractWorker: ExtractWorker;
   private config: AIPipelineConfig;
 
   constructor(config: AIPipelineConfig) {
@@ -39,6 +41,7 @@ export class AIPipelineIntegration {
     this.storageManager = new AIPipelineStorageManager();
     this.idempotencyManager = new IdempotencyKeyManager();
     this.documentWorker = new DocumentIntakeWorker();
+    this.extractWorker = new ExtractWorker();
   }
 
   /**
