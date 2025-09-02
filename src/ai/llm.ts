@@ -75,7 +75,7 @@ class MockProvider implements LlmProvider {
 class OpenAIProvider implements LlmProvider {
   async generate({ prompt, model, temperature, maxTokens, timeoutMs }: GenArgs): Promise<LlmOutput> {
     const apiKey = process.env.OPENAI_API_KEY!;
-    const mdl = model || process.env.LLM_MODEL || "gpt-4o-mini";
+    const mdl = model || process.env.LLM_MODEL || "gpt-5";
     const controller = new AbortController();
     const tmo = setTimeout(()=>controller.abort(), timeoutMs || Number(process.env.AI_REQUEST_TIMEOUT_MS || "60000"));
 
@@ -107,7 +107,7 @@ class OpenAIProvider implements LlmProvider {
 class GrokProvider implements LlmProvider {
   async generate({ prompt, model, temperature, maxTokens, timeoutMs }: GenArgs): Promise<LlmOutput> {
     const apiKey = process.env.XAI_API_KEY!;
-    const mdl = model || process.env.LLM_MODEL || "grok-beta";
+    const mdl = model || process.env.LLM_MODEL || "grok-4-0709";
     const controller = new AbortController();
     const tmo = setTimeout(()=>controller.abort(), timeoutMs || Number(process.env.AI_REQUEST_TIMEOUT_MS || "60000"));
 
