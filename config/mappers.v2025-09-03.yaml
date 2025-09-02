@@ -1,0 +1,96 @@
+version: v2025-09-03
+templates:
+  fannie:
+    format: xml
+    root: { name: "ULDD", ns: "http://www.efanniemae.com/uldd" }
+    sections:
+      LOAN_DETAIL:
+        NoteAmount:             "LOAN_DETAIL/NoteAmount"
+        InterestRate:           "LOAN_DETAIL/NoteRatePercent"
+        FirstPaymentDate:       "LOAN_DETAIL/FirstPaymentDate"
+        MaturityDate:           "LOAN_DETAIL/LoanMaturityDate"
+      TERMS_OF_LOAN:
+        AmortTermMonths:        "TERMS_OF_LOAN/LoanMaturityPeriodCount"
+      BORROWER:
+        BorrowerFullName:       "BORROWER/BorrowerName"
+      PROPERTY:
+        PropertyStreet:         "PROPERTY/PropertyStreetAddress"
+        PropertyCity:           "PROPERTY/PropertyCity"
+        PropertyState:          "PROPERTY/PropertyState"
+        PropertyZip:            "PROPERTY/PropertyPostalCode"
+      ESCROW:
+        EscrowRequired:         "ESCROW/EscrowIndicator"
+    required:
+      - NoteAmount
+      - InterestRate
+      - AmortTermMonths
+      - FirstPaymentDate
+      - MaturityDate
+      - PropertyStreet
+      - PropertyCity
+      - PropertyState
+      - PropertyZip
+  freddie:
+    format: xml
+    root: { name: "ULDD", ns: "http://www.freddiemac.com/uldd" }
+    sections:
+      LOAN_DETAIL:
+        NoteAmount:             "LOAN_DETAIL/NoteAmount"
+        InterestRate:           "LOAN_DETAIL/NoteRatePercent"
+        FirstPaymentDate:       "LOAN_DETAIL/FirstPaymentDate"
+        MaturityDate:           "LOAN_DETAIL/LoanMaturityDate"
+      TERMS_OF_LOAN:
+        AmortTermMonths:        "TERMS_OF_LOAN/LoanMaturityPeriodCount"
+      BORROWER:
+        BorrowerFullName:       "BORROWER/BorrowerName"
+      PROPERTY:
+        PropertyStreet:         "PROPERTY/PropertyStreetAddress"
+        PropertyCity:           "PROPERTY/PropertyCity"
+        PropertyState:          "PROPERTY/PropertyState"
+        PropertyZip:            "PROPERTY/PropertyPostalCode"
+    required:
+      - NoteAmount
+      - InterestRate
+      - AmortTermMonths
+      - PropertyStreet
+      - PropertyCity
+      - PropertyState
+      - PropertyZip
+  custom:
+    format: csv
+    csv:
+      header:
+        - LoanNumber
+        - LenderLoanId
+        - InvestorLoanId
+        - BorrowerFullName
+        - PropertyStreet
+        - PropertyCity
+        - PropertyState
+        - PropertyZip
+        - NoteAmount
+        - InterestRate
+        - AmortTermMonths
+        - FirstPaymentDate
+        - MaturityDate
+        - EscrowRequired
+      mapping:
+        LoanNumber: LoanNumber
+        LenderLoanId: LenderLoanId
+        InvestorLoanId: InvestorLoanId
+        BorrowerFullName: BorrowerFullName
+        PropertyStreet: PropertyStreet
+        PropertyCity: PropertyCity
+        PropertyState: PropertyState
+        PropertyZip: PropertyZip
+        NoteAmount: NoteAmount
+        InterestRate: InterestRate
+        AmortTermMonths: AmortTermMonths
+        FirstPaymentDate: FirstPaymentDate
+        MaturityDate: MaturityDate
+        EscrowRequired: EscrowRequired
+    required:
+      - LoanNumber
+      - NoteAmount
+      - InterestRate
+      - AmortTermMonths

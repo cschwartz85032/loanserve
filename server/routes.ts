@@ -30,6 +30,7 @@ import paymentRoutes from "./routes/payment-routes";
 import rabbitmqConfigRoutes from "./routes/rabbitmq-config";
 import metricsRoutes from "./routes/metrics";
 import { qcRouter } from "../src/routes/qc.routes";
+import { exportRouter } from "../src/routes/export.routes";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1607,6 +1608,9 @@ To implement full file serving:
 
   // Register QC (Quality Control) routes
   app.use('/api/qc', qcRouter);
+
+  // Register Export routes
+  app.use('/api/export', exportRouter);
 
   const httpServer = createServer(app);
   return httpServer;

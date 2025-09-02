@@ -175,6 +175,15 @@ app.use((req, res, next) => {
     console.error('[Server] Failed to start QC worker:', error);
   }
   
+  // Start Export Worker
+  try {
+    const { startExportWorker } = await import('../src/workers/ExportWorker');
+    await startExportWorker();
+    console.log('[Server] Export worker started successfully');
+  } catch (error) {
+    console.error('[Server] Failed to start export worker:', error);
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler

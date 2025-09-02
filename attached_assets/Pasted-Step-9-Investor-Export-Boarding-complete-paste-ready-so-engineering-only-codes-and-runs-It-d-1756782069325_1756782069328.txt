@@ -1,0 +1,594 @@
+Step 9 — Investor Export & Boarding (complete, paste-ready) so engineering only codes and runs. It delivers:
+
+Export data model (exports table + webhooks)
+
+Mapper config (Fannie ULDD XML, Freddie ULDD XML, Custom CSV)
+
+Export engine (canonical → mapper → file in S3, with lineage comments)
+
+Validation (required fields per template, type coercions)
+
+Boarding snapshot (immutable docset/data hash)
+
+Workers & routes (request → generate → store → webhook → events)
+
+Minimal tests
+
+Everything below is self-contained and production-oriented.
+
+0) Env (add/confirm)
+
+.env
+
+EXPORTS_VERSION=v2025.09.03
+EXPORT_S3_PREFIX=exports
+WEBHOOK_TIMEOUT_MS=15000
+WEBHOOK_RETRY_LIMIT=5
+
+1) Database — exports, webhooks, snapshot
+1.1 Exports & Webhooks DDL
+
+migrations/007_exports.sql
+
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS exports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  template text NOT NULL CHECK (template IN ('fannie','freddie','custom')),
+  status text NOT NULL CHECK (status IN ('queued','running','succeeded','failed')) DEFAULT 'queued',
+  file_uri text NULL,                      -- s3://...
+  file_sha256 text NULL,
+  errors jsonb NOT NULL DEFAULT '[]'::jsonb,
+  lineage jsonb NOT NULL DEFAULT '{}'::jsonb, -- summary, e.g. {key: {docId,page,hash}}
+  mapper_version text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  started_at timestamptz NULL,
+  completed_at timestamptz NULL,
+  requested_by uuid NULL
+);
+
+CREATE TABLE IF NOT EXISTS export_webhooks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  template text NOT NULL CHECK (template IN ('fannie','freddie','custom')),
+  url text NOT NULL,
+  secret text NULL,                 -- HMAC signing (optional)
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_exports_loan ON exports(tenant_id, loan_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_exports_status ON exports(tenant_id, status, created_at DESC);
+
+COMMIT;
+
+1.2 Boarding snapshot
+
+We already create snapshots in earlier steps; for completeness add a helper table for immutable snapshots (optional but recommended).
+
+migrations/008_boarding_snapshots.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS boarding_snapshots (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  snapshot_hash text NOT NULL,      -- sha256 over canonical datapoints + docset hash
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_boarding_snapshots_loan ON boarding_snapshots(tenant_id, loan_id, created_at DESC);
+COMMIT;
+
+2) Mapper configuration (YAML)
+
+config/mappers.v2025-09-03.yaml
+
+version: v2025-09-03
+templates:
+  fannie:
+    format: xml
+    root: { name: "ULDD", ns: "http://www.efanniemae.com/uldd" }
+    sections:
+      LOAN_DETAIL:
+        NoteAmount:             "LOAN_DETAIL/NoteAmount"
+        InterestRate:           "LOAN_DETAIL/NoteRatePercent"
+        FirstPaymentDate:       "LOAN_DETAIL/FirstPaymentDate"
+        MaturityDate:           "LOAN_DETAIL/LoanMaturityDate"
+      TERMS_OF_LOAN:
+        AmortTermMonths:        "TERMS_OF_LOAN/LoanMaturityPeriodCount"
+      BORROWER:
+        BorrowerFullName:       "BORROWER/BorrowerName"
+      PROPERTY:
+        PropertyStreet:         "PROPERTY/PropertyStreetAddress"
+        PropertyCity:           "PROPERTY/PropertyCity"
+        PropertyState:          "PROPERTY/PropertyState"
+        PropertyZip:            "PROPERTY/PropertyPostalCode"
+      ESCROW:
+        EscrowRequired:         "ESCROW/EscrowIndicator"
+    required:
+      - NoteAmount
+      - InterestRate
+      - AmortTermMonths
+      - FirstPaymentDate
+      - MaturityDate
+      - PropertyStreet
+      - PropertyCity
+      - PropertyState
+      - PropertyZip
+  freddie:
+    format: xml
+    root: { name: "ULDD", ns: "http://www.freddiemac.com/uldd" }
+    sections:
+      LOAN_DETAIL:
+        NoteAmount:             "LOAN_DETAIL/NoteAmount"
+        InterestRate:           "LOAN_DETAIL/NoteRatePercent"
+        FirstPaymentDate:       "LOAN_DETAIL/FirstPaymentDate"
+        MaturityDate:           "LOAN_DETAIL/LoanMaturityDate"
+      TERMS_OF_LOAN:
+        AmortTermMonths:        "TERMS_OF_LOAN/LoanMaturityPeriodCount"
+      BORROWER:
+        BorrowerFullName:       "BORROWER/BorrowerName"
+      PROPERTY:
+        PropertyStreet:         "PROPERTY/PropertyStreetAddress"
+        PropertyCity:           "PROPERTY/PropertyCity"
+        PropertyState:          "PROPERTY/PropertyState"
+        PropertyZip:            "PROPERTY/PropertyPostalCode"
+    required:
+      - NoteAmount
+      - InterestRate
+      - AmortTermMonths
+      - PropertyStreet
+      - PropertyCity
+      - PropertyState
+      - PropertyZip
+  custom:
+    format: csv
+    csv:
+      header:
+        - LoanNumber
+        - LenderLoanId
+        - InvestorLoanId
+        - BorrowerFullName
+        - PropertyStreet
+        - PropertyCity
+        - PropertyState
+        - PropertyZip
+        - NoteAmount
+        - InterestRate
+        - AmortTermMonths
+        - FirstPaymentDate
+        - MaturityDate
+        - EscrowRequired
+      mapping:
+        LoanNumber: LoanNumber
+        LenderLoanId: LenderLoanId
+        InvestorLoanId: InvestorLoanId
+        BorrowerFullName: BorrowerFullName
+        PropertyStreet: PropertyStreet
+        PropertyCity: PropertyCity
+        PropertyState: PropertyState
+        PropertyZip: PropertyZip
+        NoteAmount: NoteAmount
+        InterestRate: InterestRate
+        AmortTermMonths: AmortTermMonths
+        FirstPaymentDate: FirstPaymentDate
+        MaturityDate: MaturityDate
+        EscrowRequired: EscrowRequired
+    required:
+      - LoanNumber
+      - NoteAmount
+      - InterestRate
+      - AmortTermMonths
+
+3) Mapper engine
+3.1 Loader & coerce utilities
+
+src/exports/mapperUtil.ts
+
+import fs from "fs";
+import yaml from "js-yaml";
+import { create } from "xmlbuilder2";
+
+export type MapperConfig = any;
+
+export function loadMapperConfig(p = "config/mappers.v2025-09-03.yaml"): MapperConfig {
+  return yaml.load(fs.readFileSync(p,"utf-8")) as any;
+}
+
+// Simple coercions
+export function toBool(v:any){ if (v===true||v==="true"||v==="1"||v===1) return "true"; return "false"; }
+export function asMoney(v:any){ if (v==null) return ""; return String(v).replace(/[^\d.]/g,""); }
+export function asText(v:any){ return v==null ? "" : String(v); }
+
+export function lineageComment(key:string, ev:any){
+  const parts = [`canonical:${key}`];
+  if (ev?.evidence_doc_id) parts.push(`doc:${ev.evidence_doc_id}`);
+  if (ev?.evidence_page!=null) parts.push(`page:${ev.evidence_page}`);
+  if (ev?.evidence_text_hash) parts.push(`hash:${ev.evidence_text_hash}`);
+  return `LINEAGE ${parts.join(" | ")}`;
+}
+
+// minimal XML builder using mapping path "SECTION/Field"
+export function buildXml(root:{name:string, ns?:string}, sections:any, data:Record<string,any>, evidence:Record<string,any>) {
+  const doc = create({ version:"1.0", encoding:"UTF-8" }).ele(root.name);
+  if (root.ns) doc.att("xmlns", root.ns);
+
+  for (const [section, fields] of Object.entries<any>(sections)) {
+    const node = doc.ele(section);
+    for (const [key, path] of Object.entries<string>(fields)) {
+      const val = data[key];
+      if (val==null) continue;
+      // lineage comment
+      node.com(lineageComment(key, evidence[key]));
+      const leaf = path.split("/").pop()!;
+      node.ele(leaf).txt(String(val));
+    }
+  }
+  return doc.end({ prettyPrint: true });
+}
+
+3.2 Export engine (Fannie/Freddie XML, Custom CSV)
+
+src/exports/engine.ts
+
+import { loadMapperConfig, buildXml, asMoney, asText, toBool } from "./mapperUtil";
+import { createHash } from "crypto";
+import { putBytes } from "../utils/storage";
+
+type Canonical = Record<string, any>;
+type EvidenceMap = Record<string, { evidence_doc_id?: string, evidence_page?: number, evidence_text_hash?: string }>;
+
+export async function generateExport(opts:{
+  tenantId:string,
+  loanId:string,
+  template:'fannie'|'freddie'|'custom',
+  canonical:Canonical,
+  evidence: EvidenceMap,
+  mapperVersion:string
+}): Promise<{ bytes:Uint8Array, sha256:string, mime:string, filename:string }> {
+  const cfg = loadMapperConfig();
+  const tpl = cfg.templates[opts.template];
+  if (!tpl) throw new Error(`Unknown template: ${opts.template}`);
+
+  // Validate required keys exist in canonical
+  const req:string[] = tpl.required || [];
+  const missing = req.filter(k => opts.canonical[k]==null || opts.canonical[k]==="");
+  if (missing.length) throw new Error(`Missing required keys: ${missing.join(", ")}`);
+
+  let bytes:Uint8Array, mime:string, filename:string;
+
+  if (tpl.format === "xml") {
+    // Coerce known boolean/money fields before build if needed
+    const data = { ...opts.canonical };
+    if (data.EscrowRequired!=null) data.EscrowRequired = toBool(data.EscrowRequired);
+
+    const xml = buildXml(tpl.root, tpl.sections, data, opts.evidence);
+    bytes = Buffer.from(xml, "utf-8");
+    mime = "application/xml";
+    filename = `${opts.template.toUpperCase()}_${opts.loanId}.xml`;
+
+  } else if (tpl.format === "csv") {
+    const header:string[] = tpl.csv.header;
+    const map:Record<string,string> = tpl.csv.mapping;
+    const row:string[] = header.map(h => {
+      const key = map[h] || h;
+      const v = opts.canonical[key];
+      return (v==null) ? "" : String(v);
+    });
+    const csv = header.join(",") + "\n" + row.map(escapeCsv).join(",") + "\n";
+    bytes = Buffer.from(csv, "utf-8");
+    mime = "text/csv";
+    filename = `CUSTOM_${opts.loanId}.csv`;
+  } else {
+    throw new Error(`Unsupported format: ${tpl.format}`);
+  }
+
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return { bytes, sha256, mime, filename };
+}
+
+function escapeCsv(s:string){
+  if (/[,"\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+  return s;
+}
+
+// Save to S3 under exports/
+export async function saveExport(tenantId:string, loanId:string, filename:string, bytes:Uint8Array){
+  const key = `${process.env.S3_PREFIX || "tenants"}/${tenantId}/loans/${loanId}/${process.env.EXPORT_S3_PREFIX || "exports"}/${filename}`;
+  const uri = await putBytes(key, bytes, undefined);
+  return uri;
+}
+
+4) Repo helpers for exports & snapshots
+
+src/repo.exports.ts
+
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function createExport(tenantId:string, loanId:string, template:string, requestedBy?:string) {
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    const r = await client.query(
+      `INSERT INTO exports (tenant_id, loan_id, template, status, mapper_version, requested_by)
+       VALUES ($1,$2,$3,'queued',$4,$5) RETURNING *`,
+      [tenantId, loanId, template, process.env.EXPORTS_VERSION || "v", requestedBy || null]
+    );
+    return r.rows[0];
+  } finally { client.release(); }
+}
+
+export async function markExportRunning(id:string, tenantId:string) {
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    await c.query(`UPDATE exports SET status='running', started_at=now() WHERE id=$1`, [id]);
+  } finally { c.release(); }
+}
+
+export async function markExportResult(id:string, tenantId:string, status:'succeeded'|'failed', file_uri?:string, file_sha256?:string, errors?:any) {
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    await c.query(`UPDATE exports SET status=$2, file_uri=$3, file_sha256=$4, errors=$5, completed_at=now() WHERE id=$1`,
+      [id, status, file_uri||null, file_sha256||null, errors||'[]' ]);
+  } finally { c.release(); }
+}
+
+export async function getExport(id:string, tenantId:string) {
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    const r = await c.query(`SELECT * FROM exports WHERE id=$1`, [id]);
+    return r.rows[0] || null;
+  } finally { c.release(); }
+}
+
+// Load canonical + evidence for a loan (compact)
+export async function loadCanonicalWithEvidence(tenantId:string, loanId:string){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    const r = await c.query(`
+      SELECT key, value, normalized_value, evidence_doc_id, evidence_page, evidence_text_hash
+      FROM loan_datapoints WHERE loan_id=$1
+    `, [loanId]);
+    const canonical:any = {}; const evidence:any = {};
+    for (const row of r.rows) {
+      canonical[row.key] = row.normalized_value ?? row.value;
+      evidence[row.key]  = { evidence_doc_id: row.evidence_doc_id, evidence_page: row.evidence_page, evidence_text_hash: row.evidence_text_hash };
+    }
+    return { canonical, evidence };
+  } finally { c.release(); }
+}
+
+// Boarding snapshot
+export async function createBoardingSnapshot(tenantId:string, loanId:string, snapshot_hash:string) {
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    await c.query(`INSERT INTO boarding_snapshots (tenant_id, loan_id, snapshot_hash) VALUES ($1,$2,$3)`, [tenantId, loanId, snapshot_hash]);
+  } finally { c.release(); }
+}
+
+5) Export Worker (generate + save + webhook + event)
+
+src/workers/ExportWorker.ts
+
+import { mq } from "../topology";
+import { generateExport, saveExport } from "../exports/engine";
+import { createExport, markExportRunning, markExportResult, loadCanonicalWithEvidence } from "../repo.exports";
+import { createHash } from "crypto";
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function startExportWorker() {
+  // on request
+  await mq.consume("loan.export.request.q", async (msg:any, ch:any)=>{
+    const { tenantId, loanId, template, requestedBy } = JSON.parse(msg.content.toString());
+    const row = await createExport(tenantId, loanId, template, requestedBy);
+    await mq.publish("loan.export","start",{ tenantId, loanId, exportId: row.id, template });
+    ch.ack(msg);
+  });
+
+  // on start
+  await mq.consume("loan.export.start.q", async (msg:any, ch:any)=>{
+    const { tenantId, loanId, exportId, template } = JSON.parse(msg.content.toString());
+    try {
+      await markExportRunning(exportId, tenantId);
+
+      // Load canonical + evidence
+      const { canonical, evidence } = await loadCanonicalWithEvidence(tenantId, loanId);
+      // Generate file
+      const out = await generateExport({ tenantId, loanId, template, canonical, evidence, mapperVersion: process.env.EXPORTS_VERSION || "v" });
+      // Save to S3
+      const uri = await saveExport(tenantId, loanId, out.filename, out.bytes);
+
+      await markExportResult(exportId, tenantId, 'succeeded', uri, out.sha256, '[]');
+      await emitWebhook(tenantId, exportId, uri, out.sha256, template);
+      await mq.publish("loan.export","completed",{ tenantId, loanId, exportId, uri, sha256: out.sha256, template });
+
+    } catch (e:any) {
+      await markExportResult(exportId, tenantId, 'failed', undefined, undefined, JSON.stringify([{ message: String(e) }]));
+      await mq.publish("loan.export","completed",{ tenantId, loanId, exportId, error: String(e), template });
+    } finally {
+      ch.ack(msg);
+    }
+  });
+}
+
+async function emitWebhook(tenantId:string, exportId:string, uri:string, sha256:string, template:string) {
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    const w = await client.query(`SELECT * FROM export_webhooks WHERE tenant_id=$1 AND template=$2 AND active=true`, [tenantId, template]);
+    const timeout = Number(process.env.WEBHOOK_TIMEOUT_MS || "15000");
+    for (const row of w.rows) {
+      try {
+        const body = JSON.stringify({ export_id: exportId, template, file_uri: uri, sha256 });
+        const res = await fetch(row.url, {
+          method: "POST",
+          headers: {
+            "Content-Type":"application/json",
+            "X-LoanServe-Signature": sign(body, row.secret)
+          },
+          body,
+          signal: AbortSignal.timeout(timeout)
+        });
+        if (!res.ok) throw new Error(`Webhook ${row.url} ${res.status}`);
+      } catch (e) {
+        // retries can be implemented via outbox/failure log; keep minimal here
+      }
+    }
+  } finally { client.release(); }
+}
+
+function sign(body:string, secret?:string){
+  if (!secret) return "";
+  const h = createHash("sha256"); h.update(secret + body);
+  return h.digest("hex");
+}
+
+6) RMQ bindings for export
+
+/mnt/data/init-queues.ts (add)
+
+await ch.assertExchange("loan.export","topic",{durable:true});
+const bind = async (q:string,rk:string)=>{
+  await ch.assertQueue(q,{durable:true,arguments:{
+    "x-dead-letter-exchange":"dlx",
+    "x-dead-letter-routing-key":`${q}.dlq`
+  }});
+  await ch.bindQueue(q,"loan.export",rk);
+  await ch.assertQueue(`${q}.retry`,{durable:true,arguments:{
+    "x-dead-letter-exchange":"loan.export",
+    "x-dead-letter-routing-key":rk,
+    "x-message-ttl":15000
+  }});
+  await ch.assertQueue(`${q}.dlq`,{durable:true});
+  await ch.bindQueue(`${q}.dlq`,"dlx",`${q}.dlq`);
+};
+await bind("loan.export.request.q","request");
+await bind("loan.export.start.q","start");
+await bind("loan.export.completed.q","completed");
+
+
+src/service.ts (add)
+
+import { startExportWorker } from "./workers/ExportWorker";
+await startExportWorker();
+
+7) Routes (request export, check status, download redirect)
+
+src/routes/export.routes.ts
+
+import { Router } from "express";
+import { Pool } from "pg";
+import { getExport } from "../repo.exports";
+export const exportRouter = Router();
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+// Request export
+exportRouter.post("/loans/:id/export", async (req, res) => {
+  const { template } = req.body || {};
+  if (!['fannie','freddie','custom'].includes(template)) return res.status(400).json({ error: "invalid template" });
+  await req.mq.publish("loan.export","request",{ tenantId: req.tenant.id, loanId: req.params.id, template, requestedBy: req.user?.id || null });
+  res.status(202).json({ status: "queued" });
+});
+
+// Status
+exportRouter.get("/exports/:exportId", async (req,res)=>{
+  const row = await getExport(req.params.exportId, req.tenant.id);
+  if (!row) return res.status(404).end();
+  res.json(row);
+});
+
+// Download redirect (client will use S3 presign outside this service; here we return stored URI)
+exportRouter.get("/exports/:exportId/file", async (req,res)=>{
+  const row = await getExport(req.params.exportId, req.tenant.id);
+  if (!row || row.status!=='succeeded') return res.status(404).end();
+  res.json({ file_uri: row.file_uri, sha256: row.file_sha256 });
+});
+
+
+Wire into your main routes.ts:
+
+import { exportRouter } from "./export.routes";
+app.use("/api", exportRouter);
+
+8) Boarding snapshot creation (on finalize or on first successful export)
+
+src/workers/FinalizeHook.ts (optional helper)
+
+import { Pool } from "pg";
+import { createHash } from "crypto";
+import { createBoardingSnapshot } from "../repo.exports";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function createSnapshotForLoan(tenantId:string, loanId:string) {
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    const d = await client.query(`SELECT key, value, normalized_value, evidence_text_hash FROM loan_datapoints WHERE loan_id=$1 ORDER BY key`, [loanId]);
+    const js = JSON.stringify(d.rows);
+    const h = createHash("sha256").update(js).digest("hex");
+    await createBoardingSnapshot(tenantId, loanId, h);
+    return h;
+  } finally { client.release(); }
+}
+
+
+You can call createSnapshotForLoan() either when you finalize or right before the first export.
+
+9) Minimal tests
+
+tests/export.engine.test.ts
+
+import { generateExport } from "../src/exports/engine";
+
+it("builds Fannie XML", async ()=>{
+  const canonical:any = {
+    NoteAmount:200000, InterestRate:7.125, AmortTermMonths:360,
+    FirstPaymentDate:"2025-10-01", MaturityDate:"2055-10-01",
+    BorrowerFullName:"John Q. Public",
+    PropertyStreet:"123 Main St", PropertyCity:"Phoenix", PropertyState:"AZ", PropertyZip:"85032",
+    EscrowRequired:true
+  };
+  const evidence:any = {};
+  const out = await generateExport({ tenantId:"t", loanId:"L1", template:"fannie", canonical, evidence, mapperVersion:"v" });
+  expect(out.mime).toBe("application/xml");
+  expect(out.bytes.toString("utf-8")).toContain("<ULDD");
+});
+
+it("builds Custom CSV", async ()=>{
+  const canonical:any = { LoanNumber:"LN-1", NoteAmount:200000, InterestRate:7.125, AmortTermMonths:360, BorrowerFullName:"John" };
+  const out = await generateExport({ tenantId:"t", loanId:"L1", template:"custom", canonical, evidence:{}, mapperVersion:"v" });
+  expect(out.mime).toBe("text/csv");
+  expect(out.bytes.toString("utf-8").split("\n").length).toBeGreaterThan(1);
+});
+
+10) What engineering must not change
+
+Templates & required fields are controlled by config/mappers.vYYYY-MM-DD.yaml.
+
+Lineage comments MUST be emitted for XML fields (source traceability).
+
+S3 path structure remains <prefix>/<tenant>/loans/<loan>/<exports>/<filename>.
+
+Events: publish loan.export#start and loan.export#completed consistently.
+
+Webhook signing header is X-LoanServe-Signature (sha256(secret + body)).
+
+Boarding snapshot must be sha256 over canonical datapoints (and should not be mutable).
+
+11) Quick verification checklist
+
+Seed a loan with canonical datapoints (Step 7 outputs).
+
+POST /api/loans/:id/export { "template": "fannie" } → returns {status:"queued"}.
+
+Worker runs → exports row → status='succeeded', file_uri points to S3, file_sha256 set.
+
+GET /api/exports/:exportId shows success; /file returns storage URI & hash.
+
+If a webhook exists for template → receives POST payload with export_id, template, file_uri, sha256.
+
+(Optional) Boarding snapshot hash created on finalize or prior to first export.
