@@ -104,8 +104,41 @@ class OpenAIProvider implements LlmProvider {
   }
 }
 
+class GrokProvider implements LlmProvider {
+  async generate({ prompt, model, temperature, maxTokens, timeoutMs }: GenArgs): Promise<LlmOutput> {
+    const apiKey = process.env.XAI_API_KEY!;
+    const mdl = model || process.env.LLM_MODEL || "grok-2-1212";
+    const controller = new AbortController();
+    const tmo = setTimeout(()=>controller.abort(), timeoutMs || Number(process.env.AI_REQUEST_TIMEOUT_MS || "60000"));
+
+    try {
+      const res = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type":"application/json" },
+        body: JSON.stringify({
+          model: mdl,
+          temperature: Number(temperature ?? (process.env.AI_TEMPERATURE || "0")),
+          max_tokens: Number(maxTokens ?? (process.env.AI_MAX_TOKENS || "2000")),
+          messages: [
+            { role: "system", content: "You are a precise data-extraction service. Output STRICT JSON, no commentary." },
+            { role: "user", content: prompt }
+          ]
+        }),
+        signal: controller.signal
+      });
+      if (!res.ok) throw new Error(`Grok error: ${res.status} ${await res.text()}`);
+      const json = await res.json();
+      const text = json.choices?.[0]?.message?.content?.trim() || "";
+      return { text };
+    } finally {
+      clearTimeout(tmo);
+    }
+  }
+}
+
 export function getProvider(): LlmProvider {
   const p = (process.env.LLM_PROVIDER || "mock").toLowerCase();
   if (p === "openai") return new OpenAIProvider();
+  if (p === "grok") return new GrokProvider();
   return new MockProvider();
 }
