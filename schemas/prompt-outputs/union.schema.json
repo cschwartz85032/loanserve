@@ -1,0 +1,13 @@
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/union.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LLM Prompt Output (Union)",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "note.schema.json" },
+    { "$ref": "cd.schema.json" },
+    { "$ref": "hoi.schema.json" },
+    { "$ref": "flood.schema.json" },
+    { "$ref": "appraisal.schema.json" }
+  ]
+}

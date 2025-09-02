@@ -1,0 +1,56 @@
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/note.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Promissory Note Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docId": { "type": "string", "format": "uuid" },
+        "page": { "type": "integer", "minimum": 1 },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "textHash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "snippet": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["docId", "page", "textHash"]
+    }
+  },
+  "properties": {
+    "docType": { "const": "NOTE" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "NoteAmount": { "type": ["number","null"], "minimum": 0 },
+        "InterestRate": { "type": ["number","null"], "minimum": 0, "maximum": 100 },
+        "AmortTermMonths": { "type": ["integer","null"], "minimum": 1, "maximum": 480 },
+        "FirstPaymentDate": { "type": ["string","null"], "format": "date" },
+        "MaturityDate": { "type": ["string","null"], "format": "date" },
+        "LateChargePct": { "type": ["number","null"], "minimum": 0, "maximum": 100 },
+        "LateChargeGraceDays": { "type": ["integer","null"], "minimum": 0, "maximum": 60 },
+        "BorrowerFullName": { "type": ["string","null"], "minLength": 1, "maxLength": 200 }
+      },
+      "required": ["NoteAmount","InterestRate","AmortTermMonths","FirstPaymentDate","MaturityDate","BorrowerFullName"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "NoteAmount": { "$ref": "#/$defs/Evidence" },
+        "InterestRate": { "$ref": "#/$defs/Evidence" },
+        "AmortTermMonths": { "$ref": "#/$defs/Evidence" },
+        "FirstPaymentDate": { "$ref": "#/$defs/Evidence" },
+        "MaturityDate": { "$ref": "#/$defs/Evidence" },
+        "LateChargePct": { "$ref": "#/$defs/Evidence" },
+        "LateChargeGraceDays": { "$ref": "#/$defs/Evidence" },
+        "BorrowerFullName": { "$ref": "#/$defs/Evidence" }
+      },
+      "required": ["NoteAmount","InterestRate","AmortTermMonths","FirstPaymentDate","MaturityDate","BorrowerFullName"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}

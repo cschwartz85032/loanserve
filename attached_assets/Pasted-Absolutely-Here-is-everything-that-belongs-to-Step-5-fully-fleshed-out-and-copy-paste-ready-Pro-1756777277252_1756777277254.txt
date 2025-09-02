@@ -1,0 +1,493 @@
+Absolutely. Here is everything that belongs to Step 5 — fully fleshed out and copy-paste ready:
+
+Prompt packs (5 files)
+
+JSON Schemas (union + 5 doc-specific)
+
+AJV validator helper (1 file)
+
+Use exactly these paths and contents.
+
+prompts/note.md
+# ROLE
+You extract loan terms from a Promissory Note. Return STRICT JSON only.
+
+# OUTPUT_SCHEMA
+{
+  "docType": "NOTE",
+  "promptVersion": "v2025-09-03.note.v1",
+  "data": {
+    "NoteAmount": "number",               // dollars
+    "InterestRate": "number",             // annual % (e.g., 7.125)
+    "AmortTermMonths": "integer",         // total months (e.g., 360)
+    "FirstPaymentDate": "YYYY-MM-DD",
+    "MaturityDate": "YYYY-MM-DD",
+    "LateChargePct": "number|null",       // % (optional)
+    "LateChargeGraceDays": "integer|null",
+    "BorrowerFullName": "string"
+  },
+  "evidence": {
+    "NoteAmount": {"docId":"uuid","page":1,"bbox":[x1,y1,x2,y2],"textHash":"sha256","snippet":"..."},
+    "InterestRate": {"docId":"uuid","page":1,"bbox":[x1,y1,x2,y2],"textHash":"sha256","snippet":"..."},
+    "AmortTermMonths": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "FirstPaymentDate": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "MaturityDate": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "LateChargePct": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "LateChargeGraceDays": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "BorrowerFullName": {"docId":"uuid","page":1,"textHash":"sha256"}
+  }
+}
+
+# ANCHORS (prefer values near these)
+PROMISSORY NOTE; NOTE AMOUNT; PRINCIPAL; ANNUAL INTEREST RATE; FIRST PAYMENT DATE; MATURITY DATE;
+LATE CHARGE; GRACE DAYS; BORROWER
+
+# NEGATIVE_ANCHORS (avoid confusing with other docs)
+"CLOSING DISCLOSURE", "DEED OF TRUST", "INSURANCE", "FLOOD", "APPRAISAL"
+
+# RULES
+- Normalize dates to YYYY-MM-DD. If month words are used, convert properly.
+- Parse currency and percentages numerically (no symbols, no commas).
+- If uncertain, output null (do NOT guess).
+- Include evidence for EACH field with page and at least textHash; bbox/snippet when available.
+- Output MUST be valid JSON and match the schema.
+
+# INPUT
+{{DOC_TEXT_SLICE}}
+
+# RETURN (JSON ONLY)
+
+prompts/cd.md
+# ROLE
+You extract closing economics and escrow hints from a Closing Disclosure (CD). Return STRICT JSON only.
+
+# OUTPUT_SCHEMA
+{
+  "docType": "CD",
+  "promptVersion": "v2025-09-03.cd.v1",
+  "data": {
+    "TotalLoanAmount": "number",
+    "PAndIAmount": "number",
+    "EscrowRequired": "boolean|null",
+    "TaxEscrowMonthly": "number|null",
+    "InsuranceEscrowMonthly": "number|null",
+    "HOICarrier": "string|null",
+    "HOIPolicyNumber": "string|null",
+    "PropertyAddress": "string"
+  },
+  "evidence": {
+    "TotalLoanAmount": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "PAndIAmount": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "EscrowRequired": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "TaxEscrowMonthly": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "InsuranceEscrowMonthly": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "HOICarrier": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "HOIPolicyNumber": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "PropertyAddress": {"docId":"uuid","page":1,"textHash":"sha256"}
+  }
+}
+
+# ANCHORS
+"Closing Disclosure"; "Loan Terms"; "Projected Payments"; "Escrow"; "Insurance"; "Policy"
+# NEGATIVES
+"Promissory Note", "Deed of Trust", "Appraisal", "Flood Determination"
+
+# RULES
+- Money: numbers only (e.g., 2013.25). Booleans: true/false.
+- Address: single formatted string from the CD mailing/address block.
+- Evidence for EACH field.
+
+# INPUT
+{{DOC_TEXT_SLICE}}
+
+# RETURN (JSON ONLY)
+
+prompts/hoi.md
+# ROLE
+Extract homeowner's insurance (HOI) policy facts from a Policy Declarations page. Return STRICT JSON only.
+
+# OUTPUT_SCHEMA
+{
+  "docType": "HOI",
+  "promptVersion": "v2025-09-03.hoi.v1",
+  "data": {
+    "HomeownersInsCarrier": "string",
+    "HOIPolicyNumber": "string",
+    "HOIEffectiveDate": "YYYY-MM-DD",
+    "HOIExpirationDate": "YYYY-MM-DD",
+    "HOIPhone": "string|null",
+    "HOIEmail": "string|null"
+  },
+  "evidence": {
+    "HomeownersInsCarrier": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "HOIPolicyNumber": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "HOIEffectiveDate": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "HOIExpirationDate": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "HOIPhone": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "HOIEmail": {"docId":"uuid","page":1,"textHash":"sha256"}
+  }
+}
+
+# ANCHORS
+"DECLARATIONS", "POLICY NUMBER", "EFFECTIVE", "EXPIRATION", "CARRIER", "INSURANCE COMPANY", "CONTACT"
+
+# RULES
+- Normalize dates to YYYY-MM-DD.
+- Strip spaces/dashes from policy number unless they are internal structure.
+- Evidence for EACH field.
+
+# INPUT
+{{DOC_TEXT_SLICE}}
+
+# RETURN (JSON ONLY)
+
+prompts/flood.md
+# ROLE
+Extract flood determination facts. Return STRICT JSON only.
+
+# OUTPUT_SCHEMA
+{
+  "docType": "FLOOD",
+  "promptVersion": "v2025-09-03.flood.v1",
+  "data": {
+    "FloodZone": "string",
+    "FloodInsRequired": "boolean",
+    "DeterminationIdentifier": "string|null"
+  },
+  "evidence": {
+    "FloodZone": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "FloodInsRequired": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "DeterminationIdentifier": {"docId":"uuid","page":1,"textHash":"sha256"}
+  }
+}
+
+# ANCHORS
+"FLOOD HAZARD DETERMINATION", "SFHA", "ZONE", "INSURANCE REQUIRED", "DETERMINATION"
+
+# RULES
+- Map "IN/OUT OF SFHA" to FloodInsRequired true/false when present.
+- Evidence for EACH field.
+
+# INPUT
+{{DOC_TEXT_SLICE}}
+
+# RETURN (JSON ONLY)
+
+prompts/appraisal.md
+# ROLE
+Extract appraisal facts. Return STRICT JSON only.
+
+# OUTPUT_SCHEMA
+{
+  "docType": "APPRAISAL",
+  "promptVersion": "v2025-09-03.appraisal.v1",
+  "data": {
+    "AppraisalDate": "YYYY-MM-DD",
+    "AppraisedValue": "number",
+    "AppraisalFormType": "string|null"
+  },
+  "evidence": {
+    "AppraisalDate": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "AppraisedValue": {"docId":"uuid","page":1,"textHash":"sha256"},
+    "AppraisalFormType": {"docId":"uuid","page":1,"textHash":"sha256"}
+  }
+}
+
+# ANCHORS
+"Uniform Residential Appraisal Report", "URAR", "Effective Date of Appraisal", "Appraised Value"
+
+# RULES
+- Value in dollars (no commas/symbols). Dates = YYYY-MM-DD.
+- Evidence for EACH field.
+
+# INPUT
+{{DOC_TEXT_SLICE}}
+
+# RETURN (JSON ONLY)
+
+schemas/prompt-outputs/union.schema.json
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/union.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LLM Prompt Output (Union)",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "note.schema.json" },
+    { "$ref": "cd.schema.json" },
+    { "$ref": "hoi.schema.json" },
+    { "$ref": "flood.schema.json" },
+    { "$ref": "appraisal.schema.json" }
+  ]
+}
+
+Evidence $defs (reused)
+
+Use the same $defs block below inside each of the five doc-specific schemas.
+
+"$defs": {
+  "Evidence": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "docId":   { "type": "string", "format": "uuid" },
+      "page":    { "type": "integer", "minimum": 1 },
+      "bbox":    { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+      "textHash":{ "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+      "snippet": { "type": "string", "maxLength": 1000 }
+    },
+    "required": ["docId", "page", "textHash"]
+  }
+}
+
+schemas/prompt-outputs/note.schema.json
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/note.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Promissory Note Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docId": { "type": "string", "format": "uuid" },
+        "page": { "type": "integer", "minimum": 1 },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "textHash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "snippet": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["docId", "page", "textHash"]
+    }
+  },
+  "properties": {
+    "docType": { "const": "NOTE" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "NoteAmount": { "type": ["number","null"], "minimum": 0 },
+        "InterestRate": { "type": ["number","null"], "minimum": 0, "maximum": 100 },
+        "AmortTermMonths": { "type": ["integer","null"], "minimum": 1, "maximum": 480 },
+        "FirstPaymentDate": { "type": ["string","null"], "format": "date" },
+        "MaturityDate": { "type": ["string","null"], "format": "date" },
+        "LateChargePct": { "type": ["number","null"], "minimum": 0, "maximum": 100 },
+        "LateChargeGraceDays": { "type": ["integer","null"], "minimum": 0, "maximum": 60 },
+        "BorrowerFullName": { "type": ["string","null"], "minLength": 1, "maxLength": 200 }
+      },
+      "required": ["NoteAmount","InterestRate","AmortTermMonths","FirstPaymentDate","MaturityDate","BorrowerFullName"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "NoteAmount": { "$ref": "#/$defs/Evidence" },
+        "InterestRate": { "$ref": "#/$defs/Evidence" },
+        "AmortTermMonths": { "$ref": "#/$defs/Evidence" },
+        "FirstPaymentDate": { "$ref": "#/$defs/Evidence" },
+        "MaturityDate": { "$ref": "#/$defs/Evidence" },
+        "LateChargePct": { "$ref": "#/$defs/Evidence" },
+        "LateChargeGraceDays": { "$ref": "#/$defs/Evidence" },
+        "BorrowerFullName": { "$ref": "#/$defs/Evidence" }
+      },
+      "required": ["NoteAmount","InterestRate","AmortTermMonths","FirstPaymentDate","MaturityDate","BorrowerFullName"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+schemas/prompt-outputs/cd.schema.json
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/cd.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Closing Disclosure Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "CD" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "TotalLoanAmount": { "type": ["number","null"], "minimum": 0 },
+        "PAndIAmount": { "type": ["number","null"], "minimum": 0 },
+        "EscrowRequired": { "type": ["boolean","null"] },
+        "TaxEscrowMonthly": { "type": ["number","null"], "minimum": 0 },
+        "InsuranceEscrowMonthly": { "type": ["number","null"], "minimum": 0 },
+        "HOICarrier": { "type": ["string","null"], "minLength": 1, "maxLength": 200 },
+        "HOIPolicyNumber": { "type": ["string","null"], "minLength": 1, "maxLength": 120 },
+        "PropertyAddress": { "type": ["string","null"], "minLength": 1, "maxLength": 300 }
+      },
+      "required": ["TotalLoanAmount","PAndIAmount","EscrowRequired","PropertyAddress"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "TotalLoanAmount": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "PAndIAmount": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "EscrowRequired": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "TaxEscrowMonthly": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "InsuranceEscrowMonthly": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOICarrier": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIPolicyNumber": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "PropertyAddress": { "$ref": "note.schema.json#/$defs/Evidence" }
+      },
+      "required": ["TotalLoanAmount","PAndIAmount","EscrowRequired","PropertyAddress"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+schemas/prompt-outputs/hoi.schema.json
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/hoi.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Homeowners Insurance Declarations Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "HOI" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "HomeownersInsCarrier": { "type": ["string","null"], "minLength": 1, "maxLength": 200 },
+        "HOIPolicyNumber": { "type": ["string","null"], "minLength": 1, "maxLength": 120 },
+        "HOIEffectiveDate": { "type": ["string","null"], "format": "date" },
+        "HOIExpirationDate": { "type": ["string","null"], "format": "date" },
+        "HOIPhone": { "type": ["string","null"], "maxLength": 40 },
+        "HOIEmail": { "type": ["string","null"], "format": "email" }
+      },
+      "required": ["HomeownersInsCarrier","HOIPolicyNumber","HOIEffectiveDate","HOIExpirationDate"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "HomeownersInsCarrier": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIPolicyNumber": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIEffectiveDate": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIExpirationDate": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIPhone": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "HOIEmail": { "$ref": "note.schema.json#/$defs/Evidence" }
+      },
+      "required": ["HomeownersInsCarrier","HOIPolicyNumber","HOIEffectiveDate","HOIExpirationDate"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+schemas/prompt-outputs/flood.schema.json
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/flood.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flood Determination Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "FLOOD" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "FloodZone": { "type": ["string","null"], "minLength": 1, "maxLength": 40 },
+        "FloodInsRequired": { "type": ["boolean","null"] },
+        "DeterminationIdentifier": { "type": ["string","null"], "maxLength": 120 }
+      },
+      "required": ["FloodZone","FloodInsRequired"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "FloodZone": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "FloodInsRequired": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "DeterminationIdentifier": { "$ref": "note.schema.json#/$defs/Evidence" }
+      },
+      "required": ["FloodZone","FloodInsRequired"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+schemas/prompt-outputs/appraisal.schema.json
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/appraisal.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Appraisal Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": { "$ref": "note.schema.json#/$defs" },
+  "properties": {
+    "docType": { "const": "APPRAISAL" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "AppraisalDate": { "type": ["string","null"], "format": "date" },
+        "AppraisedValue": { "type": ["number","null"], "minimum": 0 },
+        "AppraisalFormType": { "type": ["string","null"], "maxLength": 120 }
+      },
+      "required": ["AppraisalDate","AppraisedValue"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "AppraisalDate": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "AppraisedValue": { "$ref": "note.schema.json#/$defs/Evidence" },
+        "AppraisalFormType": { "$ref": "note.schema.json#/$defs/Evidence" }
+      },
+      "required": ["AppraisalDate","AppraisedValue"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
+
+src/utils/validation/promptOutputValidator.ts
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
+
+// Import all schemas so $refs resolve reliably in bundlers:
+import unionSchema from "../../../schemas/prompt-outputs/union.schema.json";
+import noteSchema from "../../../schemas/prompt-outputs/note.schema.json";
+import cdSchema from "../../../schemas/prompt-outputs/cd.schema.json";
+import hoiSchema from "../../../schemas/prompt-outputs/hoi.schema.json";
+import floodSchema from "../../../schemas/prompt-outputs/flood.schema.json";
+import appraisalSchema from "../../../schemas/prompt-outputs/appraisal.schema.json";
+
+const ajv = new Ajv({ allErrors: true, strict: true });
+addFormats(ajv);
+
+// Register doc schemas first (they are referenced by the union schema)
+[noteSchema, cdSchema, hoiSchema, floodSchema, appraisalSchema].forEach(s => ajv.addSchema(s));
+
+const validate = ajv.compile(unionSchema);
+
+export function assertValidPromptOutput(obj: unknown) {
+  const ok = validate(obj);
+  if (!ok) {
+    const err = new Error("PromptOutputValidationError");
+    (err as any).details = validate.errors;
+    throw err;
+  }
+}
+
+How to use (quick reminder)
+
+When your ExtractWorker gets an [AI] response for a doc slice, parse JSON, then call:
+
+import { assertValidPromptOutput } from "../utils/validation/promptOutputValidator";
+assertValidPromptOutput(aiJson);
+
+
+If it throws, do one repair pass or route the item to DLQ/HITL; never persist invalid structures.

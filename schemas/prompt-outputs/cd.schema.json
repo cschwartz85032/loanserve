@@ -1,0 +1,56 @@
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/cd.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Closing Disclosure Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docId": { "type": "string", "format": "uuid" },
+        "page": { "type": "integer", "minimum": 1 },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "textHash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "snippet": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["docId", "page", "textHash"]
+    }
+  },
+  "properties": {
+    "docType": { "const": "CD" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "TotalLoanAmount": { "type": ["number","null"], "minimum": 0 },
+        "PAndIAmount": { "type": ["number","null"], "minimum": 0 },
+        "EscrowRequired": { "type": ["boolean","null"] },
+        "TaxEscrowMonthly": { "type": ["number","null"], "minimum": 0 },
+        "InsuranceEscrowMonthly": { "type": ["number","null"], "minimum": 0 },
+        "HOICarrier": { "type": ["string","null"], "minLength": 1, "maxLength": 200 },
+        "HOIPolicyNumber": { "type": ["string","null"], "minLength": 1, "maxLength": 120 },
+        "PropertyAddress": { "type": ["string","null"], "minLength": 1, "maxLength": 300 }
+      },
+      "required": ["TotalLoanAmount","PAndIAmount","EscrowRequired","PropertyAddress"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "TotalLoanAmount": { "$ref": "#/$defs/Evidence" },
+        "PAndIAmount": { "$ref": "#/$defs/Evidence" },
+        "EscrowRequired": { "$ref": "#/$defs/Evidence" },
+        "TaxEscrowMonthly": { "$ref": "#/$defs/Evidence" },
+        "InsuranceEscrowMonthly": { "$ref": "#/$defs/Evidence" },
+        "HOICarrier": { "$ref": "#/$defs/Evidence" },
+        "HOIPolicyNumber": { "$ref": "#/$defs/Evidence" },
+        "PropertyAddress": { "$ref": "#/$defs/Evidence" }
+      },
+      "required": ["TotalLoanAmount","PAndIAmount","EscrowRequired","PropertyAddress"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}

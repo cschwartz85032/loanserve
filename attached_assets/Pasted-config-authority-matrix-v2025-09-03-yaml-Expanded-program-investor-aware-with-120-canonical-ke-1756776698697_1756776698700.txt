@@ -1,0 +1,470 @@
+config/authority-matrix.v2025-09-03.yaml
+
+(Expanded, program/investor-aware, with ~120+ canonical keys. You can keep appending keys; evaluator supports prohibits, prefer/require, bonuses, penalties, and tie-breakers.)
+
+version: v2025-09-03
+description: "Expanded authority rules for majority of servicing datapoints; ULDD-backed. Generator will append any missing ULDD keys as neutral stubs."
+
+thresholds:
+  accept_confidence: 0.80
+  hitl_floor: 0.60
+  tie_margin: 0.07
+
+weights:
+  source:
+    deterministic: 1.00
+    payload: 0.85
+    vendor: 0.97
+    ai_doc: 0.75
+    ai_cross: 0.78
+  docType:
+    NOTE: 1.00
+    LE: 0.92
+    CD: 0.93
+    DEED: 0.95
+    TITLE: 0.94
+    HOI: 0.92
+    FLOOD: 0.95
+    APPRAISAL: 0.93
+    TAXBILL: 0.90
+    HUD1: 0.90
+
+bonuses:
+  recency_days:
+    half_life: 180
+    max_bonus: 0.05
+  signed_doc_bonus: 0.03
+  anchor_proximity_bonus:
+    near_strong_anchor: 0.03
+    near_weak_anchor: 0.01
+
+penalties:
+  missing_evidence: 0.10
+  page_image_quality_low: 0.05
+
+defaults:
+  tie_breakers: [ "authority_rank", "doc_date_recent", "higher_confidence" ]
+  accept_if_single_candidate: true
+
+# -------------------------------------------------------------------------
+# KEYS (grouped). For each key you can use:
+# - priority: ordered preference lanes with optional require/prohibit/require_anchor
+# - prohibit: disallow sources/docTypes
+# - tie_breakers: override defaults
+# -------------------------------------------------------------------------
+keys:
+
+  # ===== Loan Economics =====
+  NoteAmount:
+    priority:
+      - { prefer: { docType: NOTE }, require: { extractor: deterministic } }
+      - { prefer: { docType: CD } }
+      - { prefer: { source: payload } }
+    prohibit: [ { docType: HOI }, { docType: TITLE } ]
+
+  InterestRate:
+    priority:
+      - { prefer: { docType: NOTE }, require: { extractor: deterministic } }
+      - { prefer: { docType: CD } }
+      - { prefer: { source: payload } }
+
+  DefaultRate:
+    priority:
+      - { prefer: { docType: NOTE } }
+      - { prefer: { source: payload } }
+    prohibit: [ { docType: CD }, { docType: HOI }, { docType: TITLE } ]
+
+  RateType:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: LE } }, { prefer: { source: payload } } ]
+
+  PaymentType:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ]
+
+  AmortTermMonths:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: LE } }, { prefer: { source: payload } } ]
+
+  BalloonFlag:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  BalloonDate:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ]
+
+  FirstPaymentDate:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ]
+
+  MaturityDate:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: DEED } }, { prefer: { source: payload } } ]
+
+  LateChargePct:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  LateChargeGraceDays:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  IndexName:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  Margin:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  ARMCapStructure:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  ARMChangeFrequency:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  ARMFirstChangeDate:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  FloorRate:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+  CeilingRate:
+    priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ]
+
+
+  # ===== Borrower / Co-Borrower / Guarantor =====
+  BorrowerFirstName: { priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+  BorrowerMiddleName:{ priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+  BorrowerLastName:  { priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+  BorrowerFullName:  { priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+
+  BorrowerSSN:
+    priority: [ { prefer: { docType: LE } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ]
+    prohibit: [ { docType: NOTE } ]
+
+  BorrowerDOB:
+    priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ]
+
+  BorrowerEmail:
+    priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ]
+
+  BorrowerPhone:
+    priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ]
+
+  CoBorrowerFirstName: { priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+  CoBorrowerLastName:  { priority: [ { prefer: { docType: NOTE } }, { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+  CoBorrowerSSN:
+    priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ]
+    prohibit: [ { docType: NOTE } ]
+  CoBorrowerDOB:
+    priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ]
+
+  GuarantorName:      { priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ] }
+  GuarantorSSN:       { priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ] }
+
+
+  # ===== Collateral / Property =====
+  PropertyStreet: { priority: [ { prefer: { docType: DEED } }, { prefer: { docType: CD } }, { prefer: { docType: APPRAISAL } } ] }
+  PropertyUnit:   { priority: [ { prefer: { docType: DEED } }, { prefer: { docType: CD } } ] }
+  PropertyCity:   { priority: [ { prefer: { docType: DEED } }, { prefer: { docType: CD } }, { prefer: { docType: APPRAISAL } } ] }
+  PropertyState:  { priority: [ { prefer: { docType: DEED } }, { prefer: { docType: CD } } ] }
+  PropertyZip:    { priority: [ { prefer: { docType: DEED } }, { prefer: { docType: CD } } ] }
+  PropertyCounty: { priority: [ { prefer: { docType: DEED } }, { prefer: { docType: APPRAISAL } } ] }
+  APN:            { priority: [ { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+  PropertyType:   { priority: [ { prefer: { docType: APPRAISAL } }, { prefer: { docType: LE } }, { prefer: { source: payload } } ] }
+  OccupancyType:  { priority: [ { prefer: { docType: LE } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  UnitsCount:     { priority: [ { prefer: { docType: APPRAISAL } }, { prefer: { source: payload } } ] }
+  HOAName:        { priority: [ { prefer: { docType: TITLE } }, { prefer: { source: payload } } ] }
+  HOAMonthly:     { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  LegalDescription: { priority: [ { prefer: { docType: DEED } }, { prefer: { docType: TITLE } } ] }
+
+
+  # ===== Insurance / Escrows =====
+  EscrowRequired:         { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  TaxEscrowMonthly:       { priority: [ { prefer: { docType: CD } }, { prefer: { docType: TAXBILL } }, { prefer: { source: payload } } ] }
+  InsuranceEscrowMonthly: { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  FloodEscrowMonthly:     { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+
+  HomeownersInsCarrier:
+    priority: [ { prefer: { docType: HOI } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ]
+    prohibit: [ { docType: NOTE } ]
+
+  HOIPolicyNumber:
+    priority:
+      - { prefer: { docType: HOI }, require_anchor: ["Policy Number","Declarations"] }
+      - { prefer: { docType: CD } }
+      - { prefer: { source: payload } }
+    prohibit: [ { docType: NOTE } ]
+
+  HOIEffectiveDate:  { priority: [ { prefer: { docType: HOI } }, { prefer: { source: payload } } ] }
+  HOIExpirationDate: { priority: [ { prefer: { docType: HOI } }, { prefer: { source: payload } } ] }
+  HazardDeductible:  { priority: [ { prefer: { docType: HOI } }, { prefer: { source: payload } } ] }
+
+  FloodZone:             { priority: [ { prefer: { docType: FLOOD } }, { prefer: { source: payload } }, { prefer: { source: ai_doc } } ] }
+  FloodInsRequired:      { priority: [ { prefer: { docType: FLOOD } }, { prefer: { source: payload } } ] }
+  DeterminationIdentifier:{ priority: [ { prefer: { docType: FLOOD } }, { prefer: { source: payload } } ] }
+
+  # ===== Title / Settlement =====
+  TitleCompanyName:  { priority: [ { prefer: { docType: TITLE } }, { prefer: { source: payload } } ] }
+  TitleFileNumber:   { priority: [ { prefer: { docType: TITLE } }, { prefer: { source: payload } } ] }
+  TitleSettlementChargesTotal:
+    priority: [ { prefer: { docType: TITLE } }, { prefer: { docType: CD } } ]
+    prohibit: [ { docType: NOTE } ]
+  RecordingState:    { priority: [ { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+  RecordingCounty:   { priority: [ { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+
+  # ===== Appraisal =====
+  AppraisedValue:    { priority: [ { prefer: { docType: APPRAISAL } }, { prefer: { source: payload } }, { prefer: { source: ai_doc } } ] }
+  AppraisalDate:     { priority: [ { prefer: { docType: APPRAISAL } }, { prefer: { source: payload } } ] }
+  AppraisalFormType: { priority: [ { prefer: { docType: APPRAISAL } }, { prefer: { source: payload } } ] }
+  UCDPSSRStatus:     { priority: [ { prefer: { vendor: true } }, { prefer: { docType: APPRAISAL } }, { prefer: { source: payload } } ] }
+
+  # ===== Origination / Disclosures =====
+  LoanOriginatorName:
+    priority: [ { prefer: { docType: LE } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ]
+    prohibit: [ { docType: NOTE }, { docType: TITLE } ]
+
+  LoanOriginatorCompany: { priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ] }
+  Channel:               { priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ] }
+  ProgramCode:           { priority: [ { prefer: { source: payload } } ] }
+  LockStatus:            { priority: [ { prefer: { source: payload } } ] }
+  LockExpireDate:        { priority: [ { prefer: { source: payload } } ] }
+  ECOAActionDate:        { priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ] }
+  TRID_LEDate:           { priority: [ { prefer: { docType: LE } }, { prefer: { source: payload } } ] }
+  TRID_CDDate:           { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  ATRQMStatus:           { priority: [ { prefer: { source: payload } } ] }
+
+  # ===== Fees / Credits =====
+  Points:                { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  BrokerComp:            { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  CreditsSeller:         { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  CreditsLender:         { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+  PrepaidInterestAmount: { priority: [ { prefer: { docType: CD } }, { prefer: { source: payload } } ] }
+
+  # ===== Ratios =====
+  LTV:   { priority: [ { prefer: { source: payload } }, { prefer: { docType: APPRAISAL } } ] }
+  CLTV:  { priority: [ { prefer: { source: payload } }, { prefer: { docType: APPRAISAL } } ] }
+  HCLTV: { priority: [ { prefer: { source: payload } } ] }
+  DTIFront: { priority: [ { prefer: { source: payload } } ] }
+  DTIBack:  { priority: [ { prefer: { source: payload } } ] }
+
+  # ===== Servicing Setup =====
+  BoardingDate:          { priority: [ { prefer: { source: payload } } ] }
+  EscrowBalanceAtBoard:  { priority: [ { prefer: { source: payload } } ] }
+  InterestAccrualMethod: { priority: [ { prefer: { source: payload } } ] }
+  DayCount:              { priority: [ { prefer: { source: payload } } ] }
+  ServicerName:          { priority: [ { prefer: { source: payload } } ] }
+  ServicingType:         { priority: [ { prefer: { source: payload } } ] }
+  PaymentFrequency:      { priority: [ { prefer: { docType: NOTE } }, { prefer: { source: payload } } ] }
+
+  # ===== Identifiers =====
+  LenderLoanId:   { priority: [ { prefer: { source: payload } } ] }
+  InvestorLoanId: { priority: [ { prefer: { source: payload } } ] }
+  MERSMin:        { priority: [ { prefer: { docType: DEED } }, { prefer: { source: payload } } ] }
+
+# ---------------- Overrides ----------------
+program_overrides:
+  FNMA:
+    keys:
+      LoanOriginatorName:
+        priority: [ { prefer: { docType: LE } }, { prefer: { docType: CD } }, { prefer: { source: payload } } ]
+  FRE:
+    keys:
+      AppraisedValue:
+        bonuses:
+          anchor_proximity_bonus:
+            near_strong_anchor: 0.04
+
+investor_overrides:
+  ACME_CAPITAL:
+    thresholds:
+      accept_confidence: 0.85
+    keys:
+      HOIPolicyNumber:
+        priority:
+          - { prefer: { docType: HOI }, require_anchor: ["Policy Number","Declarations"] }
+          - { prefer: { source: payload } }
+
+tools/build-authority-matrix-from-uldd.ts
+
+(Generator: reads official ULDD spreadsheets, derives canonical keys, and appends missing keys as neutral stubs to the YAML above. Safe to re-run; preserves existing rules.)
+
+#!/usr/bin/env ts-node
+
+/**
+ * Build/append authoritative-key stubs from official ULDD Appendix workbooks.
+ * Usage:
+ *   ts-node tools/build-authority-matrix-from-uldd.ts \
+ *     vendor/uldd/fannie_appendix_d.xlsx \
+ *     vendor/uldd/freddie_appendix_d.xlsx \
+ *     config/authority-matrix.v2025-09-03.yaml
+ */
+
+import xlsx from "xlsx";
+import fs from "fs";
+import yaml from "js-yaml";
+import path from "path";
+
+type Row = Record<string, string>;
+
+function readULDDWorkbook(xlsxPath: string): string[] {
+  const wb = xlsx.readFile(xlsxPath, { cellDates: false });
+  // Heuristic: prefer a sheet with "Complete" in name; fallback to first
+  const sheetName =
+    wb.SheetNames.find((n) => /complete/i.test(n)) || wb.SheetNames[0];
+
+  const rows: Row[] = xlsx.utils.sheet_to_json(wb.Sheets[sheetName], {
+    raw: false,
+    defval: "",
+  });
+
+  const keys = new Set<string>();
+
+  for (const r of rows) {
+    // common header variants across GSE workbooks:
+    const pathish =
+      r["MISMO v3.0 Data Point"] ||
+      r["MISMO v3.4 Data Point"] ||
+      r["XML Path"] ||
+      r["ULDD XPath"] ||
+      r["MISMO Field"] ||
+      "";
+
+    const name = String(pathish).trim();
+    if (!name) continue;
+
+    // leaf from MISMO/ULDD path, e.g., DEAL/LOAN/LOAN_DETAIL/NoteRatePercent -> NoteRatePercent
+    const leaf = name.split(/[\/.]/).pop()!.trim();
+    if (!leaf) continue;
+
+    // Try a mapping to our canonical keys where we have clarity; otherwise keep leaf
+    const canonical = toCanonical(leaf);
+    keys.add(canonical);
+  }
+
+  return [...keys].sort();
+}
+
+function toCanonical(leaf: string): string {
+  const map: Record<string, string> = {
+    NoteRatePercent: "InterestRate",
+    NoteAmount: "NoteAmount",
+    LoanMaturityPeriodCount: "AmortTermMonths",
+    LoanMaturityDate: "MaturityDate",
+    FirstPaymentDate: "FirstPaymentDate",
+    BalloonIndicator: "BalloonFlag",
+    PaymentFrequencyType: "PaymentFrequency",
+    BorrowerName: "BorrowerFullName",
+    BorrowerFirstName: "BorrowerFirstName",
+    BorrowerLastName: "BorrowerLastName",
+    BorrowerSSN: "BorrowerSSN",
+    BorrowerBirthDate: "BorrowerDOB",
+    LienPriorityType: "LienPosition",
+    PropertyStreetAddress: "PropertyStreet",
+    PropertyCity: "PropertyCity",
+    PropertyState: "PropertyState",
+    PropertyPostalCode: "PropertyZip",
+    PropertyCountyName: "PropertyCounty",
+    AppraisedValueAmount: "AppraisedValue",
+    AppraisalEffectiveDate: "AppraisalDate",
+    FloodZoneIdentifier: "FloodZone",
+    HomeownersInsurancePolicyIdentifier: "HOIPolicyNumber",
+    HomeownersInsuranceCompanyName: "HomeownersInsCarrier",
+    MortgageElectronicRegistrationSystemMINIdentifier: "MERSMin",
+    EscrowIndicator: "EscrowRequired",
+    MonthlyEscrowTaxAmount: "TaxEscrowMonthly",
+    MonthlyEscrowInsuranceAmount: "InsuranceEscrowMonthly",
+    OccupancyType: "OccupancyType",
+    LoanPurposeType: "LoanPurpose",
+    CombinedLTVRatioPercent: "CLTV",
+    LTVRatioPercent: "LTV",
+    HousingExpenseRatioPercent: "DTIFront",
+    TotalDebtExpenseRatioPercent: "DTIBack",
+  };
+  return map[leaf] || leaf;
+}
+
+function loadMatrix(matrixPath: string): any {
+  const text = fs.readFileSync(matrixPath, "utf8");
+  return yaml.load(text) as any;
+}
+
+function saveMatrix(matrixPath: string, matrix: any) {
+  const out = yaml.dump(matrix, { lineWidth: 120 });
+  fs.writeFileSync(matrixPath, out);
+  console.log(`Saved ${matrixPath}`);
+}
+
+function ensureKeys(matrix: any, keys: string[]) {
+  matrix.keys ||= {};
+  let added = 0;
+
+  for (const k of keys) {
+    if (matrix.keys[k]) continue; // already present
+
+    // Neutral stub (engineers will fine-tune later).
+    // Prefer CD (fee/econ), then NOTE (econ), then payload as fallback.
+    matrix.keys[k] = {
+      priority: [
+        { prefer: { docType: "CD" } },
+        { prefer: { docType: "NOTE" } },
+        { prefer: { source: "payload" } },
+      ],
+    };
+    added++;
+  }
+
+  return added;
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  if (args.length < 2) {
+    console.error(
+      "Usage: ts-node tools/build-authority-matrix-from-uldd.ts <uldd.xlsx> [<uldd.xlsx> ...] <matrix.yaml>"
+    );
+    process.exit(1);
+  }
+
+  const matrixPath = args[args.length - 1];
+  const xlsxPaths = args.slice(0, -1);
+
+  // Verify inputs
+  for (const p of xlsxPaths) {
+    if (!fs.existsSync(p)) {
+      console.error(`ULDD workbook not found: ${p}`);
+      process.exit(1);
+    }
+  }
+  if (!fs.existsSync(matrixPath)) {
+    console.error(`Matrix YAML not found: ${matrixPath}`);
+    process.exit(1);
+  }
+
+  // Collect keys from all provided workbooks
+  const allKeys = new Set<string>();
+  for (const xp of xlsxPaths) {
+    const ks = readULDDWorkbook(xp);
+    ks.forEach((k) => allKeys.add(k));
+  }
+
+  const matrix = loadMatrix(matrixPath);
+
+  // Optional: bump version with date suffix
+  const baseVer = String(matrix.version || "v0.0.0");
+  const stamp =
+    "v" +
+    new Date().toISOString().slice(0, 10).replace(/-/g, "-") +
+    "+" +
+    path.basename(matrixPath).split(".")[0];
+  matrix.version = stamp.startsWith("v") ? stamp : `v${stamp}`;
+
+  const added = ensureKeys(matrix, [...allKeys].sort());
+  saveMatrix(matrixPath, matrix);
+  console.log(`Total keys from ULDD: ${allKeys.size}. Added new stubs: ${added}.`);
+}
+
+main();
+
+
+How to run:
+
+# Example with both Fannie & Freddie appendices
+ts-node tools/build-authority-matrix-from-uldd.ts \
+  vendor/uldd/fannie_appendix_d.xlsx \
+  vendor/uldd/freddie_appendix_d.xlsx \
+  config/authority-matrix.v2025-09-03.yaml
+
+
+This will append any missing ULDD-derived keys to your matrix as neutral stubs so nothing slips through. Your evaluator will immediately support them; you can then refine priorities per key in PRs (with CODEOWNERS if you’d like).

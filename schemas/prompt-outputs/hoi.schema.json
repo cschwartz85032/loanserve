@@ -1,0 +1,52 @@
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/hoi.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Homeowners Insurance Declarations Extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "docId": { "type": "string", "format": "uuid" },
+        "page": { "type": "integer", "minimum": 1 },
+        "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "textHash": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" },
+        "snippet": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["docId", "page", "textHash"]
+    }
+  },
+  "properties": {
+    "docType": { "const": "HOI" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "HomeownersInsCarrier": { "type": ["string","null"], "minLength": 1, "maxLength": 200 },
+        "HOIPolicyNumber": { "type": ["string","null"], "minLength": 1, "maxLength": 120 },
+        "HOIEffectiveDate": { "type": ["string","null"], "format": "date" },
+        "HOIExpirationDate": { "type": ["string","null"], "format": "date" },
+        "HOIPhone": { "type": ["string","null"], "minLength": 1, "maxLength": 50 },
+        "HOIEmail": { "type": ["string","null"], "format": "email", "maxLength": 200 }
+      },
+      "required": ["HomeownersInsCarrier","HOIPolicyNumber","HOIEffectiveDate","HOIExpirationDate"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "HomeownersInsCarrier": { "$ref": "#/$defs/Evidence" },
+        "HOIPolicyNumber": { "$ref": "#/$defs/Evidence" },
+        "HOIEffectiveDate": { "$ref": "#/$defs/Evidence" },
+        "HOIExpirationDate": { "$ref": "#/$defs/Evidence" },
+        "HOIPhone": { "$ref": "#/$defs/Evidence" },
+        "HOIEmail": { "$ref": "#/$defs/Evidence" }
+      },
+      "required": ["HomeownersInsCarrier","HOIPolicyNumber","HOIEffectiveDate","HOIExpirationDate"]
+    }
+  },
+  "required": ["docType","promptVersion","data","evidence"]
+}
