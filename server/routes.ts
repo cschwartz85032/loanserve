@@ -212,6 +212,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/remittance', createRemittanceRoutes(pool));
   console.log('[Routes] Registered investor remittance routes');
 
+  // Initialize Security Hardening (Step 12)
+  try {
+    const { initializeSecurity, validateSecurityConfig } = await import('../src/security/integration');
+    
+    // Validate security configuration
+    const securityValidation = validateSecurityConfig();
+    if (!securityValidation.valid) {
+      console.warn('[Security] Configuration warnings:', securityValidation.errors);
+    } else {
+      console.log('[Security] ✅ All security configurations validated');
+    }
+
+    // Initialize security components
+    await initializeSecurity(app);
+    console.log('[Routes] Security hardening initialized');
+  } catch (error) {
+    console.error('[Routes] Failed to initialize security hardening:', error);
+    console.log('[Routes] Application will continue without enhanced security features');
+  }
+
   // Serve observability dashboard
   app.get('/observability', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'server/observability/dashboard-ui.html'));
