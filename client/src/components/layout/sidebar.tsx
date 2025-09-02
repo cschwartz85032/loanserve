@@ -16,8 +16,7 @@ import {
   Zap,
   Settings,
   Users,
-  Mail,
-  PlusCircle
+  Mail
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +33,6 @@ export function Sidebar() {
   // Build navigation dynamically based on user roles
   const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
-    { name: "Create Loan", href: "/create-loan", icon: PlusCircle },
     { name: "Loan Portfolio", href: "/loans", icon: FileText },
     { name: "Payments", href: "/payments", icon: CreditCard },
     { name: "Fee Management", href: "/fees", icon: Receipt },

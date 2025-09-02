@@ -25,7 +25,6 @@ import MfaSettings from "@/pages/MfaSettings";
 import Settings from "@/pages/Settings";
 import ActivatePage from "@/pages/activate";
 import ActivateTestPage from "@/pages/activate-test";
-import CreateLoan from "@/pages/CreateLoan";
 import NotFound from "@/pages/not-found";
 
 // Borrower Portal Pages
@@ -38,7 +37,6 @@ function Router() {
     <Switch>
       <ProtectedRoute path="/" component={Dashboard} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
-      <ProtectedRoute path="/create-loan" component={CreateLoan} />
       <ProtectedRoute path="/loans" component={Loans} />
       <ProtectedRoute path="/payments" component={Payments} />
       <ProtectedRoute path="/documents" component={Documents} />
