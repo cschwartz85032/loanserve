@@ -107,7 +107,7 @@ class OpenAIProvider implements LlmProvider {
 class GrokProvider implements LlmProvider {
   async generate({ prompt, model, temperature, maxTokens, timeoutMs }: GenArgs): Promise<LlmOutput> {
     const apiKey = process.env.XAI_API_KEY!;
-    const mdl = model || process.env.LLM_MODEL || "grok-2-1212";
+    const mdl = model || process.env.LLM_MODEL || "grok-beta";
     const controller = new AbortController();
     const tmo = setTimeout(()=>controller.abort(), timeoutMs || Number(process.env.AI_REQUEST_TIMEOUT_MS || "60000"));
 
