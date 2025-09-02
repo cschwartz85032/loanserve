@@ -1734,6 +1734,10 @@ To implement full file serving:
   // Register Prometheus metrics routes
   app.use('/', metricsRouter);
 
+  // Register Payment routes
+  const { paymentsRouter } = await import('../src/routes/payments.routes');
+  app.use('/api', paymentsRouter);
+
   const httpServer = createServer(app);
   return httpServer;
 }
