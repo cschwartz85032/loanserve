@@ -200,6 +200,15 @@ app.use((req, res, next) => {
     console.error('[Server] Failed to start notification worker:', error);
   }
   
+  // Start Boarding Worker (Step 14)
+  try {
+    const { startBoardingWorker } = await import('../src/workers/BoardingWorker');
+    await startBoardingWorker();
+    console.log('[Server] Boarding worker started successfully');
+  } catch (error) {
+    console.error('[Server] Failed to start boarding worker:', error);
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler

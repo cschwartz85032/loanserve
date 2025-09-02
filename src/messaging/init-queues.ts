@@ -72,6 +72,15 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
         autoDelete: false
       }
     },
+    // Loan boarding exchange
+    {
+      name: 'loan.board',
+      type: 'topic',
+      options: {
+        durable: true,
+        autoDelete: false
+      }
+    },
     // Monitoring and alerting exchange
     {
       name: 'ai.monitoring.v2',
@@ -290,6 +299,44 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
           'x-queue-type': 'quorum'
         }
       }
+    },
+
+    // Loan boarding queues
+    {
+      name: 'loan.finalize.completed.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
+          'x-dead-letter-routing-key': 'loan.finalize.completed.retry',
+          'x-message-ttl': 300000, // 5 minutes for finalize completion
+          'x-max-retries': 2
+        }
+      }
+    },
+    {
+      name: 'loan.board.request.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
+          'x-dead-letter-routing-key': 'loan.board.request.retry',
+          'x-message-ttl': 300000, // 5 minutes for boarding request
+          'x-max-retries': 2
+        }
+      }
+    },
+    {
+      name: 'loan.board.completed.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
+          'x-dead-letter-routing-key': 'loan.board.completed.retry',
+          'x-message-ttl': 300000, // 5 minutes for boarding completion
+          'x-max-retries': 2
+        }
+      }
     }
   ],
 
@@ -320,7 +367,12 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
     // Monitoring bindings
     { queue: 'q.monitoring.metrics.v2', exchange: 'ai.monitoring.v2', routingKey: 'metrics.*' },
     { queue: 'q.monitoring.alerts.v2', exchange: 'ai.monitoring.v2', routingKey: 'alert.*' },
-    { queue: 'q.pipeline.status.v2', exchange: 'ai.monitoring.v2', routingKey: 'status.*' }
+    { queue: 'q.pipeline.status.v2', exchange: 'ai.monitoring.v2', routingKey: 'status.*' },
+
+    // Loan boarding bindings
+    { queue: 'loan.finalize.completed.q', exchange: 'loan.board', routingKey: 'finalize.completed' },
+    { queue: 'loan.board.request.q', exchange: 'loan.board', routingKey: 'request' },
+    { queue: 'loan.board.completed.q', exchange: 'loan.board', routingKey: 'completed' }
   ]
 };
 

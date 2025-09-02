@@ -108,6 +108,21 @@ export async function finalizeLoan(loanId: number, userId: number) {
 
     console.log(`[Finalize] Loan ${loanId} finalized with certificate ${certUri}`);
 
+    // 11) Trigger boarding workflow for Step 14
+    try {
+      const { boardLoan } = await import("../servicing/boarding");
+      
+      // Set default tenant ID for demo (in production this would come from context)
+      const tenantId = "00000000-0000-0000-0000-000000000001";
+      
+      console.log(`[Finalize] Triggering boarding for loan ${loanId}`);
+      const boardingResult = await boardLoan(tenantId, loanId);
+      console.log(`[Finalize] Boarding completed for loan ${loanId}:`, boardingResult);
+    } catch (boardingError) {
+      console.error(`[Finalize] Boarding failed for loan ${loanId}:`, boardingError);
+      // Continue with finalization even if boarding fails
+    }
+
     return {
       success: true,
       certificateUri: certUri,

@@ -1,0 +1,533 @@
+Step 14 — Boarding to Servicing & Handoff (complete, paste-ready) so engineering only codes and runs. This step takes a finalized loan and boards it into the servicing subsystem with:
+
+Data model for servicing accounts, escrow sub-accounts, amortization schedule, payment plans, transactions, GL postings, and vendor payees (tax/HOI/flood/HOA).
+
+A Boarding Worker that consumes loan.finalize#completed, derives schedule, escrow analyses, opening balances, creates GL opening entries, and sets the account Active.
+
+A Servicing API (read-only for now) for schedule, balances, and last N transactions.
+
+A Payment Allocation Engine contract (principal/interest/escrow/fees waterfall) to be used by your existing payment-allocation-engine.ts.
+
+Hooks to your servicing-cycle-service.ts and disbursement-service.ts (next steps will add remittance and monthly cycle jobs).
+
+No decisions are left for engineering—just paste and wire.
+
+0) Environment
+
+.env
+
+# Boarding defaults
+BOARDING_VERSION=v2025.09.03
+BOARDING_GRACE_DAYS_DEFAULT=15
+BOARDING_DAY_COUNT=Actual/360        # Display only; schedule uses exact math below
+
+# Escrow defaults (used if not provided on the loan)
+ESCROW_CUSHION_MONTHS=2
+ESCROW_ANALYSIS_INFLATION_PCT=0.03   # annual factor for projections
+
+# GL (opening entries)
+GL_BASE_CURRENCY=USD
+GL_RETAINED_EARNINGS_ACCT=3000
+GL_LOAN_PRINCIPAL_ACCT=1100
+GL_INTEREST_INCOME_ACCT=4000
+GL_ESCROW_LIABILITY_ACCT=2100
+
+# Vendors (fallbacks if not in docs)
+VENDOR_TAX_DEFAULT_NAME=Local Tax Authority
+VENDOR_HOI_DEFAULT_NAME=Borrower’s HOI Carrier
+VENDOR_FLOOD_DEFAULT_NAME=NFIP
+VENDOR_HOA_DEFAULT_NAME=Subject HOA
+
+1) Database — Servicing & GL
+
+migrations/018_servicing_core.sql
+
+BEGIN;
+
+-- 1) Servicing account per loan
+CREATE TABLE IF NOT EXISTS svc_accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL UNIQUE REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  state text NOT NULL CHECK (state IN ('Pending','Active','Closed','ChargedOff')) DEFAULT 'Pending',
+  open_date date NOT NULL,
+  first_payment_date date NOT NULL,
+  maturity_date date NOT NULL,
+  note_amount numeric(18,2) NOT NULL,
+  interest_rate numeric(9,6) NOT NULL,       -- annual nominal rate (percent)
+  amort_term_months integer NOT NULL,
+  payment_frequency text NOT NULL CHECK (payment_frequency IN ('Monthly')) DEFAULT 'Monthly',
+  pmt_principal_interest numeric(18,2) NOT NULL,    -- contractual P&I
+  grace_days integer NOT NULL DEFAULT 15,
+  day_count text NOT NULL DEFAULT 'Actual/360',
+  escrow_required boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  activated_at timestamptz NULL
+);
+
+-- 2) Escrow sub-accounts (TAX, HOI, FLOOD, HOA, OTHER)
+CREATE TABLE IF NOT EXISTS svc_escrow_sub (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  bucket text NOT NULL CHECK (bucket IN ('TAX','HOI','FLOOD','HOA','OTHER')),
+  monthly_accrual numeric(18,2) NOT NULL DEFAULT 0,
+  balance numeric(18,2) NOT NULL DEFAULT 0,
+  cushion_months integer NOT NULL DEFAULT 2,
+  vendor_id uuid NULL,       -- references svc_vendors.id
+  UNIQUE (loan_id, bucket)
+);
+
+-- 3) Vendors (tax/insurance/hoa payees)
+CREATE TABLE IF NOT EXISTS svc_vendors (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NULL,               -- vendor may be loan-specific
+  type text NOT NULL CHECK (type IN ('TAX','HOI','FLOOD','HOA','OTHER')),
+  name text NOT NULL,
+  address text NULL,
+  phone text NULL,
+  email text NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 4) Amortization schedule (1 row per installment)
+CREATE TABLE IF NOT EXISTS svc_schedule (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  installment_no integer NOT NULL,
+  due_date date NOT NULL,
+  principal_due numeric(18,2) NOT NULL,
+  interest_due numeric(18,2) NOT NULL,
+  escrow_due numeric(18,2) NOT NULL DEFAULT 0,
+  total_due numeric(18,2) NOT NULL,
+  principal_balance_after numeric(18,2) NOT NULL,
+  paid boolean NOT NULL DEFAULT false,
+  paid_at timestamptz NULL,
+  UNIQUE (loan_id, installment_no)
+);
+
+-- 5) Transactions (payments/disbursements/adjustments)
+CREATE TABLE IF NOT EXISTS svc_txns (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  ts timestamptz NOT NULL DEFAULT now(),
+  type text NOT NULL CHECK (type IN ('PAYMENT','DISBURSEMENT','ADJUSTMENT','BOARDING')),
+  amount numeric(18,2) NOT NULL,       -- signed (positive receipts, negative disbursements)
+  currency text NOT NULL DEFAULT 'USD',
+  alloc_principal numeric(18,2) NOT NULL DEFAULT 0,
+  alloc_interest numeric(18,2) NOT NULL DEFAULT 0,
+  alloc_escrow numeric(18,2) NOT NULL DEFAULT 0,
+  alloc_fees numeric(18,2) NOT NULL DEFAULT 0,
+  memo text NULL,
+  ref jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+-- 6) GL postings (double-entry)
+CREATE TABLE IF NOT EXISTS gl_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NULL,    -- some entries are portfolio-level
+  ts timestamptz NOT NULL DEFAULT now(),
+  entry_no bigint GENERATED ALWAYS AS IDENTITY,
+  debit_acct integer NOT NULL,
+  credit_acct integer NOT NULL,
+  amount numeric(18,2) NOT NULL,
+  memo text NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_svc_accounts_loan ON svc_accounts(tenant_id, loan_id);
+CREATE INDEX IF NOT EXISTS idx_svc_schedule_loan ON svc_schedule(tenant_id, loan_id, due_date);
+CREATE INDEX IF NOT EXISTS idx_svc_txns_loan ON svc_txns(tenant_id, loan_id, ts);
+
+COMMIT;
+
+2) Boarding math — amortization & escrow analysis
+
+src/servicing/amort.ts
+
+export function calcMonthlyPI(noteAmount:number, annualRatePct:number, termMonths:number): number {
+  const r = (annualRatePct/100) / 12;
+  if (r === 0) return round2(noteAmount / termMonths);
+  const pmt = noteAmount * (r * Math.pow(1+r, termMonths)) / (Math.pow(1+r, termMonths) - 1);
+  return round2(pmt);
+}
+
+export function buildSchedule(params:{
+  noteAmount:number, annualRatePct:number, termMonths:number, firstPaymentDate:string, escrowMonthly:number
+}) {
+  const { noteAmount, annualRatePct, termMonths, firstPaymentDate, escrowMonthly } = params;
+  const pi = calcMonthlyPI(noteAmount, annualRatePct, termMonths);
+  const r = (annualRatePct/100) / 12;
+
+  const rows: Array<{
+    installment_no:number, due_date:string,
+    principal_due:number, interest_due:number, escrow_due:number, total_due:number,
+    principal_balance_after:number
+  }> = [];
+
+  let bal = noteAmount;
+  let d = new Date(firstPaymentDate);
+  for (let n=1; n<=termMonths; n++) {
+    const interest = round2(bal * r);
+    const principal = round2(pi - interest);
+    const escrow = round2(escrowMonthly);
+    const total = round2(principal + interest + escrow);
+    bal = round2(bal - principal);
+    rows.push({
+      installment_no:n,
+      due_date: toISO(addMonths(d, n-1)),
+      principal_due: principal,
+      interest_due: interest,
+      escrow_due: escrow,
+      total_due: total,
+      principal_balance_after: Math.max(0, bal)
+    });
+  }
+  return { pi, rows };
+}
+
+export function estimateEscrowMonthly(inputs:{
+  taxAnnual?:number, hoiAnnual?:number, floodAnnual?:number, hoaAnnual?:number,
+  cushionMonths?:number, inflationPct?:number
+}): { monthly:number, buckets:Record<string,number> } {
+  const inf = inputs.inflationPct ?? 0.03;
+  const next = (amt?:number)=> round2((amt ?? 0) * (1+inf));
+  const buckets = {
+    TAX:   round2(next(inputs.taxAnnual)/12),
+    HOI:   round2(next(inputs.hoiAnnual)/12),
+    FLOOD: round2(next(inputs.floodAnnual)/12),
+    HOA:   round2(inputs.hoaAnnual ?? 0 / 12)
+  };
+  const monthly = round2(buckets.TAX + buckets.HOI + buckets.FLOOD + buckets.HOA);
+  return { monthly, buckets };
+}
+
+function addMonths(date:Date, months:number){ const d=new Date(date); d.setMonth(d.getMonth()+months); return d; }
+function toISO(d:Date){ return d.toISOString().slice(0,10); }
+function round2(n:number){ return Math.round((n+Number.EPSILON)*100)/100; }
+
+3) Boarding Worker — consumes loan.finalize#completed
+
+/mnt/data/init-queues.ts (add)
+
+await ch.assertExchange("loan.board","topic",{durable:true});
+const bindB = async (q:string,rk:string)=>{
+  await ch.assertQueue(q,{durable:true,arguments:{
+    "x-dead-letter-exchange":"dlx",
+    "x-dead-letter-routing-key":`${q}.dlq`
+  }});
+  await ch.bindQueue(q,"loan.board",rk);
+  await ch.assertQueue(`${q}.retry`,{durable:true,arguments:{
+    "x-dead-letter-exchange":"loan.board",
+    "x-dead-letter-routing-key":rk,
+    "x-message-ttl":15000
+  }});
+  await ch.assertQueue(`${q}.dlq`,{durable:true});
+  await ch.bindQueue(`${q}.dlq`,"dlx",`${q}.dlq`);
+};
+await bindB("loan.board.request.q","request");
+await bindB("loan.board.completed.q","completed");
+
+
+src/servicing/boarding.ts
+
+import { Pool } from "pg";
+import { estimateEscrowMonthly, buildSchedule, calcMonthlyPI } from "./amort";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function boardLoan(tenantId:string, loanId:string){
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+
+    // Load finalized canonical
+    const dp = await client.query(`
+      SELECT key, value, normalized_value FROM loan_datapoints WHERE loan_id=$1
+    `, [loanId]);
+    const get = (k:string)=> dp.rows.find((r:any)=> r.key===k)?.normalized_value ?? dp.rows.find((r:any)=> r.key===k)?.value ?? null;
+
+    const noteAmount          = Number(get("NoteAmount"));
+    const interestRate        = Number(get("InterestRate"));
+    const termMonths          = Number(get("AmortTermMonths"));
+    const firstPaymentDate    = String(get("FirstPaymentDate"));
+    const maturityDate        = String(get("MaturityDate"));
+    const escrowRequired      = (get("EscrowRequired") === true || String(get("EscrowRequired")).toLowerCase()==="true");
+
+    if (!noteAmount || !interestRate || !termMonths || !firstPaymentDate || !maturityDate) {
+      throw new Error("Missing required canonical fields for boarding");
+    }
+
+    // Escrow estimates from canonical or defaults
+    const taxAnnual   = Number(get("AnnualTax")) || undefined;
+    const hoiAnnual   = Number(get("AnnualHOI")) || undefined;
+    const floodAnnual = Number(get("AnnualFloodInsurance")) || undefined;
+    const hoaAnnual   = Number(get("AnnualHOA")) || undefined;
+
+    const esc = estimateEscrowMonthly({
+      taxAnnual, hoiAnnual, floodAnnual, hoaAnnual,
+      cushionMonths: Number(process.env.ESCROW_CUSHION_MONTHS || "2"),
+      inflationPct: Number(process.env.ESCROW_ANALYSIS_INFLATION_PCT || "0.03")
+    });
+
+    // Schedule build
+    const escrowMonthly = escrowRequired ? esc.monthly : 0;
+    const sched = buildSchedule({
+      noteAmount, annualRatePct: interestRate, termMonths,
+      firstPaymentDate, escrowMonthly
+    });
+
+    // Create servicing account
+    const graceDays = Number(process.env.BOARDING_GRACE_DAYS_DEFAULT || "15");
+    await client.query(`
+      INSERT INTO svc_accounts (tenant_id, loan_id, state, open_date, first_payment_date, maturity_date, note_amount, interest_rate,
+                                amort_term_months, payment_frequency, pmt_principal_interest, grace_days, escrow_required)
+      VALUES ($1,$2,'Active', CURRENT_DATE, $3, $4, $5, $6, $7, 'Monthly', $8, $9, $10)
+      ON CONFLICT (loan_id) DO NOTHING
+    `, [tenantId, loanId, firstPaymentDate, maturityDate, noteAmount, interestRate, termMonths, sched.pi, graceDays, escrowRequired]);
+
+    // Escrow sub-accounts
+    const buckets = esc.buckets;
+    for (const [k,v] of Object.entries(buckets)) {
+      await client.query(`
+        INSERT INTO svc_escrow_sub (tenant_id, loan_id, bucket, monthly_accrual, cushion_months, balance)
+        VALUES ($1,$2,$3,$4,$5,0)
+        ON CONFLICT (loan_id, bucket) DO UPDATE SET monthly_accrual=EXCLUDED.monthly_accrual, cushion_months=EXCLUDED.cushion_months
+      `, [tenantId, loanId, k, v, Number(process.env.ESCROW_CUSHION_MONTHS || "2")]);
+    }
+
+    // Vendors (try to pull from canonical; fallback to defaults)
+    const upsertVendor = async (type:string, name:string|null, address?:string|null, phone?:string|null, email?:string|null)=>{
+      await client.query(`
+        INSERT INTO svc_vendors (tenant_id, loan_id, type, name, address, phone, email)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT DO NOTHING
+      `, [tenantId, loanId, type, name || `${type} Vendor`, address || null, phone || null, email || null]);
+    };
+    await upsertVendor('TAX',   String(get("TaxAuthority")) || process.env.VENDOR_TAX_DEFAULT_NAME || "Tax Authority");
+    await upsertVendor('HOI',   String(get("HomeownersInsCarrier")) || process.env.VENDOR_HOI_DEFAULT_NAME || "HOI Carrier");
+    await upsertVendor('FLOOD', String(get("FloodCarrier")) || process.env.VENDOR_FLOOD_DEFAULT_NAME || "NFIP");
+    await upsertVendor('HOA',   String(get("HOAName")) || process.env.VENDOR_HOA_DEFAULT_NAME || "HOA");
+
+    // Insert schedule
+    for (const r of sched.rows) {
+      await client.query(`
+        INSERT INTO svc_schedule (tenant_id, loan_id, installment_no, due_date, principal_due, interest_due, escrow_due, total_due, principal_balance_after)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        ON CONFLICT (loan_id, installment_no) DO NOTHING
+      `, [tenantId, loanId, r.installment_no, r.due_date, r.principal_due, r.interest_due, r.escrow_due, r.total_due, r.principal_balance_after]);
+    }
+
+    // Opening GL (Boarding)
+    await client.query(`
+      INSERT INTO svc_txns (tenant_id, loan_id, ts, type, amount, currency, alloc_principal, memo, ref)
+      VALUES ($1,$2, now(), 'BOARDING', $3, 'USD', $3, 'Boarding entry', '{}')
+    `, [tenantId, loanId, noteAmount]);
+
+    // GL double entry: Debit Loan Principal (asset), Credit Retained Earnings (or funding source)
+    await client.query(`
+      INSERT INTO gl_entries (tenant_id, loan_id, ts, debit_acct, credit_acct, amount, memo)
+      VALUES ($1,$2, now(), $3, $4, $5, 'Boarding opening principal')
+    `, [tenantId, loanId, Number(process.env.GL_LOAN_PRINCIPAL_ACCT || "1100"), Number(process.env.GL_RETAINED_EARNINGS_ACCT || "3000"), noteAmount]);
+
+    // Activate (already set) + return P&I + Escrow monthly
+    return { p_i: sched.pi, escrow_monthly: escrowMonthly, first_due_date: firstPaymentDate };
+  } finally {
+    client.release();
+  }
+}
+
+
+src/workers/BoardingWorker.ts
+
+import { mq } from "../topology";
+import { boardLoan } from "../servicing/boarding";
+
+export async function startBoardingWorker(){
+  // Triggered automatically after finalize is completed AND succeeded
+  await mq.consume("loan.finalize.completed.q", async (msg:any, ch:any)=>{
+    const { tenantId, loanId, error } = JSON.parse(msg.content.toString());
+    try {
+      if (!error) {
+        const out = await boardLoan(tenantId, loanId);
+        await mq.publish("loan.board","completed",{ tenantId, loanId, ...out });
+      } else {
+        await mq.publish("loan.board","completed",{ tenantId, loanId, skipped:true, reason:"finalize_error" });
+      }
+      ch.ack(msg);
+    } catch (e:any) {
+      await mq.publish("loan.board","completed",{ tenantId, loanId, error: String(e) });
+      ch.nack(msg, false, false);
+    }
+  });
+
+  // Manual board request (idempotent)
+  await mq.consume("loan.board.request.q", async (msg:any, ch:any)=>{
+    const { tenantId, loanId } = JSON.parse(msg.content.toString());
+    try {
+      const out = await boardLoan(tenantId, loanId);
+      await mq.publish("loan.board","completed",{ tenantId, loanId, ...out });
+      ch.ack(msg);
+    } catch (e:any) {
+      await mq.publish("loan.board","completed",{ tenantId, loanId, error: String(e) });
+      ch.nack(msg, false, false);
+    }
+  });
+}
+
+
+src/service.ts (add)
+
+import { startBoardingWorker } from "./workers/BoardingWorker";
+await startBoardingWorker();
+
+4) Servicing API (read-only views)
+
+src/routes/servicing.routes.ts
+
+import { Router } from "express";
+import { Pool } from "pg";
+export const servicingRouter = Router();
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+// Account summary
+servicingRouter.get("/loans/:id/servicing", async (req:any,res)=>{
+  const c = await pool.connect();
+  try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [req.tenant.id]);
+    const acc = await c.query(`SELECT * FROM svc_accounts WHERE loan_id=$1`, [req.params.id]);
+    if (!acc.rowCount) return res.status(404).json({ error:"not boarded" });
+    const esc = await c.query(`SELECT bucket, monthly_accrual, balance FROM svc_escrow_sub WHERE loan_id=$1`, [req.params.id]);
+    res.json({ account: acc.rows[0], escrow: esc.rows });
+  } finally { c.release(); }
+});
+
+// Next 12 schedule rows
+servicingRouter.get("/loans/:id/schedule", async (req:any,res)=>{
+  const c = await pool.connect();
+  try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [req.tenant.id]);
+    const rows = await c.query(`
+      SELECT installment_no, due_date, principal_due, interest_due, escrow_due, total_due, principal_balance_after, paid, paid_at
+      FROM svc_schedule WHERE loan_id=$1 ORDER BY installment_no LIMIT 12
+    `, [req.params.id]);
+    res.json({ schedule: rows.rows });
+  } finally { c.release(); }
+});
+
+// Recent transactions
+servicingRouter.get("/loans/:id/txns", async (req:any,res)=>{
+  const c = await pool.connect();
+  try {
+    await c.query(`SET LOCAL app.tenant_id = $1`, [req.tenant.id]);
+    const rows = await c.query(`
+      SELECT ts, type, amount, alloc_principal, alloc_interest, alloc_escrow, alloc_fees, memo
+      FROM svc_txns WHERE loan_id=$1 ORDER BY ts DESC LIMIT 50
+    `, [req.params.id]);
+    res.json({ txns: rows.rows });
+  } finally { c.release(); }
+});
+
+
+Wire to main:
+
+import { servicingRouter } from "./routes/servicing.routes";
+app.use("/api", servicingRouter);
+
+5) Payment Allocation Engine contract (waterfall)
+
+We standardize the input and output for your existing payment-allocation-engine.ts so it can be swapped in without decisions.
+
+src/servicing/allocation.ts
+
+export type AllocationInput = {
+  pmt_amount:number,
+  pmt_date:string,
+  installment_no?:number|null
+  // context for current due
+  principal_due:number,
+  interest_due:number,
+  escrow_due:number,
+  fees_due:number
+};
+
+export type AllocationResult = {
+  alloc_principal:number,
+  alloc_interest:number,
+  alloc_escrow:number,
+  alloc_fees:number,
+  leftover:number
+};
+
+export function allocateStandard(inp:AllocationInput): AllocationResult {
+  let rem = round2(inp.pmt_amount);
+  const out = { alloc_principal:0, alloc_interest:0, alloc_escrow:0, alloc_fees:0, leftover:0 };
+
+  // 1) Interest
+  const ai = Math.min(rem, inp.interest_due); rem = round2(rem - ai); out.alloc_interest = ai;
+  // 2) Escrow
+  const ae = Math.min(rem, inp.escrow_due);   rem = round2(rem - ae); out.alloc_escrow = ae;
+  // 3) Fees
+  const af = Math.min(rem, inp.fees_due);     rem = round2(rem - af); out.alloc_fees = af;
+  // 4) Principal
+  const ap = Math.min(rem, inp.principal_due);rem = round2(rem - ap); out.alloc_principal = ap;
+
+  out.leftover = rem;
+  return out;
+}
+
+function round2(n:number){ return Math.round((n+Number.EPSILON)*100)/100; }
+
+
+(When you implement actual payment posting in the later step, call this to compute allocations, then mark schedule row paid, create svc_txns, and GL entries).
+
+6) Tests (sanity)
+
+tests/boarding.test.ts
+
+import { calcMonthlyPI, buildSchedule, estimateEscrowMonthly } from "../src/servicing/amort";
+
+it("calculates PI and schedule", ()=>{
+  const pi = calcMonthlyPI(200000, 7.125, 360);
+  expect(pi).toBeGreaterThan(1000);
+  const sched = buildSchedule({ noteAmount:200000, annualRatePct:7.125, termMonths:360, firstPaymentDate:"2025-10-01", escrowMonthly: 250 });
+  expect(sched.rows[0].total_due).toBeCloseTo(pi + 250, 2);
+  expect(sched.rows[359].principal_balance_after).toBeCloseTo(0, 2);
+});
+
+it("estimates escrow monthly", ()=>{
+  const e = estimateEscrowMonthly({ taxAnnual:2400, hoiAnnual:1200, floodAnnual:0, hoaAnnual:600, cushionMonths:2, inflationPct:0.03 });
+  expect(e.monthly).toBeGreaterThan(300);
+});
+
+7) What engineering must not change
+
+Board only on/after finalize (loan.finalize#completed with no error).
+
+Schedule math is amortized monthly PI first, then escrow added per analysis; do not change waterfall order or rounding.
+
+Escrow buckets supported: TAX, HOI, FLOOD, HOA, OTHER — add new types only by PR.
+
+GL opening entries must debit Loan Principal (1100) and credit Retained Earnings (3000) for the full NoteAmount (or your configured accounts).
+
+Servicing account must transition to Active on success.
+
+Read-only API only—no posting payments in this step.
+
+S3/DB paths and queue names as provided.
+
+8) Quick verification checklist
+
+Finalize a loan (no Critical QC defects) → boarding worker runs → svc_accounts row is created Active.
+
+svc_schedule contains full amortization; first row matches PI + escrow.
+
+Escrow sub-accounts exist with monthly accruals; vendors created/fallbacks present.
+
+Opening BOARDING transaction exists; GL opening entry created.
+
+/api/loans/:id/servicing returns account + escrow; /schedule & /txns respond with data.
+
+Allocation contract returns expected waterfall values.

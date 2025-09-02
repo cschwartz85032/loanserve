@@ -243,6 +243,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.warn('[Routes] Finalization features will not be available');
   }
 
+  // Initialize Boarding to Servicing System (Step 14)
+  try {
+    console.log('[Routes] Registering servicing routes...');
+    const { servicingRouter } = await import('../src/routes/servicing.routes');
+    app.use('/api', servicingRouter);
+    console.log('[Routes] Servicing routes registered');
+  } catch (error) {
+    console.error('[Routes] Failed to register servicing routes:', error);
+    console.warn('[Routes] Servicing features will not be available');
+  }
+
   // Serve observability dashboard
   app.get('/observability', (req, res) => {
     res.sendFile(path.join(process.cwd(), 'server/observability/dashboard-ui.html'));
