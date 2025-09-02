@@ -6,6 +6,8 @@
 import { SelfHealingWorker, WorkItem, WorkResult } from './self-healing-worker';
 import { LineageTracker } from '../utils/lineage-tracker';
 import { AuthorityMatrix, DataSource, FieldValue } from '../authority/authority-matrix';
+import { AIPipelineService } from '../database/ai-pipeline-service';
+import { DatabaseIntegratedWorkerMixin } from './database-integrated-worker';
 import { createHash } from 'crypto';
 import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
 import * as XLSX from 'xlsx';
@@ -73,6 +75,8 @@ export interface ValidationResult {
 
 export class DocumentIntakeWorker extends SelfHealingWorker<DocumentIntakePayload, DocumentIntakeResult> {
   private lineageTracker: LineageTracker;
+  private dbService: AIPipelineService;
+  private dbMixin: DatabaseIntegratedWorkerMixin;
   private textractClient: TextractClient;
   private ajv: Ajv;
 
@@ -81,11 +85,16 @@ export class DocumentIntakeWorker extends SelfHealingWorker<DocumentIntakePayloa
       name: 'document-intake-worker',
       maxRetries: 3,
       retryDelayMs: 2000,
+      retryBackoffMultiplier: 2,
+      maxRetryDelayMs: 30000,
       timeoutMs: 180000, // 3 minutes for complex documents
+      dlqEnabled: true,
       idempotencyEnabled: true
     });
 
     this.lineageTracker = new LineageTracker();
+    this.dbService = new AIPipelineService();
+    this.dbMixin = new DatabaseIntegratedWorkerMixin();
     
     this.textractClient = new TextractClient({
       region: process.env.AWS_REGION || 'us-east-1'
@@ -103,10 +112,40 @@ export class DocumentIntakeWorker extends SelfHealingWorker<DocumentIntakePayloa
     const startTime = Date.now();
 
     try {
-      // 1. Classify and validate document
+      // Set tenant context for RLS
+      if (payload.tenantId) {
+        await this.dbService.setTenantContext(payload.tenantId);
+      }
+
+      // 1. Create or get loan candidate
+      let loanCandidate;
+      try {
+        loanCandidate = await this.dbService.createLoanCandidate({
+          tenantId: payload.tenantId || '00000000-0000-0000-0000-000000000001',
+          loanUrn: payload.loanUrn
+        });
+      } catch (error) {
+        // Loan candidate might already exist, try to get it
+        const existingCandidate = await this.dbService.getLoanCandidate(payload.documentId);
+        if (existingCandidate) {
+          loanCandidate = existingCandidate;
+        } else {
+          throw error;
+        }
+      }
+
+      // 2. Create document record
+      const documentRecord = await this.dbService.createDocument({
+        loanId: loanCandidate.id,
+        storageUri: payload.filePath,
+        sha256: createHash('sha256').update(readFileSync(payload.filePath)).digest('hex'),
+        docType: payload.fileType
+      });
+
+      // 3. Classify and validate document
       const documentType = await this.classifyDocument(payload);
       
-      // 2. Extract data based on document type
+      // 4. Extract data based on document type
       let rawExtractedData: Record<string, any>;
       switch (payload.fileType) {
         case 'pdf':
@@ -125,27 +164,40 @@ export class DocumentIntakeWorker extends SelfHealingWorker<DocumentIntakePayloa
           throw new Error(`Unsupported file type: ${payload.fileType}`);
       }
 
-      // 3. Apply escrow-led and investor-first processing
+      // 5. Apply escrow-led and investor-first processing
       const processedData = await this.applyEscrowInvestorRules(
         rawExtractedData,
         payload.escrowInstructions || [],
         payload.investorDirectives || []
       );
 
-      // 4. Create lineage records for all extracted values
+      // 6. Store datapoints in database
+      await this.dbMixin.storeDatapoints(
+        loanCandidate.id,
+        processedData,
+        documentRecord.id
+      );
+
+      // 7. Create lineage records for all extracted values
       const lineageIds = await this.createLineageRecords(
         processedData,
         payload,
         documentType
       );
 
-      // 5. Resolve conflicts using Authority Matrix
+      // 8. Resolve conflicts using Authority Matrix
       const finalData = await this.resolveDataConflicts(processedData, payload.tenantId);
 
-      // 6. Validate extracted data
+      // 9. Validate extracted data
       const validationResults = await this.validateExtractedData(finalData);
 
-      // 7. Calculate processing statistics
+      // 10. Update loan candidate status
+      await this.dbService.updateLoanCandidateStatus(
+        loanCandidate.id,
+        validationResults.some(v => !v.isValid && v.severity === 'error') ? 'conflicts' : 'validated'
+      );
+
+      // 11. Calculate processing statistics
       const processingStats = this.calculateProcessingStats(
         finalData,
         validationResults,
@@ -163,7 +215,8 @@ export class DocumentIntakeWorker extends SelfHealingWorker<DocumentIntakePayloa
 
       return {
         success: true,
-        result
+        result,
+        shouldRetry: false
       };
 
     } catch (error) {
@@ -408,7 +461,7 @@ export class DocumentIntakeWorker extends SelfHealingWorker<DocumentIntakePayloa
       const lineageId = await this.lineageTracker.createLineage({
         fieldName,
         value: fieldValue.value,
-        source: fieldValue.source.type,
+        source: fieldValue.source.type as 'ai_extraction',
         confidence: fieldValue.source.confidence,
         extractorVersion: process.env.EXTRACTOR_VERSION || 'v2025.09.01',
         documentReference: {
@@ -446,20 +499,13 @@ export class DocumentIntakeWorker extends SelfHealingWorker<DocumentIntakePayloa
     for (const [fieldName, values] of Object.entries(fieldGroups)) {
       const resolution = AuthorityMatrix.resolveConflict(fieldName, values, tenantId);
       
-      // Find winning value
-      const winnerValue = values.find(v => 
-        AuthorityMatrix.getSourceKey(v.source) === resolution.winner
+      // Find winning value based on highest priority
+      const winnerValue = values.reduce((highest, current) => 
+        current.source.priority > highest.source.priority ? current : highest
       );
 
       if (winnerValue) {
-        resolvedData[fieldName] = {
-          ...winnerValue,
-          authorityDecision: {
-            winner: resolution.winner,
-            reason: resolution.reason,
-            conflictingSources: resolution.conflictingSources
-          }
-        };
+        resolvedData[fieldName] = winnerValue;
       }
     }
 
