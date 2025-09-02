@@ -32,6 +32,7 @@ import metricsRoutes from "./routes/metrics";
 import { qcRouter } from "../src/routes/qc.routes";
 import { exportRouter } from "../src/routes/export.routes";
 import { notificationRouter } from "../src/routes/notification.routes";
+import { storageRoutes } from "../src/routes/storage.routes";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1615,6 +1616,9 @@ To implement full file serving:
 
   // Register Notification routes
   app.use('/api/notifications', notificationRouter);
+
+  // Register Storage test routes
+  app.use('/api/storage', storageRoutes);
 
   const httpServer = createServer(app);
   return httpServer;

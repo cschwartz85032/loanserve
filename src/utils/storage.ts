@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'crypto';
-// import { ObjectStorageService } from '../database/ai-pipeline-service';
+import { S3Service } from '../services/S3Service';
 
 export interface FileMetadata {
   uri: string;
@@ -47,13 +47,11 @@ export interface EvidenceSnippet {
  * Manages document storage with proper tenant isolation and lineage tracking
  */
 export class AIPipelineStorageManager {
-  // private objectStorage: ObjectStorageService;
-  private bucketName: string;
+  private s3Service: S3Service;
   private s3Prefix: string;
 
   constructor() {
-    // this.objectStorage = new ObjectStorageService();
-    this.bucketName = process.env.AI_PIPELINE_BUCKET || 'replit-objstore-484db537-8ad9-444a-8b99-05e67a37f2f2';
+    this.s3Service = new S3Service();
     this.s3Prefix = process.env.AI_PIPELINE_PREFIX || 'ai-servicing';
   }
 
@@ -78,19 +76,21 @@ export class AIPipelineStorageManager {
 
     // Generate storage path
     const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/uploads/${sha256}_${filename}`;
-    const uri = `s3://${this.bucketName}/${storageKey}`;
 
-    // Upload to object storage
+    // Upload to S3
     try {
-      // Implementation would use ObjectStorageService to upload
-      // For now, this is a placeholder that would integrate with actual object storage
-      console.log(`[Storage] Uploading file to ${uri}`);
+      await this.s3Service.ensureBucket();
+      const uploadResult = await this.s3Service.uploadFile(storageKey, fileBuffer, mime, {
+        'filename': filename,
+        'tenant-id': tenantId,
+        'loan-id': loanId,
+        'sha256': sha256
+      });
       
-      // TODO: Actual upload implementation
-      // await this.objectStorage.uploadFile(storageKey, fileBuffer, mime);
+      console.log(`[Storage] Uploaded file to ${uploadResult.location}`);
 
       return {
-        uri,
+        uri: uploadResult.location,
         sha256,
         filename,
         size,
@@ -114,12 +114,17 @@ export class AIPipelineStorageManager {
   ): Promise<DocumentChunk> {
     const sha256 = createHash('sha256').update(chunkData).digest('hex');
     const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/chunks/${docId}/page-${pageNumber}.pdf`;
-    const uri = `s3://${this.bucketName}/${storageKey}`;
 
     try {
-      console.log(`[Storage] Saving chunk to ${uri}`);
-      // TODO: Actual upload implementation
-      // await this.objectStorage.uploadFile(storageKey, chunkData, 'application/pdf');
+      await this.s3Service.ensureBucket();
+      await this.s3Service.uploadFile(storageKey, chunkData, 'application/pdf', {
+        'doc-id': docId,
+        'page-number': pageNumber.toString(),
+        'tenant-id': tenantId,
+        'loan-id': loanId
+      });
+      
+      console.log(`[Storage] Saved chunk to ${this.s3Service.getS3Url(storageKey)}`);
 
       return {
         docId,
@@ -152,13 +157,19 @@ export class AIPipelineStorageManager {
     };
 
     const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/ocr/${docId}/page-${pageNumber}.json`;
-    const uri = `s3://${this.bucketName}/${storageKey}`;
 
     try {
-      console.log(`[Storage] Saving OCR result to ${uri}`);
+      await this.s3Service.ensureBucket();
       const jsonData = JSON.stringify(ocrResult, null, 2);
-      // TODO: Actual upload implementation
-      // await this.objectStorage.uploadFile(storageKey, Buffer.from(jsonData), 'application/json');
+      await this.s3Service.uploadFile(storageKey, Buffer.from(jsonData), 'application/json', {
+        'doc-id': docId,
+        'page-number': pageNumber.toString(),
+        'tenant-id': tenantId,
+        'loan-id': loanId,
+        'confidence': ocrResult.confidence.toString()
+      });
+      
+      console.log(`[Storage] Saved OCR result to ${this.s3Service.getS3Url(storageKey)}`);
 
       return ocrResult;
     } catch (error) {
@@ -177,14 +188,18 @@ export class AIPipelineStorageManager {
     reflowedText: string
   ): Promise<string> {
     const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/text/${docId}.txt`;
-    const uri = `s3://${this.bucketName}/${storageKey}`;
 
     try {
-      console.log(`[Storage] Saving reflowed text to ${uri}`);
-      // TODO: Actual upload implementation
-      // await this.objectStorage.uploadFile(storageKey, Buffer.from(reflowedText), 'text/plain');
-
-      return uri;
+      await this.s3Service.ensureBucket();
+      await this.s3Service.uploadFile(storageKey, Buffer.from(reflowedText), 'text/plain', {
+        'doc-id': docId,
+        'tenant-id': tenantId,
+        'loan-id': loanId
+      });
+      
+      console.log(`[Storage] Saved reflowed text to ${this.s3Service.getS3Url(storageKey)}`);
+      
+      return this.s3Service.getS3Url(storageKey);
     } catch (error) {
       throw new Error(`Failed to save reflowed text: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -200,10 +215,9 @@ export class AIPipelineStorageManager {
     evidence: EvidenceSnippet
   ): Promise<string> {
     const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/evidence/${evidence.docId}/page-${evidence.pageNumber}.txt`;
-    const uri = `s3://${this.bucketName}/${storageKey}`;
 
     try {
-      console.log(`[Storage] Saving evidence snippet to ${uri}`);
+      await this.s3Service.ensureBucket();
       const evidenceData = {
         text: evidence.text,
         boundingBox: evidence.boundingBox,
@@ -212,10 +226,17 @@ export class AIPipelineStorageManager {
       };
       
       const jsonData = JSON.stringify(evidenceData, null, 2);
-      // TODO: Actual upload implementation
-      // await this.objectStorage.uploadFile(storageKey, Buffer.from(jsonData), 'application/json');
-
-      return uri;
+      await this.s3Service.uploadFile(storageKey, Buffer.from(jsonData), 'application/json', {
+        'doc-id': evidence.docId,
+        'page-number': evidence.pageNumber.toString(),
+        'tenant-id': tenantId,
+        'loan-id': loanId,
+        'text-hash': evidence.textHash
+      });
+      
+      console.log(`[Storage] Saved evidence snippet to ${this.s3Service.getS3Url(storageKey)}`);
+      
+      return this.s3Service.getS3Url(storageKey);
     } catch (error) {
       throw new Error(`Failed to save evidence snippet: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -229,11 +250,8 @@ export class AIPipelineStorageManager {
 
     try {
       console.log(`[Storage] Retrieving text from ${storageKey}`);
-      // TODO: Actual download implementation
-      // const textBuffer = await this.objectStorage.downloadFile(storageKey);
-      // return textBuffer.toString('utf-8');
-      
-      return ""; // Placeholder
+      const textBuffer = await this.s3Service.downloadFile(storageKey);
+      return textBuffer.toString('utf-8');
     } catch (error) {
       throw new Error(`Failed to retrieve text: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -252,10 +270,7 @@ export class AIPipelineStorageManager {
 
     try {
       console.log(`[Storage] Retrieving chunk from ${storageKey}`);
-      // TODO: Actual download implementation
-      // return await this.objectStorage.downloadFile(storageKey);
-      
-      return Buffer.alloc(0); // Placeholder
+      return await this.s3Service.downloadFile(storageKey);
     } catch (error) {
       throw new Error(`Failed to retrieve chunk: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -274,12 +289,12 @@ export class AIPipelineStorageManager {
 
     try {
       console.log(`[Storage] Retrieving OCR result from ${storageKey}`);
-      // TODO: Actual download implementation
-      // const jsonBuffer = await this.objectStorage.downloadFile(storageKey);
-      // return JSON.parse(jsonBuffer.toString('utf-8'));
-      
-      return null; // Placeholder
-    } catch (error) {
+      const jsonBuffer = await this.s3Service.downloadFile(storageKey);
+      return JSON.parse(jsonBuffer.toString('utf-8'));
+    } catch (error: any) {
+      if (error.message.includes('not found')) {
+        return null;
+      }
       console.warn(`OCR result not found for ${storageKey}: ${error}`);
       return null;
     }
@@ -298,14 +313,19 @@ export class AIPipelineStorageManager {
     mime: string = 'application/octet-stream'
   ): Promise<string> {
     const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/exports/${exportId}/${filename}`;
-    const uri = `s3://${this.bucketName}/${storageKey}`;
 
     try {
-      console.log(`[Storage] Saving export to ${uri}`);
-      // TODO: Actual upload implementation
-      // await this.objectStorage.uploadFile(storageKey, data, mime);
-
-      return uri;
+      await this.s3Service.ensureBucket();
+      const uploadResult = await this.s3Service.uploadFile(storageKey, data, mime, {
+        'export-id': exportId,
+        'tenant-id': tenantId,
+        'loan-id': loanId,
+        'filename': filename
+      });
+      
+      console.log(`[Storage] Saved export to ${uploadResult.location}`);
+      
+      return uploadResult.location;
     } catch (error) {
       throw new Error(`Failed to save export: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -321,14 +341,18 @@ export class AIPipelineStorageManager {
     expectedSha256: string
   ): Promise<boolean> {
     try {
-      // Get the original upload
-      const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/uploads/${expectedSha256}_*`;
-      // TODO: Implement file verification
-      // const fileBuffer = await this.objectStorage.downloadFile(storageKey);
-      // const actualSha256 = createHash('sha256').update(fileBuffer).digest('hex');
-      // return actualSha256 === expectedSha256;
+      // List files with the expected SHA256 prefix
+      const uploadPrefix = `${this.s3Prefix}/${tenantId}/loans/${loanId}/uploads/${expectedSha256}_`;
+      const files = await this.s3Service.listFiles(uploadPrefix, 1);
       
-      return true; // Placeholder
+      if (files.length === 0) {
+        return false;
+      }
+      
+      // Download and verify the first matching file
+      const fileBuffer = await this.s3Service.downloadFile(files[0].key);
+      const actualSha256 = createHash('sha256').update(fileBuffer).digest('hex');
+      return actualSha256 === expectedSha256;
     } catch (error) {
       console.error(`File integrity verification failed: ${error}`);
       return false;
@@ -343,8 +367,7 @@ export class AIPipelineStorageManager {
     
     try {
       console.log(`[Storage] Cleaning up files for loan ${loanId}`);
-      // TODO: Implement cleanup
-      // await this.objectStorage.deletePrefix(prefixToClean);
+      await this.s3Service.deletePrefix(prefixToClean);
     } catch (error) {
       console.error(`Failed to cleanup loan files: ${error}`);
       throw error;
@@ -375,6 +398,25 @@ export class AIPipelineStorageManager {
    */
   getDocumentPath(tenantId: string, loanId: string, docId: string, type: 'uploads' | 'chunks' | 'ocr' | 'text' | 'evidence' | 'exports'): string {
     return `${this.s3Prefix}/${tenantId}/loans/${loanId}/${type}/${docId}`;
+  }
+
+  /**
+   * Test S3 connectivity
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      return await this.s3Service.testConnection();
+    } catch (error) {
+      console.error('[Storage] Connection test failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get S3 service configuration
+   */
+  getS3Config() {
+    return this.s3Service.getConfig();
   }
 }
 
