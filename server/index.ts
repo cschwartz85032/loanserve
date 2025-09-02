@@ -184,6 +184,15 @@ app.use((req, res, next) => {
     console.error('[Server] Failed to start export worker:', error);
   }
   
+  // Start Notification Worker
+  try {
+    const { startNotificationWorker } = await import('../src/workers/NotificationWorker');
+    await startNotificationWorker();
+    console.log('[Server] Notification worker started successfully');
+  } catch (error) {
+    console.error('[Server] Failed to start notification worker:', error);
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler

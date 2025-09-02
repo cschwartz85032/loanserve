@@ -31,6 +31,7 @@ import rabbitmqConfigRoutes from "./routes/rabbitmq-config";
 import metricsRoutes from "./routes/metrics";
 import { qcRouter } from "../src/routes/qc.routes";
 import { exportRouter } from "../src/routes/export.routes";
+import { notificationRouter } from "../src/routes/notification.routes";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1611,6 +1612,9 @@ To implement full file serving:
 
   // Register Export routes
   app.use('/api/export', exportRouter);
+
+  // Register Notification routes
+  app.use('/api/notifications', notificationRouter);
 
   const httpServer = createServer(app);
   return httpServer;
