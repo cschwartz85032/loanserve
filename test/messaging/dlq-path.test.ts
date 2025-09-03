@@ -23,6 +23,12 @@ describe("Messaging DLQ flow", () => {
       quorum: false // Use classic queues for testing
     });
 
+    // Also setup finalize queue for finalize-specific tests
+    await assertWithDlx(ch, "loan.board", "loan.finalize.completed.q", "finalize.completed", {
+      retryTtlMs: 2000, // 2 seconds for faster testing
+      quorum: false // Use classic queues for testing
+    });
+
     console.log('[DLQ Test] Test topology created');
   });
 
@@ -32,6 +38,9 @@ describe("Messaging DLQ flow", () => {
       await ch.deleteQueue("loan.board.request.q");
       await ch.deleteQueue("loan.board.request.q.retry");
       await ch.deleteQueue("loan.board.request.q.dlq");
+      await ch.deleteQueue("loan.finalize.completed.q");
+      await ch.deleteQueue("loan.finalize.completed.q.retry");
+      await ch.deleteQueue("loan.finalize.completed.q.dlq");
     } catch (error) {
       console.warn('[DLQ Test] Cleanup warning:', error);
     }
@@ -45,6 +54,9 @@ describe("Messaging DLQ flow", () => {
     await ch.purgeQueue("loan.board.request.q");
     await ch.purgeQueue("loan.board.request.q.retry");  
     await ch.purgeQueue("loan.board.request.q.dlq");
+    await ch.purgeQueue("loan.finalize.completed.q");
+    await ch.purgeQueue("loan.finalize.completed.q.retry");
+    await ch.purgeQueue("loan.finalize.completed.q.dlq");
   });
 
   it("routes terminal errors to DLQ using nack(false, false)", async () => {
@@ -237,5 +249,142 @@ describe("Messaging DLQ flow", () => {
     expect(headerCheck).toBe(true);
     
     await ch.cancel("test-header-consumer");
+  });
+
+  // FINALIZE STAGE SPECIFIC TESTS - per requirements document
+  it("routes finalize stage terminal failures to DLQ using nack(false, false)", async () => {
+    // Test that publishes a message to loan.finalize.completed.q, forces a terminal failure, 
+    // and verifies the message appears in loan.finalize.completed.q.dlq
+    
+    let messageReceived = false;
+    
+    await ch.consume("loan.finalize.completed.q", msg => {
+      if (!msg) return;
+      messageReceived = true;
+      
+      console.log('[DLQ Test] Simulating finalize stage terminal failure with nack(false, false)');
+      // Simulate terminal failure (same pattern as BoardingWorker)
+      ch.nack(msg, false, false);
+    }, { consumerTag: "test-finalize-failure-consumer" });
+
+    // Publish a finalize completion message
+    const finalizeMessage = { 
+      tenantId: "test-tenant-123", 
+      loanId: "loan-456", 
+      action: "finalize-completion",
+      status: "failed" 
+    };
+    await ch.publish("loan.board", "finalize.completed", Buffer.from(JSON.stringify(finalizeMessage)), {
+      contentType: "application/json"
+    });
+
+    // Wait for message to be processed and routed to DLQ
+    let dlqMessageFound = false;
+    for (let i = 0; i < 20 && !dlqMessageFound; i++) {
+      const dlqStatus = await ch.checkQueue("loan.finalize.completed.q.dlq");
+      if (dlqStatus.messageCount > 0) {
+        dlqMessageFound = true;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    expect(messageReceived).toBe(true);
+    expect(dlqMessageFound).toBe(true);
+
+    // Verify the message content in DLQ
+    const dlqMessage = await ch.get("loan.finalize.completed.q.dlq");
+    expect(dlqMessage).toBeTruthy();
+    if (dlqMessage) {
+      const content = JSON.parse(dlqMessage.content.toString());
+      expect(content.loanId).toBe("loan-456");
+      expect(content.action).toBe("finalize-completion");
+      ch.ack(dlqMessage);
+    }
+
+    await ch.cancel("test-finalize-failure-consumer");
+  }, 10000);
+
+  it("handles finalize stage transient errors with retry queue redelivery", async () => {
+    // Test for a transient error and verify the message flows through loan.finalize.completed.q.retry 
+    // and is redelivered to the main queue after the TTL
+    
+    let messageCount = 0;
+    const receivedMessages: any[] = [];
+
+    await ch.consume("loan.finalize.completed.q", msg => {
+      if (!msg) return;
+      
+      messageCount++;
+      const content = JSON.parse(msg.content.toString());
+      receivedMessages.push({ 
+        attempt: messageCount, 
+        content, 
+        timestamp: Date.now() 
+      });
+      
+      console.log(`[DLQ Test] Finalize stage received message attempt ${messageCount}`);
+
+      if (messageCount === 1) {
+        // First delivery: simulate transient failure by routing to retry
+        console.log('[DLQ Test] Simulating finalize transient failure - routing to retry');
+        ch.publish("dlx", "loan.finalize.completed.q.retry", msg.content, { 
+          headers: {
+            ...msg.properties.headers,
+            'x-retry-count': 1,
+            'x-last-error': 'Finalize database connection timeout'
+          }
+        });
+        ch.ack(msg);
+        return;
+      }
+      
+      // Second delivery should succeed
+      console.log('[DLQ Test] Finalize second delivery - acknowledging success');
+      ch.ack(msg);
+    }, { consumerTag: "test-finalize-retry-consumer" });
+
+    // Publish finalize completion message
+    const finalizeMessage = { 
+      tenantId: "test-tenant-456", 
+      loanId: "loan-789", 
+      action: "finalize-completion",
+      status: "success" 
+    };
+    await ch.publish("loan.board", "finalize.completed", Buffer.from(JSON.stringify(finalizeMessage)), {
+      contentType: "application/json"
+    });
+
+    // Wait for retry TTL (2 seconds) plus processing time
+    await new Promise(r => setTimeout(r, 3500));
+
+    expect(messageCount).toBeGreaterThanOrEqual(2);
+    expect(receivedMessages).toHaveLength(2);
+    
+    // Verify retry delay worked
+    const delay = receivedMessages[1].timestamp - receivedMessages[0].timestamp;
+    expect(delay).toBeGreaterThan(1800); // Should be close to 2000ms TTL
+    expect(delay).toBeLessThan(3000);   // But not too much longer
+
+    // Verify message content consistency
+    expect(receivedMessages[0].content.loanId).toBe("loan-789");
+    expect(receivedMessages[1].content.loanId).toBe("loan-789");
+
+    await ch.cancel("test-finalize-retry-consumer");
+  }, 15000);
+
+  it("validates finalize queue structure matches assertWithDlx pattern", async () => {
+    // Verify that finalize queues are properly created with the assertWithDlx helper
+    const mainQueue = await ch.checkQueue("loan.finalize.completed.q");
+    const retryQueue = await ch.checkQueue("loan.finalize.completed.q.retry");
+    const dlqQueue = await ch.checkQueue("loan.finalize.completed.q.dlq");
+
+    expect(mainQueue).toBeTruthy();
+    expect(retryQueue).toBeTruthy(); 
+    expect(dlqQueue).toBeTruthy();
+
+    console.log('[DLQ Test] Finalize queue structure validation passed');
+    // If we get here, all finalize queues were created successfully by the helper
+    expect(true).toBe(true);
   });
 });

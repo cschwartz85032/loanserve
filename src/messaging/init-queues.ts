@@ -381,18 +381,6 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
 
     // Loan boarding queues
     {
-      name: 'loan.finalize.completed.q',
-      options: {
-        durable: true,
-        arguments: {
-          'x-dead-letter-exchange': 'ai.pipeline.retry.v2',
-          'x-dead-letter-routing-key': 'loan.finalize.completed.retry',
-          'x-message-ttl': 300000, // 5 minutes for finalize completion
-          'x-max-retries': 2
-        }
-      }
-    },
-    {
       name: 'loan.board.request.q',
       options: {
         durable: true,
@@ -636,7 +624,6 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
     { queue: 'q.pipeline.status.v2', exchange: 'ai.monitoring.v2', routingKey: 'status.*' },
 
     // Loan boarding bindings
-    { queue: 'loan.finalize.completed.q', exchange: 'loan.board', routingKey: 'finalize.completed' },
     { queue: 'loan.board.request.q', exchange: 'loan.board', routingKey: 'request' },
     { queue: 'loan.board.completed.q', exchange: 'loan.board', routingKey: 'completed' },
 
@@ -693,6 +680,9 @@ export async function initializeAIPipelineTopology(connectionUrl: string): Promi
     // Loan boarding queues with standardized DLX pattern
     await assertWithDlx(channel, "loan.board", "loan.board.request.q", "request", { retryTtlMs: 15_000, quorum: true });
     await assertWithDlx(channel, "loan.board", "loan.board.completed.q", "completed", { retryTtlMs: 15_000, quorum: true });
+    
+    // Loan finalization queues (missing from old topology!)
+    await assertWithDlx(channel, "loan.board", "loan.finalize.completed.q", "finalize.completed", { retryTtlMs: 15_000, quorum: true });
 
     // Servicing cycle queues
     await assertWithDlx(channel, "svc.cycle", "svc.cycle.tick.q", "tick", { retryTtlMs: 15_000, quorum: true });
