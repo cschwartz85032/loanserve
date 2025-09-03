@@ -543,13 +543,19 @@ export class AIPipelineService {
    * Set tenant context for RLS
    */
   async setTenantContext(tenantId: string): Promise<void> {
-    await db.execute(sql`SET app.tenant_id = ${tenantId}`);
+    // Validate tenant ID format
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error(`Invalid tenant ID format: ${tenantId}`);
+    }
+    // Use SET LOCAL to scope tenant context to current transaction only
+    await db.execute(sql`SET LOCAL app.tenant_id = ${tenantId}`);
   }
 
   /**
    * Set user context for RLS
    */
   async setUserContext(userId: string): Promise<void> {
-    await db.execute(sql`SET app.user_id = ${userId}`);
+    // Use SET LOCAL to scope user context to current transaction only
+    await db.execute(sql`SET LOCAL app.user_id = ${userId}`);
   }
 }

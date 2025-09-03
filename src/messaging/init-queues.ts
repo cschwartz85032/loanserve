@@ -407,6 +407,142 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
           'x-max-retries': 2
         }
       }
+    },
+
+    // RETRY QUEUES for loan boarding, servicing, and disbursements
+    {
+      name: 'loan.board.request.retry.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+          'x-dead-letter-routing-key': 'loan.board.request.failed',
+          'x-message-ttl': 15000, // 15 seconds retry delay
+          'x-queue-type': 'quorum'
+        }
+      }
+    },
+    {
+      name: 'loan.board.completed.retry.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+          'x-dead-letter-routing-key': 'loan.board.completed.failed',
+          'x-message-ttl': 15000,
+          'x-queue-type': 'quorum'
+        }
+      }
+    },
+    {
+      name: 'svc.cycle.tick.retry.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+          'x-dead-letter-routing-key': 'svc.cycle.tick.failed',
+          'x-message-ttl': 15000,
+          'x-queue-type': 'quorum'
+        }
+      }
+    },
+    {
+      name: 'svc.cycle.completed.retry.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+          'x-dead-letter-routing-key': 'svc.cycle.completed.failed',
+          'x-message-ttl': 15000,
+          'x-queue-type': 'quorum'
+        }
+      }
+    },
+    {
+      name: 'svc.disb.request.retry.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+          'x-dead-letter-routing-key': 'svc.disb.request.failed',
+          'x-message-ttl': 30000, // 30 seconds for disbursements (more critical)
+          'x-queue-type': 'quorum'
+        }
+      }
+    },
+    {
+      name: 'svc.disb.completed.retry.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+          'x-dead-letter-routing-key': 'svc.disb.completed.failed',
+          'x-message-ttl': 15000,
+          'x-queue-type': 'quorum'
+        }
+      }
+    },
+
+    // DLQ QUEUES for loan boarding, servicing, and disbursements
+    {
+      name: 'loan.board.request.dlq.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-message-ttl': 86400000 // 24 hours for manual investigation
+        }
+      }
+    },
+    {
+      name: 'loan.board.completed.dlq.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-message-ttl': 86400000
+        }
+      }
+    },
+    {
+      name: 'svc.cycle.tick.dlq.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-message-ttl': 86400000
+        }
+      }
+    },
+    {
+      name: 'svc.cycle.completed.dlq.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-message-ttl': 86400000
+        }
+      }
+    },
+    {
+      name: 'svc.disb.request.dlq.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-message-ttl': 86400000
+        }
+      }
+    },
+    {
+      name: 'svc.disb.completed.dlq.q',
+      options: {
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-message-ttl': 86400000
+        }
+      }
     }
   ],
 
@@ -450,7 +586,23 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
 
     // Disbursement bindings
     { queue: 'svc.disb.request.q', exchange: 'svc.disb', routingKey: 'request' },
-    { queue: 'svc.disb.completed.q', exchange: 'svc.disb', routingKey: 'completed' }
+    { queue: 'svc.disb.completed.q', exchange: 'svc.disb', routingKey: 'completed' },
+
+    // RETRY BINDINGS for loan boarding, servicing, and disbursements
+    { queue: 'loan.board.request.retry.q', exchange: 'ai.pipeline.retry.v2', routingKey: 'loan.board.request.retry' },
+    { queue: 'loan.board.completed.retry.q', exchange: 'ai.pipeline.retry.v2', routingKey: 'loan.board.completed.retry' },
+    { queue: 'svc.cycle.tick.retry.q', exchange: 'ai.pipeline.retry.v2', routingKey: 'svc.cycle.tick.retry' },
+    { queue: 'svc.cycle.completed.retry.q', exchange: 'ai.pipeline.retry.v2', routingKey: 'svc.cycle.completed.retry' },
+    { queue: 'svc.disb.request.retry.q', exchange: 'ai.pipeline.retry.v2', routingKey: 'svc.disb.request.retry' },
+    { queue: 'svc.disb.completed.retry.q', exchange: 'ai.pipeline.retry.v2', routingKey: 'svc.disb.completed.retry' },
+
+    // DLQ BINDINGS for loan boarding, servicing, and disbursements
+    { queue: 'loan.board.request.dlq.q', exchange: 'ai.pipeline.dlq.v2', routingKey: 'loan.board.request.failed' },
+    { queue: 'loan.board.completed.dlq.q', exchange: 'ai.pipeline.dlq.v2', routingKey: 'loan.board.completed.failed' },
+    { queue: 'svc.cycle.tick.dlq.q', exchange: 'ai.pipeline.dlq.v2', routingKey: 'svc.cycle.tick.failed' },
+    { queue: 'svc.cycle.completed.dlq.q', exchange: 'ai.pipeline.dlq.v2', routingKey: 'svc.cycle.completed.failed' },
+    { queue: 'svc.disb.request.dlq.q', exchange: 'ai.pipeline.dlq.v2', routingKey: 'svc.disb.request.failed' },
+    { queue: 'svc.disb.completed.dlq.q', exchange: 'ai.pipeline.dlq.v2', routingKey: 'svc.disb.completed.failed' }
   ]
 };
 

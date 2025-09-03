@@ -17,6 +17,7 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { fromEnv, fromIni, fromInstanceMetadata } from '@aws-sdk/credential-providers';
 import { Readable } from 'stream';
+import { createHash } from 'crypto';
 
 export interface S3Config {
   region: string;
@@ -47,6 +48,23 @@ export class S3Service {
   private client: S3Client;
   private bucket: string;
   private region: string;
+
+  /**
+   * Hash S3 key for secure logging - prevents PII exposure
+   */
+  private hashKey(key: string): string {
+    return createHash('sha256').update(key).digest('hex').substring(0, 16);
+  }
+
+  /**
+   * Create safe log representation of S3 key
+   */
+  private safelog(key: string): string {
+    // Hash the key but keep some structure for debugging
+    const hash = this.hashKey(key);
+    const extension = key.split('.').pop();
+    return `key_${hash}${extension ? `.${extension}` : ''}`;
+  }
 
   constructor(config?: Partial<S3Config>) {
     this.region = config?.region || process.env.AWS_REGION || 'us-east-1';
@@ -151,7 +169,7 @@ export class S3Service {
       }
 
       const location = `s3://${this.bucket}/${key}`;
-      console.log(`[S3Service] Uploaded ${key} to ${location}`);
+      console.log(`[S3Service] Uploaded ${this.safelog(key)} to bucket ${this.bucket}`);
 
       return {
         key,
@@ -160,7 +178,7 @@ export class S3Service {
         etag: result.ETag || ''
       };
     } catch (error: any) {
-      console.error(`[S3Service] Upload failed for ${key}:`, error);
+      console.error(`[S3Service] Upload failed for ${this.safelog(key)}:`, error.message);
       throw new Error(`S3 upload failed: ${error.message}`);
     }
   }
@@ -191,10 +209,10 @@ export class S3Service {
         stream.on('error', reject);
       });
     } catch (error: any) {
-      console.error(`[S3Service] Download failed for ${key}:`, error);
+      console.error(`[S3Service] Download failed for ${this.safelog(key)}:`, error.message);
       
       if (error.name === 'NoSuchKey') {
-        throw new Error(`File not found: ${key}`);
+        throw new Error(`File not found in storage`);
       }
       
       throw new Error(`S3 download failed: ${error.message}`);
@@ -219,7 +237,7 @@ export class S3Service {
 
       return response.Body as Readable;
     } catch (error: any) {
-      console.error(`[S3Service] Stream download failed for ${key}:`, error);
+      console.error(`[S3Service] Stream download failed for ${this.safelog(key)}:`, error.message);
       throw new Error(`S3 stream download failed: ${error.message}`);
     }
   }
@@ -275,9 +293,9 @@ export class S3Service {
         Bucket: this.bucket,
         Key: key
       }));
-      console.log(`[S3Service] Deleted ${key}`);
+      console.log(`[S3Service] Deleted ${this.safelog(key)}`);
     } catch (error: any) {
-      console.error(`[S3Service] Delete failed for ${key}:`, error);
+      console.error(`[S3Service] Delete failed for ${this.safelog(key)}:`, error.message);
       throw new Error(`S3 delete failed: ${error.message}`);
     }
   }
@@ -324,7 +342,8 @@ export class S3Service {
         etag: obj.ETag || ''
       }));
     } catch (error: any) {
-      console.error(`[S3Service] List failed for prefix ${prefix}:`, error);
+      const safePrefix = prefix ? this.hashKey(prefix).substring(0, 8) : 'none';
+      console.error(`[S3Service] List failed for prefix ${safePrefix}:`, error.message);
       throw new Error(`S3 list failed: ${error.message}`);
     }
   }
@@ -336,15 +355,18 @@ export class S3Service {
     try {
       const objects = await this.listFiles(prefix);
       if (objects.length === 0) {
-        console.log(`[S3Service] No files found with prefix: ${prefix}`);
+        const safePrefix = this.hashKey(prefix).substring(0, 8);
+        console.log(`[S3Service] No files found with prefix: ${safePrefix}`);
         return;
       }
 
       const keys = objects.map(obj => obj.key);
       await this.deleteFiles(keys);
-      console.log(`[S3Service] Deleted ${keys.length} files with prefix: ${prefix}`);
+      const safePrefix = this.hashKey(prefix).substring(0, 8);
+      console.log(`[S3Service] Deleted ${keys.length} files with prefix: ${safePrefix}`);
     } catch (error: any) {
-      console.error(`[S3Service] Delete prefix failed for ${prefix}:`, error);
+      const safePrefix = this.hashKey(prefix).substring(0, 8);
+      console.error(`[S3Service] Delete prefix failed for ${safePrefix}:`, error.message);
       throw new Error(`S3 delete prefix failed: ${error.message}`);
     }
   }
