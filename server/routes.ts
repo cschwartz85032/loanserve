@@ -1762,6 +1762,10 @@ To implement full file serving:
   // Register Admin API Management routes
   app.use('/api', adminApiRouter);
 
+  // Register AI Pipeline Monitoring routes
+  const { monitoringRouter } = await import('../src/routes/monitoring.routes');
+  app.use('/api', monitoringRouter);
+
   // Register Health and Reliability routes
   const { healthCheck } = await import('../src/reliability/health');
   const { chaosEngine, CHAOS_TESTS } = await import('../src/reliability/chaos');
