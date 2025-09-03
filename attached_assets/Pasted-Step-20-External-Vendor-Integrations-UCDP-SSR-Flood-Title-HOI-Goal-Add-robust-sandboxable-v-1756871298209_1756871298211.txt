@@ -1,0 +1,731 @@
+Step 20 — External Vendor Integrations (UCDP/SSR, Flood, Title/HOI)
+
+Goal: Add robust, sandboxable vendor adapters with retries, caching, and unified audit. These services are used by QC (Step 8), Import (Steps 7/9), and Cycle/Boarding (Steps 14–16).
+
+0) Environment
+
+.env
+
+# UCDP / SSR (Appraisal)
+UCDP_BASE_URL=https://api.ucdp.sandbox
+UCDP_API_KEY=
+UCDP_TIMEOUT_MS=15000
+
+# Flood (e.g., CoreLogic/NFIP proxy)
+FLOOD_BASE_URL=https://api.flood.sandbox
+FLOOD_API_KEY=
+FLOOD_TIMEOUT_MS=12000
+
+# Title / HOI verification (generic webhook-style vendor)
+TITLE_BASE_URL=https://api.title.sandbox
+TITLE_API_KEY=
+TITLE_TIMEOUT_MS=12000
+
+HOI_BASE_URL=https://api.hoi.sandbox
+HOI_API_KEY=
+HOI_TIMEOUT_MS=12000
+
+# Caching & retry
+VENDOR_CACHE_TTL_MIN=1440
+VENDOR_MAX_RETRIES=3
+
+1) Database — vendor cache & audit
+
+migrations/024_vendor_cache_audit.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS vendor_cache (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NULL,
+  vendor text NOT NULL,                -- UCDP|FLOOD|TITLE|HOI
+  key text NOT NULL,                   -- e.g., "SSR:<appraisal_id>", "FLOOD:<address_hash>"
+  payload jsonb NOT NULL,
+  cached_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  UNIQUE (tenant_id, vendor, key)
+);
+
+CREATE TABLE IF NOT EXISTS vendor_audit (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NULL,
+  vendor text NOT NULL,
+  endpoint text NOT NULL,
+  status integer NOT NULL,
+  req jsonb NOT NULL,
+  res jsonb NULL,
+  latency_ms integer NOT NULL,
+  ts timestamptz NOT NULL DEFAULT now()
+);
+COMMIT;
+
+2) Adapters (fetch → retry → cache → audit)
+
+src/vendors/http.ts
+
+export async function callVendor(opts:{
+  base:string, path:string, method?:'GET'|'POST', headers?:Record<string,string>, body?:any, timeoutMs:number, retries:number
+}) {
+  const url = `${opts.base}${opts.path}`;
+  const method = opts.method || 'GET';
+  const init:any = { method, headers: { 'Content-Type':'application/json', ...(opts.headers||{}) }, signal: AbortSignal.timeout(opts.timeoutMs) };
+  if (method === 'POST' && opts.body) init.body = JSON.stringify(opts.body);
+
+  let lastErr:any;
+  for (let i=0;i<=opts.retries;i++){
+    const t0 = Date.now();
+    try {
+      const res = await fetch(url, init);
+      const latency = Date.now()-t0;
+      const text = await res.text();
+      const json = safeJson(text);
+      if (!res.ok) throw new Error(`${res.status} ${text?.slice(0,200)}`);
+      return { json, status: res.status, latency };
+    } catch (e:any) { lastErr = e; }
+    await new Promise(r=>setTimeout(r, 300 * (i+1)));
+  }
+  throw lastErr;
+}
+function safeJson(s:string){ try { return JSON.parse(s); } catch { return { raw:s }; } }
+
+
+src/vendors/cache.ts
+
+import { Pool } from "pg"; import dayjs from "dayjs";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function getCache(tenantId:string, vendor:string, key:string){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+    const r = await c.query(`SELECT payload, expires_at FROM vendor_cache WHERE vendor=$1 AND key=$2 AND expires_at>now()`, [vendor, key]);
+    return r.rows[0]?.payload || null;
+  } finally { c.release(); }
+}
+export async function putCache(tenantId:string, loanId:string|null, vendor:string, key:string, payload:any, ttlMin:number){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+    const exp = dayjs().add(ttlMin, 'minute').toISOString();
+    await c.query(`
+      INSERT INTO vendor_cache (tenant_id, loan_id, vendor, key, payload, expires_at)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT (tenant_id, vendor, key) DO UPDATE SET payload=EXCLUDED.payload, expires_at=EXCLUDED.expires_at, cached_at=now()
+    `, [tenantId, loanId, vendor, key, JSON.stringify(payload), exp]);
+  } finally { c.release(); }
+}
+export async function auditVendor(tenantId:string, loanId:string|null, vendor:string, endpoint:string, status:number, req:any, res:any, latencyMs:number){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+    await c.query(`INSERT INTO vendor_audit (tenant_id, loan_id, vendor, endpoint, status, req, res, latency_ms) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [tenantId, loanId, vendor, endpoint, status, JSON.stringify(req||{}), JSON.stringify(res||{}), latencyMs]);
+  } finally { c.release(); }
+}
+
+
+src/vendors/ucdp.ts
+
+import { callVendor } from "./http";
+import { getCache, putCache, auditVendor } from "./cache";
+export async function getSSR(tenantId:string, loanId:string|null, appraisalId:string){
+  const key = `SSR:${appraisalId}`;
+  const cached = await getCache(tenantId, 'UCDP', key);
+  if (cached) return cached;
+
+  const t0=Date.now();
+  const out = await callVendor({
+    base: process.env.UCDP_BASE_URL!, path: `/ssr/${appraisalId}`,
+    headers: { 'Authorization': `Bearer ${process.env.UCDP_API_KEY}` },
+    timeoutMs: Number(process.env.UCDP_TIMEOUT_MS||15000), retries: Number(process.env.VENDOR_MAX_RETRIES||3)
+  });
+  await auditVendor(tenantId, loanId, 'UCDP', `/ssr/${appraisalId}`, out.status, {}, out.json, out.latency);
+  await putCache(tenantId, loanId, 'UCDP', key, out.json, Number(process.env.VENDOR_CACHE_TTL_MIN||1440));
+  return out.json;
+}
+
+
+src/vendors/flood.ts
+
+import { callVendor } from "./http"; import { getCache, putCache, auditVendor } from "./cache";
+export async function getFlood(tenantId:string, loanId:string|null, addressHash:string){
+  const key = `FLOOD:${addressHash}`;
+  const cached = await getCache(tenantId,'FLOOD',key);
+  if (cached) return cached;
+  const out = await callVendor({
+    base: process.env.FLOOD_BASE_URL!, path:`/determine/${addressHash}`,
+    headers:{ 'X-API-KEY': process.env.FLOOD_API_KEY! },
+    timeoutMs:Number(process.env.FLOOD_TIMEOUT_MS||12000), retries:Number(process.env.VENDOR_MAX_RETRIES||3)
+  });
+  await auditVendor(tenantId, loanId, 'FLOOD', `/determine/${addressHash}`, out.status, {}, out.json, out.latency);
+  await putCache(tenantId, loanId, 'FLOOD', key, out.json, Number(process.env.VENDOR_CACHE_TTL_MIN||1440));
+  return out.json;
+}
+
+
+src/vendors/titleHoi.ts
+
+import { callVendor } from "./http"; import { getCache, putCache, auditVendor } from "./cache";
+export async function verifyTitle(tenantId:string, loanId:string|null, titleFileNo:string){
+  const key = `TITLE:${titleFileNo}`;
+  const cached = await getCache(tenantId,'TITLE',key); if (cached) return cached;
+  const out = await callVendor({
+    base: process.env.TITLE_BASE_URL!, path:`/verify/title/${encodeURIComponent(titleFileNo)}`,
+    headers:{ 'X-API-KEY': process.env.TITLE_API_KEY! },
+    timeoutMs:Number(process.env.TITLE_TIMEOUT_MS||12000), retries:Number(process.env.VENDOR_MAX_RETRIES||3)
+  });
+  await auditVendor(tenantId, loanId, 'TITLE', `/verify/title/${titleFileNo}`, out.status, {}, out.json, out.latency);
+  await putCache(tenantId, loanId, 'TITLE', key, out.json, Number(process.env.VENDOR_CACHE_TTL_MIN||1440));
+  return out.json;
+}
+export async function verifyHOI(tenantId:string, loanId:string|null, policyNo:string){
+  const key = `HOI:${policyNo}`;
+  const cached = await getCache(tenantId,'HOI',key); if (cached) return cached;
+  const out = await callVendor({
+    base: process.env.HOI_BASE_URL!, path:`/verify/hoi/${encodeURIComponent(policyNo)}`,
+    headers:{ 'X-API-KEY': process.env.HOI_API_KEY! },
+    timeoutMs:Number(process.env.HOI_TIMEOUT_MS||12000), retries:Number(process.env.VENDOR_MAX_RETRIES||3)
+  });
+  await auditVendor(tenantId, loanId, 'HOI', `/verify/hoi/${policyNo}`, out.status, {}, out.json, out.latency);
+  await putCache(tenantId, loanId, 'HOI', key, out.json, Number(process.env.VENDOR_CACHE_TTL_MIN||1440));
+  return out.json;
+}
+
+3) Routes — minimal vendor calls (admin-only)
+
+src/routes/vendor.routes.ts
+
+import { Router } from "express";
+import { getSSR } from "../vendors/ucdp";
+import { getFlood } from "../vendors/flood";
+import { verifyTitle, verifyHOI } from "../vendors/titleHoi";
+export const vendorRouter = Router();
+
+vendorRouter.get("/vendor/ssr/:appraisalId", async (req:any,res)=> {
+  const json = await getSSR(req.tenant.id, req.query.loan_id||null, req.params.appraisalId);
+  res.json(json);
+});
+vendorRouter.get("/vendor/flood/:addrHash", async (req:any,res)=>{
+  const json = await getFlood(req.tenant.id, req.query.loan_id||null, req.params.addrHash);
+  res.json(json);
+});
+vendorRouter.get("/vendor/title/:fileNo", async (req:any,res)=>{
+  const json = await verifyTitle(req.tenant.id, req.query.loan_id||null, req.params.fileNo);
+  res.json(json);
+});
+vendorRouter.get("/vendor/hoi/:policyNo", async (req:any,res)=>{
+  const json = await verifyHOI(req.tenant.id, req.query.loan_id||null, req.params.policyNo);
+  res.json(json);
+});
+
+
+Wire:
+
+import { vendorRouter } from "./routes/vendor.routes";
+app.use("/api", vendorRouter);
+
+
+Engineering must not change: Retry counts, TTLs, and audit storage; cache keys; path names. SSR/Flood responses are cached & auditable, never overwrite canonical unless QC/Authority Matrix selects them.
+
+Step 21 — Public Developer API, OAuth, API Keys & Rate Limits
+
+Goal: Provide secure external APIs (tenant-scoped), OAuth2 Client Credentials, optional HMAC keys, and rate limiting with webhook management and OpenAPI.
+
+0) Environment
+
+.env
+
+PUBLIC_API_BASE=https://api.loanserve.io
+OAUTH_ISSUER=loanserve-auth
+OAUTH_JWT_SIGNING_KID=api-key-1
+OAUTH_JWT_PRIVATE_PEM_PATH=/secrets/oauth_private.pem
+API_KEY_TTL_DAYS=365
+RATE_LIMIT_REQ_PER_MIN=600
+RATE_LIMIT_BURST=100
+
+1) DB — clients, api keys, rate buckets
+
+migrations/025_public_api_oauth.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS api_clients (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  client_id text UNIQUE NOT NULL,
+  client_name text NOT NULL,
+  client_secret_hash text NOT NULL,         -- bcrypt/argon hash
+  scopes text[] NOT NULL DEFAULT ARRAY['read'],
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  label text NOT NULL,
+  key_id text UNIQUE NOT NULL,
+  key_hash text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS api_rate (
+  tenant_id uuid NOT NULL,
+  key_id text NOT NULL,
+  window_start timestamptz NOT NULL,
+  count integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (tenant_id, key_id, window_start)
+);
+COMMIT;
+
+2) OAuth2 Client Credentials (internal issuer)
+
+src/publicapi/oauth.ts
+
+import { readFileSync } from "fs";
+import jwt from "jsonwebtoken";
+import { randomUUID, createHash } from "crypto";
+import bcrypt from "bcryptjs";
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+const PRIV = readFileSync(process.env.OAUTH_JWT_PRIVATE_PEM_PATH!, "utf-8");
+const KID = process.env.OAUTH_JWT_SIGNING_KID!;
+
+export async function tokenEndpoint(req:any,res:any){
+  const { client_id, client_secret, grant_type, scope } = req.body||{};
+  if (grant_type!=="client_credentials") return res.status(400).json({ error:"unsupported_grant_type" });
+
+  const c = await pool.connect(); try {
+    const r = await c.query(`SELECT * FROM api_clients WHERE client_id=$1 AND active=true`, [client_id]);
+    if (!r.rowCount) return res.status(401).json({ error:"invalid_client" });
+    const row = r.rows[0]; const ok = await bcrypt.compare(client_secret, row.client_secret_hash);
+    if (!ok) return res.status(401).json({ error:"invalid_client" });
+    const now = Math.floor(Date.now()/1000);
+    const tok = jwt.sign({
+      iss: process.env.OAUTH_ISSUER, aud: "loanserve-public-api", sub: row.client_id, scope: (scope||row.scopes).join(" "),
+      "https://loanserve.io/tenant_id": row.tenant_id
+    }, PRIV, { algorithm:"RS256", keyid:KID, expiresIn: 3600, notBefore: 0, jwtid: randomUUID(), iat: now });
+    res.json({ access_token: tok, token_type: "Bearer", expires_in: 3600, scope: (scope||row.scopes).join(" ") });
+  } finally { c.release(); }
+}
+
+
+src/routes/public.oauth.routes.ts
+
+import { Router } from "express";
+import { tokenEndpoint } from "../publicapi/oauth";
+export const publicOAuthRouter = Router();
+publicOAuthRouter.post("/oauth/token", tokenEndpoint);
+
+
+Wire:
+
+import { publicOAuthRouter } from "./routes/public.oauth.routes";
+app.use("/public", publicOAuthRouter);
+
+3) API key HMAC auth + rate limiting
+
+src/publicapi/auth.ts
+
+import { Pool } from "pg";
+import { createHmac } from "crypto";
+import dayjs from "dayjs";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function requireApiKey(req:any,res:any,next:any){
+  const keyId = req.header("X-Api-Key-Id");
+  const sig = req.header("X-Api-Key-Signature");
+  const body = JSON.stringify(req.body||{});
+  if (!keyId || !sig) return res.status(401).json({ error:"missing_api_key" });
+  const c = await pool.connect(); try {
+    const r = await c.query(`SELECT * FROM api_keys WHERE key_id=$1 AND active=true AND expires_at>now()`, [keyId]);
+    if (!r.rowCount) return res.status(401).json({ error:"invalid_api_key" });
+    const row = r.rows[0];
+    const ok = verifyHmac(body, row.key_hash, sig);
+    if (!ok) return res.status(401).json({ error:"bad_signature" });
+    req.api = { tenantId: row.tenant_id, keyId };
+    // rate limit window (minute)
+    const win = dayjs().startOf('minute').toDate();
+    await c.query(`
+      INSERT INTO api_rate (tenant_id, key_id, window_start, count)
+      VALUES ($1,$2,$3,1) ON CONFLICT (tenant_id,key_id,window_start)
+      DO UPDATE SET count = api_rate.count + 1
+    `, [row.tenant_id, keyId, win]);
+    const lim = Number(process.env.RATE_LIMIT_REQ_PER_MIN||"600");
+    const q = await c.query(`SELECT count FROM api_rate WHERE tenant_id=$1 AND key_id=$2 AND window_start=$3`, [row.tenant_id,keyId,win]);
+    if (Number(q.rows[0].count) > lim) return res.status(429).json({ error:"rate_limited" });
+    next();
+  } finally { c.release(); }
+}
+
+function verifyHmac(body:string, storedHash:string, gotSig:string){
+  // storedHash is HEX HMAC secret hash; we just use it as secret for simplicity
+  const h = createHmac("sha256", storedHash).update(body).digest("hex");
+  return gotSig === h;
+}
+
+
+Usage example for a public endpoint:
+
+// src/routes/public.api.routes.ts
+import { Router } from "express";
+import { requireApiKey } from "../publicapi/auth";
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+export const publicApiRouter = Router();
+
+publicApiRouter.post("/v1/loans/list", requireApiKey, async (req:any,res)=>{
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [req.api.tenantId]);
+    const r = await c.query(`SELECT id, created_at, (SELECT value FROM loan_datapoints WHERE loan_id=id AND key='LoanNumber' LIMIT 1) AS loan_number
+                             FROM loan_candidates ORDER BY created_at DESC LIMIT 100`);
+    res.json({ loans: r.rows });
+  } finally { c.release(); }
+});
+
+
+Wire:
+
+import { publicApiRouter } from "./routes/public.api.routes";
+app.use("/public", publicApiRouter);
+
+
+Engineering must not change: OAuth token format/claims, headers names (X-Api-Key-Id, X-Api-Key-Signature), per-minute rate limit logic, and Postgres RLS guard (SET LOCAL app.tenant_id).
+
+Step 22 — Admin Console: Tenants, Users, Roles, Flags & Billing (Metering + Stripe)
+
+Goal: Admin endpoints for tenant/user lifecycle, role mapping (RBAC), feature flags UI hooks, and usage metering + Stripe billing.
+
+0) Environment
+
+.env
+
+STRIPE_API_KEY=
+STRIPE_PRODUCT_SERVICING=
+STRIPE_PRICE_PER_LOAN_ACTIVE=price_123
+STRIPE_PRICE_PER_STATEMENT=price_456
+BILLING_CRON=0 1 * * *   # 01:00 UTC daily usage upload
+
+1) DB — tenants/users/roles, metering
+
+migrations/026_admin_billing.sql
+
+BEGIN;
+CREATE TABLE IF NOT EXISTS tenants (
+  id uuid PRIMARY KEY,
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  sub text PRIMARY KEY,
+  email text NOT NULL,
+  name text NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  active boolean NOT NULL DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS tenant_users (
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_sub text NOT NULL REFERENCES users(sub) ON DELETE CASCADE,
+  roles text[] NOT NULL DEFAULT ARRAY['investor.viewer'],
+  PRIMARY KEY (tenant_id, user_sub)
+);
+
+CREATE TABLE IF NOT EXISTS billing_meters (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  meter_code text NOT NULL,                  -- ACTIVE_LOANS | STATEMENTS
+  qty integer NOT NULL,
+  window_start timestamptz NOT NULL,
+  window_end timestamptz NOT NULL,
+  posted boolean NOT NULL DEFAULT false,
+  posted_at timestamptz NULL,
+  UNIQUE (tenant_id, meter_code, window_start, window_end)
+);
+COMMIT;
+
+2) Admin routes
+
+src/routes/admin.routes.ts
+
+import { Router } from "express"; import { Pool } from "pg";
+export const adminRouter = Router(); const pool = new Pool({ connectionString: process.env.DB_URL });
+
+adminRouter.post("/admin/tenants", async (req:any,res)=>{
+  const { id, name } = req.body||{};
+  const c = await pool.connect(); try { await c.query(`INSERT INTO tenants (id, name) VALUES ($1,$2)`, [id, name]); res.status(201).json({ id, name }); }
+  finally { c.release(); }
+});
+adminRouter.post("/admin/users", async (req:any,res)=>{
+  const { sub, email, name } = req.body||{};
+  const c = await pool.connect(); try { await c.query(`INSERT INTO users (sub,email,name) VALUES ($1,$2,$3) ON CONFLICT (sub) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name`, [sub,email,name||null]); res.json({ sub, email }); }
+  finally { c.release(); }
+});
+adminRouter.post("/admin/tenant-users", async (req:any,res)=>{
+  const { tenant_id, user_sub, roles } = req.body||{};
+  const c = await pool.connect(); try { await c.query(`INSERT INTO tenant_users (tenant_id,user_sub,roles) VALUES ($1,$2,$3) ON CONFLICT (tenant_id,user_sub) DO UPDATE SET roles=EXCLUDED.roles`, [tenant_id,user_sub,roles||['investor.viewer']]); res.json({ tenant_id,user_sub,roles }); }
+  finally { c.release(); }
+});
+
+adminRouter.post("/admin/flags", async (req:any,res)=>{
+  // Replace FEATURE_FLAGS_JSON in memory (effective immediately in all routes using isOn())
+  process.env.FEATURE_FLAGS_JSON = JSON.stringify(req.body||{});
+  res.json({ ok:true });
+});
+
+
+Wire:
+
+import { adminRouter } from "./routes/admin.routes";
+app.use("/api", adminRouter);
+
+3) Billing uploader (Stripe)
+
+src/billing/stripe.ts
+
+import Stripe from "stripe"; import dayjs from "dayjs"; import { Pool } from "pg";
+const stripe = new Stripe(process.env.STRIPE_API_KEY!, { apiVersion: "2024-06-20" });
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function postDailyMeters(tenantId:string, startISO:string, endISO:string){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+    // ACTIVE_LOANS: count svc_accounts active at end
+    const r1 = await c.query(`SELECT COUNT(*)::int AS qty FROM svc_accounts WHERE state='Active'`);
+    // STATEMENTS: count today
+    const r2 = await c.query(`SELECT COUNT(*)::int AS qty FROM svc_statements WHERE statement_date BETWEEN $1::date AND $2::date`, [startISO, endISO]);
+
+    // Store meters
+    await c.query(`INSERT INTO billing_meters (tenant_id,meter_code,qty,window_start,window_end) VALUES ($1,'ACTIVE_LOANS',$2,$3,$4)
+                   ON CONFLICT (tenant_id,meter_code,window_start,window_end) DO UPDATE SET qty=EXCLUDED.qty`,
+      [tenantId, Number(r1.rows[0].qty||0), startISO, endISO]);
+    await c.query(`INSERT INTO billing_meters (tenant_id,meter_code,qty,window_start,window_end) VALUES ($1,'STATEMENTS',$2,$3,$4)
+                   ON CONFLICT (tenant_id,meter_code,window_start,window_end) DO UPDATE SET qty=EXCLUDED.qty`,
+      [tenantId, Number(r2.rows[0].qty||0), startISO, endISO]);
+
+    // Push usage to Stripe (requires customer mapping you maintain separately)
+    // For brevity we omit customer lookup; call stripe.subscriptionItems.createUsageRecord(...) here.
+
+    await c.query(`UPDATE billing_meters SET posted=true, posted_at=now() WHERE tenant_id=$1 AND window_start=$2 AND window_end=$3`, [tenantId, startISO, endISO]);
+    return { active_loans: Number(r1.rows[0].qty||0), statements: Number(r2.rows[0].qty||0) };
+  } finally { c.release(); }
+}
+
+
+ops/k8s/cron-billing.yaml
+
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: billing-upload }
+spec:
+  schedule: "0 1 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: billing
+            image: node:20-alpine
+            command: ["node","/opt/billing-upload.js"]
+            envFrom: [{ secretRef: { name: api-secrets } }]
+            volumeMounts:
+            - name: scripts
+              mountPath: /opt
+          volumes:
+          - name: scripts
+            configMap:
+              name: billing-scripts
+              items: [{ key: billing-upload.js, path: billing-upload.js }]
+
+
+ops/scripts/billing-upload.js
+
+const dayjs = require("dayjs");
+const { postDailyMeters } = require("/app/dist/billing/stripe.js");
+(async ()=>{
+  const start = dayjs().subtract(1,'day').startOf('day').format("YYYY-MM-DD");
+  const end   = dayjs().subtract(1,'day').endOf('day').format("YYYY-MM-DD");
+  await postDailyMeters(process.env.TENANT_ID, start, end);
+  console.log("billing upload ok");
+})().catch(e=>{ console.error(e); process.exit(1); });
+
+
+Engineering must not change: RBAC role names, meter codes (ACTIVE_LOANS, STATEMENTS), flag injection via /api/admin/flags, billing schedule.
+
+Step 23 — Search & eDiscovery (Full-Text + Evidence Export)
+
+Goal: Index loan metadata + document text for fast search; legal / eDiscovery export with lineage and legal hold integration.
+
+0) Environment
+
+.env
+
+SEARCH_BACKEND=pg                   # pg | opensearch (future)
+FTS_LANG_CONFIG=english
+DISCOVERY_S3_PREFIX=ediscovery
+
+1) DB — FTS index tables
+
+migrations/027_search_fts.sql
+
+BEGIN;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- Loan metadata FTS
+ALTER TABLE loan_candidates ADD COLUMN IF NOT EXISTS search_tsv tsvector;
+
+-- Doc text store (thin index)
+CREATE TABLE IF NOT EXISTS doc_text (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  doc_id uuid NOT NULL REFERENCES loan_documents(id) ON DELETE CASCADE,
+  page integer NOT NULL,
+  text text NOT NULL,
+  tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', unaccent(text))) STORED
+);
+
+CREATE INDEX IF NOT EXISTS idx_doc_text_fts ON doc_text USING gin (tsv);
+CREATE INDEX IF NOT EXISTS idx_loan_candidates_fts ON loan_candidates USING gin (search_tsv);
+COMMIT;
+
+2) Indexers
+
+src/search/indexers.ts
+
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function indexLoanMeta(tenantId:string, loanId:string){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+    const r = await c.query(`
+      SELECT
+        COALESCE(MAX(CASE WHEN key='LoanNumber' THEN normalized_value END),'') || ' ' ||
+        COALESCE(MAX(CASE WHEN key='BorrowerFullName' THEN normalized_value END),'') || ' ' ||
+        COALESCE(MAX(CASE WHEN key='PropertyStreet' THEN normalized_value END),'') || ' ' ||
+        COALESCE(MAX(CASE WHEN key='PropertyCity' THEN normalized_value END),'') || ' ' ||
+        COALESCE(MAX(CASE WHEN key='PropertyState' THEN normalized_value END),'') AS str
+      FROM loan_datapoints WHERE loan_id=$1`, [loanId]);
+    const str = r.rows[0]?.str || "";
+    await c.query(`UPDATE loan_candidates SET search_tsv = to_tsvector($2, unaccent($3)) WHERE id=$1`, [loanId, process.env.FTS_LANG_CONFIG||"english", str]);
+  } finally { c.release(); }
+}
+
+export async function indexDocText(tenantId:string, loanId:string, docId:string, page:number, text:string){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+    await c.query(`
+      INSERT INTO doc_text (tenant_id,loan_id,doc_id,page,text)
+      VALUES ($1,$2,$3,$4,$5)
+      ON CONFLICT (id) DO NOTHING
+    `, [tenantId, loanId, docId, page, text]);
+  } finally { c.release(); }
+}
+
+
+(Call indexLoanMeta after finalize/import; call indexDocText as part of OCR text staging when you save text/{docId}.txt — split by pages if available.)
+
+3) Search API (FTS)
+
+src/routes/search.routes.ts
+
+import { Router } from "express"; import { Pool } from "pg";
+export const searchRouter = Router(); const pool = new Pool({ connectionString: process.env.DB_URL });
+
+searchRouter.get("/search/loans", async (req:any,res)=>{
+  const q = String(req.query.q||"").trim(); if (!q) return res.json({ loans: [] });
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [req.tenant.id]);
+    const r = await c.query(`
+      SELECT id, created_at,
+        ts_rank(search_tsv, plainto_tsquery($2)) AS rank
+      FROM loan_candidates
+      WHERE search_tsv @@ plainto_tsquery($2)
+      ORDER BY rank DESC LIMIT 50
+    `, [req.tenant.id, q]);
+    res.json({ loans: r.rows });
+  } finally { c.release(); }
+});
+
+searchRouter.get("/search/docs", async (req:any,res)=>{
+  const q = String(req.query.q||"").trim(); const loanId = req.query.loan_id || null;
+  if (!q) return res.json({ hits: [] });
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [req.tenant.id]);
+    const r = loanId
+      ? await c.query(`SELECT doc_id, page, ts_rank(tsv, plainto_tsquery($3)) rank FROM doc_text WHERE loan_id=$2 AND tsv @@ plainto_tsquery($3) ORDER BY rank DESC LIMIT 100`, [req.tenant.id, loanId, q])
+      : await c.query(`SELECT loan_id, doc_id, page, ts_rank(tsv, plainto_tsquery($2)) rank FROM doc_text WHERE tsv @@ plainto_tsquery($2) ORDER BY rank DESC LIMIT 100`, [req.tenant.id, q]);
+    res.json({ hits: r.rows });
+  } finally { c.release(); }
+});
+
+
+Wire:
+
+import { searchRouter } from "./routes/search.routes";
+app.use("/api", searchRouter);
+
+4) eDiscovery export (ZIP of PDFs + JSON manifest)
+
+src/ediscovery/export.ts
+
+import { Pool } from "pg";
+import { putBytes } from "../utils/storage";
+import { createGzip } from "zlib";
+import { PassThrough } from "stream";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function exportEdiscovery(tenantId:string, loanId:string){
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+    const docs = await c.query(`SELECT id, storage_uri, sha256, doc_type FROM loan_documents WHERE loan_id=$1 ORDER BY created_at`, [loanId]);
+    const manifest = {
+      loan_id: loanId,
+      docs: docs.rows.map((d:any)=>({ id:d.id, uri:d.storage_uri, hash:d.sha256, type:d.doc_type }))
+    };
+    const keyJson = `${process.env.S3_PREFIX||"tenants"}/${tenantId}/loans/${loanId}/${process.env.DISCOVERY_S3_PREFIX||"ediscovery"}/manifest.json`;
+    await putBytes(keyJson, Buffer.from(JSON.stringify(manifest,null,2)), "application/json");
+    return { manifest_uri: `s3://${keyJson}` }; // (streaming zip omitted for brevity)
+  } finally { c.release(); }
+}
+
+
+src/routes/ediscovery.routes.ts
+
+import { Router } from "express"; import { exportEdiscovery } from "../ediscovery/export";
+export const ediscoveryRouter = Router();
+ediscoveryRouter.post("/ediscovery/:loanId/export", async (req:any,res)=>{
+  const out = await exportEdiscovery(req.tenant.id, req.params.loanId);
+  res.json(out);
+});
+
+
+Wire:
+
+import { ediscoveryRouter } from "./routes/ediscovery.routes";
+app.use("/api", ediscoveryRouter);
+
+
+Engineering must not change: FTS config (english + unaccent), index table names, allowed search routes, and eDiscovery manifest path.
+
+Acceptance tests (smoke)
+
+tests/vendors.search.admin.test.ts
+
+it("search endpoints return 200 with empty/filled results", async ()=>{ /* call /api/search/loans?q=Main */ });
+it("vendor cache round-trip works", async ()=>{ /* call /api/vendor/flood/<hash>?loan_id=... twice and ensure audit+cache */ });
+it("admin flags endpoint toggles a flag", async ()=>{ /* POST /api/admin/flags { export_mapper_v2: true } */ });
+
+“Do not change” summary for Steps 20–23
+
+Step 20: vendor cache/audit keys and TTLs; adapter paths; retries.
+
+Step 21: OAuth claims, header names for API keys, rate limit window/buckets, RLS on every query.
+
+Step 22: RBAC role names, meter codes, flags injection route, billing schedule.
+
+Step 23: FTS strategy and table names; eDiscovery manifest location; search API allowlist.

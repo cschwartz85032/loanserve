@@ -35,6 +35,7 @@ import { notificationRouter } from "../src/routes/notification.routes";
 import { storageRoutes } from "../src/routes/storage.routes";
 import { metricsRouter } from "../src/routes/metrics.routes";
 import { withHttpMetrics } from "../src/monitoring/httpMetrics";
+import { vendorRouter } from "../src/routes/vendor.routes";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1745,6 +1746,9 @@ To implement full file serving:
   // Register Analytics routes
   const { analyticsRouter } = await import('../src/routes/analytics.routes');
   app.use('/api/analytics', analyticsRouter);
+
+  // Register Vendor Integration routes
+  app.use('/api', vendorRouter);
 
   // Register Health and Reliability routes
   const { healthCheck } = await import('../src/reliability/health');
