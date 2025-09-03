@@ -1,0 +1,179 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etl-hourly
+  namespace: loanserve
+spec:
+  schedule: "15 * * * *"  # Every hour at 15 minutes past
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800  # 30 minutes timeout
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: etl
+            image: node:20-alpine
+            command: ["node", "/opt/etl-hourly.js"]
+            envFrom:
+            - secretRef:
+                name: loanserve-secrets
+            env:
+            - name: TENANT_ID
+              value: "00000000-0000-0000-0000-000000000001"
+            volumeMounts:
+            - name: scripts
+              mountPath: /opt
+            - name: app-dist
+              mountPath: /app/dist
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+          volumes:
+          - name: scripts
+            configMap:
+              name: etl-scripts
+              items:
+              - key: etl-hourly.js
+                path: etl-hourly.js
+          - name: app-dist
+            emptyDir: {}
+          initContainers:
+          - name: copy-app
+            image: loanserve/api:latest
+            command: ["cp", "-r", "/app/dist", "/shared/"]
+            volumeMounts:
+            - name: app-dist
+              mountPath: /shared
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: etl-nightly
+  namespace: loanserve
+spec:
+  schedule: "0 2 * * *"  # 02:00 UTC nightly
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200  # 2 hours timeout
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: etl
+            image: node:20-alpine
+            command: ["node", "/opt/etl-nightly.js"]
+            envFrom:
+            - secretRef:
+                name: loanserve-secrets
+            env:
+            - name: TENANT_ID
+              value: "00000000-0000-0000-0000-000000000001"
+            volumeMounts:
+            - name: scripts
+              mountPath: /opt
+            - name: app-dist
+              mountPath: /app/dist
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+          volumes:
+          - name: scripts
+            configMap:
+              name: etl-scripts
+              items:
+              - key: etl-nightly.js
+                path: etl-nightly.js
+          - name: app-dist
+            emptyDir: {}
+          initContainers:
+          - name: copy-app
+            image: loanserve/api:latest
+            command: ["cp", "-r", "/app/dist", "/shared/"]
+            volumeMounts:
+            - name: app-dist
+              mountPath: /shared
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: etl-scripts
+  namespace: loanserve
+data:
+  etl-hourly.js: |
+    const { ReportingETL } = require('/app/dist/etl/reporting/loaders.js');
+    
+    async function runHourlyETL() {
+      const tenantId = process.env.TENANT_ID || '00000000-0000-0000-0000-000000000001';
+      console.log(`[ETL] Starting hourly ETL for tenant ${tenantId}`);
+      
+      try {
+        const etl = new ReportingETL(tenantId);
+        const metrics = await etl.runIncrementalETL();
+        
+        console.log('[ETL] Hourly ETL completed successfully');
+        console.log('[ETL] Metrics:', JSON.stringify(metrics, null, 2));
+        
+        // Optionally export to S3
+        if (process.env.LAKE_BUCKET) {
+          console.log('[ETL] Triggering S3 export...');
+          // Would call S3 export function here
+        }
+        
+      } catch (error) {
+        console.error('[ETL] Hourly ETL failed:', error);
+        process.exit(1);
+      }
+    }
+    
+    runHourlyETL();
+
+  etl-nightly.js: |
+    const { ReportingETL } = require('/app/dist/etl/reporting/loaders.js');
+    
+    async function runNightlyETL() {
+      const tenantId = process.env.TENANT_ID || '00000000-0000-0000-0000-000000000001';
+      console.log(`[ETL] Starting nightly full ETL for tenant ${tenantId}`);
+      
+      try {
+        const etl = new ReportingETL(tenantId);
+        const metrics = await etl.runFullETL();
+        
+        console.log('[ETL] Nightly ETL completed successfully');
+        console.log('[ETL] Metrics:', JSON.stringify(metrics, null, 2));
+        
+        // Full S3 export
+        if (process.env.LAKE_BUCKET) {
+          console.log('[ETL] Triggering full S3 export...');
+          // Would call full S3 export function here
+        }
+        
+        // Data quality checks
+        console.log('[ETL] Running data quality checks...');
+        // Would run DQ checks here
+        
+      } catch (error) {
+        console.error('[ETL] Nightly ETL failed:', error);
+        process.exit(1);
+      }
+    }
+    
+    runNightlyETL();

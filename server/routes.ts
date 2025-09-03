@@ -1742,6 +1742,10 @@ To implement full file serving:
   const { investorRouter } = await import('../src/routes/investor.routes');
   app.use('/api', investorRouter);
 
+  // Register Analytics routes
+  const { analyticsRouter } = await import('../src/routes/analytics.routes');
+  app.use('/api/analytics', analyticsRouter);
+
   // Register Health and Reliability routes
   const { healthCheck } = await import('../src/reliability/health');
   const { chaosEngine, CHAOS_TESTS } = await import('../src/reliability/chaos');

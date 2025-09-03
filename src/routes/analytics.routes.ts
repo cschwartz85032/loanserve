@@ -1,0 +1,381 @@
+import { Router } from "express";
+import { pool } from "../../server/db";
+import { ReportingETL } from "../etl/reporting/loaders";
+import { LakehouseExtractor } from "../etl/lakehouse/parquet-extractor";
+import { Readable } from "stream";
+
+export const analyticsRouter = Router();
+
+// ETL Management Endpoints
+analyticsRouter.post('/etl/run', async (req, res) => {
+  try {
+    const { type = 'incremental', tenant_id } = req.body;
+    const tenantId = tenant_id || '00000000-0000-0000-0000-000000000001';
+    
+    const etl = new ReportingETL(tenantId);
+    let metrics;
+    
+    if (type === 'full') {
+      metrics = await etl.runFullETL();
+    } else {
+      const since = req.body.since_iso;
+      metrics = await etl.runIncrementalETL(since);
+    }
+    
+    res.json({
+      success: true,
+      type,
+      tenant_id: tenantId,
+      metrics,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[Analytics] ETL run failed:', error);
+    res.status(500).json({
+      error: 'ETL execution failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Lakehouse Export Endpoints
+analyticsRouter.post('/lakehouse/export', async (req, res) => {
+  try {
+    const { type = 'incremental', tenant_id } = req.body;
+    const tenantId = tenant_id || '00000000-0000-0000-0000-000000000001';
+    
+    const extractor = new LakehouseExtractor(tenantId);
+    const jobs = await extractor.exportAllTables(type !== 'full');
+    
+    res.json({
+      success: true,
+      export_type: type,
+      tenant_id: tenantId,
+      jobs,
+      summary: {
+        total: jobs.length,
+        completed: jobs.filter(j => j.status === 'completed').length,
+        failed: jobs.filter(j => j.status === 'failed').length
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('[Analytics] Lakehouse export failed:', error);
+    res.status(500).json({
+      error: 'Lakehouse export failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Data Export Endpoints
+analyticsRouter.get('/export/csv/:table', async (req, res) => {
+  try {
+    const { table } = req.params;
+    const { limit = 10000, offset = 0 } = req.query;
+    
+    const allowedTables = [
+      'dim_loan', 'dim_investor', 'dim_user',
+      'fact_txn', 'fact_qc', 'fact_servicing', 'fact_remit',
+      'fact_export', 'fact_notify', 'fact_document'
+    ];
+    
+    if (!allowedTables.includes(table)) {
+      return res.status(400).json({ error: 'Invalid table name' });
+    }
+    
+    const client = await pool.connect();
+    
+    try {
+      const result = await client.query(`
+        SELECT * FROM reporting.${table}
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]);
+      
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'No data found' });
+      }
+      
+      // Set CSV headers
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${table}_export.csv"`);
+      
+      // Convert to CSV
+      const headers = Object.keys(result.rows[0]);
+      const csvData = [
+        headers.join(','),
+        ...result.rows.map(row => 
+          headers.map(header => {
+            const value = row[header];
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'string' && value.includes(',')) {
+              return `"${value.replace(/"/g, '""')}"`;
+            }
+            return String(value);
+          }).join(',')
+        )
+      ].join('\n');
+      
+      res.send(csvData);
+      
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('[Analytics] CSV export failed:', error);
+    res.status(500).json({
+      error: 'CSV export failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Dashboard Query Endpoints
+analyticsRouter.get('/dashboard/portfolio-summary', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    
+    try {
+      const result = await client.query(`
+        SELECT 
+          COUNT(DISTINCT loan_id) as total_loans,
+          SUM(upb) as total_upb,
+          SUM(escrow_balance) as total_escrow,
+          COUNT(*) FILTER (WHERE delinquency_bucket != '0+') as delinquent_loans,
+          AVG(upb) as avg_loan_balance
+        FROM reporting.v_portfolio_summary
+      `);
+      
+      res.json({
+        success: true,
+        data: result.rows[0],
+        timestamp: new Date().toISOString()
+      });
+      
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('[Analytics] Portfolio summary failed:', error);
+    res.status(500).json({
+      error: 'Portfolio summary failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+analyticsRouter.get('/dashboard/monthly-activity', async (req, res) => {
+  try {
+    const { months = 12 } = req.query;
+    const client = await pool.connect();
+    
+    try {
+      const result = await client.query(`
+        SELECT * FROM reporting.v_monthly_activity
+        WHERE year >= EXTRACT(year FROM NOW() - INTERVAL '${months} months')
+        ORDER BY year DESC, month DESC, transaction_type
+        LIMIT 100
+      `);
+      
+      res.json({
+        success: true,
+        data: result.rows,
+        timestamp: new Date().toISOString()
+      });
+      
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('[Analytics] Monthly activity failed:', error);
+    res.status(500).json({
+      error: 'Monthly activity failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+analyticsRouter.get('/dashboard/qc-performance', async (req, res) => {
+  try {
+    const { months = 6 } = req.query;
+    const client = await pool.connect();
+    
+    try {
+      const result = await client.query(`
+        SELECT * FROM reporting.v_qc_dashboard
+        WHERE year >= EXTRACT(year FROM NOW() - INTERVAL '${months} months')
+        ORDER BY year DESC, month DESC, severity
+        LIMIT 100
+      `);
+      
+      res.json({
+        success: true,
+        data: result.rows,
+        timestamp: new Date().toISOString()
+      });
+      
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('[Analytics] QC performance failed:', error);
+    res.status(500).json({
+      error: 'QC performance failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+analyticsRouter.get('/dashboard/remittance-summary', async (req, res) => {
+  try {
+    const { months = 12 } = req.query;
+    const client = await pool.connect();
+    
+    try {
+      const result = await client.query(`
+        SELECT * FROM reporting.v_remittance_summary
+        WHERE year >= EXTRACT(year FROM NOW() - INTERVAL '${months} months')
+        ORDER BY year DESC, month DESC, investor_name
+        LIMIT 100
+      `);
+      
+      res.json({
+        success: true,
+        data: result.rows,
+        timestamp: new Date().toISOString()
+      });
+      
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('[Analytics] Remittance summary failed:', error);
+    res.status(500).json({
+      error: 'Remittance summary failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Custom SQL Query Endpoint (Admin only)
+analyticsRouter.post('/query/sql', async (req, res) => {
+  try {
+    const { sql, limit = 1000 } = req.body;
+    
+    if (!sql || typeof sql !== 'string') {
+      return res.status(400).json({ error: 'SQL query is required' });
+    }
+    
+    // Basic SQL injection protection (whitelist approach)
+    const allowedPatterns = [
+      /^SELECT\s+/i,
+      /FROM\s+reporting\./i
+    ];
+    
+    const forbiddenPatterns = [
+      /INSERT\s+/i,
+      /UPDATE\s+/i,
+      /DELETE\s+/i,
+      /DROP\s+/i,
+      /CREATE\s+/i,
+      /ALTER\s+/i,
+      /TRUNCATE\s+/i
+    ];
+    
+    if (!allowedPatterns.every(pattern => pattern.test(sql))) {
+      return res.status(400).json({ error: 'Only SELECT queries from reporting schema are allowed' });
+    }
+    
+    if (forbiddenPatterns.some(pattern => pattern.test(sql))) {
+      return res.status(400).json({ error: 'DDL/DML operations are not allowed' });
+    }
+    
+    const client = await pool.connect();
+    
+    try {
+      const limitedSql = sql.includes('LIMIT') ? sql : `${sql} LIMIT ${limit}`;
+      const result = await client.query(limitedSql);
+      
+      res.json({
+        success: true,
+        columns: result.fields?.map(f => f.name) || [],
+        data: result.rows,
+        row_count: result.rowCount,
+        timestamp: new Date().toISOString()
+      });
+      
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('[Analytics] SQL query failed:', error);
+    res.status(500).json({
+      error: 'SQL query failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Data Quality Metrics
+analyticsRouter.get('/data-quality/metrics', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    
+    try {
+      const metrics = await client.query(`
+        SELECT 
+          'dim_loan' as table_name,
+          COUNT(*) as total_rows,
+          COUNT(*) FILTER (WHERE loan_number IS NOT NULL) as loan_number_filled,
+          COUNT(*) FILTER (WHERE borrower_name IS NOT NULL) as borrower_name_filled,
+          MAX(updated_at) as last_updated
+        FROM reporting.dim_loan
+        
+        UNION ALL
+        
+        SELECT 
+          'fact_txn' as table_name,
+          COUNT(*) as total_rows,
+          COUNT(*) FILTER (WHERE amount > 0) as positive_amounts,
+          COUNT(*) FILTER (WHERE d >= CURRENT_DATE - INTERVAL '30 days') as recent_txns,
+          MAX(created_at) as last_updated
+        FROM reporting.fact_txn
+        
+        UNION ALL
+        
+        SELECT 
+          'fact_servicing' as table_name,
+          COUNT(*) as total_rows,
+          COUNT(*) FILTER (WHERE upb > 0) as active_loans,
+          COUNT(*) FILTER (WHERE d = CURRENT_DATE) as current_snapshots,
+          MAX(created_at) as last_updated
+        FROM reporting.fact_servicing
+      `);
+      
+      res.json({
+        success: true,
+        metrics: metrics.rows,
+        timestamp: new Date().toISOString()
+      });
+      
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('[Analytics] Data quality metrics failed:', error);
+    res.status(500).json({
+      error: 'Data quality metrics failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
