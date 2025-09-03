@@ -36,6 +36,9 @@ import { storageRoutes } from "../src/routes/storage.routes";
 import { metricsRouter } from "../src/routes/metrics.routes";
 import { withHttpMetrics } from "../src/monitoring/httpMetrics";
 import { vendorRouter } from "../src/routes/vendor.routes";
+import { publicOAuthRouter } from "../src/routes/public.oauth.routes";
+import { publicApiRouter } from "../src/routes/public.api.routes";
+import { adminApiRouter } from "../src/routes/admin.api.routes";
 import { 
   insertLoanSchema, 
   insertPaymentSchema, 
@@ -1749,6 +1752,15 @@ To implement full file serving:
 
   // Register Vendor Integration routes
   app.use('/api', vendorRouter);
+
+  // Register Public OAuth routes (no auth required)
+  app.use('/public', publicOAuthRouter);
+
+  // Register Public API routes (OAuth2 JWT auth)
+  app.use('/public/api', publicApiRouter);
+
+  // Register Admin API Management routes
+  app.use('/api', adminApiRouter);
 
   // Register Health and Reliability routes
   const { healthCheck } = await import('../src/reliability/health');
