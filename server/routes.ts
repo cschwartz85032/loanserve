@@ -1742,6 +1742,44 @@ To implement full file serving:
   const { investorRouter } = await import('../src/routes/investor.routes');
   app.use('/api', investorRouter);
 
+  // Register Health and Reliability routes
+  const { healthCheck } = await import('../src/reliability/health');
+  const { chaosEngine, CHAOS_TESTS } = await import('../src/reliability/chaos');
+  
+  app.get('/healthz', healthCheck);
+  app.get('/health', healthCheck); // Alternative endpoint
+  
+  // Chaos engineering endpoints (admin only)
+  app.get('/admin/chaos/tests', (req, res) => {
+    res.json({ tests: CHAOS_TESTS });
+  });
+  
+  app.post('/admin/chaos/run/:testName', async (req: any, res) => {
+    try {
+      const result = await chaosEngine.runChaosTest(req.params.testName);
+      res.json(result);
+    } catch (error) {
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+  
+  app.get('/admin/chaos/active', (req, res) => {
+    res.json({ active_tests: chaosEngine.getActiveTests() });
+  });
+  
+  app.post('/admin/chaos/abort/:testName', async (req: any, res) => {
+    try {
+      await chaosEngine.abortChaosTest(req.params.testName);
+      res.json({ message: 'Test aborted' });
+    } catch (error) {
+      res.status(400).json({ 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

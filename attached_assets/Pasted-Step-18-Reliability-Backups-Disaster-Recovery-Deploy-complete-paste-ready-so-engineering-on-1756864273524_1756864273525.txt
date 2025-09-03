@@ -1,0 +1,529 @@
+Step 18 — Reliability, Backups, Disaster Recovery & Deploy (complete, paste-ready) so engineering only codes and runs. This step delivers:
+
+SLOs & DR objectives (RPO/RTO)
+
+Backups: Postgres (PITR + nightly logical), S3 versioning/lifecycle, Vault snapshots, RabbitMQ definitions
+
+Disaster Recovery: restore runbooks + automated restore jobs (staging DR test)
+
+Deploy: blue/green with zero-downtime DB migrations, feature flags, maintenance mode
+
+Infra-as-Code: Terraform snippets for KMS, S3, RDS, RabbitMQ, IAM
+
+Chaos & failover drills: scripts + acceptance checks
+
+No decisions left—just paste and wire.
+
+0) Objectives (hard requirements)
+
+RPO (data loss target): ≤ 5 minutes (PITR).
+
+RTO (service restore): ≤ 30 minutes (automated restore + failover).
+
+Backups retained: 35 days (PITR window) + 90 days (nightly logical) + 7 years for immutable export artifacts (S3 object-lock when enabled).
+
+DR test: automatic weekly restore to a DR staging environment and end-to-end smoke.
+
+1) Environment
+
+.env
+
+# --- Reliability targets ---
+RPO_MINUTES=5
+RTO_MINUTES=30
+
+# --- Backups ---
+BACKUP_BUCKET=loanserve-backups
+BACKUP_PREFIX=prod
+BACKUP_CRON_PG_LOGICAL=0 3 * * *             # 03:00 UTC nightly
+BACKUP_CRON_RMQ=15 3 * * *                   # 03:15 UTC nightly
+BACKUP_CRON_VAULT=30 3 * * *                 # 03:30 UTC nightly
+BACKUP_CRON_S3_MANIFEST=45 3 * * *           # 03:45 UTC nightly
+BACKUP_ENCRYPTION_KMS_ARN=arn:aws:kms:us-east-1:123456789012:key/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+BACKUP_PG_PARALLEL_JOBS=4
+
+# --- Postgres PITR (AWS RDS Aurora/Postgres recommended) ---
+RDS_CLUSTER_ID=loanserve-prod-aurora
+RDS_SNAPSHOT_RETENTION_DAYS=35
+
+# --- DR staging target (restore validation) ---
+DR_DB_URL=postgres://dr_user:dr_pass@dr-host:5432/loanserve_dr
+DR_RESTORE_CRON=0 6 * * 6                    # Saturday 06:00 UTC
+DR_SMOKE_URL=https://dr.loanserve.io/healthz
+DR_SMOKE_TIMEOUT_MS=600000
+
+# --- Deploy (blue/green) ---
+DEPLOY_STRATEGY=bluegreen
+MAINTENANCE_BANNER="System upgrade in progress"
+FEATURE_FLAGS_JSON='{"export_mapper_v2": false, "ai_provider_openai": false}'
+
+# --- Terraform state bucket (if you host yourself) ---
+TF_STATE_BUCKET=loanserve-tfstate
+
+2) Terraform — core infra (KMS, S3, RDS, IAM, RabbitMQ)
+
+These snippets are additive and can be pasted into your existing Terraform project. They choose secure defaults.
+
+2.1 KMS (envelope and S3 backup encryption)
+
+infra/terraform/kms.tf
+
+resource "aws_kms_key" "backups" {
+  description             = "LoanServe backups"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "backups" {
+  name          = "alias/loanserve-backups"
+  target_key_id = aws_kms_key.backups.key_id
+}
+
+2.2 S3 buckets (artifacts + backups) with versioning & lifecycle
+
+infra/terraform/s3.tf
+
+resource "aws_s3_bucket" "artifacts" {
+  bucket = "loanserve-artifacts"
+  force_destroy = false
+}
+
+resource "aws_s3_bucket_versioning" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+  versioning_configuration { status = "Enabled" }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  bucket = aws_s3_bucket.artifacts.id
+  rule {
+    id = "noncurrent-versions"
+    status = "Enabled"
+    noncurrent_version_expiration { noncurrent_days = 3650 }
+  }
+}
+
+resource "aws_s3_bucket" "backups" {
+  bucket = "loanserve-backups"
+  force_destroy = false
+}
+
+resource "aws_s3_bucket_versioning" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  versioning_configuration { status = "Enabled" }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.backups.arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "backups" {
+  bucket = aws_s3_bucket.backups.id
+  rule {
+    id     = "expire-noncritical"
+    status = "Enabled"
+    expiration { days = 365 } # manifests/logical dumps
+    filter {}
+  }
+}
+
+2.3 RDS Postgres (PITR)
+
+infra/terraform/rds.tf
+
+resource "aws_rds_cluster" "pg" {
+  cluster_identifier      = "loanserve-prod-aurora"
+  engine                  = "aurora-postgresql"
+  engine_version          = "15.4"
+  master_username         = "loanserve"
+  master_password         = var.pg_master_password
+  backup_retention_period = 35
+  preferred_backup_window = "03:00-04:00"
+  iam_database_authentication_enabled = true
+  storage_encrypted       = true
+  kms_key_id              = aws_kms_key.backups.arn
+}
+
+resource "aws_rds_cluster_instance" "pg_writer" {
+  identifier         = "loanserve-prod-aurora-writer"
+  cluster_identifier = aws_rds_cluster.pg.id
+  instance_class     = "db.r6g.large"
+  engine             = aws_rds_cluster.pg.engine
+  engine_version     = aws_rds_cluster.pg.engine_version
+  publicly_accessible = false
+}
+
+resource "aws_rds_cluster_instance" "pg_reader" {
+  count              = 2
+  identifier         = "loanserve-prod-aurora-reader-${count.index}"
+  cluster_identifier = aws_rds_cluster.pg.id
+  instance_class     = "db.r6g.large"
+  engine             = aws_rds_cluster.pg.engine
+  engine_version     = aws_rds_cluster.pg.engine_version
+  publicly_accessible = false
+}
+
+
+(If you already run Postgres yourself, keep your stack and ensure continuous WAL archiving and 35-day PITR window.)
+
+2.4 RabbitMQ management user (read-only for monitoring)
+
+infra/terraform/rabbitmq.tf
+
+resource "rabbitmq_user" "monitor" {
+  name     = "monitor"
+  password = var.rmq_monitor_password
+  tags     = ["monitoring"]
+}
+
+resource "rabbitmq_permissions" "monitor_root" {
+  user  = rabbitmq_user.monitor.name
+  vhost = "/"
+  permissions {
+    configure = ""
+    write     = ""
+    read      = ".*"
+  }
+}
+
+3) Backups — job scripts (K8s CronJobs or any scheduler)
+3.1 Nightly logical dump (schema + data) to S3 (encrypted)
+
+ops/backups/pg_dump_nightly.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+DAY=$(date -u +%F)
+TMP=/tmp/pgdump-${DAY}.sql.gz
+PGPASSWORD="${DB_PASS:?}" pg_dump \
+  -h "${DB_HOST:?}" -U "${DB_USER:?}" -d "${DB_NAME:?}" \
+  -j "${BACKUP_PG_PARALLEL_JOBS:-4}" -F p --no-owner --no-privileges \
+  | gzip -c > "$TMP"
+SHA=$(sha256sum "$TMP" | awk '{print $1}')
+aws s3 cp "$TMP" "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${DAY}.sql.gz" \
+  --sse aws:kms --sse-kms-key-id "${BACKUP_ENCRYPTION_KMS_ARN:?}"
+aws s3 cp <(printf '{"date":"%s","sha256":"%s"}' "$DAY" "$SHA") \
+  "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${DAY}.manifest.json" \
+  --sse aws:kms --sse-kms-key-id "${BACKUP_ENCRYPTION_KMS_ARN:?}"
+rm -f "$TMP"
+
+
+K8s CronJob:
+
+ops/k8s/cron-pg-dump.yaml
+
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: backup-pg-nightly }
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: amazon/aws-cli:2.15.0
+            command: ["/bin/sh","-c","/opt/pg_dump_nightly.sh"]
+            envFrom:
+            - secretRef: { name: backup-secrets }
+            volumeMounts:
+            - name: scripts
+              mountPath: /opt
+          volumes:
+          - name: scripts
+            configMap:
+              name: backup-scripts
+              items: [{ key: pg_dump_nightly.sh, path: pg_dump_nightly.sh, mode: 0755 }]
+
+
+(Create ConfigMap backup-scripts with the script; Secret backup-secrets holding DB credentials and AWS env.)
+
+3.2 RabbitMQ config (definitions JSON)
+
+ops/backups/rmq_export.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+DAY=$(date -u +%F)
+curl -u "${RMQ_USER}:${RMQ_PASS}" "http://rabbitmq:15672/api/definitions" \
+  -o /tmp/rmq-defs-${DAY}.json
+aws s3 cp /tmp/rmq-defs-${DAY}.json "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/rmq/${DAY}.json" \
+  --sse aws:kms --sse-kms-key-id "${BACKUP_ENCRYPTION_KMS_ARN:?}"
+rm -f /tmp/rmq-defs-${DAY}.json
+
+3.3 Vault snapshot (Raft integrated storage)
+
+ops/backups/vault_snapshot.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+DAY=$(date -u +%F)
+curl --header "X-Vault-Token: ${VAULT_TOKEN:?}" \
+  --request PUT "${VAULT_ADDR:?}/v1/sys/storage/raft/snapshot" \
+  --output "/tmp/vault-${DAY}.snap"
+aws s3 cp "/tmp/vault-${DAY}.snap" "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/vault/${DAY}.snap" \
+  --sse aws:kms --sse-kms-key-id "${BACKUP_ENCRYPTION_KMS_ARN:?}"
+rm -f "/tmp/vault-${DAY}.snap"
+
+3.4 S3 artifact manifests (for auditing)
+
+ops/backups/s3_manifest.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+DAY=$(date -u +%F)
+aws s3 ls "s3://${ARTIFACTS_BUCKET:?}/${ARTIFACTS_PREFIX:?}/" --recursive \
+ | awk '{print $4}' \
+ | jq -R -s 'split("\n")|map(select(length>0))' \
+ > "/tmp/s3-artifacts-${DAY}.json"
+aws s3 cp "/tmp/s3-artifacts-${DAY}.json" "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/s3-artifacts/${DAY}.json" \
+  --sse aws:kms --sse-kms-key-id "${BACKUP_ENCRYPTION_KMS_ARN:?}"
+rm -f "/tmp/s3-artifacts-${DAY}.json"
+
+4) Restore runbooks (copy-paste)
+4.1 Postgres PITR (Aurora example)
+# Pick a restore time (UTC) within retention window:
+RESTORE_TO="2025-10-01T03:10:00Z"
+
+aws rds restore-db-cluster-to-point-in-time \
+  --db-cluster-identifier loanserve-prod-aurora-restored \
+  --source-db-cluster-identifier loanserve-prod-aurora \
+  --restore-to-time "$RESTORE_TO" \
+  --use-latest-restorable-time false
+
+# Create a writer instance for the restored cluster:
+aws rds create-db-instance \
+  --db-instance-identifier loanserve-prod-aurora-restored-writer \
+  --db-cluster-identifier loanserve-prod-aurora-restored \
+  --db-instance-class db.r6g.large \
+  --engine aurora-postgresql
+
+# Update application .env DR_DB_URL to point at the restored endpoint for verification.
+
+4.2 Logical dump restore (dev/DR)
+aws s3 cp "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/2025-10-01.sql.gz" - | gunzip \
+| PGPASSWORD="$DR_DB_PASS" psql -h "$DR_DB_HOST" -U "$DR_DB_USER" -d "$DR_DB_NAME"
+
+4.3 RabbitMQ restore
+# Upload definitions JSON via management:
+curl -u admin:pass -H "Content-Type: application/json" \
+  -X POST -d @rmq-YYYY-MM-DD.json \
+  http://rabbitmq:15672/api/definitions
+
+4.4 Vault snapshot restore (cluster sealed):
+curl --header "X-Vault-Token: $VAULT_TOKEN" \
+  --request PUT --data-binary @vault-YYYY-MM-DD.snap \
+  $VAULT_ADDR/v1/sys/storage/raft/restore
+
+5) DR Staging weekly automated restore + smoke
+
+ops/dr/weekly_restore.sh
+
+#!/usr/bin/env bash
+set -euo pipefail
+# 1) Pick latest logical dump
+KEY=$(aws s3 ls "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/" | awk '{print $4}' | tail -n1)
+aws s3 cp "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${KEY}" - | gunzip \
+| PGPASSWORD="${DR_DB_PASS:?}" psql -h "${DR_DB_HOST:?}" -U "${DR_DB_USER:?}" -d "${DR_DB_NAME:?}"
+
+# 2) Call DR smoke endpoint
+code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 600 "${DR_SMOKE_URL:?}")
+if [ "$code" != "200" ]; then
+  echo "DR SMOKE FAILED ${code}"; exit 1
+fi
+echo "DR restore+smoke OK"
+
+
+K8s CronJob:
+
+ops/k8s/cron-dr-restore.yaml
+
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: dr-weekly-restore }
+spec:
+  schedule: "0 6 * * 6"   # Saturday 06:00 UTC
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: dr-restore
+            image: amazon/aws-cli:2.15.0
+            command: ["/bin/sh","-c","/opt/weekly_restore.sh"]
+            envFrom: [{ secretRef: { name: dr-restore-secrets } }]
+            volumeMounts:
+            - name: scripts
+              mountPath: /opt
+          volumes:
+          - name: scripts
+            configMap:
+              name: dr-restore-scripts
+              items: [{ key: weekly_restore.sh, path: weekly_restore.sh, mode: 0755 }]
+
+6) Deploy — blue/green with zero-downtime DB migrations
+6.1 Migration policy
+
+Rule 1: migrations are expand → code deploy → contract (three phases).
+
+Rule 2: never drop/rename columns in the same deploy that reads/writes them.
+
+Rule 3: code reads new columns optional until cutover.
+
+Example migrations (expand/contract):
+
+migrations/1001_expand_add_column.sql
+
+ALTER TABLE loan_datapoints ADD COLUMN IF NOT EXISTS extractor_version text;
+
+
+Deploy green (new pods) that write both old+new. After verifying, run:
+
+migrations/1002_contract_backfill.sql
+
+UPDATE loan_datapoints SET extractor_version='v2025.09.03' WHERE extractor_version IS NULL;
+
+
+Cut traffic to blue, keep green. Later, if needed:
+
+migrations/1003_contract_drop_old.sql
+
+-- Drop obsolete columns only after all code paths stopped using them
+-- ALTER TABLE ... DROP COLUMN old_col;
+-- (execute in a later release)
+
+6.2 K8s blue/green manifests
+
+ops/k8s/deploy-blue.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api-blue, labels: { app: loanserve, color: blue } }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: loanserve, color: blue } }
+  template:
+    metadata: { labels: { app: loanserve, color: blue } }
+    spec:
+      containers:
+      - name: api
+        image: ghcr.io/loanserve/api:1.18.0
+        envFrom: [{ secretRef: { name: api-secrets } }]
+        ports: [{ containerPort: 8080 }]
+        readinessProbe: { httpGet: { path: /readyz, port: 8080 }, initialDelaySeconds: 5, periodSeconds: 5 }
+        livenessProbe:  { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 10, periodSeconds: 10 }
+
+
+ops/k8s/svc-canary.yaml
+
+apiVersion: v1
+kind: Service
+metadata: { name: api }
+spec:
+  selector: { app: loanserve, color: blue }   # switch to green during cutover
+  ports: [{ port: 80, targetPort: 8080 }]
+
+
+To cut over: deploy green (same Deploy with color: green and new image), run smoke, then switch Service selector to { color: green }.
+
+6.3 Maintenance banner & feature flags
+
+src/config/flags.ts
+
+export const FLAGS = JSON.parse(process.env.FEATURE_FLAGS_JSON || "{}");
+export function isOn(key:string){ return !!FLAGS[key]; }
+
+
+src/middleware/maintenance.ts
+
+export function maintenanceBanner(text = process.env.MAINTENANCE_BANNER || ""){
+  return (_req:any,res:any,next:any)=>{ if (text) res.setHeader("X-Maintenance-Notice", text); next(); };
+}
+
+
+Wire in app init:
+
+import { maintenanceBanner } from "./middleware/maintenance";
+app.use(maintenanceBanner());
+
+7) Chaos drills & failover checks
+
+ops/chaos/drop_rmq_connection.sh
+
+#!/usr/bin/env bash
+set -e
+kubectl scale deploy rmq-consumer --replicas=0
+sleep 60
+kubectl scale deploy rmq-consumer --replicas=3
+
+
+ops/chaos/kill_db_reader.sh
+
+#!/usr/bin/env bash
+set -e
+aws rds failover-db-cluster --db-cluster-identifier "$RDS_CLUSTER_ID"
+
+
+ops/chaos/latency_injector.sh
+
+tc qdisc add dev eth0 root netem delay 200ms 20ms distribution normal
+sleep 300
+tc qdisc del dev eth0 root netem
+
+
+(Run these in staging; observe Step 11 dashboards and alert rules firing/recovering.)
+
+8) Acceptance tests (reliability)
+
+tests/reliability.acceptance.test.ts
+
+import fetch from "node-fetch";
+
+it("PITR RPO/RTO config visible", ()=>{
+  expect(Number(process.env.RPO_MINUTES)).toBeLessThanOrEqual(5);
+  expect(Number(process.env.RTO_MINUTES)).toBeLessThanOrEqual(30);
+});
+
+it("DR smoke responds 200", async ()=>{
+  if (!process.env.DR_SMOKE_URL) return;
+  const res = await fetch(process.env.DR_SMOKE_URL, { timeout: 10000 }).catch(()=>({ status:0 }));
+  expect([0,200]).toContain(res.status);  // allow missing in dev
+});
+
+9) What engineering must not change
+
+PITR retention 35 days; nightly logical dumps stored encrypted in S3 loanserve-backups.
+
+Restore runbooks must be executable within RTO 30 min (practice weekly DR restore).
+
+Artifacts (certificates, dr reports, statements, exports, remittance files) stored in the artifacts bucket with versioning; never delete versions within 7 years.
+
+Deploy must follow expand → deploy → contract migration policy; drop columns only in a later release.
+
+Blue/green cutover via Service selector only after /readyz passes; never route traffic to unready pods.
+
+Feature flags loaded from FEATURE_FLAGS_JSON; no hard-coded toggles in code.
+
+Chaos drills run in staging monthly; DO NOT run in prod unless using a controlled window.
+
+10) Quick verification checklist
+
+Terraform apply creates KMS, S3 (artifacts/backups), RDS with PITR, RabbitMQ monitor user.
+
+Nightly CronJobs drop pg dump, rmq defs, vault snap, s3 manifests into backups S3 with KMS SSE.
+
+Weekly DR restore job rebuilds a DB in DR and /healthz returns 200.
+
+Simulated Aurora failover: app reconnects; Step 11 dashboards show blips but SLOs respected.
+
+Blue/green deploy with a no-op migration completes without downtime; maintenance banner visible during deploy window.
+
+Feature flag flip (e.g., "export_mapper_v2": true) changes behavior without redeploy (validate in staging).

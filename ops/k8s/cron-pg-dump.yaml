@@ -1,0 +1,110 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-pg-nightly
+  namespace: loanserve
+spec:
+  schedule: "0 3 * * *"  # 03:00 UTC nightly
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600  # 1 hour timeout
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: amazon/aws-cli:2.15.0
+            command: ["/bin/sh", "-c", "/opt/pg_dump_nightly.sh"]
+            envFrom:
+            - secretRef:
+                name: backup-secrets
+            volumeMounts:
+            - name: scripts
+              mountPath: /opt
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+          volumes:
+          - name: scripts
+            configMap:
+              name: backup-scripts
+              items:
+              - key: pg_dump_nightly.sh
+                path: pg_dump_nightly.sh
+                mode: 0755
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-scripts
+  namespace: loanserve
+data:
+  pg_dump_nightly.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    
+    # Install required packages
+    apt-get update && apt-get install -y postgresql-client jq
+    
+    # Nightly PostgreSQL logical dump with encryption and manifest
+    DAY=$(date -u +%F)
+    TMP=/tmp/pgdump-${DAY}.sql.gz
+    
+    echo "[Backup] Starting PostgreSQL logical dump for ${DAY}"
+    
+    # Perform parallel dump and compress
+    PGPASSWORD="${DB_PASS:?}" pg_dump \
+      -h "${DB_HOST:?}" -U "${DB_USER:?}" -d "${DB_NAME:?}" \
+      -j "${BACKUP_PG_PARALLEL_JOBS:-4}" -F p --no-owner --no-privileges \
+      | gzip -c > "$TMP"
+    
+    # Calculate checksum
+    SHA=$(sha256sum "$TMP" | awk '{print $1}')
+    SIZE=$(stat -c%s "$TMP")
+    
+    echo "[Backup] Dump complete. Size: ${SIZE} bytes, SHA256: ${SHA}"
+    
+    # Upload to S3 with KMS encryption
+    aws s3 cp "$TMP" "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${DAY}.sql.gz" \
+      --sse aws:kms --sse-kms-key-id "${BACKUP_ENCRYPTION_KMS_ARN:?}"
+    
+    # Create manifest file
+    MANIFEST=$(printf '{"date":"%s","sha256":"%s","size":%d,"type":"logical_dump","retention_days":90}' \
+      "$DAY" "$SHA" "$SIZE")
+    
+    aws s3 cp <(echo "$MANIFEST") \
+      "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${DAY}.manifest.json" \
+      --sse aws:kms --sse-kms-key-id "${BACKUP_ENCRYPTION_KMS_ARN:?}"
+    
+    # Cleanup
+    rm -f "$TMP"
+    
+    echo "[Backup] PostgreSQL backup completed successfully"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-secrets
+  namespace: loanserve
+type: Opaque
+stringData:
+  DB_HOST: "postgres-host"
+  DB_USER: "postgres-user"
+  DB_PASS: "postgres-password"  
+  DB_NAME: "loanserve"
+  BACKUP_BUCKET: "loanserve-backups"
+  BACKUP_PREFIX: "prod"
+  BACKUP_PG_PARALLEL_JOBS: "4"
+  BACKUP_ENCRYPTION_KMS_ARN: "arn:aws:kms:us-east-1:123456789012:key/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  AWS_ACCESS_KEY_ID: "your-access-key"
+  AWS_SECRET_ACCESS_KEY: "your-secret-key"
+  AWS_DEFAULT_REGION: "us-east-1"

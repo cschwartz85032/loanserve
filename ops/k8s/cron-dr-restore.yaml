@@ -1,0 +1,150 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dr-weekly-restore
+  namespace: loanserve
+spec:
+  schedule: "0 6 * * 6"  # Saturday 06:00 UTC
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200  # 2 hour timeout
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: dr-restore
+            image: amazon/aws-cli:2.15.0
+            command: ["/bin/sh", "-c", "/opt/weekly_restore.sh"]
+            envFrom:
+            - secretRef:
+                name: dr-restore-secrets
+            volumeMounts:
+            - name: scripts
+              mountPath: /opt
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+          volumes:
+          - name: scripts
+            configMap:
+              name: dr-restore-scripts
+              items:
+              - key: weekly_restore.sh
+                path: weekly_restore.sh
+                mode: 0755
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dr-restore-scripts
+  namespace: loanserve
+data:
+  weekly_restore.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    
+    # Install required packages
+    apt-get update && apt-get install -y postgresql-client jq curl
+    
+    # Weekly DR restore test with smoke testing
+    echo "[DR] Starting weekly disaster recovery restore test"
+    
+    # Find latest logical dump
+    LATEST_KEY=$(aws s3 ls "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/" | \
+      grep '\.sql\.gz$' | sort | tail -n1 | awk '{print $4}')
+    
+    if [[ -z "$LATEST_KEY" ]]; then
+      echo "[DR] ERROR: No PostgreSQL backup found"
+      exit 1
+    fi
+    
+    echo "[DR] Using backup: ${LATEST_KEY}"
+    
+    # Download and verify backup
+    TMP=/tmp/restore-$(date +%s).sql.gz
+    aws s3 cp "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${LATEST_KEY}" "$TMP"
+    
+    # Verify checksum if manifest exists
+    MANIFEST_KEY="${LATEST_KEY%.sql.gz}.manifest.json"
+    if aws s3 ls "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${MANIFEST_KEY}" >/dev/null 2>&1; then
+      echo "[DR] Verifying backup integrity..."
+      aws s3 cp "s3://${BACKUP_BUCKET}/${BACKUP_PREFIX}/pg/${MANIFEST_KEY}" - | \
+        jq -r '.sha256' > /tmp/expected_sha
+      ACTUAL_SHA=$(sha256sum "$TMP" | awk '{print $1}')
+      EXPECTED_SHA=$(cat /tmp/expected_sha)
+      
+      if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+        echo "[DR] ERROR: Backup checksum mismatch"
+        exit 1
+      fi
+      echo "[DR] Backup integrity verified"
+    fi
+    
+    # Drop and recreate DR database
+    echo "[DR] Recreating DR database..."
+    PGPASSWORD="${DR_DB_PASS:?}" psql -h "${DR_DB_HOST:?}" -U "${DR_DB_USER:?}" -d postgres -c \
+      "DROP DATABASE IF EXISTS ${DR_DB_NAME:?}; CREATE DATABASE ${DR_DB_NAME:?};"
+    
+    # Restore backup
+    echo "[DR] Restoring database from backup..."
+    gunzip -c "$TMP" | \
+      PGPASSWORD="${DR_DB_PASS:?}" psql -h "${DR_DB_HOST:?}" -U "${DR_DB_USER:?}" -d "${DR_DB_NAME:?}" \
+      -q --set ON_ERROR_STOP=on
+    
+    # Cleanup restore file
+    rm -f "$TMP" /tmp/expected_sha
+    
+    echo "[DR] Database restore completed"
+    
+    # Wait for DR application to start
+    echo "[DR] Waiting for DR application to become ready..."
+    sleep 30
+    
+    # Perform smoke test
+    echo "[DR] Running smoke tests..."
+    START_TIME=$(date +%s)
+    
+    # Test health endpoint
+    HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+      --max-time "${DR_SMOKE_TIMEOUT_MS:-600000}" \
+      "${DR_SMOKE_URL:?}")
+    
+    if [[ "$HEALTH_CODE" != "200" ]]; then
+      echo "[DR] ERROR: Health check failed with status ${HEALTH_CODE}"
+      exit 1
+    fi
+    
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
+    
+    echo "[DR] Smoke tests completed successfully in ${DURATION} seconds"
+    echo "[DR] DR restore and validation successful"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dr-restore-secrets
+  namespace: loanserve
+type: Opaque
+stringData:
+  BACKUP_BUCKET: "loanserve-backups"
+  BACKUP_PREFIX: "prod"
+  BACKUP_ENCRYPTION_KMS_ARN: "arn:aws:kms:us-east-1:123456789012:key/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  DR_DB_HOST: "dr-postgres-host"
+  DR_DB_USER: "dr-postgres-user"
+  DR_DB_PASS: "dr-postgres-password"
+  DR_DB_NAME: "loanserve_dr"
+  DR_SMOKE_URL: "https://dr.loanserve.io/healthz"
+  DR_SMOKE_TIMEOUT_MS: "600000"
+  AWS_ACCESS_KEY_ID: "your-access-key"
+  AWS_SECRET_ACCESS_KEY: "your-secret-key"
+  AWS_DEFAULT_REGION: "us-east-1"
