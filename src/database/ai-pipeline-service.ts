@@ -41,6 +41,9 @@ export class AIPipelineService {
     propertyId?: string;
     sourceImportId?: string;
   }): Promise<LoanCandidate> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(data.tenantId);
+    
     const [candidate] = await db
       .insert(loanCandidates)
       .values({
@@ -58,9 +61,12 @@ export class AIPipelineService {
   }
 
   /**
-   * Get loan candidate by ID
+   * Get loan candidate by ID (requires tenant context)
    */
-  async getLoanCandidate(id: string): Promise<LoanCandidate | null> {
+  async getLoanCandidate(id: string, tenantId: string): Promise<LoanCandidate | null> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(tenantId);
+    
     const [candidate] = await db
       .select()
       .from(loanCandidates)
@@ -71,12 +77,16 @@ export class AIPipelineService {
   }
 
   /**
-   * Update loan candidate status
+   * Update loan candidate status (requires tenant context)
    */
   async updateLoanCandidateStatus(
     id: string, 
-    status: string
+    status: string,
+    tenantId: string
   ): Promise<void> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(tenantId);
+    
     await db
       .update(loanCandidates)
       .set({ 
@@ -87,7 +97,7 @@ export class AIPipelineService {
   }
 
   /**
-   * Create document record
+   * Create document record (requires tenant context)
    */
   async createDocument(data: {
     loanId: string;
@@ -95,7 +105,11 @@ export class AIPipelineService {
     sha256: string;
     docType?: string;
     classConfidence?: number;
+    tenantId: string;
   }): Promise<LoanDocument> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(data.tenantId);
+    
     const [document] = await db
       .insert(loanDocuments)
       .values({
@@ -112,12 +126,16 @@ export class AIPipelineService {
   }
 
   /**
-   * Update document OCR status
+   * Update document OCR status (requires tenant context)
    */
   async updateDocumentOcrStatus(
     id: string, 
-    status: string
+    status: string,
+    tenantId: string
   ): Promise<void> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(tenantId);
+    
     await db
       .update(loanDocuments)
       .set({ ocrStatus: status })
@@ -125,7 +143,7 @@ export class AIPipelineService {
   }
 
   /**
-   * Create or update datapoint
+   * Create or update datapoint (requires tenant context)
    */
   async upsertDatapoint(data: {
     loanId: string;
@@ -143,7 +161,11 @@ export class AIPipelineService {
     promptVersion?: string;
     authorityPriority: number;
     authorityDecision?: any;
+    tenantId: string;
   }): Promise<LoanDatapoint> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(data.tenantId);
+    
     // First try to find existing datapoint
     const [existing] = await db
       .select()
@@ -209,9 +231,12 @@ export class AIPipelineService {
   }
 
   /**
-   * Get all datapoints for a loan
+   * Get all datapoints for a loan (requires tenant context)
    */
-  async getLoanDatapoints(loanId: string): Promise<LoanDatapoint[]> {
+  async getLoanDatapoints(loanId: string, tenantId: string): Promise<LoanDatapoint[]> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(tenantId);
+    
     return await db
       .select()
       .from(loanDatapoints)
@@ -220,14 +245,18 @@ export class AIPipelineService {
   }
 
   /**
-   * Create conflict record
+   * Create conflict record (requires tenant context)
    */
   async createConflict(data: {
     loanId: string;
     key: string;
     candidates: any[];
     authorityRule?: string;
+    tenantId: string;
   }): Promise<void> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(data.tenantId);
+    
     await db
       .insert(loanConflicts)
       .values({
@@ -240,14 +269,18 @@ export class AIPipelineService {
   }
 
   /**
-   * Resolve conflict
+   * Resolve conflict (requires tenant context)
    */
   async resolveConflict(
     id: string,
     selectedValue: string,
     rationale: string,
+    tenantId: string,
     resolverId?: string
   ): Promise<void> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(tenantId);
+    
     await db
       .update(loanConflicts)
       .set({
@@ -450,7 +483,7 @@ export class AIPipelineService {
   }
 
   /**
-   * Create pipeline alert
+   * Create pipeline alert (requires tenant context)
    */
   async createAlert(data: {
     alertId: string;
@@ -459,7 +492,11 @@ export class AIPipelineService {
     title: string;
     message: string;
     metadata?: any;
+    tenantId: string;
   }): Promise<void> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(data.tenantId);
+    
     await db
       .insert(pipelineAlerts)
       .values({
@@ -473,9 +510,12 @@ export class AIPipelineService {
   }
 
   /**
-   * Resolve alert
+   * Resolve alert (requires tenant context)
    */
-  async resolveAlert(alertId: string, resolvedBy: string): Promise<void> {
+  async resolveAlert(alertId: string, resolvedBy: string, tenantId: string): Promise<void> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(tenantId);
+    
     await db
       .update(pipelineAlerts)
       .set({
@@ -487,9 +527,12 @@ export class AIPipelineService {
   }
 
   /**
-   * Get active alerts
+   * Get active alerts (requires tenant context)
    */
-  async getActiveAlerts(): Promise<any[]> {
+  async getActiveAlerts(tenantId: string): Promise<any[]> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(tenantId);
+    
     return await db
       .select()
       .from(pipelineAlerts)
@@ -498,15 +541,18 @@ export class AIPipelineService {
   }
 
   /**
-   * Record monitoring event
+   * Record monitoring event (enforces tenant context)
    */
   async recordMonitoringEvent(data: {
     metric: string;
     value: number;
     dimensions?: any;
-    tenantId?: string;
+    tenantId: string; // Now required for RLS
     correlationId?: string;
   }): Promise<void> {
+    // Enforce tenant context for RLS
+    await this.setTenantContext(data.tenantId);
+    
     await db
       .insert(monitoringEvents)
       .values({
