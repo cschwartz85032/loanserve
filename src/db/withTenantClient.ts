@@ -104,3 +104,53 @@ export async function getCurrentTenant(client: PoolClient): Promise<string | nul
     return null;
   }
 }
+
+/**
+ * Runtime guard to assert tenant context is set before DB operations
+ * Call this before any database query to prevent cross-tenant data leakage
+ */
+export async function assertTenantContext(client: PoolClient): Promise<string> {
+  const tenantId = await getCurrentTenant(client);
+  
+  if (!tenantId) {
+    const error = new Error('CRITICAL: Database operation attempted without tenant context - potential cross-tenant data leak!');
+    console.error('[SECURITY] Tenant context missing!', {
+      timestamp: new Date().toISOString(),
+      stack: new Error().stack?.split('\n').slice(1, 5).join('\n')
+    });
+    throw error;
+  }
+  
+  // Validate tenant ID format
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+    const error = new Error(`CRITICAL: Invalid tenant ID format detected: ${redactUuid(tenantId)}`);
+    console.error('[SECURITY] Invalid tenant ID format!', {
+      tenantId: redactUuid(tenantId),
+      timestamp: new Date().toISOString()
+    });
+    throw error;
+  }
+  
+  return tenantId;
+}
+
+/**
+ * Wrapper for any raw SQL query that enforces tenant context checking
+ * Use this instead of client.query directly for tenant-sensitive operations
+ */
+export async function tenantSafeQuery(
+  client: PoolClient, 
+  query: string, 
+  params?: any[]
+): Promise<any> {
+  // Runtime guard - ensure tenant context is set
+  const tenantId = await assertTenantContext(client);
+  
+  console.debug('[DB] Executing tenant-safe query', {
+    tenantId: redactUuid(tenantId),
+    queryType: query.split(' ')[0].toUpperCase(),
+    timestamp: new Date().toISOString()
+  });
+  
+  return await client.query(query, params);
+}

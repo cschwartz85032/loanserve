@@ -1,0 +1,69 @@
+Section A – Tenancy, Auth & RBAC/ABAC
+
+What’s improved:
+
+The service now uses SET LOCAL instead of the previous SET in both the service layer (setTenantContext)
+GitHub
+ and the lower-level withTenantClient helper
+GitHub
+.
+
+RLS policies have been enabled on previously missing tables such as pipeline_alerts and monitoring_events.
+
+Remaining deficiencies:
+
+Lack of transaction scope: The withTenantClient helper calls SET LOCAL without wrapping the operation in a transaction, so if the surrounding code isn’t already in a transaction, SET LOCAL behaves like SET and can leak tenant context across requests. The setTenantContext method in AIPipelineService is similarly outside any transaction
+GitHub
+GitHub
+. This violates the requirement that every DB call be scoped to a single transaction to prevent cross‑tenant leakage.
+
+How to fix: Wrap the call to SET LOCAL in a BEGIN/COMMIT block within withTenantClient, or require callers to use an explicit transaction (see the patch in our previous recommendation). Ensure setTenantContext is called inside a Drizzle transaction or through withTenantClient so the context resets when the transaction ends.
+
+Sensitive data in logs: The debug log in withTenantClient still prints the full tenant UUID to the console
+GitHub
+, violating the “no PII in logs” rule.
+
+How to fix: Use a redaction helper (e.g., mask the first 28 characters) before logging tenant IDs or remove tenant identifiers from logs entirely.
+
+No evidence that all service methods enforce tenant context: The service calls setTenantContext manually before each query, but without a runtime guard it’s possible for new methods to forget this step.
+
+How to fix: Add a proxy or wrapper around all Drizzle DB calls that asserts current_setting('app.tenant_id') is not null, and fail fast in development if context is missing.
+
+Because of these gaps, the claim that Section A is “fully fixed” and “bulletproof” is premature.
+
+Section B – Messaging Topology
+
+What’s improved:
+
+All loan boarding, servicing cycle and disbursement queues now have properly defined .retry.q and .dlq.q companions with TTL and dead‑letter configuration
+GitHub
+GitHub
+.
+
+The bindings map the queues to their exchanges and routing keys
+GitHub
+, and the topology uses a global ai.pipeline.retry.v2 and ai.pipeline.dlq.v2.
+
+(Per your description) workers now call nack(false, false) on terminal errors and publish structured error events to a monitoring exchange.
+
+Remaining deficiencies:
+
+Missing retry and DLQ for loan.finalize.completed.q: The main queue loan.finalize.completed.q dead‑letters to loan.finalize.completed.retry
+GitHub
+, but there are no corresponding loan.finalize.completed.retry.q or .dlq.q definitions anywhere in the topology. Messages dead‑lettered from this queue will be routed to a non‑existent queue and effectively disappear.
+
+How to fix: Add loan.finalize.completed.retry.q and loan.finalize.completed.dlq.q queues with arguments mirroring the pattern used for other stages (TTL ≈ 15 s for retry, 24 h for DLQ), and bind them to the ai.pipeline.retry.v2 and ai.pipeline.dlq.v2 exchanges respectively. Update the bindings accordingly.
+
+Unverified consumer behavior for finalize stage: Because the finalize stage lacks proper retry/DLQ queues, there is no automated test proving that a failure lands in the DLQ or that a transient error is retried.
+
+How to fix: Extend the existing DLQ‑path tests to include a message on loan.finalize.completed.q that is forced to fail, verifying it appears in the new .dlq.q. Also test that transient errors re‑appear after the retry TTL.
+
+Potential metrics misalignment: If any queue names have changed (e.g., moving from loan.docs… to q.document…), ensure the Prometheus/RabbitMQ poller watches the new queue names. Otherwise, queue depth metrics will silently drop for the renamed queues.
+
+Summary
+
+Section A: RLS is enabled and SET LOCAL is used, but without an explicit transaction, tenant context can still leak. Sensitive tenant IDs are still logged. A runtime guard for context is missing.
+
+Section B: Most queues have correct retry and DLQ wiring, and workers use nack(false, false). However, loan.finalize.completed.q still lacks its companion retry and DLQ queues, so messages from the finalize stage could be lost.
+
+Until those defects are addressed, the system is not yet “fully resolved” or “hardened to enterprise standards.”

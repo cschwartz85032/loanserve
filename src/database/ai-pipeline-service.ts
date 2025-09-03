@@ -28,6 +28,8 @@ import {
 } from './ai-pipeline-schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { withTenantClient, assertTenantContext, tenantSafeQuery } from '../db/withTenantClient';
+import { drizzle } from 'drizzle-orm/postgres-js';
 
 export class AIPipelineService {
   /**
@@ -41,39 +43,45 @@ export class AIPipelineService {
     propertyId?: string;
     sourceImportId?: string;
   }): Promise<LoanCandidate> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(data.tenantId);
-    
-    const [candidate] = await db
-      .insert(loanCandidates)
-      .values({
-        tenantId: data.tenantId,
-        loanUrn: data.loanUrn,
-        investorId: data.investorId,
-        escrowId: data.escrowId,
-        propertyId: data.propertyId,
-        sourceImportId: data.sourceImportId,
-        status: 'new'
-      })
-      .returning();
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      const [candidate] = await db
+        .insert(loanCandidates)
+        .values({
+          tenantId: data.tenantId,
+          loanUrn: data.loanUrn,
+          investorId: data.investorId,
+          escrowId: data.escrowId,
+          propertyId: data.propertyId,
+          sourceImportId: data.sourceImportId,
+          status: 'new'
+        })
+        .returning();
 
-    return candidate;
+      return candidate;
+    });
   }
 
   /**
    * Get loan candidate by ID (requires tenant context)
    */
   async getLoanCandidate(id: string, tenantId: string): Promise<LoanCandidate | null> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(tenantId);
-    
-    const [candidate] = await db
-      .select()
-      .from(loanCandidates)
-      .where(eq(loanCandidates.id, id))
-      .limit(1);
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      const [candidate] = await db
+        .select()
+        .from(loanCandidates)
+        .where(eq(loanCandidates.id, id))
+        .limit(1);
 
-    return candidate || null;
+      return candidate || null;
+    });
   }
 
   /**
@@ -84,16 +92,19 @@ export class AIPipelineService {
     status: string,
     tenantId: string
   ): Promise<void> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(tenantId);
-    
-    await db
-      .update(loanCandidates)
-      .set({ 
-        status, 
-        updatedAt: sql`now()` 
-      })
-      .where(eq(loanCandidates.id, id));
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .update(loanCandidates)
+        .set({ 
+          status, 
+          updatedAt: sql`now()` 
+        })
+        .where(eq(loanCandidates.id, id));
+    });
   }
 
   /**
@@ -107,22 +118,25 @@ export class AIPipelineService {
     classConfidence?: number;
     tenantId: string;
   }): Promise<LoanDocument> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(data.tenantId);
-    
-    const [document] = await db
-      .insert(loanDocuments)
-      .values({
-        loanId: data.loanId,
-        storageUri: data.storageUri,
-        sha256: data.sha256,
-        docType: data.docType,
-        classConfidence: data.classConfidence?.toString(),
-        ocrStatus: 'pending'
-      })
-      .returning();
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      const [document] = await db
+        .insert(loanDocuments)
+        .values({
+          loanId: data.loanId,
+          storageUri: data.storageUri,
+          sha256: data.sha256,
+          docType: data.docType,
+          classConfidence: data.classConfidence?.toString(),
+          ocrStatus: 'pending'
+        })
+        .returning();
 
-    return document;
+      return document;
+    });
   }
 
   /**
@@ -133,13 +147,16 @@ export class AIPipelineService {
     status: string,
     tenantId: string
   ): Promise<void> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(tenantId);
-    
-    await db
-      .update(loanDocuments)
-      .set({ ocrStatus: status })
-      .where(eq(loanDocuments.id, id));
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .update(loanDocuments)
+        .set({ ocrStatus: status })
+        .where(eq(loanDocuments.id, id));
+    });
   }
 
   /**
@@ -234,14 +251,17 @@ export class AIPipelineService {
    * Get all datapoints for a loan (requires tenant context)
    */
   async getLoanDatapoints(loanId: string, tenantId: string): Promise<LoanDatapoint[]> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(tenantId);
-    
-    return await db
-      .select()
-      .from(loanDatapoints)
-      .where(eq(loanDatapoints.loanId, loanId))
-      .orderBy(desc(loanDatapoints.authorityPriority));
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      return await db
+        .select()
+        .from(loanDatapoints)
+        .where(eq(loanDatapoints.loanId, loanId))
+        .orderBy(desc(loanDatapoints.authorityPriority));
+    });
   }
 
   /**
@@ -254,18 +274,21 @@ export class AIPipelineService {
     authorityRule?: string;
     tenantId: string;
   }): Promise<void> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(data.tenantId);
-    
-    await db
-      .insert(loanConflicts)
-      .values({
-        loanId: data.loanId,
-        key: data.key,
-        candidates: data.candidates,
-        authorityRule: data.authorityRule,
-        status: 'open'
-      });
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .insert(loanConflicts)
+        .values({
+          loanId: data.loanId,
+          key: data.key,
+          candidates: data.candidates,
+          authorityRule: data.authorityRule,
+          status: 'open'
+        });
+    });
   }
 
   /**
@@ -494,50 +517,59 @@ export class AIPipelineService {
     metadata?: any;
     tenantId: string;
   }): Promise<void> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(data.tenantId);
-    
-    await db
-      .insert(pipelineAlerts)
-      .values({
-        alertId: data.alertId,
-        type: data.type,
-        severity: data.severity,
-        title: data.title,
-        message: data.message,
-        metadata: data.metadata || {}
-      });
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .insert(pipelineAlerts)
+        .values({
+          alertId: data.alertId,
+          type: data.type,
+          severity: data.severity,
+          title: data.title,
+          message: data.message,
+          metadata: data.metadata || {}
+        });
+    });
   }
 
   /**
    * Resolve alert (requires tenant context)
    */
   async resolveAlert(alertId: string, resolvedBy: string, tenantId: string): Promise<void> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(tenantId);
-    
-    await db
-      .update(pipelineAlerts)
-      .set({
-        resolved: true,
-        resolvedBy,
-        resolvedAt: sql`now()`
-      })
-      .where(eq(pipelineAlerts.alertId, alertId));
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .update(pipelineAlerts)
+        .set({
+          resolved: true,
+          resolvedBy,
+          resolvedAt: sql`now()`
+        })
+        .where(eq(pipelineAlerts.alertId, alertId));
+    });
   }
 
   /**
    * Get active alerts (requires tenant context)
    */
   async getActiveAlerts(tenantId: string): Promise<any[]> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(tenantId);
-    
-    return await db
-      .select()
-      .from(pipelineAlerts)
-      .where(eq(pipelineAlerts.resolved, false))
-      .orderBy(desc(pipelineAlerts.createdAt));
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      return await db
+        .select()
+        .from(pipelineAlerts)
+        .where(eq(pipelineAlerts.resolved, false))
+        .orderBy(desc(pipelineAlerts.createdAt));
+    });
   }
 
   /**
@@ -586,36 +618,12 @@ export class AIPipelineService {
   }
 
   /**
-   * Set tenant context for RLS
-   * @deprecated Use setTenantContextTx with db.transaction instead
+   * @deprecated SECURITY WARNING: This method bypassed proper transaction scoping
+   * Use withTenantClient() with assertTenantContext() instead
+   * 
+   * All database operations now enforced to use secure tenant-isolated connections
    */
-  async setTenantContext(tenantId: string): Promise<void> {
-    // Validate tenant ID format
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
-      throw new Error(`Invalid tenant ID format: ${tenantId}`);
-    }
-    // Use SET LOCAL to scope tenant context to current transaction only
-    await db.execute(sql`SET LOCAL app.tenant_id = ${tenantId}`);
-  }
-
-  /**
-   * Set tenant context within an active transaction
-   * Replace the existing method to require an active transaction.
-   * If using Drizzle's transaction API, prefer db.transaction(async tx => { ... })
-   */
-  async setTenantContextTx(client: any, tenantId: string): Promise<void> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
-      throw new Error(`Invalid tenant ID format: ${tenantId}`);
-    }
-    // call on the transaction's client
-    await client.execute(sql`SET LOCAL app.tenant_id = ${tenantId}`);
-  }
-
-  /**
-   * Set user context for RLS
-   */
-  async setUserContext(userId: string): Promise<void> {
-    // Use SET LOCAL to scope user context to current transaction only
-    await db.execute(sql`SET LOCAL app.user_id = ${userId}`);
+  private async __DEPRECATED_setTenantContext(): Promise<never> {
+    throw new Error('SECURITY: setTenantContext is deprecated. Use withTenantClient() for proper tenant isolation.');
   }
 }
