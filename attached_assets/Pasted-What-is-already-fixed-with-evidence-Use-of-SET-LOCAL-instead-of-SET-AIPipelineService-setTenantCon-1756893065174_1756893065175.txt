@@ -1,0 +1,137 @@
+What is already fixed, with evidence
+
+Use of SET LOCAL instead of SET
+AIPipelineService.setTenantContext now uses SET LOCAL app.tenant_id = $1.
+withTenantClient now uses SET LOCAL app.tenant_id = $1 on the acquired client.
+
+Per-call enforcement
+CRUD methods in AIPipelineService now accept a tenantId and call setTenantContext(tenantId) before every query path, e.g. getLoanCandidate, createDocument, updateDocumentOcrStatus, upsertDatapoint.
+
+RLS on newer tables
+migrations/002_ai_pipeline_rls_policies.sql enables RLS on pipeline_alerts and monitoring_events, and adds a tenant policy for monitoring_events.
+
+Sensitive S3 key logging
+S3Service now hashes keys before logging, avoiding raw key disclosure.
+
+Remaining defects and exactly how to fix them
+Defect 1. SET LOCAL is used outside explicit transactions
+
+Why this matters:
+In PostgreSQL, SET LOCAL only guarantees transaction-scoped lifetime if you are inside a transaction block. If you call it outside a transaction, the setting behaves like SET for the session until the connection is returned. With pooled connections, this can leak tenant context across unrelated requests.
+
+Fix: Always begin a transaction before setting tenant context, and always end it before releasing the client.
+
+Drop-in patch for withTenantClient.ts:
+
+// src/db/withTenantClient.ts
+
+export async function withTenantClient<T>(
+  tenantId: string,
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  if (!tenantId) throw new Error('Tenant ID is required for database operations');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+    throw new Error(`Invalid tenant ID format: ${tenantId}`);
+  }
+
+  const client = await pool.connect();
+  try {
+    // Start transaction so SET LOCAL is truly transaction-scoped
+    await client.query('BEGIN');
+    await client.query('SET LOCAL app.tenant_id = $1', [tenantId]);
+
+    const result = await fn(client);
+
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+
+Drop-in patch for service-level helper:
+
+// src/database/ai-pipeline-service.ts
+
+// Replace the existing method to require an active transaction.
+// If using Drizzle's transaction API, prefer db.transaction(async tx => { ... })
+async setTenantContextTx(client: any, tenantId: string): Promise<void> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+    throw new Error(`Invalid tenant ID format: ${tenantId}`);
+  }
+  // call on the transaction's client
+  await client.execute(sql`SET LOCAL app.tenant_id = ${tenantId}`);
+}
+
+
+Enforcement guidance:
+
+Migrate all call sites so that DB work happens inside either:
+
+withTenantClient(tenantId, client => /* use client */), or
+
+db.transaction(async (tx) => { await setTenantContextTx(tx, tenantId); /* use tx */ }).
+
+Do not perform plain db calls outside these wrappers.
+
+Proof tests to add:
+
+Isolation test: Begin a request for Tenant A that intentionally throws after SET LOCAL; then immediately process a request for Tenant B on the same pool. Verify Tenant B can only see B’s rows, proving A’s context did not leak.
+
+Commit vs rollback test: In a transaction that sets A, insert a row; rollback; then issue a new transaction and confirm no A context remains and no A rows were inserted.
+
+Defect 2. Full tenant UUID is logged at debug in withTenantClient
+
+Why this matters:
+Your spec forbids exposing PII in logs. A tenant UUID can be treated as sensitive. Current debug log prints the entire tenantId.
+
+Fix: Redact or hash tenantId in logs. Provide a shared redaction utility and use it.
+
+Drop-in patch:
+
+// src/logging/redact.ts
+export function redactUuid(u?: string): string {
+  if (!u) return 'unknown';
+  // keep last 4 for correlation
+  return u.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-([0-9a-f]{12})/i, '********-****-****-****-$1');
+}
+
+// src/db/withTenantClient.ts
+import { redactUuid } from '../logging/redact';
+
+// ...
+console.debug('[DB] Tenant context set for session', {
+  tenantId: redactUuid(tenantId),
+  timestamp: new Date().toISOString()
+});
+
+
+Proof tests to add:
+
+A log-capture test that asserts no log line contains a complete UUID pattern.
+
+Negative test: intentionally log a full UUID in a throwaway path, confirm test fails.
+
+Safety rails to prevent regressions
+
+Static guard: Add an ESLint rule or a simple AST check that forbids direct imports of db in service files except from an approved list, forcing usage of withTenantClient or db.transaction(...).
+
+Runtime guard: Wrap db.execute or repository methods in a development mode proxy that checks current_setting('app.tenant_id', true) is non-null before allowing a query in non-admin paths.
+
+CI test suite: Include the isolation and log-sanitization tests above in CI and block merges on failure.
+
+Bottom line
+
+The switch to SET LOCAL and the per-call enforcement look correct, and RLS on the newer tables is in place.
+
+To honestly claim “bulletproof tenant isolation with zero leakage risk,” you must also:
+
+Run all tenant-scoped queries inside an explicit transaction so SET LOCAL is truly transaction-scoped.
+
+Remove full UUIDs from logs across the codebase.
+
+Implement the patches above, add the proposed tests, and you will have both the enforcement and the proofs that no new bugs were introduced and that all five issues are fully resolved.

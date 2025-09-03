@@ -5,6 +5,7 @@
 
 import { PoolClient } from 'pg';
 import { pool } from '../../server/db';
+import { redactUuid } from '../logging/redact';
 
 /**
  * Execute database operations with tenant context set
@@ -14,37 +15,34 @@ export async function withTenantClient<T>(
   tenantId: string,
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
-  if (!tenantId) {
-    throw new Error('Tenant ID is required for database operations');
-  }
-
-  // Validate tenant ID format
+  if (!tenantId) throw new Error('Tenant ID is required for database operations');
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
     throw new Error(`Invalid tenant ID format: ${tenantId}`);
   }
 
   const client = await pool.connect();
-  
   try {
-    // Set tenant context for this session - this enforces RLS
+    // Start transaction so SET LOCAL is truly transaction-scoped
+    await client.query('BEGIN');
     await client.query('SET LOCAL app.tenant_id = $1', [tenantId]);
     
     console.debug('[DB] Tenant context set for session', {
-      tenantId,
+      tenantId: redactUuid(tenantId),
       timestamp: new Date().toISOString()
     });
 
-    // Execute the database operations with tenant context
-    return await fn(client);
-    
+    const result = await fn(client);
+
+    await client.query('COMMIT');
+    return result;
   } catch (error) {
+    try { await client.query('ROLLBACK'); } catch {}
     console.error('[DB] Database operation failed with tenant context', {
-      tenantId,
+      tenantId: redactUuid(tenantId),
       error: error instanceof Error ? error.message : String(error)
     });
     throw error;
   } finally {
-    // Release the client back to the pool
     client.release();
   }
 }

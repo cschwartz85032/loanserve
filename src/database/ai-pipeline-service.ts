@@ -587,6 +587,7 @@ export class AIPipelineService {
 
   /**
    * Set tenant context for RLS
+   * @deprecated Use setTenantContextTx with db.transaction instead
    */
   async setTenantContext(tenantId: string): Promise<void> {
     // Validate tenant ID format
@@ -595,6 +596,19 @@ export class AIPipelineService {
     }
     // Use SET LOCAL to scope tenant context to current transaction only
     await db.execute(sql`SET LOCAL app.tenant_id = ${tenantId}`);
+  }
+
+  /**
+   * Set tenant context within an active transaction
+   * Replace the existing method to require an active transaction.
+   * If using Drizzle's transaction API, prefer db.transaction(async tx => { ... })
+   */
+  async setTenantContextTx(client: any, tenantId: string): Promise<void> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+      throw new Error(`Invalid tenant ID format: ${tenantId}`);
+    }
+    // call on the transaction's client
+    await client.execute(sql`SET LOCAL app.tenant_id = ${tenantId}`);
   }
 
   /**
