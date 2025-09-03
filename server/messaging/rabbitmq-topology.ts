@@ -169,6 +169,58 @@ export class TopologyManager {
       durable: true,
     });
 
+    // Phase 24: Document Intelligence Pipeline exchanges
+    this.addExchange({
+      name: 'doc.intelligence',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'doc.intelligence.dlq',
+      type: 'direct',
+      durable: true,
+    });
+
+    // Phase 24: Analytics ETL Pipeline exchanges  
+    this.addExchange({
+      name: 'analytics.etl',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'analytics.etl.dlq',
+      type: 'direct',
+      durable: true,
+    });
+
+    // Phase 24: Compliance Audit Pipeline exchanges
+    this.addExchange({
+      name: 'compliance.audit',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'compliance.audit.dlq',
+      type: 'direct',
+      durable: true,
+    });
+
+    // Phase 24: AI Processing Pipeline exchanges
+    this.addExchange({
+      name: 'ai.processing',
+      type: 'topic',
+      durable: true,
+    });
+
+    this.addExchange({
+      name: 'ai.processing.dlq',
+      type: 'direct',
+      durable: true,
+    });
+
     // Dead letter exchange
     this.addExchange({
       name: 'dlx.main',
@@ -803,6 +855,194 @@ export class TopologyManager {
       ],
     });
 
+    // Phase 24: Document Intelligence Pipeline queues
+    const docStages = ['import', 'split', 'ocr', 'extract', 'qc', 'export', 'notify'];
+    for (const stage of docStages) {
+      this.addQueue({
+        name: `q.doc.${stage}.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'doc.intelligence.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-delivery-limit': 5,
+          'x-message-ttl': 3600000, // 1 hour TTL
+        },
+        bindings: [
+          { exchange: 'doc.intelligence', routingKey: `doc.${stage}.v1` },
+        ],
+      });
+
+      // Retry queue for each stage with exponential backoff
+      this.addQueue({
+        name: `q.doc.${stage}.retry.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'doc.intelligence.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-message-ttl': 300000, // 5 minutes for retry
+        },
+        bindings: [
+          { exchange: 'doc.intelligence', routingKey: `doc.${stage}.retry.v1` },
+        ],
+      });
+    }
+
+    // Document Intelligence DLQ
+    this.addQueue({
+      name: 'q.doc.intelligence.dlq.v2',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-message-ttl': 86400000, // 24 hours
+      },
+      bindings: [
+        { exchange: 'doc.intelligence.dlq', routingKey: '#' },
+      ],
+    });
+
+    // Phase 24: Analytics ETL Pipeline queues
+    const etlStages = ['extract', 'transform', 'load', 'validate', 'publish'];
+    for (const stage of etlStages) {
+      this.addQueue({
+        name: `q.analytics.${stage}.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'analytics.etl.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-delivery-limit': 3,
+          'x-message-ttl': 7200000, // 2 hours TTL for ETL
+        },
+        bindings: [
+          { exchange: 'analytics.etl', routingKey: `etl.${stage}.v1` },
+        ],
+      });
+
+      // ETL retry queue
+      this.addQueue({
+        name: `q.analytics.${stage}.retry.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'analytics.etl.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-message-ttl': 600000, // 10 minutes for ETL retry
+        },
+        bindings: [
+          { exchange: 'analytics.etl', routingKey: `etl.${stage}.retry.v1` },
+        ],
+      });
+    }
+
+    // Analytics ETL DLQ
+    this.addQueue({
+      name: 'q.analytics.etl.dlq.v2',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-message-ttl': 86400000, // 24 hours
+      },
+      bindings: [
+        { exchange: 'analytics.etl.dlq', routingKey: '#' },
+      ],
+    });
+
+    // Phase 24: Compliance Audit Pipeline queues
+    const auditStages = ['regulatory', 'investor', 'internal', 'classification'];
+    for (const stage of auditStages) {
+      this.addQueue({
+        name: `q.compliance.${stage}.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'compliance.audit.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-delivery-limit': 5,
+          'x-message-ttl': 1800000, // 30 minutes TTL
+        },
+        bindings: [
+          { exchange: 'compliance.audit', routingKey: `audit.${stage}.v1` },
+        ],
+      });
+
+      // Compliance retry queue
+      this.addQueue({
+        name: `q.compliance.${stage}.retry.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'compliance.audit.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-message-ttl': 300000, // 5 minutes for compliance retry
+        },
+        bindings: [
+          { exchange: 'compliance.audit', routingKey: `audit.${stage}.retry.v1` },
+        ],
+      });
+    }
+
+    // Compliance Audit DLQ
+    this.addQueue({
+      name: 'q.compliance.audit.dlq.v2',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-message-ttl': 86400000, // 24 hours
+      },
+      bindings: [
+        { exchange: 'compliance.audit.dlq', routingKey: '#' },
+      ],
+    });
+
+    // Phase 24: AI Processing Pipeline queues
+    const aiStages = ['analyze', 'classify', 'extract', 'validate', 'enrich'];
+    for (const stage of aiStages) {
+      this.addQueue({
+        name: `q.ai.${stage}.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'ai.processing.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-delivery-limit': 3,
+          'x-message-ttl': 1800000, // 30 minutes TTL for AI
+        },
+        bindings: [
+          { exchange: 'ai.processing', routingKey: `ai.${stage}.v1` },
+        ],
+      });
+
+      // AI retry queue with longer backoff
+      this.addQueue({
+        name: `q.ai.${stage}.retry.v2`,
+        durable: true,
+        arguments: {
+          'x-queue-type': 'quorum',
+          'x-dead-letter-exchange': 'ai.processing.dlq',
+          'x-dead-letter-routing-key': `${stage}.failed`,
+          'x-message-ttl': 900000, // 15 minutes for AI retry (API limits)
+        },
+        bindings: [
+          { exchange: 'ai.processing', routingKey: `ai.${stage}.retry.v1` },
+        ],
+      });
+    }
+
+    // AI Processing DLQ
+    this.addQueue({
+      name: 'q.ai.processing.dlq.v2',
+      durable: true,
+      arguments: {
+        'x-queue-type': 'quorum',
+        'x-message-ttl': 86400000, // 24 hours
+      },
+      bindings: [
+        { exchange: 'ai.processing.dlq', routingKey: '#' },
+      ],
+    });
+
     // Dead letter queues
     this.addQueue({
       name: 'dlq.payments',
@@ -858,6 +1098,51 @@ export class TopologyManager {
       durable: true,
       bindings: [
         { exchange: 'dlx.main', routingKey: 'aml.dlq' },
+      ],
+    });
+
+    // Phase 24: New Pipeline DLQs
+    this.addQueue({
+      name: 'dlq.doc.intelligence',
+      durable: true,
+      arguments: {
+        'x-message-ttl': 604800000, // 7 days for doc intelligence failures
+      },
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'doc.intelligence.dlq' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'dlq.analytics.etl',
+      durable: true,
+      arguments: {
+        'x-message-ttl': 604800000, // 7 days for ETL failures
+      },
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'analytics.etl.dlq' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'dlq.compliance.audit',
+      durable: true,
+      arguments: {
+        'x-message-ttl': 2592000000, // 30 days for compliance failures (regulatory requirement)
+      },
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'compliance.audit.dlq' },
+      ],
+    });
+
+    this.addQueue({
+      name: 'dlq.ai.processing',
+      durable: true,
+      arguments: {
+        'x-message-ttl': 604800000, // 7 days for AI processing failures
+      },
+      bindings: [
+        { exchange: 'dlx.main', routingKey: 'ai.processing.dlq' },
       ],
     });
 

@@ -1,9 +1,7 @@
 // Do-Not-Ping enforcement system
 // Prevents notifications when required data is already available from documents/vendors
 
-import { Pool } from "pg";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+import { withTenantClient } from "../db/withTenantClient";
 
 export interface GuardResult {
   satisfied: boolean;
@@ -21,10 +19,7 @@ export async function canSatisfyFromDocsOrVendors(
   keys: string[], 
   minConfidence = Number(process.env.AI_ACCEPT_CONFIDENCE || "0.80")
 ): Promise<GuardResult> {
-  const client = await pool.connect();
-  try {
-    // Note: tenant isolation handled by application logic
-    // await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+  return withTenantClient(tenantId, async (client) => {
     
     const result = await client.query(
       `SELECT key, value, confidence, autofilled_from 
@@ -80,12 +75,7 @@ export async function canSatisfyFromDocsOrVendors(
       satisfied: false, 
       missingKeys 
     };
-  } catch (error: any) {
-    console.error(`[DoNotPingGuard] Error checking datapoint availability:`, error);
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 /**

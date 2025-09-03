@@ -11,6 +11,12 @@ import path from "path";
 import fs from "fs/promises";
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { 
+  validateUploadedFile, 
+  generateSecureFilename, 
+  createFileUploadAuditLog,
+  type FileUploadAuditLog 
+} from './utils/file-security';
 import { analyzeDocument } from "./openai";
 import feeRoutes from "./routes/fees";
 import { registerLedgerRoutes } from "./routes/ledger";
@@ -80,7 +86,7 @@ function isAuthenticated(req: any, res: any, next: any) {
   res.status(401).json({ error: "Unauthorized" });
 }
 
-// Configure multer for file uploads
+// Configure multer for file uploads with enhanced security
 const uploadStorage = multer.diskStorage({
   destination: async function (req, file, cb) {
     const uploadDir = 'server/uploads';
@@ -92,13 +98,47 @@ const uploadStorage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Generate unique filename with timestamp
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    try {
+      // Generate secure filename using the utility function
+      const secureFilename = generateSecureFilename(file.originalname);
+      cb(null, secureFilename);
+    } catch (error) {
+      console.error('Error generating secure filename:', error);
+      // Fallback to basic sanitization
+      const timestamp = Date.now();
+      const randomSuffix = Math.round(Math.random() * 1E9);
+      const sanitized = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+      cb(null, `file_${timestamp}_${randomSuffix}_${sanitized}`);
+    }
   }
 });
 
-const upload = multer({ storage: uploadStorage });
+// Enhanced multer configuration with file filtering
+const upload = multer({ 
+  storage: uploadStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+    files: 1 // Single file upload
+  },
+  fileFilter: function (req, file, cb) {
+    // Basic file type validation (detailed validation happens later)
+    const allowedMimeTypes = [
+      'application/pdf', 'application/msword', 
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain', 'text/csv', 'application/csv',
+      'image/png', 'image/jpeg', 'image/gif', 'image/tiff', 'image/bmp',
+      'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed'
+    ];
+
+    if (allowedMimeTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type '${file.mimetype}' is not allowed`));
+    }
+  }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Health check routes (no auth required - must be accessible for monitoring)
@@ -1173,7 +1213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ============= DOCUMENT ROUTES =============
   
-  // Document upload endpoint with multipart/form-data support
+  // Document upload endpoint with enhanced security validation
   app.post("/api/documents/upload", isAuthenticated, upload.single('file'), async (req, res) => {
     try {
       if (!req.file) {
@@ -1186,23 +1226,135 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Loan ID is required" });
       }
 
-      // Create document record in database
+      // Read file buffer for security validation
+      const filePath = req.file.path;
+      const fileBuffer = await fs.readFile(filePath);
+
+      // Comprehensive file validation
+      const validation = validateUploadedFile(
+        req.file.originalname,
+        fileBuffer,
+        req.file.mimetype,
+        req.file.size,
+        {
+          maxSizeMB: 10,
+          allowPasswordProtectedPDFs: false // Reject password-protected PDFs
+        }
+      );
+
+      if (!validation.valid) {
+        // Delete the uploaded file if validation fails
+        try {
+          await fs.unlink(filePath);
+        } catch (unlinkError) {
+          console.error('Error deleting invalid file:', unlinkError);
+        }
+
+        return res.status(400).json({ 
+          error: "File validation failed", 
+          details: validation.errors 
+        });
+      }
+
+      // Create security audit log
+      const auditLog: FileUploadAuditLog = createFileUploadAuditLog(
+        req.file.originalname,
+        validation,
+        req.file.size,
+        req.file.mimetype,
+        req.user?.id || 'unknown',
+        getRealUserIP(req),
+        req.headers['user-agent'] || 'unknown'
+      );
+
+      // Log security audit for file upload
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id?.toString() || 'unknown',
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.UPLOADED,
+        resourceType: 'document',
+        resourceId: 'pending', // Will be updated after document creation
+        loanId: parseInt(loanId),
+        ipAddr: getRealUserIP(req),
+        userAgent: req.headers['user-agent'],
+        description: `Secure file upload: ${validation.sanitizedFilename}`,
+        details: {
+          securityAudit: auditLog,
+          validationPassed: true,
+          originalFilename: req.file.originalname,
+          secureFilename: req.file.filename,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype
+        }
+      });
+
+      // Create document record in database using sanitized data
       const document = await storage.createDocument({
         loanId: parseInt(loanId),
-        category: category || 'other', // Fixed: use 'other' instead of invalid 'loan_document'
-        title: req.file.originalname,
-        description: description || `Uploaded ${req.file.originalname}`,
-        fileName: req.file.originalname,
+        category: category || 'other',
+        title: validation.sanitizedFilename?.split('.')[0] || 'Uploaded Document',
+        description: description || `Uploaded ${validation.sanitizedFilename}`,
+        fileName: validation.sanitizedFilename || req.file.originalname,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         storageUrl: `/uploads/${req.file.filename}`,
         uploadedBy: req.user?.id,
-        notes: req.body.notes || null // Store AI extraction JSON or other notes
+        notes: req.body.notes || null
       });
 
-      res.status(201).json(document);
-    } catch (error) {
+      // Update audit log with actual document ID
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id?.toString() || 'unknown',
+        eventType: COMPLIANCE_EVENTS.DOCUMENT.UPLOADED,
+        resourceType: 'document',
+        resourceId: document.id.toString(),
+        loanId: document.loanId,
+        ipAddr: getRealUserIP(req),
+        userAgent: req.headers['user-agent'],
+        description: `Document created successfully: ${document.title}`,
+        newValues: document
+      });
+
+      res.status(201).json({
+        ...document,
+        securityValidation: {
+          passed: true,
+          originalFilename: req.file.originalname,
+          sanitizedFilename: validation.sanitizedFilename
+        }
+      });
+    } catch (error: any) {
       console.error("Error uploading document:", error);
+      
+      // Clean up file if it exists
+      if (req.file?.path) {
+        try {
+          await fs.unlink(req.file.path);
+        } catch (unlinkError) {
+          console.error('Error deleting file after error:', unlinkError);
+        }
+      }
+
+      // Log security incident for failed uploads
+      await complianceAudit.logEvent({
+        actorType: 'user',
+        actorId: req.user?.id?.toString() || 'unknown',
+        eventType: 'SECURITY.UPLOAD_FAILED',
+        resourceType: 'document',
+        resourceId: 'failed',
+        loanId: req.body.loanId ? parseInt(req.body.loanId) : null,
+        ipAddr: getRealUserIP(req),
+        userAgent: req.headers['user-agent'],
+        description: `Document upload failed: ${error.message}`,
+        details: {
+          error: error.message,
+          originalFilename: req.file?.originalname || 'unknown',
+          fileSize: req.file?.size || 0,
+          mimeType: req.file?.mimetype || 'unknown'
+        }
+      });
+
       res.status(500).json({ error: "Failed to upload document" });
     }
   });

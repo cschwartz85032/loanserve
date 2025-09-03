@@ -1,10 +1,22 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { sql } from 'drizzle-orm';
-import { rabbitmqClient } from '../services/rabbitmq-unified';
-import { queueMonitor } from '../services/queue-monitor';
+import { healthMonitor } from '../utils/enhanced-health-monitor';
 
 const router = Router();
+
+interface QueueMetrics {
+  name: string;
+  depth: number;
+}
+
+interface QueueInfo {
+  total: number;
+  totalDepth: number;
+  dlqCount: number;
+  dlqDepth: number;
+  topQueues: QueueMetrics[];
+}
 
 interface HealthStatus {
   status: 'ok' | 'degraded' | 'error';
@@ -16,9 +28,11 @@ interface HealthStatus {
       error?: string;
     };
     rabbitmq: {
-      status: 'ok' | 'error';
+      status: 'ok' | 'warning' | 'error';
       connected?: boolean;
       error?: string;
+      warning?: string;
+      queues?: QueueInfo;
     };
     environment: {
       status: 'ok' | 'warning';
@@ -34,115 +48,28 @@ interface HealthStatus {
 
 /**
  * GET /healthz
- * Health check endpoint for monitoring and deployment validation
+ * Enhanced health check endpoint with comprehensive system monitoring
  * Returns 200 if all critical services are healthy
  * Returns 503 if any critical service is down
  */
 router.get('/', async (req, res) => {
-  const startTime = Date.now();
-  const health: HealthStatus = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    checks: {
-      database: { status: 'ok' },
-      rabbitmq: { status: 'ok' },
-      environment: {
-        status: 'ok',
-        nodeEnv: process.env.NODE_ENV || 'development',
-        featuresEnabled: {
-          payments: process.env.PAYMENTS_FEATURE_FLAG === 'true',
-          reconciliation: process.env.PAYMENT_RECONCILE_ENABLED === 'true',
-          webhooks: process.env.PAYMENT_WEBHOOK_ENABLED === 'true'
-        }
-      }
-    }
-  };
-
-  // Check database connectivity
   try {
-    const dbStart = Date.now();
-    await db.execute(sql`SELECT 1`);
-    health.checks.database.responseTime = Date.now() - dbStart;
-  } catch (error: any) {
-    health.checks.database.status = 'error';
-    health.checks.database.error = error.message || 'Database connection failed';
-    health.status = 'error';
-  }
-
-  // Check RabbitMQ connectivity with queue depths
-  try {
-    const connectionInfo = await rabbitmqClient.getConnectionInfo();
+    const health = await healthMonitor.runAllChecks();
     
-    health.checks.rabbitmq = {
-      status: connectionInfo.connected ? 'ok' : 'warning',
-      connected: connectionInfo.connected,
-      queues: {
-        total: 0,
-        totalDepth: 0,
-        dlqCount: 0,
-        dlqDepth: 0,
-        topQueues: []
-      }
-    };
-
-    // Only get queue metrics if connected
-    if (connectionInfo.connected) {
-      try {
-        const monitor = queueMonitor;
-        const queueMetrics = await monitor.getAllQueueMetrics();
-        
-        if (queueMetrics && Array.isArray(queueMetrics)) {
-          // Calculate DLQ depths
-          const dlqQueues = queueMetrics.filter(q => q.name.startsWith('dlq.'));
-          const totalDlqDepth = dlqQueues.reduce((sum, q) => sum + q.messages, 0);
-          
-          // Calculate total queue depth
-          const totalQueueDepth = queueMetrics.reduce((sum, q) => sum + q.messages, 0);
-          
-          health.checks.rabbitmq.queues = {
-            total: queueMetrics.length,
-            totalDepth: totalQueueDepth,
-            dlqCount: dlqQueues.length,
-            dlqDepth: totalDlqDepth,
-            topQueues: queueMetrics
-              .sort((a, b) => b.messages - a.messages)
-              .slice(0, 5)
-              .map(q => ({ name: q.name, depth: q.messages }))
-          };
-
-          // Mark unhealthy if DLQ depth is too high
-          if (totalDlqDepth > 100) {
-            health.checks.rabbitmq.status = 'warning';
-            health.checks.rabbitmq.warning = `High DLQ depth: ${totalDlqDepth} messages`;
-          }
-        }
-      } catch (error) {
-        health.checks.rabbitmq.warning = 'Queue metrics unavailable';
-      }
-    } else {
-      health.checks.rabbitmq.warning = 'RabbitMQ disconnected';
-      health.status = 'warning';
-    }
+    // Convert to HTTP status codes
+    const httpStatus = health.overall === 'healthy' ? 200 : 
+                      health.overall === 'degraded' ? 206 : 503;
+    
+    res.status(httpStatus).json(health);
   } catch (error: any) {
-    health.checks.rabbitmq = {
-      status: 'error',
-      error: error.message || 'RabbitMQ check failed'
-    };
-    health.status = 'error';
+    console.error('Health check failed:', error);
+    res.status(503).json({
+      overall: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: 'Health check system failure',
+      details: error.message
+    });
   }
-
-  // Check environment configuration
-  if (!process.env.CLOUDAMQP_URL) {
-    health.checks.environment.status = 'warning';
-    if (health.status === 'ok') {
-      health.status = 'degraded';
-    }
-  }
-
-  // Set appropriate HTTP status code
-  const httpStatus = health.status === 'ok' ? 200 : 503;
-
-  res.status(httpStatus).json(health);
 });
 
 /**
@@ -151,9 +78,60 @@ router.get('/', async (req, res) => {
  * Used by Kubernetes/orchestrators to determine if container should be restarted
  */
 router.get('/live', (req, res) => {
+  const isAlive = healthMonitor.isAlive();
   res.status(200).json({ 
-    status: 'live'
+    status: 'live',
+    alive: isAlive,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
+});
+
+/**
+ * GET /healthz/metrics
+ * Performance metrics for health checks
+ */
+router.get('/metrics', async (req, res) => {
+  try {
+    const metrics = healthMonitor.getPerformanceMetrics();
+    const history = healthMonitor.getCheckHistory();
+    
+    res.status(200).json({
+      performance: metrics,
+      historyCount: Object.fromEntries(
+        Array.from(history.entries()).map(([name, checks]) => [name, checks.length])
+      ),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Failed to get health metrics',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * GET /healthz/history/:checkName?
+ * Get health check history for trending analysis
+ */
+router.get('/history/:checkName?', (req, res) => {
+  try {
+    const { checkName } = req.params;
+    const history = healthMonitor.getCheckHistory(checkName);
+    
+    const result = Object.fromEntries(history.entries());
+    
+    res.status(200).json({
+      history: result,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Failed to get health history',
+      details: error.message
+    });
+  }
 });
 
 /**
@@ -162,40 +140,27 @@ router.get('/live', (req, res) => {
  * Used by load balancers to determine if instance should receive requests
  */
 router.get('/ready', async (req, res) => {
-  const checks: { db?: { ok: boolean }, rabbit?: { ok: boolean } } = {};
-
-  // Database check: execute a simple SELECT 1 using the pool provided
   try {
-    await db.execute(sql`SELECT 1`);
-    checks.db = { ok: true };
-  } catch (error) {
-    checks.db = { ok: false };
-  }
-
-  // RabbitMQ check: ensure there is an active connection
-  try {
-    const connectionInfo = await rabbitmqClient.getConnectionInfo();
-    if (connectionInfo.connected) {
-      checks.rabbit = { ok: true };
+    const readiness = await healthMonitor.isReady();
+    
+    if (readiness.ready) {
+      res.status(200).json({
+        status: 'ready',
+        timestamp: new Date().toISOString()
+      });
     } else {
-      checks.rabbit = { ok: false };
+      res.status(503).json({
+        status: 'not_ready',
+        reason: readiness.reason,
+        timestamp: new Date().toISOString()
+      });
     }
-  } catch (error) {
-    checks.rabbit = { ok: false };
-  }
-
-  // If either check fails, respond with HTTP 503 
-  const allOk = checks.db?.ok && checks.rabbit?.ok;
-  
-  if (allOk) {
-    res.status(200).json({
-      status: 'ready',
-      checks
-    });
-  } else {
+  } catch (error: any) {
     res.status(503).json({
-      status: 'degraded', 
-      checks
+      status: 'not_ready',
+      reason: 'Readiness check failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });

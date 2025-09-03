@@ -1,14 +1,12 @@
 // Notification service - core orchestration
 // Handles request processing, rate limiting, idempotency, rendering, and delivery
 
-import { Pool } from "pg";
 import { renderTemplate } from "./template";
 import { sendEmail } from "./providers/email";
 import { sendSms } from "./providers/sms";
 import { sendWebhook } from "./providers/webhook";
 import { shouldSuppressNotification } from "./guard";
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+import { withTenantClient } from "../db/withTenantClient";
 
 export interface NotificationRequest {
   tenantId: string;
@@ -34,10 +32,7 @@ export interface NotificationResult {
  * Handles rate limiting, idempotency, Do-Not-Ping enforcement, and delivery
  */
 export async function requestNotification(request: NotificationRequest): Promise<NotificationResult | null> {
-  const client = await pool.connect();
-  try {
-    // Note: tenant isolation handled by application logic
-    // await client.query('SET LOCAL app.tenant_id = $1', [request.tenantId]);
+  return withTenantClient(request.tenantId, async (client) => {
 
     // Check idempotency
     if (request.idempotencyKey) {
@@ -166,12 +161,7 @@ export async function requestNotification(request: NotificationRequest): Promise
       reason: processResult.reason
     };
 
-  } catch (error: any) {
-    console.error('[NotificationService] Request failed:', error);
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 /**
@@ -182,90 +172,94 @@ async function processNotification(
   template: any, 
   request: NotificationRequest
 ): Promise<{ status: string; reason?: string }> {
-  const client = await pool.connect();
   try {
-    // Render template
-    const rendered = renderTemplate(template.subject, template.body, request.params || {});
-    
-    // Update status to rendered
-    await client.query(
-      'UPDATE notifications SET status = $1 WHERE id = $2',
-      ['rendered', notificationId]
-    );
-    
-    await client.query(
-      'INSERT INTO notification_events (notification_id, event, meta) VALUES ($1, $2, $3)',
-      [notificationId, 'rendered', JSON.stringify({ subject: rendered.subject })]
-    );
+    return await withTenantClient(request.tenantId, async (client) => {
+      // Render template
+      const rendered = renderTemplate(template.subject, template.body, request.params || {});
+      
+      // Update status to rendered
+      await client.query(
+        'UPDATE notifications SET status = $1 WHERE id = $2',
+        ['rendered', notificationId]
+      );
+      
+      await client.query(
+        'INSERT INTO notification_events (notification_id, event, meta) VALUES ($1, $2, $3)',
+        [notificationId, 'rendered', JSON.stringify({ subject: rendered.subject })]
+      );
 
-    // Send via appropriate provider
-    let sendResult: any;
-    
-    switch (request.channel) {
-      case 'email':
-        if (!rendered.subject) {
-          throw new Error('Email requires subject');
-        }
-        sendResult = await sendEmail(request.toAddress, rendered.subject, rendered.body);
-        break;
-        
-      case 'sms':
-        sendResult = await sendSms(request.toAddress, rendered.body);
-        break;
-        
-      case 'webhook':
-        const payload = JSON.parse(rendered.body);
-        sendResult = await sendWebhook(request.toAddress, payload);
-        break;
-        
-      default:
-        throw new Error(`Unsupported channel: ${request.channel}`);
-    }
+      // Send via appropriate provider
+      let sendResult: any;
+      
+      switch (request.channel) {
+        case 'email':
+          if (!rendered.subject) {
+            throw new Error('Email requires subject');
+          }
+          sendResult = await sendEmail(request.toAddress, rendered.subject, rendered.body);
+          break;
+          
+        case 'sms':
+          sendResult = await sendSms(request.toAddress, rendered.body);
+          break;
+          
+        case 'webhook':
+          const payload = JSON.parse(rendered.body);
+          sendResult = await sendWebhook(request.toAddress, payload);
+          break;
+          
+        default:
+          throw new Error(`Unsupported channel: ${request.channel}`);
+      }
 
-    // Update final status
-    const finalStatus: 'sent' | 'failed' = sendResult.ok ? 'sent' : 'failed';
-    const sentAt = sendResult.ok ? new Date() : null;
-    
-    await client.query(
-      'UPDATE notifications SET status = $1, reason = $2, sent_at = $3 WHERE id = $4',
-      [finalStatus, sendResult.error || null, sentAt, notificationId]
-    );
+      // Update final status
+      const finalStatus: 'sent' | 'failed' = sendResult.ok ? 'sent' : 'failed';
+      const sentAt = sendResult.ok ? new Date() : null;
+      
+      await client.query(
+        'UPDATE notifications SET status = $1, reason = $2, sent_at = $3 WHERE id = $4',
+        [finalStatus, sendResult.error || null, sentAt, notificationId]
+      );
 
-    // Log final event
-    await client.query(
-      'INSERT INTO notification_events (notification_id, event, meta) VALUES ($1, $2, $3)',
-      [notificationId, finalStatus, JSON.stringify({
-        provider_id: sendResult.providerId || sendResult.sid,
-        error: sendResult.error
-      })]
-    );
+      // Log final event
+      await client.query(
+        'INSERT INTO notification_events (notification_id, event, meta) VALUES ($1, $2, $3)',
+        [notificationId, finalStatus, JSON.stringify({
+          provider_id: sendResult.providerId || sendResult.sid,
+          error: sendResult.error
+        })]
+      );
 
-    console.log(`[NotificationService] Notification ${notificationId} ${finalStatus}`);
-    
-    return {
-      status: finalStatus,
-      reason: sendResult.error
-    };
-
+      console.log(`[NotificationService] Notification ${notificationId} ${finalStatus}`);
+      
+      return {
+        status: finalStatus as 'sent' | 'failed',
+        reason: sendResult.error
+      };
+    });
   } catch (error: any) {
     console.error(`[NotificationService] Processing failed for ${notificationId}:`, error);
     
-    // Update to failed status
-    await client.query(
-      'UPDATE notifications SET status = $1, reason = $2 WHERE id = $3',
-      ['failed', error.message, notificationId]
-    );
-    
-    await client.query(
-      'INSERT INTO notification_events (notification_id, event, meta) VALUES ($1, $2, $3)',
-      [notificationId, 'failed', JSON.stringify({ error: error.message })]
-    );
+    // Update to failed status using a separate tenant client connection
+    try {
+      await withTenantClient(request.tenantId, async (client) => {
+        await client.query(
+          'UPDATE notifications SET status = $1, reason = $2 WHERE id = $3',
+          ['failed', error.message, notificationId]
+        );
+        
+        await client.query(
+          'INSERT INTO notification_events (notification_id, event, meta) VALUES ($1, $2, $3)',
+          [notificationId, 'failed', JSON.stringify({ error: error.message })]
+        );
+      });
+    } catch (updateError) {
+      console.error(`[NotificationService] Failed to update error status for ${notificationId}:`, updateError);
+    }
 
     return {
-      status: 'failed',
+      status: 'failed' as const,
       reason: error.message
     };
-  } finally {
-    client.release();
   }
 }
