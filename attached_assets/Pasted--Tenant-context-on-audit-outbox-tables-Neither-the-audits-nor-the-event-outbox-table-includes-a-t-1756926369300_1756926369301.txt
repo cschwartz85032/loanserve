@@ -1,0 +1,37 @@
+“Tenant context on audit/outbox tables” – Neither the audits nor the event_outbox table includes a tenant_id column in the core schema
+GitHub
+. RLS policies on audits filter rows by matching the target_id to a loan_candidates row with the current tenant
+GitHub
+, and the event_outbox policy does the same via aggregate_id
+GitHub
+. That is effective for isolation but does not constitute a tenant column or “NOT NULL tenant enforcement” as claimed.
+
+“UUID format validation with regex constraints” – None of the SQL migrations add a CHECK constraint or regex to validate that tenant_id columns match a UUID format. The validation for tenant ID format only exists in the TypeScript helpers (withTenantClient and AIPipelineService.setTenantContext), not at the database level
+GitHub
+.
+
+“All tenant columns are NOT NULL” – The tenant_id column exists and is NOT NULL for loan_candidates and imports, but tables like monitoring_events allow tenant_id to be NULL
+GitHub
+. This is intentional so that system‑wide metrics can be stored, but it means the claim “NOT NULL on all tenant columns” is not accurate.
+
+“38 CASCADE constraints in place” – Many FKs do use ON DELETE CASCADE, but some, such as loan_datapoints.evidence_doc_id and qc_defects.evidence_doc_id, do not (they either default or omit ON DELETE). Additionally, there are only a handful of FK constraints in the AI pipeline schema; the number 38 likely includes unrelated tables in other migrations.
+
+Backfill and version migrations – The repository does not contain separate scripts named mC01–mC06; instead, the AI‑pipeline schema and RLS policies are implemented in 001_ai_pipeline_core_schema.sql and 002_ai_pipeline_rls_policies.sql. There is no migration script labelled mC06 that backfills extractor_version, nor can we verify a backfill has been executed from the code alone.
+
+Tenant context enforcement in application code – As noted in earlier reviews, the DB helpers set SET LOCAL app.tenant_id without wrapping it in a transaction and they log full tenant IDs
+GitHub
+. This is not directly a database‑schema issue but does impact the effectiveness of RLS in practice; tenant context must still be handled correctly at the connection layer.
+
+Guidance to fully meet Section C requirements
+
+Add UUID format checks and NOT‑NULL constraints where appropriate – If you truly need to enforce UUID formatting in the database, add CHECK constraints like tenant_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and ensure that any optional tenant_id columns (like on monitoring_events) are clearly documented as optional.
+
+Review FK on evidence_doc_id fields – Decide whether ON DELETE SET NULL is desired for loan_datapoints.evidence_doc_id and qc_defects.evidence_doc_id; if the intent is truly cascade deletion, adjust these constraints.
+
+Provide a backfill script if you claim to have migrated existing rows – A migration that sets default extractor_version and prompt_version values for existing loan_datapoints should be included and referenced, otherwise the claim of backfilling cannot be verified.
+
+Do not overstate the presence of NOT‑NULL tenant columns – Where global tables are shared by design, acknowledge that tenant_id can be NULL and ensure RLS policies reflect that.
+
+Coordinate with Section A fixes – The RLS policies are only effective if tenant context is correctly scoped per transaction in the application code.
+
+In conclusion, Section C has strong foundations: core tables include lineage fields, RLS policies isolate tenants, and foreign keys largely cascade. However, a few of the items in the engineering report either go beyond what is present (tenant columns on audits/event_outbox, UUID checks) or omit necessary scripts (backfill). Addressing these points will ensure the database layer genuinely meets enterprise‑grade security and data‑integrity standards.
