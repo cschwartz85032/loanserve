@@ -1,0 +1,290 @@
+Loanserve Platform – Senior Architect Review
+Summary
+Section	Pass/Fail	Justification
+A) Tenancy, Auth & RBAC/ABAC	Fail	The migrations enable row‑level security (RLS) and create policies tied to app.tenant_id, but the application code never sets this variable. In the notification service and Do‑Not‑Ping guard, the line that would call SET LOCAL app.tenant_id = $1 is commented out
+GitHub
+GitHub
+. A general middleware for propagating the tenant from req.user is absent. As a result, cross‑tenant reads bypass RLS and violate tenant isolation.
+B) Messaging Toplogy (RabbitMQ)	Fail	The AI pipeline defines exchanges and durable queues with retry and DLQ for the document splitting, OCR, extraction and QC stages. However, newly added loan‑boarding and servicing queues (e.g., loan.finalize.completed.q, loan.board.request.q, svc.cycle.tick.q, svc.disb.request.q) declare dead‑letter exchanges but never define corresponding .retry or .dlq queues. Their bindings reference the new queues without retries
+GitHub
+GitHub
+. Without .retry and .dlq queues, fatal errors are acked into oblivion.
+C) Database Schema, Constraints & RLS	Partial Pass	The core migration creates tenant‑scoped tables with evidence fields (e.g., loan_datapoints.evidence_doc_id, evidence_page, evidence_text_hash, confidence, extractor_version, prompt_version) and unique indexes
+GitHub
+. A separate migration enables RLS and adds tenant isolation policies for each table
+GitHub
+. However, no index exists on (loan_id, key) for loan_datapoints, and RLS is effectively disabled because the application never sets app.tenant_id. Some migrations reference lineage_records and monitoring_events tables which are not created in the provided migration set.
+D) Storage & Upload (S3)	Fail	The storage manager computes a SHA‑256 of the uploaded buffer and constructs the S3 key as ${prefix}/${tenantId}/loans/${loanId}/uploads/${sha256}_${filename}
+GitHub
+. It does not sanitize the filename (control characters, spaces, path‑traversal) or timestamp the key. There is no check to reject password‑protected PDFs, no MIME sniffing, no virus scanning, and no configurable size limit.
+E) Prompt Packs, JSON Schemas & AJV	Pass	The AJV validator is configured with strict mode (strict, strictSchema, strictNumbers, etc.) and compiles individual schemas. Custom formats for SHA‑256 and promptVersion are added
+GitHub
+, and all prompt schemas set additionalProperties: false.
+Monitoring & Health	Fail	A basic /healthz and /readyz route exists but the readiness check comments out the actual DB and AMQP checks
+GitHub
+. There is no /readyz integration test verifying DB connectivity, no metrics on query latency or queue depth, and no separate liveness endpoint.
+Notable Defects
+[critical][src/notifications/service.ts:35] Missing tenant context for DB operations
+
+In the notification service, the code obtains a PostgreSQL client and explicitly comments out the line that sets the tenant context: // await client.query('SET LOCAL app.tenant_id = $1', [request.tenantId])
+GitHub
+. Without setting app.tenant_id, all subsequent queries (SELECT/INSERT into notification_counters, notification_templates, notifications) bypass the RLS policies and allow cross‑tenant reads/writes.
+
+[critical][src/notifications/guard.ts:24] Do‑Not‑Ping guard bypasses RLS
+
+The Do‑Not‑Ping guard also creates a new DB client and comments out SET LOCAL app.tenant_id
+GitHub
+. As a result, it reads from loan_datapoints and can see datapoints for other tenants. This violates tenant isolation and may suppress notifications incorrectly.
+
+[major][src/messaging/init-queues.ts:323] No retry/DLQ queues for new stages
+
+The queue topology defines new queues such as loan.finalize.completed.q and svc.cycle.tick.q with a dead‑letter exchange pointing back to ai.pipeline.retry.v2, but there are no matching .retry or .dlq queues declared in the topology
+GitHub
+. The bindings section references these queues directly
+GitHub
+. If a worker throws a fatal error, messages will be retried indefinitely or lost because no dead‑letter queue exists.
+
+[major][src/utils/storage.ts:73] Unsanitized filename and missing PDF validation
+
+When saving uploads, the storage manager constructs an S3 key by concatenating the raw filename to the SHA‑256 hash
+GitHub
+. This allows path‑traversal (..), extremely long names, or non‑ASCII characters to pollute the bucket namespace. There is no check for password‑protected PDFs or MIME sniffing; a malicious file could bypass scanning and compromise downstream processing.
+
+[medium][src/routes/health.routes.ts:3] Readiness check is stubbed
+
+The readiness route returns 200 OK without checking database connectivity or RabbitMQ health
+GitHub
+. In production this would create false positives where the process is unhealthy but still reports ready.
+
+[medium][migration] Index on loan_datapoints(loan_id, key) missing
+
+The core migration does not create an index on (loan_id, key) for loan_datapoints. Queries in the Do‑Not‑Ping guard filter by loan_id and key
+GitHub
+; without this index the query will result in full table scans.
+
+[medium][security] Secrets and credentials in code
+
+Several services instantiate new Pool({ connectionString: process.env.DATABASE_URL }) directly inside modules. If these modules are imported during tests or other contexts, they may create idle connections with default credentials. There is no central configuration for environment variables or secret rotation.
+
+[minor][observability] No RLS/tenancy smoke tests
+
+There are no automated tests verifying that cross‑tenant reads fail, messages land in DLQs, or that uploads reject password‑protected PDFs. Without these tests regressions can go unnoticed.
+
+Patches
+1. Implement Tenant Middleware and Enforce RLS
+
+Create a middleware (src/middleware/withTenant.ts) that extracts the tenant from the authenticated user (req.user.tenant_id) and attaches it to the request. In all database access points, wrap queries with SET LOCAL app.tenant_id. For example:
+
+// src/middleware/withTenant.ts
+import { PoolClient } from 'pg';
+
+export function withTenant() {
+  return async (req: any, _res: any, next: any) => {
+    const tenantId = req.user?.tenant_id;
+    if (!tenantId) {
+      return next(new Error('Tenant missing'));
+    }
+    // Attach tenantId to request for downstream use
+    req.tenant = { id: tenantId };
+    next();
+  };
+}
+
+// src/db/connection.ts
+import { Pool, PoolClient } from 'pg';
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+export async function withTenantClient(tenantId: string, fn: (client: PoolClient) => Promise<any>) {
+  const client = await pool.connect();
+  try {
+    // Enforce tenant for this session
+    await client.query('SET LOCAL app.tenant_id = $1', [tenantId]);
+    return await fn(client);
+  } finally {
+    client.release();
+  }
+}
+
+
+
+Refactor services (NotificationService, Do‑Not‑Ping guard, etc.) to use withTenantClient(request.tenantId, async client => { … }) instead of instantiating their own Pool. This ensures every query runs with the tenant set, and tests can validate RLS isolation.
+
+2. Complete Messaging Topology with Retry/DLQ
+
+Use a helper to declare queues with a corresponding .retry and .dlq. For each new queue (loan.finalize.completed.q, loan.board.request.q, loan.board.completed.q, svc.cycle.tick.q, svc.cycle.completed.q, svc.disb.request.q, svc.disb.completed.q) add definitions:
+
+// src/messaging/init-queues.ts – within AI_PIPELINE_TOPOLOGY.queues
+{
+  name: 'loan.finalize.completed.retry.q',
+  options: {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+      'x-dead-letter-routing-key': 'loan.finalize.completed.failed',
+      'x-message-ttl': 300000,
+      'x-delivery-limit': 3
+    }
+  }
+},
+{
+  name: 'loan.finalize.completed.dlq.q',
+  options: { durable: true, arguments: { 'x-queue-type': 'quorum' } }
+},
+// similarly for board.request, board.completed, svc.cycle.tick, etc.
+
+
+Add bindings for the .retry queues to ai.pipeline.retry.v2 and the .dlq queues to ai.pipeline.dlq.v2. Ensure workers nack on fatal errors with channel.nack(msg, false, false) so that messages route to the appropriate DLQ.
+
+3. Sanitize Filenames and Reject Protected PDFs
+
+Augment AIPipelineStorageManager.saveUpload to clean the filename and check PDFs:
+
+import fileType from 'file-type';
+import pdfParse from 'pdf-parse';
+
+function sanitize(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+async saveUpload(file: Express.Multer.File | Buffer, tenantId: string, loanId: string, originalFilename?: string) {
+  const fileBuffer = Buffer.isBuffer(file) ? file : file.buffer;
+  const filename = sanitize(originalFilename || (file as Express.Multer.File).originalname || 'uploaded-file');
+  // Reject password‑protected PDFs
+  const type = await fileType.fromBuffer(fileBuffer);
+  if (type?.mime === 'application/pdf') {
+    const pdf = await pdfParse(fileBuffer).catch(() => null);
+    if (!pdf) throw new Error('Invalid PDF');
+    if (pdf.info?.Encrypted) {
+      throw new Error('Password‑protected PDF not allowed');
+    }
+  }
+  // Compute SHA256 and include a timestamp prefix
+  const ts = Date.now();
+  const sha = createHash('sha256').update(fileBuffer).digest('hex');
+  const storageKey = `${this.s3Prefix}/${tenantId}/loans/${loanId}/uploads/${ts}_${sha}_${filename}`;
+  …
+}
+
+4. Improve Health/Ready Endpoints
+
+Implement /healthz (liveness) and /readyz (readiness) routes that actively check the database and RabbitMQ:
+
+// src/routes/health.routes.ts
+import { Router } from 'express';
+import { pingDb } from '../db';
+import { healthCheckTopology } from '../messaging/init-queues';
+
+export const healthRouter = Router();
+healthRouter.get('/healthz', (_req,res) => res.status(200).json({ ok: true }));
+healthRouter.get('/readyz', async (_req,res) => {
+  try {
+    const dbOk = await pingDb();
+    const rmqOk = (await healthCheckTopology(process.env.AMQP_URL)).isHealthy;
+    if (dbOk && rmqOk) return res.status(200).json({ ok: true });
+    return res.status(503).json({ ok: false, dbOk, rmqOk });
+  } catch {
+    return res.status(503).json({ ok: false });
+  }
+});
+
+5. Add Index on loan_datapoints(loan_id, key)
+
+Create a migration to improve lookup performance for Do‑Not‑Ping checks:
+
+-- m025_add_loan_datapoints_idx.sql
+BEGIN;
+CREATE INDEX IF NOT EXISTS idx_loan_datapoints_loan_key ON loan_datapoints (loan_id, key);
+COMMIT;
+
+Rewrite Demands
+Tenancy & RLS Enforcement
+
+Why: Application code never sets app.tenant_id despite RLS policies. Cross‑tenant reads/writes are possible
+GitHub
+GitHub
+.
+
+Requirements:
+
+Implement a withTenant middleware and a database helper (as shown above) that sets SET LOCAL app.tenant_id on every query.
+
+Refactor services (notification, guard, storage, etc.) to use the helper rather than instantiating new Pool objects.
+
+Add acceptance tests where user A cannot read or modify tenant B’s data.
+
+Deadline: deliver within one sprint (1 week).
+
+Complete Messaging Topology
+
+Why: Several new queues lack .retry/.dlq definitions and bindings
+GitHub
+GitHub
+.
+
+Requirements:
+
+For every main queue, declare a .retry and .dlq queue with appropriate TTL and routing.
+
+Update bindings so .retry queues bind to ai.pipeline.retry.v2 and .dlq queues bind to ai.pipeline.dlq.v2.
+
+Modify workers to nack(false,false) on fatal errors; verify messages appear in DLQ.
+
+Add tests: publish a failing message and assert it ends up in the DLQ.
+
+Deadline: within one sprint.
+
+Secure Upload Handling
+
+Why: Uploaded filenames are unsanitized; password‑protected PDFs and potentially malicious files are accepted
+GitHub
+.
+
+Requirements:
+
+Sanitize filenames; incorporate timestamp and hash to avoid collisions.
+
+Enforce PDF validation: reject encrypted PDFs; optionally limit file size and run virus scan.
+
+Add tests: uploading a passworded PDF returns 400; uploading a normal PDF succeeds.
+
+Deadline: within two weeks.
+
+Observability & Health
+
+Why: Current /readyz endpoint returns OK without checking dependencies
+GitHub
+.
+
+Requirements:
+
+Implement liveness (/healthz) and readiness (/readyz) endpoints with real checks on DB and RabbitMQ as shown in the patch.
+
+Emit Prometheus metrics for queue lag, worker errors and DB latency.
+
+Provide a Grafana dashboard to visualize these metrics.
+
+Deadline: within one sprint.
+
+Tests for Evidence Lineage
+
+Why: There are no tests ensuring that extracted datapoints always store evidence fields, confidence, extractor version, and prompt version.
+
+Requirements:
+
+Add integration tests that run the extraction pipeline on sample documents and assert that each persisted datapoint has evidence_doc_id, evidence_page, evidence_text_hash, confidence, extractor_version, and prompt_version populated.
+
+Add negative tests verifying that missing evidence fields cause persistence to fail.
+
+Deadline: within two sprints.
+
+Test Execution
+
+An attempt to run npm ci and npm test on the provided repository (loanserve-main) failed due to a 403 error fetching zod-validation-error from the npm registry. Without the full dependency installation, the build and test suite could not be executed. The error log is attached below:
+
+$ cd loanserve-main/loanserve-main && npm ci
+npm ERR! 403 Forbidden - GET https://registry.npmjs.org/zod-validation-error/-/zod-validation-error-3.5.3.tgz
+npm ERR! In most cases, you or one of your dependencies are requesting a package version that is forbidden by your security policy.
+
+
+Given this, no application tests were run. Once the dependencies can be installed (e.g., by updating the package or using an internal registry), the smoke tests described above must be implemented and executed.
