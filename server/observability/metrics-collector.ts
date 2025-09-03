@@ -134,11 +134,13 @@ export async function getPaymentStats() {
 export async function getNotificationStats() {
   try {
     // Query notifications using columns that actually exist in the current database
+    // Note: email_sent, sms_sent columns don't exist, using status and channel instead
     const result = await db.execute(sql`
       SELECT 
-        COUNT(CASE WHEN email_sent = true THEN 1 END) as emails_sent,
-        COUNT(CASE WHEN sms_sent = true THEN 1 END) as sms_sent,
-        COUNT(CASE WHEN is_read = true THEN 1 END) as read_notifications,
+        COUNT(CASE WHEN status = 'sent' AND channel = 'email' THEN 1 END) as emails_sent,
+        COUNT(CASE WHEN status = 'sent' AND channel = 'sms' THEN 1 END) as sms_sent,
+        COUNT(CASE WHEN status = 'sent' THEN 1 END) as total_sent,
+        COUNT(CASE WHEN status = 'failed' THEN 1 END) as total_failed,
         COUNT(*) as total_notifications
       FROM notifications
       WHERE created_at > NOW() - INTERVAL '1 hour'
@@ -146,7 +148,8 @@ export async function getNotificationStats() {
 
     const emailsSent = parseInt(result.rows[0]?.emails_sent as string) || 0;
     const smsSent = parseInt(result.rows[0]?.sms_sent as string) || 0;
-    const readNotifications = parseInt(result.rows[0]?.read_notifications as string) || 0;
+    const totalSent = parseInt(result.rows[0]?.total_sent as string) || 0;
+    const totalFailed = parseInt(result.rows[0]?.total_failed as string) || 0;
     const totalNotifications = parseInt(result.rows[0]?.total_notifications as string) || 0;
 
     // Record to counters
@@ -156,13 +159,16 @@ export async function getNotificationStats() {
     if (smsSent > 0) {
       recordMetric(notificationSentCounter, smsSent, { type: 'sms' });
     }
+    if (totalFailed > 0) {
+      recordMetric(notificationFailedCounter, totalFailed, { type: 'any' });
+    }
 
     return { 
-      sent: emailsSent + smsSent, 
-      failed: Math.max(0, totalNotifications - emailsSent - smsSent),
+      sent: totalSent, 
+      failed: totalFailed,
       emailsSent,
       smsSent,
-      readNotifications,
+      readNotifications: 0, // Column doesn't exist, return 0
       totalNotifications
     };
   } catch (error) {
