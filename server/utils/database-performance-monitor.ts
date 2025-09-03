@@ -78,7 +78,15 @@ export class DatabasePerformanceMonitor {
       ORDER BY idx_scan DESC
     `);
 
-    return result as IndexUsageStats[];
+    return result.map(row => ({
+      schemaname: row.schemaname as string,
+      tablename: row.tablename as string,
+      indexname: row.indexname as string,
+      idx_scan: Number(row.idx_scan),
+      idx_tup_read: Number(row.idx_tup_read),
+      idx_tup_fetch: Number(row.idx_tup_fetch),
+      usage_level: row.usage_level as 'UNUSED' | 'LOW_USAGE' | 'MODERATE_USAGE' | 'HIGH_USAGE'
+    }));
   }
 
   /**
@@ -102,7 +110,15 @@ export class DatabasePerformanceMonitor {
       ORDER BY seq_scan_ratio DESC
     `);
 
-    return result as TableScanStats[];
+    return result.map(row => ({
+      schemaname: row.schemaname as string,
+      tablename: row.tablename as string,
+      seq_scan: Number(row.seq_scan),
+      seq_tup_read: Number(row.seq_tup_read),
+      idx_scan: Number(row.idx_scan),
+      idx_tup_fetch: Number(row.idx_tup_fetch),
+      seq_scan_ratio: Number(row.seq_scan_ratio)
+    }));
   }
 
   /**
@@ -124,7 +140,14 @@ export class DatabasePerformanceMonitor {
         LIMIT 10
       `);
 
-      return result as QueryPerformanceStats[];
+      return result.map(row => ({
+        query: row.query as string,
+        calls: Number(row.calls),
+        total_time: Number(row.total_time),
+        mean_time: Number(row.mean_time),
+        stddev_time: Number(row.stddev_time),
+        rows: Number(row.rows)
+      }));
     } catch (error) {
       // pg_stat_statements extension might not be available
       console.warn('pg_stat_statements extension not available for slow query analysis');
@@ -159,7 +182,7 @@ export class DatabasePerformanceMonitor {
       `);
 
       const responseTime = Date.now() - start;
-      const stats = connectionStats[0] as any;
+      const stats = connectionStats[0] as Record<string, any>;
 
       return {
         connected: true,
@@ -267,12 +290,12 @@ export class DatabasePerformanceMonitor {
       ORDER BY pg_total_relation_size(quote_ident(t.table_name)::regclass) DESC
     `);
 
-    return result as Array<{
-      table_name: string;
-      size_pretty: string;
-      size_bytes: number;
-      row_count: number;
-    }>;
+    return result.map(row => ({
+      table_name: row.table_name as string,
+      size_pretty: row.size_pretty as string,
+      size_bytes: Number(row.size_bytes),
+      row_count: Number(row.row_count)
+    }));
   }
 
   /**
@@ -297,12 +320,12 @@ export class DatabasePerformanceMonitor {
       ORDER BY query_start
     `);
 
-    return result as Array<{
-      pid: number;
-      duration: string;
-      query: string;
-      state: string;
-    }>;
+    return result.map(row => ({
+      pid: Number(row.pid),
+      duration: row.duration as string,
+      query: row.query as string,
+      state: row.state as string
+    }));
   }
 }
 

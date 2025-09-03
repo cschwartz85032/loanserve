@@ -1,0 +1,350 @@
+Senior Architect Review of loanserve Platform
+Summary (Pass/Fail)
+Section	Status	Justification
+A. Tenancy, Auth & RBAC/ABAC	Fail	The DB context is set with SET app.tenant_id at session level rather than SET LOCAL, risking cross‑tenant leakage, and not all service calls enforce tenant context. RLS policies are defined, but some newer tables appear without RLS.
+B. Messaging Topology (RabbitMQ)	Fail	The topology defines many queues but omits .retry/.dlq queues for several stages (loan.board., svc.cycle., svc.disb.*). Worker code (SelfHealingWorker) logs DLQ events but does not nack messages, so fatal errors never reach the DLQ.
+C. Database Schema, Constraints & RLS	Partial	Core schema includes required tables and evidence fields. RLS policies exist for many tables; however, pipeline_alerts and monitoring_events tables lack RLS. Evidence fields are present, but service code sometimes persists datapoints without lineage.
+D. Storage & Upload (S3, hashing, validation)	Pass with caveats	Filename sanitisation and rejection of password‑protected PDFs are implemented. SHA‑256 hashing and tenant‑scoped S3 keys exist. However, the S3 service logs raw keys/filenames and may expose PII; field‑level encryption uses AES‑256‑GCM correctly but some logs include user identifiers.
+E. Prompt Packs, JSON Schemas & AJV	Pass	Prompt schemas enforce additionalProperties: false, require promptVersion, and AJV is configured with strict mode and custom formats. Evidence objects are defined. Nonetheless, some schemas still allow union types and the validator does not supply comprehensive failure logging.
+
+Due to network restrictions, the repository could not be cloned locally, so npm ci, npm run build, and npm test could not be executed. The review therefore relies on static inspection of the code via the GitHub connector.
+
+Defects and Violations
+A. Tenancy, Auth & RBAC/ABAC
+
+Major — AIPipelineService.setTenantContext uses SET app.tenant_id instead of SET LOCAL (src/database/ai‑pipeline‑service.ts:530–546)
+GitHub
+. This sets the tenant ID at the session level, meaning subsequent calls in the same connection could leak tenant context across requests. The spec requires SET LOCAL app.tenant_id = $1 for every DB call, ensuring the setting is scoped to the transaction.
+
+Major — Not all DB calls enforce tenant context. Several service methods call the database directly through Drizzle ORM without wrapping them in withTenantClient or invoking setTenantContext. For example, in AIPipelineService many methods directly call this.db.insert(... or this.db.update(...) without setting the tenant ID. This defeats RLS.
+
+Major — Missing RLS policies on newer tables. The migrations enable RLS on legacy tables, but tables such as pipeline_alerts and monitoring_events defined later in the schema are not covered by RLS policies, leaving them globally readable.
+
+Moderate — withTenantClient attaches tenant ID to the request but does not validate per‑call
+GitHub
+. If a service forgets to use withTenantClient, no error is thrown.
+
+Moderate — Sensitive fields logged. Some logs (e.g. in services/S3Service.ts) include full S3 key paths and user identifiers. PII should be redacted or hashed.
+
+B. Messaging Topology (RabbitMQ)
+
+Major — Missing .retry and .dlq queues. The init-queues.ts defines retries and DLQs for early queues, but later queues such as loan.board.request.q, loan.board.completed.q, svc.cycle.tick.q, svc.cycle.completed.q, svc.disb.request.q, and svc.disb.completed.q are defined without corresponding retry and dead‑letter queues
+GitHub
+. This violates the requirement that every queue have a DLQ and retry.
+
+Major — Workers do not nack fatal errors. The SelfHealingWorker base class only logs a message on fatal errors and acknowledges the message, so messages never reach the DLQ
+GitHub
+. The spec requires nack(false,false) for fatal errors to send the message to the DLQ.
+
+Moderate — Do‑Not‑Ping suppression is implemented (notifications/guard.ts) but there is no integration test ensuring messages are suppressed based on evidence confidence thresholds.
+
+C. Database Schema, Constraints & RLS
+
+Minor — Evidence fields exist but not always persisted. Service code sometimes persists datapoints without populating evidence_doc_id, evidence_page, evidence_text_hash, confidence, extractor_version, and prompt_version (e.g. in document ingestion workers). Each datapoint must include lineage information.
+
+Minor — Index coverage. The schema defines indexes on (loan_id, key) and timestamps, but there is no composite index on tenant_id in large tables such as loan_datapoints, which could slow multi‑tenant queries.
+
+D. Storage & Upload (S3, hashing, validation)
+
+Moderate — Logging of S3 keys. The S3 adapter logs full keys containing tenant and loan IDs. Logs should redact sensitive segments or hash them to avoid PII disclosure.
+
+Minor — Lack of AV scanning. The spec suggests optional AV scanning/quarantine for uploads. The current implementation only checks for password‑protected PDFs and file size/extension
+GitHub
+.
+
+E. Prompt Packs, JSON Schemas & AJV
+
+Minor — Union types allowed. Some schemas permit union types (e.g. ["number","null"]), whereas the spec demands strict schemas. It would be safer to require explicit nullability via oneOf to avoid lenient parsing.
+
+Minor — Validator does not log all errors. The PromptOutputValidator catches AJV errors but only returns the first error without context. Returning a structured list would aid debugging and enforce strictness.
+
+General / Miscellaneous
+
+Major — Build/Test logs unavailable. Due to network restrictions the repository could not be cloned locally and tests could not be executed. This prevents verification of idempotency, queue retry, RLS enforcement, etc. The project should provide a containerised environment or CI pipeline to run the full suite.
+
+Patches and Fixes
+
+Below are suggested fixes. Paths and line numbers refer to the repository structure. These patches must be applied in a PR and accompanied by tests.
+
+A. Enforce Tenant Context with SET LOCAL
+
+Fix AIPipelineService.setTenantContext and withTenantClient:
+
+// src/database/ai-pipeline-service.ts
+// Replace the current setTenantContext implementation
+async setTenantContext(client: PoolClient, tenantId: string) {
+  // validate UUID
+  if (!uuidValidate(tenantId)) throw new Error('invalid tenantId');
+  // Use SET LOCAL so the setting only applies within the current transaction
+  await client.query('SET LOCAL app.tenant_id = $1', [tenantId]);
+}
+
+// src/db/withTenantClient.ts
+export async function withTenantClient<T>(tenantId: string, fn: (client: PoolClient) => Promise<T>) {
+  const client = await pool.connect();
+  try {
+    await client.query('SET LOCAL app.tenant_id = $1', [tenantId]);
+    const result = await fn(client);
+    return result;
+  } finally {
+    await client.query('SET LOCAL app.tenant_id = DEFAULT');
+    client.release();
+  }
+}
+
+
+Ensure every service method that interacts with the database uses withTenantClient() or explicitly calls setTenantContext() before any query.
+
+B. Complete Messaging Topology
+
+Add .retry and .dlq queues for missing queues:
+
+// src/messaging/init-queues.ts
+async function assertWithDlx(ch: Channel, ex: string, q: string, rk: string) {
+  await ch.assertExchange(ex, 'topic', { durable: true });
+  await ch.assertExchange('dlx', 'topic', { durable: true });
+  // main queue
+  await ch.assertQueue(q, {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': 'dlx',
+      'x-dead-letter-routing-key': `${q}.dlq`,
+    },
+  });
+  await ch.bindQueue(q, ex, rk);
+  // retry queue
+  await ch.assertQueue(`${q}.retry`, {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': ex,
+      'x-dead-letter-routing-key': rk,
+      'x-message-ttl': 15000,
+    },
+  });
+  await ch.bindQueue(`${q}.retry`, 'dlx', `${q}.retry`);
+  // dlq
+  await ch.assertQueue(`${q}.dlq`, { durable: true });
+  await ch.bindQueue(`${q}.dlq`, 'dlx', `${q}.dlq`);
+}
+
+// For each missing queue:
+await assertWithDlx(ch, 'loan.board', 'loan.board.request.q', 'request');
+await assertWithDlx(ch, 'loan.board', 'loan.board.completed.q', 'completed');
+await assertWithDlx(ch, 'svc.cycle', 'svc.cycle.tick.q', 'tick');
+await assertWithDlx(ch, 'svc.cycle', 'svc.cycle.completed.q', 'completed');
+await assertWithDlx(ch, 'svc.disb', 'svc.disb.request.q', 'request');
+await assertWithDlx(ch, 'svc.disb', 'svc.disb.completed.q', 'completed');
+
+
+Modify SelfHealingWorker to nack on fatal errors:
+
+// src/messaging/workers/SelfHealingWorker.ts
+protected async handleError(msg: ConsumeMessage, err: Error) {
+  this.logger.error({ err }, 'Fatal error processing message, sending to DLQ');
+  // Do not ack; nack with requeue=false and multiple=false to send to DLQ
+  this.channel.nack(msg, false, false);
+  // Optionally publish an event to a monitoring exchange
+  await this.channel.publish('ops.notifications', 'worker.error', Buffer.from(JSON.stringify({
+    worker: this.constructor.name,
+    error: err.message,
+    tenantId: this.tenantId,
+    timestamp: new Date().toISOString(),
+  })));
+}
+
+C. Add RLS Policies and Evidence Enforcement
+
+Migration to enable RLS on missing tables and ensure evidence columns:
+
+-- migrations/m024_enable_rls_add_evidence.sql
+BEGIN;
+
+-- Enable RLS and create policy on pipeline_alerts
+ALTER TABLE pipeline_alerts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_pipeline_alerts_tenant
+  ON pipeline_alerts
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+-- Enable RLS and create policy on monitoring_events
+ALTER TABLE monitoring_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_monitoring_events_tenant
+  ON monitoring_events
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+-- Ensure evidence fields exist in loan_datapoints
+ALTER TABLE loan_datapoints
+  ADD COLUMN IF NOT EXISTS evidence_doc_id uuid NULL,
+  ADD COLUMN IF NOT EXISTS evidence_page integer NULL CHECK (evidence_page >= 0),
+  ADD COLUMN IF NOT EXISTS evidence_text_hash text NULL,
+  ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NULL,
+  ADD COLUMN IF NOT EXISTS extractor_version text NULL,
+  ADD COLUMN IF NOT EXISTS prompt_version text NULL;
+
+COMMIT;
+
+
+Service layer enforcement: when persisting datapoints, require the caller to supply lineage fields. Add a validation step:
+
+function validateDatapoint(dp: LoanDatapointInput) {
+  if (!dp.evidence_doc_id || !dp.evidence_page || !dp.evidence_text_hash || dp.confidence == null || !dp.extractor_version || !dp.prompt_version) {
+    throw new Error('Datapoint missing evidence or version fields');
+  }
+}
+
+// In worker before insertion
+datapoints.forEach(validateDatapoint);
+await db.insert(loan_datapoints).values(datapoints);
+
+D. Storage Logging and AV Scanning
+
+Redact PII in logs and add optional AV scanning:
+
+// src/services/S3Service.ts
+public async upload(key: string, buffer: Buffer, contentType: string) {
+  try {
+    await this.s3Client.putObject({ Bucket: this.bucket, Key: key, Body: buffer, ContentType: contentType }).promise();
+    this.logger.info({ keyHash: sha256(Buffer.from(key)) }, 'Uploaded object to S3');
+  } catch (err) {
+    this.logger.error({ err }, 'Failed to upload to S3');
+    throw err;
+  }
+}
+
+// src/middleware/upload.ts
+if (process.env.AV_SCANNING === 'true') {
+  const isInfected = await avScanner.scan(buffer);
+  if (isInfected) {
+    return res.status(400).json({ error: 'File failed antivirus scanning' });
+  }
+}
+
+E. Schema Strictness and Validation Logging
+
+Modify prompt schemas to avoid union types and improve error logging:
+
+{
+  "$id": "https://loanserve.ai/schemas/prompt-outputs/note.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "docType": { "const": "NOTE" },
+    "promptVersion": { "type": "string", "pattern": "^v\\d{4}-\\d{2}-\\d{2}\\.[A-Za-z0-9.-]+$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "NoteAmount": { "oneOf": [ { "type": "number", "minimum": 0 }, { "type": "null" } ] },
+        "InterestRate": { "oneOf": [ { "type": "number", "minimum": 0, "maximum": 100 }, { "type": "null" } ] }
+        /* ... other fields ... */
+      },
+      "required": [ "NoteAmount", "InterestRate", "AmortTermMonths", "FirstPaymentDate", "MaturityDate", "BorrowerFullName" ]
+    },
+    "evidence": { /* same as existing */ }
+  },
+  "required": [ "docType", "promptVersion", "data", "evidence" ]
+}
+
+
+Improve AJV error reporting:
+
+// src/validators/PromptOutputValidator.ts
+try {
+  const valid = this.ajv.validate(schema, obj);
+  if (!valid) {
+    const errors = this.ajv.errors?.map(e => `${e.instancePath} ${e.message}`).join('; ');
+    throw new ValidationError(`Prompt output failed schema: ${errors}`);
+  }
+} catch (err) {
+  // Log and rethrow structured error
+  this.logger.warn({ err }, 'Prompt output validation failed');
+  throw err;
+}
+
+Tests Added/Changed
+
+The following tests should be added to ensure compliance:
+
+RLS Enforcement Test — create two tenants and insert a loan/datapoint for each. Attempt to read tenant A’s data using tenant B’s context; expect zero rows and a rejection error. This uses withTenantClient and verifies that SET LOCAL scoping resets between calls.
+
+Queue Error Path Test — publish a message to loan.board.request.q, intentionally throw an exception in the worker, and assert that the message appears in loan.board.request.q.dlq after TTL expiration. Use RabbitMQ management API to verify queue depths.
+
+Upload Guard Test — upload a password‑protected PDF and assert that the API returns HTTP 400. Upload a non‑protected PDF and assert success. If AV scanning is enabled, upload a file containing the EICAR test string and assert rejection.
+
+Schema Validation Test — feed a prompt output with an extra field (e.g. UnexpectedField) and assert that the validator throws a ValidationError. Verify that the error message lists the offending property.
+
+Evidence Lineage Test — run an extraction flow, then read the resulting loan_datapoints row and assert that evidence_doc_id, evidence_page, evidence_text_hash, confidence, extractor_version, and prompt_version are non‑null.
+
+Rewrite or Redesign Demands
+1. Tenancy Context Enforcement
+
+Why: Using session‑level SET app.tenant_id and omitting tenant context in some service calls violates the requirement of per‑call tenant isolation and could leak data across tenants.
+
+You must:
+
+Refactor all DB service methods to obtain a client via withTenantClient() or call setTenantContext() using SET LOCAL before any query.
+
+Remove all calls to SET app.tenant_id at session level. Prove via tests that cross‑tenant reads are denied.
+
+Include a migration to enable RLS on pipeline_alerts and monitoring_events tables.
+
+Acceptance: PR contains updated DB service code, migrations, and a passing RLS enforcement test.
+
+2. Messaging Topology Completion and DLQ Handling
+
+Why: Several queues lack .retry and .dlq and the worker base class acknowledges fatal errors, contrary to the specification.
+
+You must:
+
+Use a helper like assertWithDlx() to declare main, retry, and DLQ queues for every stage, including loan.board.*, svc.cycle.*, and svc.disb.*.
+
+Modify worker code to nack(false,false) on fatal errors and publish error details to a monitoring exchange.
+
+Add a test that forces a worker error and asserts that the message appears in the DLQ.
+
+Acceptance: PR includes updated queue initialisation and worker code, plus passing “DLQ on failure” test.
+
+3. Evidence Lineage Enforcement
+
+Why: Without lineage and confidence fields, extracted datapoints cannot be audited or certified.
+
+You must:
+
+Ensure the schema contains all evidence fields and backfill existing records via migration.
+
+Update extraction workers to populate evidence_doc_id, evidence_page, evidence_text_hash, confidence, extractor_version, and prompt_version for each datapoint.
+
+Add a test verifying that these fields are present after extraction.
+
+Acceptance: PR includes migrations, code changes, and passing lineage test.
+
+4. Logging and PII Redaction
+
+Why: Logging full S3 keys and user identifiers exposes sensitive information.
+
+You must:
+
+Hash or partially mask keys and IDs in logs (e.g. log only the last 6 characters of a UUID).
+
+Remove PII from error messages and ensure secrets are only read from environment variables.
+
+Acceptance: PR includes updated logging statements and a review of log outputs showing no PII.
+
+5. Improved Prompt Validation
+
+Why: Union types and limited error reporting weaken strictness.
+
+You must:
+
+Update all JSON schemas to use oneOf for nullable fields instead of union types.
+
+Configure AJV in strict mode and provide comprehensive error messages.
+
+Add a test that ensures extra fields and nullability violations are caught and logged appropriately.
+
+Acceptance: PR includes updated schemas, validator code, and passing tests for validation errors.
+
+Sources
+
+Agent
+Sources
