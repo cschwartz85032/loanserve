@@ -4,6 +4,7 @@
  */
 
 import * as amqp from 'amqplib';
+import type { Channel } from "amqplib";
 
 export interface QueueTopology {
   exchanges: ExchangeDeclaration[];
@@ -37,6 +38,65 @@ export interface BindingDeclaration {
   exchange: string;
   routingKey: string;
   arguments?: any;
+}
+
+/**
+ * Declare a main queue with DLX routing to its .dlq,
+ * a retry queue that dead-letters back to the main routing key after TTL,
+ * and the .dlq queue bound on the DLX.
+ */
+export async function assertWithDlx(
+  ch: Channel,
+  exchange: string,         // producer exchange for this stage (topic)
+  queue: string,            // main queue name (e.g., "loan.board.request.q")
+  routingKey: string,       // main routing key (e.g., "request")
+  options?: {
+    mainTtlMs?: number;     // optional, when the stage wants a visible timeout
+    retryTtlMs?: number;    // delay before returning from .retry to main
+    quorum?: boolean;       // set quorum type for durability
+  }
+): Promise<void> {
+  const mainTtlMs = options?.mainTtlMs ?? undefined;
+  const retryTtlMs = options?.retryTtlMs ?? 15_000;
+  const queueType = options?.quorum ? "quorum" : undefined;
+
+  // application exchange and global DLX
+  await ch.assertExchange(exchange, "topic", { durable: true });
+  await ch.assertExchange("dlx", "topic", { durable: true });
+
+  // main
+  await ch.assertQueue(queue, {
+    durable: true,
+    arguments: {
+      ...(queueType ? { "x-queue-type": queueType } : {}),
+      ...(mainTtlMs ? { "x-message-ttl": mainTtlMs } : {}),
+      "x-dead-letter-exchange": "dlx",
+      "x-dead-letter-routing-key": `${queue}.dlq`
+    }
+  });
+  await ch.bindQueue(queue, exchange, routingKey);
+
+  // retry
+  await ch.assertQueue(`${queue}.retry`, {
+    durable: true,
+    arguments: {
+      ...(queueType ? { "x-queue-type": queueType } : {}),
+      "x-dead-letter-exchange": exchange,
+      "x-dead-letter-routing-key": routingKey,
+      "x-message-ttl": retryTtlMs
+    }
+  });
+  // Bind retry to DLX so producers can dead-letter into it when they want a delayed retry
+  await ch.bindQueue(`${queue}.retry`, "dlx", `${queue}.retry`);
+
+  // dead letter
+  await ch.assertQueue(`${queue}.dlq`, {
+    durable: true,
+    arguments: {
+      ...(queueType ? { "x-queue-type": queueType } : {})
+    }
+  });
+  await ch.bindQueue(`${queue}.dlq`, "dlx", `${queue}.dlq`);
 }
 
 /**
@@ -607,7 +667,7 @@ export const AI_PIPELINE_TOPOLOGY: QueueTopology = {
 };
 
 /**
- * Initialize RabbitMQ topology
+ * Initialize RabbitMQ topology using recommended assertWithDlx pattern
  */
 export async function initializeAIPipelineTopology(connectionUrl: string): Promise<void> {
   console.log('[RabbitMQ] Initializing AI Pipeline topology...');
@@ -622,23 +682,59 @@ export async function initializeAIPipelineTopology(connectionUrl: string): Promi
 
     console.log('[RabbitMQ] Connected and channel created');
 
-    // Create exchanges
-    for (const exchange of AI_PIPELINE_TOPOLOGY.exchanges) {
-      await channel.assertExchange(exchange.name, exchange.type, exchange.options);
-      console.log(`[RabbitMQ] Created exchange: ${exchange.name}`);
-    }
+    // Create global DLX exchange first
+    await channel.assertExchange("dlx", "topic", { durable: true });
+    console.log('[RabbitMQ] Created global DLX exchange');
 
-    // Create queues
-    for (const queue of AI_PIPELINE_TOPOLOGY.queues) {
-      await channel.assertQueue(queue.name, queue.options);
-      console.log(`[RabbitMQ] Created queue: ${queue.name}`);
-    }
+    // Create monitoring exchange for error events
+    await channel.assertExchange("ops.notifications", "topic", { durable: true });
+    console.log('[RabbitMQ] Created ops.notifications exchange');
 
-    // Create bindings
-    for (const binding of AI_PIPELINE_TOPOLOGY.bindings) {
-      await channel.bindQueue(binding.queue, binding.exchange, binding.routingKey, binding.arguments);
-      console.log(`[RabbitMQ] Created binding: ${binding.queue} -> ${binding.exchange}#${binding.routingKey}`);
-    }
+    // Loan boarding queues with standardized DLX pattern
+    await assertWithDlx(channel, "loan.board", "loan.board.request.q", "request", { retryTtlMs: 15_000, quorum: true });
+    await assertWithDlx(channel, "loan.board", "loan.board.completed.q", "completed", { retryTtlMs: 15_000, quorum: true });
+
+    // Servicing cycle queues
+    await assertWithDlx(channel, "svc.cycle", "svc.cycle.tick.q", "tick", { retryTtlMs: 15_000, quorum: true });
+    await assertWithDlx(channel, "svc.cycle", "svc.cycle.completed.q", "completed", { retryTtlMs: 15_000, quorum: true });
+
+    // Disbursement queues
+    await assertWithDlx(channel, "svc.disb", "svc.disb.request.q", "request", { retryTtlMs: 15_000, quorum: true });
+    await assertWithDlx(channel, "svc.disb", "svc.disb.completed.q", "completed", { retryTtlMs: 15_000, quorum: true });
+
+    // AI Pipeline queues with new pattern
+    await assertWithDlx(channel, "ai.pipeline.v2", "q.document.split.v2", "document.split", { retryTtlMs: 30_000, quorum: true });
+    await assertWithDlx(channel, "ai.pipeline.v2", "q.document.ocr.v2", "document.ocr", { retryTtlMs: 60_000, quorum: true });
+    await assertWithDlx(channel, "ai.pipeline.v2", "q.document.extract.v2", "document.extract", { retryTtlMs: 120_000, quorum: true });
+    await assertWithDlx(channel, "ai.pipeline.v2", "q.loan.qc.v2", "loan.qc", { retryTtlMs: 30_000, quorum: true });
+    await assertWithDlx(channel, "ai.pipeline.v2", "q.conflict.resolve.v2", "conflict.resolve", { retryTtlMs: 15_000, quorum: true });
+
+    // Monitoring queues (no retry needed for these)
+    await channel.assertQueue("q.monitoring.metrics.v2", {
+      durable: true,
+      arguments: {
+        "x-queue-type": "quorum",
+        "x-max-length": 10000
+      }
+    });
+    await channel.bindQueue("q.monitoring.metrics.v2", "ops.notifications", "metrics.*");
+
+    await channel.assertQueue("q.monitoring.alerts.v2", {
+      durable: true,
+      arguments: {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 86400000
+      }
+    });
+    await channel.bindQueue("q.monitoring.alerts.v2", "ops.notifications", "alert.*");
+
+    await channel.assertQueue("q.worker.errors", {
+      durable: true,
+      arguments: {
+        "x-queue-type": "quorum"
+      }
+    });
+    await channel.bindQueue("q.worker.errors", "ops.notifications", "worker.error");
 
     console.log('[RabbitMQ] AI Pipeline topology initialization complete');
 

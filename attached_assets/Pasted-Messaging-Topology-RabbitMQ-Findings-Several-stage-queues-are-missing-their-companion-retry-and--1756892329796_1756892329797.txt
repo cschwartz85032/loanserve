@@ -1,0 +1,280 @@
+Messaging Topology (RabbitMQ)
+Findings
+
+Several stage queues are missing their companion .retry and .dlq queues. This violates the rule that every queue must have a retry path and a dead letter queue. The gaps are present for at least these queues:
+loan.board.request.q, loan.board.completed.q, svc.cycle.tick.q, svc.cycle.completed.q, svc.disb.request.q, svc.disb.completed.q.
+
+Workers on fatal errors do not negatively acknowledge to DLQ. The base worker logs and effectively swallows terminal failures instead of nack(false, false) which is required to route to DLQ.
+
+There is no automated test that proves the end to end error path lands in the .dlq queue and that retry TTL behavior works as configured.
+
+Drop-in fixes
+1) Topology helper for main + retry + DLQ
+// src/messaging/init-queues.ts
+import type { Channel } from "amqplib";
+
+/**
+ * Declare a main queue with DLX routing to its .dlq,
+ * a retry queue that dead-letters back to the main routing key after TTL,
+ * and the .dlq queue bound on the DLX.
+ */
+export async function assertWithDlx(
+  ch: Channel,
+  exchange: string,         // producer exchange for this stage (topic)
+  queue: string,            // main queue name (e.g., "loan.board.request.q")
+  routingKey: string,       // main routing key (e.g., "request")
+  options?: {
+    mainTtlMs?: number;     // optional, when the stage wants a visible timeout
+    retryTtlMs?: number;    // delay before returning from .retry to main
+    quorum?: boolean;       // set quorum type for durability
+  }
+): Promise<void> {
+  const mainTtlMs = options?.mainTtlMs ?? undefined;
+  const retryTtlMs = options?.retryTtlMs ?? 15_000;
+  const queueType = options?.quorum ? "quorum" : undefined;
+
+  // application exchange and global DLX
+  await ch.assertExchange(exchange, "topic", { durable: true });
+  await ch.assertExchange("dlx", "topic", { durable: true });
+
+  // main
+  await ch.assertQueue(queue, {
+    durable: true,
+    arguments: {
+      ...(queueType ? { "x-queue-type": queueType } : {}),
+      ...(mainTtlMs ? { "x-message-ttl": mainTtlMs } : {}),
+      "x-dead-letter-exchange": "dlx",
+      "x-dead-letter-routing-key": `${queue}.dlq`
+    }
+  });
+  await ch.bindQueue(queue, exchange, routingKey);
+
+  // retry
+  await ch.assertQueue(`${queue}.retry`, {
+    durable: true,
+    arguments: {
+      ...(queueType ? { "x-queue-type": queueType } : {}),
+      "x-dead-letter-exchange": exchange,
+      "x-dead-letter-routing-key": routingKey,
+      "x-message-ttl": retryTtlMs
+    }
+  });
+  // Bind retry to DLX so producers can dead-letter into it when they want a delayed retry
+  await ch.bindQueue(`${queue}.retry`, "dlx", `${queue}.retry`);
+
+  // dead letter
+  await ch.assertQueue(`${queue}.dlq`, {
+    durable: true,
+    arguments: {
+      ...(queueType ? { "x-queue-type": queueType } : {})
+    }
+  });
+  await ch.bindQueue(`${queue}.dlq`, "dlx", `${queue}.dlq`);
+}
+
+2) Wire the missing queues using the helper
+// src/messaging/init-queues.ts
+import { assertWithDlx } from "./init-queues"; // if helper is colocated, omit this
+
+export async function initializeAIPipelineTopology(connectionUrl: string): Promise<void> {
+  // ... existing connection + channel creation
+
+  // Loan boarding
+  await assertWithDlx(ch, "loan.board", "loan.board.request.q", "request", { retryTtlMs: 15_000, quorum: true });
+  await assertWithDlx(ch, "loan.board", "loan.board.completed.q", "completed", { retryTtlMs: 15_000, quorum: true });
+
+  // Servicing cycle
+  await assertWithDlx(ch, "svc.cycle", "svc.cycle.tick.q", "tick", { retryTtlMs: 15_000, quorum: true });
+  await assertWithDlx(ch, "svc.cycle", "svc.cycle.completed.q", "completed", { retryTtlMs: 15_000, quorum: true });
+
+  // Disbursements
+  await assertWithDlx(ch, "svc.disb", "svc.disb.request.q", "request", { retryTtlMs: 15_000, quorum: true });
+  await assertWithDlx(ch, "svc.disb", "svc.disb.completed.q", "completed", { retryTtlMs: 15_000, quorum: true });
+
+  // ... create any remaining exchanges, queues, bindings already in the file
+}
+
+3) Workers must nack fatal errors to DLQ
+
+Add a single place in the worker base to route terminal failures. This function is called whenever a message handling attempt determines the error is not retryable or the attempt budget is exhausted.
+
+// src/workers/self-healing-worker.ts
+import type { ConsumeMessage, Channel } from "amqplib";
+
+export abstract class SelfHealingWorker {
+  protected channel!: Channel;
+  protected monitoringExchange = "ops.notifications"; // already in topology per spec
+  protected tenantId?: string;
+
+  // Call this on terminal failure
+  protected async sendFatalToDlq(msg: ConsumeMessage, err: Error): Promise<void> {
+    // Publish a structured error event for observability
+    const payload = {
+      worker: this.constructor.name,
+      routingKey: msg.fields.routingKey,
+      queue: msg.fields.consumerTag,
+      error: { name: err.name, message: err.message, stack: err.stack?.split("\n").slice(0, 5) },
+      tenantId: this.tenantId ?? null,
+      occurred_at: new Date().toISOString()
+    };
+    try {
+      this.channel.publish(
+        this.monitoringExchange,
+        "worker.error",
+        Buffer.from(JSON.stringify(payload)),
+        { contentType: "application/json", persistent: true }
+      );
+    } catch (_) {
+      // best effort only
+    }
+
+    // Critical: do not ack. DLX will route to `<queue>.dlq`
+    this.channel.nack(msg, false, false);
+  }
+
+  // Example handle wrapper showing decision
+  protected handleErrorDecision(msg: ConsumeMessage, err: Error, attempts: number, maxAttempts: number): void {
+    const retryable = this.isRetryableError(err);
+    const shouldRetry = retryable && attempts < maxAttempts;
+    if (shouldRetry) {
+      // Dead-letter into `.retry` to get delayed re-delivery
+      this.channel.publish("dlx", `${msg.fields.consumerTag}.retry`, msg.content, {
+        headers: msg.properties.headers
+      });
+      this.channel.ack(msg);
+      return;
+    }
+    void this.sendFatalToDlq(msg, err);
+  }
+
+  protected isRetryableError(err: Error): boolean {
+    const m = err.message.toLowerCase();
+    if (m.includes("timeout") || m.includes("etimedout") || m.includes("econnreset")) return true;
+    if (m.includes("rate limit") || m.includes("429")) return true;
+    if (m.includes("502") || m.includes("503") || m.includes("504")) return true;
+    return false;
+  }
+}
+
+4) Error event schema used for monitoring
+{
+  "worker": "ExtractWorker",
+  "routingKey": "loan.board.request",
+  "queue": "loan.board.request.consumer",
+  "error": {
+    "name": "ValidationError",
+    "message": "missing mandatory field: loanId",
+    "stack": [
+      "ValidationError: missing mandatory field: loanId",
+      "    at ExtractWorker.executeWork (...",
+      "    at SelfHealingWorker.processWorkItem (..."
+    ]
+  },
+  "tenantId": "00000000-0000-0000-0000-000000000001",
+  "occurred_at": "2025-09-03T05:30:00.000Z"
+}
+
+Minimal smoke test for error path and DLQ
+
+Purpose: prove that a worker failure lands in the .dlq queue and that .retry re-delivers after TTL.
+
+// test/messaging/dlq-path.test.ts
+import amqp, { Channel, Connection } from "amqplib";
+
+const RMQ_URL = process.env.CLOUDAMQP_URL ?? "amqp://localhost:5672";
+
+describe("Messaging DLQ flow", () => {
+  let conn: Connection;
+  let ch: Channel;
+
+  beforeAll(async () => {
+    conn = await amqp.connect(RMQ_URL);
+    ch = await conn.createChannel();
+
+    // Ensure topology for one queue under test
+    await ch.assertExchange("loan.board", "topic", { durable: true });
+    await ch.assertExchange("dlx", "topic", { durable: true });
+    await ch.assertQueue("loan.board.request.q", {
+      durable: true,
+      arguments: {
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "loan.board.request.q.dlq"
+      }
+    });
+    await ch.bindQueue("loan.board.request.q", "loan.board", "request");
+    await ch.assertQueue("loan.board.request.q.retry", {
+      durable: true,
+      arguments: {
+        "x-dead-letter-exchange": "loan.board",
+        "x-dead-letter-routing-key": "request",
+        "x-message-ttl": 2000
+      }
+    });
+    await ch.bindQueue("loan.board.request.q.retry", "dlx", "loan.board.request.q.retry");
+    await ch.assertQueue("loan.board.request.q.dlq", { durable: true });
+    await ch.bindQueue("loan.board.request.q.dlq", "dlx", "loan.board.request.q.dlq");
+  });
+
+  afterAll(async () => {
+    await ch.close();
+    await conn.close();
+  });
+
+  it("routes terminal errors to DLQ", async () => {
+    // consumer that always fails terminally
+    await ch.consume("loan.board.request.q", msg => {
+      if (!msg) return;
+      // simulate terminal failure
+      ch.nack(msg, false, false); // no requeue
+    }, { consumerTag: "loan.board.request.consumer" });
+
+    // publish a message
+    await ch.publish("loan.board", "request", Buffer.from(JSON.stringify({ loanId: null })), {
+      contentType: "application/json"
+    });
+
+    // poll DLQ for presence
+    let found = false;
+    for (let i = 0; i < 20; i++) {
+      const s = await ch.checkQueue("loan.board.request.q.dlq");
+      if (s.messageCount > 0) {
+        found = true;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    expect(found).toBe(true);
+  });
+
+  it("uses retry queue for transient errors", async () => {
+    let seen = 0;
+    await ch.consume("loan.board.request.q", msg => {
+      if (!msg) return;
+      seen += 1;
+      if (seen === 1) {
+        // transient failure: dead-letter into retry
+        ch.publish("dlx", "loan.board.request.q.retry", msg.content, { headers: msg.properties.headers });
+        ch.ack(msg);
+        return;
+      }
+      // second delivery should succeed
+      ch.ack(msg);
+    }, { consumerTag: "loan.board.request.consumer2" });
+
+    await ch.publish("loan.board", "request", Buffer.from("X"), {});
+    // allow time for retry TTL
+    await new Promise(r => setTimeout(r, 3500));
+
+    expect(seen).toBeGreaterThanOrEqual(2);
+  });
+});
+
+Acceptance criteria for Section B
+
+Every application queue has a corresponding .retry and .dlq, driven by a single helper function to avoid divergence.
+
+Workers route terminal failures to DLQ using nack(false, false). Transient failures use the .retry delay path.
+
+An automated test proves that a failing message appears in the .dlq queue and that the retry queue redelivers after TTL.
+
+A structured error event is published to the monitoring exchange for each fatal worker error.

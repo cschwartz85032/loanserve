@@ -4,7 +4,7 @@
  */
 
 import amqp from 'amqplib';
-import { publishWithRetry } from '../services/rabbitmq-bootstrap';
+import type { ConsumeMessage, Channel } from "amqplib";
 
 export interface WorkerConfig {
   queueName: string;
@@ -35,6 +35,10 @@ export interface ProcessingResult {
  * Self-healing worker base class with built-in retry/DLQ logic
  */
 export abstract class SelfHealingWorker {
+  protected channel!: Channel;
+  protected monitoringExchange = "ops.notifications"; // monitoring exchange from topology
+  protected tenantId?: string;
+
   constructor(
     protected config: WorkerConfig,
     protected connection: amqp.Connection
@@ -52,12 +56,12 @@ export abstract class SelfHealingWorker {
    * Start consuming messages with self-healing behavior
    */
   async start(): Promise<void> {
-    const channel = await this.connection.createChannel();
-    await channel.prefetch(1); // Fair dispatch
+    this.channel = await this.connection.createChannel();
+    await this.channel.prefetch(1); // Fair dispatch
 
     console.log(`[SelfHealingWorker] Starting worker for queue: ${this.config.queueName}`);
 
-    await channel.consume(this.config.queueName, async (msg) => {
+    await this.channel.consume(this.config.queueName, async (msg) => {
       if (!msg) return;
 
       const startTime = Date.now();
@@ -67,6 +71,7 @@ export abstract class SelfHealingWorker {
         // Parse message content and context
         const content = JSON.parse(msg.content.toString());
         context = this.extractContext(msg, content);
+        this.tenantId = context.tenantId; // Set for error reporting
 
         console.log(`[SelfHealingWorker] Processing message ${context.messageId} (attempt ${context.attemptNumber})`);
 
@@ -83,129 +88,92 @@ export abstract class SelfHealingWorker {
 
         // Handle successful processing
         if (result.success) {
-          await channel.ack(msg);
+          await this.channel.ack(msg);
           const duration = Date.now() - startTime;
           console.log(`[SelfHealingWorker] Message ${context.messageId} processed successfully in ${duration}ms`);
           return;
         }
 
-        // Handle failed processing
-        await this.handleFailure(msg, content, context, result, channel);
+        // Handle failed processing using new error decision logic
+        this.handleErrorDecision(msg, new Error(result.error || 'Processing failed'), context.attemptNumber, this.config.maxRetries);
 
       } catch (error: any) {
         console.error(`[SelfHealingWorker] Processing error for ${context?.messageId || 'unknown'}:`, error);
         
         if (context!) {
-          await this.handleFailure(
-            msg, 
-            JSON.parse(msg.content.toString()), 
-            context, 
-            { success: false, error: error.message, shouldRetry: true },
-            channel
-          );
+          this.handleErrorDecision(msg, error, context.attemptNumber, this.config.maxRetries);
         } else {
-          // Fatal error - can't parse context, send to DLQ
-          await this.sendToDLQ(msg, channel, 'Context parsing failed');
+          // Fatal error - can't parse context, send to DLQ immediately
+          await this.sendFatalToDlq(msg, error);
         }
       }
     });
   }
 
   /**
-   * Handle processing failures with retry logic
+   * Critical: Handle error decision using recommended pattern from findings document
+   * Call this on terminal failure
    */
-  private async handleFailure(
-    msg: amqp.Message,
-    content: any,
-    context: ProcessingContext,
-    result: ProcessingResult,
-    channel: amqp.Channel
-  ): Promise<void> {
-    const shouldRetry = result.shouldRetry !== false && context.attemptNumber < this.config.maxRetries;
-
-    if (shouldRetry) {
-      // Send to retry queue
-      await this.sendToRetry(msg, content, context, result, channel);
-    } else {
-      // Send to DLQ
-      await this.sendToDLQ(msg, channel, result.error || 'Max retries exceeded');
-    }
-  }
-
-  /**
-   * Send message to retry queue with exponential backoff
-   */
-  private async sendToRetry(
-    msg: amqp.Message,
-    content: any,
-    context: ProcessingContext,
-    result: ProcessingResult,
-    channel: amqp.Channel
-  ): Promise<void> {
-    const retryDelay = result.retryDelayMs || this.calculateRetryDelay(context.attemptNumber);
-    const retryContent = {
-      ...content,
-      _retry: {
-        attemptNumber: context.attemptNumber + 1,
-        originalTimestamp: context.originalTimestamp,
-        lastError: result.error,
-        retryAt: Date.now() + retryDelay
-      }
+  protected async sendFatalToDlq(msg: ConsumeMessage, err: Error): Promise<void> {
+    // Publish a structured error event for observability
+    const payload = {
+      worker: this.constructor.name,
+      routingKey: msg.fields.routingKey,
+      queue: msg.fields.consumerTag,
+      error: { name: err.name, message: err.message, stack: err.stack?.split("\n").slice(0, 5) },
+      tenantId: this.tenantId ?? null,
+      occurred_at: new Date().toISOString()
     };
-
+    
     try {
-      // Publish to retry queue with delay
-      await publishWithRetry(
-        'doc.intelligence', // Use appropriate exchange
-        this.getRetryRoutingKey(context.stage),
-        retryContent,
-        {
-          delay: retryDelay,
-          headers: {
-            'x-retry-count': context.attemptNumber + 1,
-            'x-original-queue': this.config.queueName
-          }
-        }
+      this.channel.publish(
+        this.monitoringExchange,
+        "worker.error",
+        Buffer.from(JSON.stringify(payload)),
+        { contentType: "application/json", persistent: true }
       );
-
-      await channel.ack(msg);
-      console.log(`[SelfHealingWorker] Message ${context.messageId} scheduled for retry ${context.attemptNumber + 1} in ${retryDelay}ms`);
-    } catch (error) {
-      console.error(`[SelfHealingWorker] Failed to send to retry queue:`, error);
-      await this.sendToDLQ(msg, channel, `Retry queue failed: ${error}`);
+    } catch (_) {
+      // best effort only
     }
+
+    // Critical: do not ack. DLX will route to `<queue>.dlq`
+    this.channel.nack(msg, false, false);
   }
 
   /**
-   * Send message to DLQ for manual investigation
+   * Example handle wrapper showing decision logic
    */
-  private async sendToDLQ(
-    msg: amqp.Message,
-    channel: amqp.Channel,
-    reason: string
-  ): Promise<void> {
-    try {
-      const dlqContent = {
-        originalMessage: JSON.parse(msg.content.toString()),
-        failureReason: reason,
-        failureTimestamp: new Date().toISOString(),
-        originalQueue: this.config.queueName,
-        headers: msg.properties.headers || {}
-      };
-
-      await publishWithRetry(
-        'dlx.main',
-        this.getDLQRoutingKey(),
-        dlqContent
-      );
-
-      await channel.ack(msg);
-      console.error(`[SelfHealingWorker] Message sent to DLQ: ${reason}`);
-    } catch (error) {
-      console.error(`[SelfHealingWorker] Failed to send to DLQ:`, error);
-      await channel.nack(msg, false, false); // Drop message as last resort
+  protected handleErrorDecision(msg: ConsumeMessage, err: Error, attempts: number, maxAttempts: number): void {
+    const retryable = this.isRetryableError(err);
+    const shouldRetry = retryable && attempts < maxAttempts;
+    
+    if (shouldRetry) {
+      // Dead-letter into `.retry` to get delayed re-delivery
+      this.channel.publish("dlx", `${this.config.queueName}.retry`, msg.content, {
+        headers: {
+          ...msg.properties.headers,
+          'x-retry-count': attempts + 1,
+          'x-last-error': err.message
+        }
+      });
+      this.channel.ack(msg);
+      console.log(`[SelfHealingWorker] Message sent to retry queue (attempt ${attempts + 1})`);
+      return;
     }
+    
+    // Terminal failure - use nack to route to DLQ
+    void this.sendFatalToDlq(msg, err);
   }
+
+  protected isRetryableError(err: Error): boolean {
+    const m = err.message.toLowerCase();
+    if (m.includes("timeout") || m.includes("etimedout") || m.includes("econnreset")) return true;
+    if (m.includes("rate limit") || m.includes("429")) return true;
+    if (m.includes("502") || m.includes("503") || m.includes("504")) return true;
+    return false;
+  }
+
+  // Legacy methods removed - now using proper nack(false, false) pattern
 
   /**
    * Extract processing context from message
