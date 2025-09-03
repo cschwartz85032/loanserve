@@ -4,6 +4,13 @@ import { ReportingETL } from "../etl/reporting/loaders";
 import { LakehouseExtractor } from "../etl/lakehouse/parquet-extractor";
 import { Readable } from "stream";
 
+// Import Step 23 Analytics Components
+import { businessIntelligence } from "../analytics/business-intelligence";
+import { etlPipeline } from "../analytics/etl-pipeline";
+import { predictiveEngine } from "../analytics/predictive-engine";
+import { reportingEngine } from "../analytics/reporting-engine";
+import { streamingProcessor } from "../analytics/streaming-processor";
+
 export const analyticsRouter = Router();
 
 // ETL Management Endpoints
@@ -376,6 +383,388 @@ analyticsRouter.get('/data-quality/metrics', async (req, res) => {
     res.status(500).json({
       error: 'Data quality metrics failed',
       message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// ============================================================================
+// Step 23: Advanced Analytics Lakehouse & Business Intelligence
+// ============================================================================
+
+// Business Intelligence & KPIs
+analyticsRouter.get('/bi/kpis', async (req, res) => {
+  try {
+    const timeframe = req.query.timeframe as 'daily' | 'weekly' | 'monthly' || 'daily';
+    const kpis = await businessIntelligence.calculateKPIs(timeframe);
+    
+    res.json({
+      success: true,
+      data: kpis,
+      timeframe,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] KPIs calculation failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to calculate KPIs',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.get('/bi/insights', async (req, res) => {
+  try {
+    const insights = await businessIntelligence.generateBusinessInsights();
+    
+    res.json({
+      success: true,
+      data: insights,
+      count: insights.length,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Business insights generation failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate business insights',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.get('/bi/portfolio', async (req, res) => {
+  try {
+    const timeframe = req.query.timeframe as string || '30 days';
+    const analytics = await businessIntelligence.getPortfolioAnalytics(timeframe);
+    
+    res.json({
+      success: true,
+      data: analytics,
+      timeframe,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Portfolio analytics failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get portfolio analytics',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.get('/bi/operations', async (req, res) => {
+  try {
+    const timeframe = req.query.timeframe as string || '30 days';
+    const analytics = await businessIntelligence.getOperationalAnalytics(timeframe);
+    
+    res.json({
+      success: true,
+      data: analytics,
+      timeframe,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Operational analytics failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get operational analytics',
+      message: error.message
+    });
+  }
+});
+
+// Reporting Engine
+analyticsRouter.get('/reports/executive-dashboard', async (req, res) => {
+  try {
+    const dashboard = await reportingEngine.generateExecutiveDashboard();
+    
+    res.json({
+      success: true,
+      data: dashboard,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Executive dashboard failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate executive dashboard',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.post('/reports/portfolio-performance', async (req, res) => {
+  try {
+    const { dateRange, groupBy, includeForecasts } = req.body;
+    
+    if (!dateRange || !dateRange.start || !dateRange.end) {
+      return res.status(400).json({
+        success: false,
+        error: 'Date range is required'
+      });
+    }
+
+    const report = await reportingEngine.generatePortfolioReport({
+      dateRange,
+      groupBy,
+      includeForecasts
+    });
+    
+    res.json({
+      success: true,
+      data: report,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Portfolio report generation failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate portfolio report',
+      message: error.message
+    });
+  }
+});
+
+// Predictive Analytics
+analyticsRouter.post('/predictions/default-risk', async (req, res) => {
+  try {
+    const { loanId, features } = req.body;
+    
+    if (!loanId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Loan ID is required'
+      });
+    }
+
+    const prediction = await predictiveEngine.predictDefaultRisk(loanId, features);
+    
+    res.json({
+      success: true,
+      data: prediction,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Default risk prediction failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to predict default risk',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.post('/predictions/risk-assessment', async (req, res) => {
+  try {
+    const { loanId } = req.body;
+    
+    if (!loanId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Loan ID is required'
+      });
+    }
+
+    const assessment = await predictiveEngine.generateRiskAssessment(loanId);
+    
+    res.json({
+      success: true,
+      data: assessment,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Risk assessment failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate risk assessment',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.post('/predictions/portfolio-forecast', async (req, res) => {
+  try {
+    const { months = 12 } = req.body;
+    
+    const forecast = await predictiveEngine.generatePortfolioForecast(months);
+    
+    res.json({
+      success: true,
+      data: forecast,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Portfolio forecast failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate portfolio forecast',
+      message: error.message
+    });
+  }
+});
+
+// Real-time Streaming Analytics
+analyticsRouter.get('/streaming/real-time', async (req, res) => {
+  try {
+    const analytics = await streamingProcessor.getRealTimeAnalytics();
+    
+    res.json({
+      success: true,
+      data: analytics,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Real-time analytics failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get real-time analytics',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.post('/streaming/events', async (req, res) => {
+  try {
+    const { eventType, eventSource, payload, metadata } = req.body;
+    
+    if (!eventType || !eventSource || !payload) {
+      return res.status(400).json({
+        success: false,
+        error: 'Event type, source, and payload are required'
+      });
+    }
+
+    const eventId = await streamingProcessor.ingestEvent({
+      eventType,
+      eventSource,
+      payload,
+      metadata
+    });
+    
+    res.json({
+      success: true,
+      data: { eventId },
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Event ingestion failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to ingest event',
+      message: error.message
+    });
+  }
+});
+
+// Advanced ETL Pipeline Management
+analyticsRouter.post('/etl/advanced/run', async (req, res) => {
+  try {
+    const { jobType } = req.body;
+    
+    let result;
+    switch (jobType) {
+      case 'loan_performance':
+        result = await etlPipeline.runLoanPerformanceETL();
+        break;
+      case 'service_operations':
+        result = await etlPipeline.runServiceOperationsETL();
+        break;
+      case 'ai_performance':
+        result = await etlPipeline.runAIPerformanceETL();
+        break;
+      case 'all':
+        const [loan, service, ai] = await Promise.all([
+          etlPipeline.runLoanPerformanceETL(),
+          etlPipeline.runServiceOperationsETL(),
+          etlPipeline.runAIPerformanceETL()
+        ]);
+        result = { loan, service, ai };
+        break;
+      default:
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid job type. Use: loan_performance, service_operations, ai_performance, or all'
+        });
+    }
+    
+    res.json({
+      success: true,
+      data: result,
+      jobType,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Advanced ETL job execution failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to run advanced ETL job',
+      message: error.message
+    });
+  }
+});
+
+analyticsRouter.post('/etl/refresh-views', async (req, res) => {
+  try {
+    await etlPipeline.refreshMaterializedViews();
+    
+    res.json({
+      success: true,
+      message: 'Materialized views refreshed successfully',
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error('[Analytics] Materialized views refresh failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to refresh materialized views',
+      message: error.message
+    });
+  }
+});
+
+// Health Check for Step 23 Analytics
+analyticsRouter.get('/health/step23', async (req, res) => {
+  try {
+    const streamingMetrics = streamingProcessor.getStreamingMetrics();
+    const etlJobs = etlPipeline.getAllJobResults();
+    
+    const health = {
+      status: 'healthy',
+      components: {
+        streaming: {
+          status: streamingMetrics.errorRate < 0.1 ? 'healthy' : 'degraded',
+          eventsPerSecond: streamingMetrics.eventsPerSecond,
+          errorRate: streamingMetrics.errorRate
+        },
+        etl: {
+          status: etlJobs.length > 0 ? 'healthy' : 'warning',
+          totalJobs: etlJobs.length
+        },
+        businessIntelligence: {
+          status: 'healthy',
+          features: ['kpis', 'insights', 'portfolio', 'operations']
+        },
+        predictiveAnalytics: {
+          status: 'healthy',
+          models: ['default_risk_v2', 'delinquency_risk_v1', 'prepayment_risk_v1']
+        },
+        reporting: {
+          status: 'healthy',
+          dashboards: reportingEngine.listDashboards().length
+        }
+      },
+      lastChecked: new Date().toISOString()
+    };
+
+    res.json(health);
+  } catch (error: any) {
+    console.error('[Analytics] Step 23 health check failed:', error);
+    res.status(500).json({
+      status: 'unhealthy',
+      error: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });
