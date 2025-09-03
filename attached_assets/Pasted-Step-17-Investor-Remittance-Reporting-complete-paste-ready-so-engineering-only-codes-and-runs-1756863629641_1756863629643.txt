@@ -1,0 +1,546 @@
+Step 17 — Investor Remittance & Reporting (complete, paste-ready) so engineering only codes and runs. This step takes posted activity from servicing (Steps 14–16) and produces period remittances and investor reports, with:
+
+Investor master data, delivery rules (whole-loan / participation), cutoffs (calendar/EOM or business-day), net vs gross, servicing fee/strip, reserve holds.
+
+Remittance engine: aggregates svc_txns for the period, computes principal/interest/escrow/fees splits, servicing fee, and net wire.
+
+Artifacts: Investor Remittance Statement (PDF), Remittance File (CSV; NACHA stub optional), Loan-level Activity Report (CSV).
+
+Payouts: svc_remit_payouts + GL entries; webhook to investor (optional).
+
+APIs, queues/workers, migrations, and tests.
+
+No decisions are left—just paste and wire.
+
+0) Environment
+
+.env
+
+# Remittance cadence & cutoffs
+REMIT_CADENCE=MONTHLY                 # MONTHLY | WEEKLY
+REMIT_CUTOFF_BUSINESS_TZ=America/New_York
+REMIT_GRACE_DAYS_BUSINESS=2           # grace after EOM before cutoff; weekly uses Fri cutoff + 2 biz days
+
+# Servicing fee & strip (defaults; can be overridden per-investor/loan)
+REMIT_SVC_FEE_BPS=50                  # 50 bps annualized on UPB (monthly pro-rata)
+REMIT_STRIP_BPS=0                     # additional IO strip bps on UPB (monthly pro-rata)
+REMIT_ALLOW_NETTING=true              # true: P&I net of svc fee; false: fee separate
+
+# Escrow handling
+REMIT_PASS_ESCROW=false               # false: do not remit escrow; true: pass-through (for some contracts)
+
+# Output artifacts
+REMIT_S3_PREFIX=remittances
+REMIT_PDF_HEADER=LoanServe • Investor Remittance Statement
+REMIT_PDF_WATERMARK=LoanServe
+
+# Webhooks (optional)
+INVESTOR_WEBHOOK_URL=
+INVESTOR_WEBHOOK_SECRET=
+INVESTOR_WEBHOOK_TIMEOUT_MS=15000
+
+# GL
+GL_CASH_ACCT=1000
+GL_INVESTOR_PAYABLE_ACCT=2300
+GL_INTEREST_INCOME_ACCT=4000
+GL_SERVICING_FEE_INCOME_ACCT=4200
+GL_PRINCIPAL_CLEARING_ACCT=1150
+
+1) Database — investors, mappings, rules, runs & payouts
+
+migrations/021_investor_remit.sql
+
+BEGIN;
+
+-- 1) Investors
+CREATE TABLE IF NOT EXISTS inv_investors (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  name text NOT NULL,
+  delivery_type text NOT NULL CHECK (delivery_type IN ('WHOLE_LOAN','PARTICIPATION')),
+  webhook_url text NULL,
+  webhook_secret text NULL,
+  currency text NOT NULL DEFAULT 'USD',
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 2) Investor-loan mapping (+ overrides)
+CREATE TABLE IF NOT EXISTS inv_holdings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  investor_id uuid NOT NULL REFERENCES inv_investors(id) ON DELETE CASCADE,
+  loan_id uuid NOT NULL REFERENCES loan_candidates(id) ON DELETE CASCADE,
+  participation_pct numeric(9,6) NOT NULL DEFAULT 1.0,              -- 1.0 = 100%
+  svc_fee_bps integer NULL,                                         -- override REMIT_SVC_FEE_BPS
+  strip_bps integer NULL,                                           -- override REMIT_STRIP_BPS
+  pass_escrow boolean NULL,                                         -- override REMIT_PASS_ESCROW
+  accrual_basis text NOT NULL DEFAULT '30/360',                      -- display only for statement
+  active boolean NOT NULL DEFAULT true,
+  UNIQUE (tenant_id, investor_id, loan_id)
+);
+
+-- 3) Remittance runs (periods)
+CREATE TABLE IF NOT EXISTS inv_remit_runs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  investor_id uuid NOT NULL REFERENCES inv_investors(id) ON DELETE CASCADE,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  status text NOT NULL CHECK (status IN ('Started','Completed','Failed')) DEFAULT 'Started',
+  metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz NULL,
+  UNIQUE (tenant_id, investor_id, period_start, period_end)
+);
+
+-- 4) Line items (loan-level aggregates)
+CREATE TABLE IF NOT EXISTS inv_remit_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  run_id uuid NOT NULL REFERENCES inv_remit_runs(id) ON DELETE CASCADE,
+  tenant_id uuid NOT NULL,
+  investor_id uuid NOT NULL,
+  loan_id uuid NOT NULL,
+  upb_beg numeric(18,2) NOT NULL DEFAULT 0,
+  upb_end numeric(18,2) NOT NULL DEFAULT 0,
+  principal_collected numeric(18,2) NOT NULL DEFAULT 0,
+  interest_collected numeric(18,2) NOT NULL DEFAULT 0,
+  escrow_collected numeric(18,2) NOT NULL DEFAULT 0,
+  fees_collected numeric(18,2) NOT NULL DEFAULT 0,
+  svc_fee numeric(18,2) NOT NULL DEFAULT 0,
+  strip_io numeric(18,2) NOT NULL DEFAULT 0,
+  net_remit numeric(18,2) NOT NULL DEFAULT 0
+);
+
+-- 5) Payouts (per run)
+CREATE TABLE IF NOT EXISTS inv_remit_payouts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  investor_id uuid NOT NULL,
+  run_id uuid NOT NULL REFERENCES inv_remit_runs(id) ON DELETE CASCADE,
+  amount numeric(18,2) NOT NULL,
+  currency text NOT NULL DEFAULT 'USD',
+  method text NOT NULL CHECK (method IN ('ACH','WIRE','WEBHOOK')) DEFAULT 'ACH',
+  status text NOT NULL CHECK (status IN ('Requested','Sent','Settled','Failed','Cancelled')) DEFAULT 'Requested',
+  reference text NULL,
+  file_uri text NULL,                   -- remittance file (CSV / NACHA stub)
+  file_sha256 text NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  sent_at timestamptz NULL,
+  settled_at timestamptz NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_inv_holdings_loan ON inv_holdings(tenant_id, loan_id, active);
+CREATE INDEX IF NOT EXISTS idx_inv_runs_inv ON inv_remit_runs(tenant_id, investor_id, period_end DESC);
+
+COMMIT;
+
+2) Period selection & fee math
+
+src/investor/period.ts
+
+import dayjs from "dayjs"; import tz from "dayjs/plugin/timezone"; import utc from "dayjs/plugin/utc";
+dayjs.extend(utc); dayjs.extend(tz);
+const Z = process.env.REMIT_CUTOFF_BUSINESS_TZ || "America/New_York";
+
+export function periodFor(dateISO?:string){
+  const d = dayjs.tz(dateISO || dayjs().format("YYYY-MM-DD"), Z);
+  if ((process.env.REMIT_CADENCE || "MONTHLY").toUpperCase() === "WEEKLY") {
+    // week ends Friday; cutoff = Friday + grace business days
+    const friday = d.day() >= 5 ? d.day(5) : d.day(-2); // last Friday
+    const cutoff = addBusinessDays(friday, Number(process.env.REMIT_GRACE_DAYS_BUSINESS || "2"));
+    const start = friday.subtract(6,"day").format("YYYY-MM-DD");
+    return { start, end: friday.format("YYYY-MM-DD"), cutoff: cutoff.format("YYYY-MM-DD") };
+  } else {
+    const end = d.endOf("month").format("YYYY-MM-DD");
+    const cutoff = addBusinessDays(dayjs.tz(end,Z), Number(process.env.REMIT_GRACE_DAYS_BUSINESS || "2"));
+    const start = d.startOf("month").format("YYYY-MM-DD");
+    return { start, end, cutoff: cutoff.format("YYYY-MM-DD") };
+  }
+}
+
+function addBusinessDays(d:any, n:number){
+  let x=d; let c=0; while(c<n){ x=x.add(1,"day"); if (x.day()!=0 && x.day()!=6) c++; } return x;
+}
+
+export function monthlyBpsToMonthlyAmt(bps:number, upb:number){
+  // annual bps on UPB, pro-rated monthly (bps = basis points = / 10000)
+  const annual = upb * (bps/10000);
+  return Math.round((annual/12 + Number.EPSILON) * 100) / 100;
+}
+
+3) Remittance engine (aggregate svc_txns → line items → payout)
+
+src/investor/engine.ts
+
+import { Pool } from "pg";
+import { periodFor, monthlyBpsToMonthlyAmt } from "./period";
+import { create } from "xmlbuilder2"; // optional for future XML; we use CSV below
+import { putBytes } from "../utils/storage";
+import { createHash } from "crypto";
+
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function runRemittance(tenantId:string, investorId:string, asOfISO?:string){
+  const c = await pool.connect();
+  try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+
+    // Period
+    const per = periodFor(asOfISO);
+    const existing = await c.query(`SELECT id FROM inv_remit_runs WHERE tenant_id=$1 AND investor_id=$2 AND period_start=$3 AND period_end=$4`,
+      [tenantId, investorId, per.start, per.end]);
+    if (existing.rowCount) return { ok:true, skipped:true };
+
+    const run = await c.query(`INSERT INTO inv_remit_runs (tenant_id, investor_id, period_start, period_end) VALUES ($1,$2,$3,$4) RETURNING id`,
+      [tenantId, investorId, per.start, per.end]);
+    const runId = run.rows[0].id;
+
+    // Holdings
+    const holdings = await c.query(`
+      SELECT h.*, i.delivery_type, COALESCE(h.svc_fee_bps,$3::int) AS svc_bps, COALESCE(h.strip_bps,$4::int) AS strip_bps,
+             COALESCE(h.pass_escrow,$5::bool) AS pass_escrow
+        FROM inv_holdings h
+        JOIN inv_investors i ON i.id=h.investor_id
+       WHERE h.tenant_id=$1 AND h.investor_id=$2 AND h.active=true
+    `, [tenantId, investorId, Number(process.env.REMIT_SVC_FEE_BPS||"50"), Number(process.env.REMIT_STRIP_BPS||"0"), (process.env.REMIT_PASS_ESCROW||"false")==="true"]);
+
+    let totalNet = 0;
+    for (const h of holdings.rows) {
+      // Collect posted payments & adjustments for period
+      const tx = await c.query(`
+        SELECT type, amount, alloc_principal, alloc_interest, alloc_escrow, alloc_fees
+          FROM svc_txns
+         WHERE loan_id=$1 AND ts::date BETWEEN $2::date AND $3::date
+      `, [h.loan_id, per.start, per.end]);
+
+      let p=0,i=0,e=0,f=0;
+      for (const t of tx.rows) {
+        if (t.type==='PAYMENT') {
+          p += Number(t.alloc_principal||0);
+          i += Number(t.alloc_interest||0);
+          e += Number(t.alloc_escrow||0);
+          f += Number(t.alloc_fees||0);
+        } else if (t.type==='ADJUSTMENT') {
+          p += Number(t.alloc_principal||0);
+          i += Number(t.alloc_interest||0);
+          e += Number(t.alloc_escrow||0);
+          f += Number(t.alloc_fees||0);
+        }
+      }
+
+      // Simple UPB proxy: beginning = last principal_balance_after before start; ending = after period end
+      const begRow = await c.query(`
+        SELECT principal_balance_after FROM svc_schedule WHERE loan_id=$1 AND due_date < $2::date
+        ORDER BY due_date DESC LIMIT 1
+      `, [h.loan_id, per.start]);
+      const endRow = await c.query(`
+        SELECT principal_balance_after FROM svc_schedule WHERE loan_id=$1 AND due_date <= $2::date
+        ORDER BY due_date DESC LIMIT 1
+      `, [h.loan_id, per.end]);
+      const upbBeg = Number(begRow.rows[0]?.principal_balance_after || 0);
+      const upbEnd = Number(endRow.rows[0]?.principal_balance_after || Math.max(0, upbBeg - p));
+
+      // Servicing fee & strip (monthly on average UPB)
+      const avgUPB = (upbBeg + upbEnd)/2;
+      const svcFee = monthlyBpsToMonthlyAmt(Number(h.svc_bps||0), avgUPB) * Number(h.participation_pct||1);
+      const strip = monthlyBpsToMonthlyAmt(Number(h.strip_bps||0), avgUPB) * Number(h.participation_pct||1);
+
+      const passEscrow = !!h.pass_escrow;
+      const net = (p + i + (passEscrow? e:0)) * Number(h.participation_pct||1) - svcFee - strip;
+
+      await c.query(`
+        INSERT INTO inv_remit_items (run_id, tenant_id, investor_id, loan_id, upb_beg, upb_end, principal_collected, interest_collected, escrow_collected, fees_collected, svc_fee, strip_io, net_remit)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      `, [runId, tenantId, investorId, h.loan_id, upbBeg, upbEnd, p, i, e, f, round2(svcFee), round2(strip), round2(net)]);
+
+      totalNet += net;
+    }
+
+    // Build remittance CSV file (loan-level report)
+    const items = await c.query(`SELECT * FROM inv_remit_items WHERE run_id=$1 ORDER BY loan_id`, [runId]);
+    const header = "LoanId,UPB_Beg,UPB_End,Principal,Interest,Escrow,Fees,SvcFee,StripIO,Net\n";
+    const rows = items.rows.map((r:any)=>
+      [r.loan_id,r.upb_beg,r.upb_end,r.principal_collected,r.interest_collected,r.escrow_collected,r.fees_collected,r.svc_fee,r.strip_io,r.net_remit]
+        .map(v=>String(v)).join(",")
+    ).join("\n");
+    const csv = header + rows + "\n";
+    const b = Buffer.from(csv,"utf-8");
+    const sha = createHash("sha256").update(b).digest("hex");
+    const key = `${process.env.S3_PREFIX||"tenants"}/${tenantId}/${process.env.REMIT_S3_PREFIX||"remittances"}/${investorId}_${per.start}_${per.end}_loan_activity.csv`;
+    const uri = await putBytes(key, b, "text/csv");
+
+    // Create payout row
+    const payout = await c.query(`
+      INSERT INTO inv_remit_payouts (tenant_id, investor_id, run_id, amount, method, file_uri, file_sha256, status)
+      VALUES ($1,$2,$3,$4,'ACH',$5,$6,'Requested') RETURNING id
+    `, [tenantId, investorId, runId, round2(totalNet), uri, sha]);
+    const payoutId = payout.rows[0].id;
+
+    await c.query(`UPDATE inv_remit_runs SET status='Completed', completed_at=now(), metrics=$3 WHERE id=$1 AND tenant_id=$2`,
+      [runId, tenantId, JSON.stringify({ totalNet: round2(totalNet), items: items.rowCount })]);
+
+    return { runId, payoutId, totalNet: round2(totalNet), period: per, file_uri: uri, file_sha256: sha };
+  } finally { c.release(); }
+}
+
+function round2(n:number){ return Math.round((n+Number.EPSILON)*100)/100; }
+
+4) Remittance Statement PDF
+
+src/investor/statementPdf.ts
+
+import PDFDocument from "pdfkit";
+import { sha256Buf } from "../utils/hash";
+
+export async function renderRemitStatement(input:{
+  header:string, watermark:string,
+  investor:{ name:string }, period:{ start:string, end:string, cutoff:string },
+  summary:{ totalNet:number, items:number },
+  lines:Array<{ loan_id:string, upb_beg:number, upb_end:number, principal:number, interest:number, escrow:number, svc_fee:number, strip:number, net:number }>
+}){
+  const doc = new PDFDocument({ size:"LETTER", margin:50 });
+  const buffers:Buffer[] = [];
+  doc.on("data", (b)=>buffers.push(b));
+
+  doc.fontSize(18).text(input.header, { align:"center" }).moveDown(0.5);
+  addWatermark(doc, input.watermark);
+  doc.fontSize(12).text(`Investor: ${input.investor.name}`);
+  doc.text(`Period: ${input.period.start} to ${input.period.end} (cutoff ${input.period.cutoff})`).moveDown(0.5);
+
+  doc.fontSize(14).text(`Total Net Remittance: $${fmt(input.summary.totalNet)}  •  Loans: ${input.summary.items}`).moveDown(0.5);
+  doc.fontSize(12).text("Breakdown (top 10)...").moveDown(0.2);
+  input.lines.slice(0,10).forEach(r=>{
+    doc.text(`${r.loan_id}  UPB ${fmt(r.upb_beg)}→${fmt(r.upb_end)}  P ${fmt(r.principal)}  I ${fmt(r.interest)}  SvcFee ${fmt(r.svc_fee)}  Net ${fmt(r.net)}`);
+  });
+
+  doc.end();
+  const pdf = await new Promise<Buffer>((resolve)=> doc.on("end", ()=> resolve(Buffer.concat(buffers))));
+  return { pdf, sha256: sha256Buf(pdf) };
+}
+
+function addWatermark(doc:PDFKit.PDFDocument, text:string){
+  if (!text) return;
+  const { width, height } = doc.page;
+  doc.save().fillColor("#dddddd").fontSize(40)
+    .rotate(-30, { origin:[width/2,height/2] }).opacity(0.2)
+    .text(text, width/2-200, height/2-50).opacity(1).rotate(30,{origin:[width/2,height/2]}).restore();
+}
+function fmt(n:number){ return Number(n||0).toFixed(2); }
+
+5) Workers & queues
+
+/mnt/data/init-queues.ts (add)
+
+await ch.assertExchange("inv.remit","topic",{durable:true});
+const bindR = async (q:string,rk:string)=>{
+  await ch.assertQueue(q,{durable:true,arguments:{
+    "x-dead-letter-exchange":"dlx",
+    "x-dead-letter-routing-key":`${q}.dlq`
+  }});
+  await ch.bindQueue(q,"inv.remit",rk);
+  await ch.assertQueue(`${q}.retry`,{durable:true,arguments:{
+    "x-dead-letter-exchange":"inv.remit",
+    "x-dead-letter-routing-key":rk,
+    "x-message-ttl":15000
+  }});
+  await ch.assertQueue(`${q}.dlq`,{durable:true});
+  await ch.bindQueue(`${q}.dlq`,"dlx",`${q}.dlq`);
+};
+await bindR("inv.remit.request.q","request");
+await bindR("inv.remit.completed.q","completed");
+
+
+src/workers/RemittanceWorker.ts
+
+import { mq } from "../topology";
+import { runRemittance } from "../investor/engine";
+import { renderRemitStatement } from "../investor/statementPdf";
+import { putBytes } from "../utils/storage";
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function startRemittanceWorker(){
+  await mq.consume("inv.remit.request.q", async (msg:any, ch:any)=>{
+    const { tenantId, investorId, asOf } = JSON.parse(msg.content.toString());
+    const c = await pool.connect();
+    try {
+      const res = await runRemittance(tenantId, investorId, asOf);
+      // Build statement PDF and save
+      await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+      const inv = await c.query(`SELECT name FROM inv_investors WHERE id=$1`, [investorId]);
+      const lines = (await c.query(`SELECT loan_id, upb_beg, upb_end, principal_collected, interest_collected, escrow_collected, svc_fee, strip_io, net_remit FROM inv_remit_items WHERE run_id=$1 ORDER BY loan_id`, [res.runId])).rows
+        .map((r:any)=>({ loan_id:r.loan_id, upb_beg:r.upb_beg, upb_end:r.upb_end, principal:r.principal_collected, interest:r.interest_collected, escrow:r.escrow_collected, svc_fee:r.svc_fee, strip:r.strip_io, net:r.net_remit }));
+
+      const pdf = await renderRemitStatement({
+        header: process.env.REMIT_PDF_HEADER || "LoanServe • Investor Remittance Statement",
+        watermark: process.env.REMIT_PDF_WATERMARK || "",
+        investor: { name: inv.rows[0]?.name || investorId },
+        period: res.period,
+        summary: { totalNet: res.totalNet, items: lines.length },
+        lines
+      });
+      const key = `${process.env.S3_PREFIX||"tenants"}/${tenantId}/${process.env.REMIT_S3_PREFIX||"remittances"}/${investorId}_${res.period.start}_${res.period.end}_statement.pdf`;
+      const uri = await putBytes(key, pdf.pdf, "application/pdf");
+
+      // Notify investor (optional webhook)
+      if (process.env.INVESTOR_WEBHOOK_URL) {
+        try {
+          const body = JSON.stringify({ investor_id: investorId, period: res.period, total: res.totalNet, file_uri: res.file_uri, statement_uri: uri });
+          const sig = require("crypto").createHash("sha256").update((process.env.INVESTOR_WEBHOOK_SECRET||"")+body).digest("hex");
+          await fetch(process.env.INVESTOR_WEBHOOK_URL, { method:"POST", headers:{ "Content-Type":"application/json", "X-LoanServe-Remit-Signature":sig }, body,
+            signal: AbortSignal.timeout(Number(process.env.INVESTOR_WEBHOOK_TIMEOUT_MS||"15000")) });
+        } catch {}
+      }
+
+      await mq.publish("inv.remit","completed",{ tenantId, investorId, runId: res.runId, payoutId: res.payoutId, totalNet: res.totalNet, period: res.period, file_uri: res.file_uri });
+      ch.ack(msg);
+    } catch (e:any) {
+      await mq.publish("inv.remit","completed",{ tenantId, investorId, error:String(e) });
+      ch.nack(msg, false, false);
+    } finally { c.release(); }
+  });
+}
+
+
+src/service.ts (add)
+
+import { startRemittanceWorker } from "./workers/RemittanceWorker";
+await startRemittanceWorker();
+
+6) Routes — investors, holdings, request remittance, view runs
+
+src/routes/investor.routes.ts
+
+import { Router } from "express";
+import { Pool } from "pg";
+export const investorRouter = Router();
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+investorRouter.post("/investors", async (req:any,res)=>{
+  const { name, delivery_type, webhook_url, webhook_secret } = req.body || {};
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [req.tenant.id]);
+    const r = await c.query(`INSERT INTO inv_investors (tenant_id,name,delivery_type,webhook_url,webhook_secret) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [req.tenant.id, name, delivery_type, webhook_url||null, webhook_secret||null]);
+    res.status(201).json(r.rows[0]);
+  } finally { c.release(); }
+});
+
+investorRouter.post("/investors/:id/holdings", async (req:any,res)=>{
+  const { loan_id, participation_pct, svc_fee_bps, strip_bps, pass_escrow } = req.body || {};
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [req.tenant.id]);
+    const r = await c.query(`
+      INSERT INTO inv_holdings (tenant_id, investor_id, loan_id, participation_pct, svc_fee_bps, strip_bps, pass_escrow)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (tenant_id, investor_id, loan_id) DO UPDATE SET
+        participation_pct=EXCLUDED.participation_pct, svc_fee_bps=EXCLUDED.svc_fee_bps, strip_bps=EXCLUDED.strip_bps, pass_escrow=EXCLUDED.pass_escrow
+      RETURNING *
+    `, [req.tenant.id, req.params.id, loan_id, participation_pct ?? 1.0, svc_fee_bps || null, strip_bps || null, pass_escrow ?? null]);
+    res.status(200).json(r.rows[0]);
+  } finally { c.release(); }
+});
+
+investorRouter.post("/investors/:id/remit", async (req:any,res)=>{
+  await req.mq.publish("inv.remit","request",{ tenantId: req.tenant.id, investorId: req.params.id, asOf: req.body?.asOf || undefined });
+  res.status(202).json({ status:"queued" });
+});
+
+investorRouter.get("/investors/:id/remit/runs", async (req:any,res)=>{
+  const c = await pool.connect(); try {
+    await c.query(`SET LOCAL app.tenant_id=$1`, [req.tenant.id]);
+    const r = await c.query(`SELECT * FROM inv_remit_runs WHERE investor_id=$1 ORDER BY period_end DESC`, [req.params.id]);
+    res.json({ runs: r.rows });
+  } finally { c.release(); }
+});
+
+
+Wire:
+
+import { investorRouter } from "./routes/investor.routes";
+app.use("/api", investorRouter);
+
+7) GL entries for payout settlement (hook to your disbursement service)
+
+When your outbound payment service pays the investor, publish inv.remit#payout_settled and add:
+
+/mnt/data/init-queues.ts (optional add)
+
+await bindR("inv.remit.payout_settled.q","payout_settled");
+
+
+src/workers/RemitPayoutStatusWorker.ts
+
+import { mq } from "../topology";
+import { Pool } from "pg";
+const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function startRemitPayoutStatusWorker(){
+  await mq.consume("inv.remit.payout_settled.q", async (msg:any, ch:any)=>{
+    const { tenantId, payoutId, reference } = JSON.parse(msg.content.toString());
+    const c = await pool.connect();
+    try {
+      await c.query(`SET LOCAL app.tenant_id=$1`, [tenantId]);
+      const p = await c.query(`UPDATE inv_remit_payouts SET status='Settled', reference=$2, settled_at=now() WHERE id=$1 RETURNING investor_id, amount`, [payoutId, reference||null]);
+      const investorId = p.rows[0].investor_id; const amt = Number(p.rows[0].amount);
+      // GL: Debit Investor Payable, Credit Cash
+      await c.query(`
+        INSERT INTO gl_entries (tenant_id, loan_id, debit_acct, credit_acct, amount, memo)
+        VALUES ($1,NULL,$2,$3,$4,'Investor payout settlement')
+      `, [tenantId, Number(process.env.GL_INVESTOR_PAYABLE_ACCT||"2300"), Number(process.env.GL_CASH_ACCT||"1000"), amt]);
+      ch.ack(msg);
+    } catch (e) { ch.nack(msg, false, false); } finally { c.release(); }
+  });
+}
+
+
+src/service.ts (add)
+
+import { startRemitPayoutStatusWorker } from "./workers/RemitPayoutStatusWorker";
+await startRemitPayoutStatusWorker();
+
+8) Acceptance tests (sanity)
+
+tests/investor.remit.test.ts
+
+import { runRemittance } from "../src/investor/engine";
+
+it("creates a remittance run and payout", async ()=>{
+  const tenantId="00000000-0000-0000-0000-000000000000";
+  const investorId="00000000-0000-0000-0000-000000000111";
+  const res = await runRemittance(tenantId, investorId, "2025-10-01");
+  expect(res.totalNet).toBeDefined();
+  expect(res.file_uri).toMatch(/^s3:\/\//);
+});
+
+9) What engineering must not change
+
+Cadence & cutoffs come from REMIT_CADENCE + grace; do not hardcode dates elsewhere.
+
+For each holding, net remittance is
+Net = (P + I + (passEscrow?Escrow:0)) * participation_pct – ServicingFee – StripIO.
+
+ServicingFee and StripIO are monthly bps on average UPB (Beg+End)/2, pro-rated monthly; do not charge fee on escrow or fees.
+
+Netting: if REMIT_ALLOW_NETTING=true, servicing fee/strip are implicitly netted (we still show them in the statement).
+
+Artifacts: produce CSV activity and a statement PDF every run; store under remittances/.
+
+Payout: create inv_remit_payouts row Requested with the CSV attached; the payment system is responsible for sending funds and later publishing settlement.
+
+GL: on settlement post Debit Investor Payable (2300), Credit Cash (1000).
+
+Idempotency: one run per investor + period; re-requests for the same period must skip.
+
+10) Quick verification checklist
+
+Create investor + holdings.
+
+Post some payments in the period (Step 16).
+
+POST /api/investors/:id/remit → queued → worker completes → inv_remit_runs row + inv_remit_payouts row created, CSV in S3, statement PDF in S3.
+
+Inspect CSV: loan-level P/I/E/Fee/FeeNet columns align with transactions; statement shows total net.
+
+Simulate payout settlement event → GL entry posted (Investor Payable → Cash).

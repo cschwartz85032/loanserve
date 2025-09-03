@@ -1738,6 +1738,10 @@ To implement full file serving:
   const { paymentsRouter } = await import('../src/routes/payments.routes');
   app.use('/api', paymentsRouter);
 
+  // Register Investor routes
+  const { investorRouter } = await import('../src/routes/investor.routes');
+  app.use('/api', investorRouter);
+
   const httpServer = createServer(app);
   return httpServer;
 }
