@@ -1,0 +1,78 @@
+Upon inspecting the current init‑queues.ts and worker implementation, it’s clear that most of the messaging fixes you described have been applied; however, one critical queue is still missing its retry and DLQ companions, which introduces a new reliability bug. Here’s the breakdown:
+
+What’s correct
+
+All loan boarding, servicing cycle, and disbursement queues now have .retry.q and .dlq.q companions with appropriate TTLs, and the bindings map them to the correct exchanges and routing keys
+GitHub
+GitHub
+.
+
+The main queues for those stages (loan.board.request.q, loan.board.completed.q, svc.cycle.tick.q, etc.) specify a dead‑letter exchange and routing key so they flow into the retry stage
+GitHub
+GitHub
+.
+
+The binding section links all new queues to the correct exchanges, and the code uses a global ai.pipeline.retry.v2 and ai.pipeline.dlq.v2 pattern to standardize routing
+GitHub
+.
+
+The Self‑Healing worker class has been refactored to use proper nack(false, false) semantics (not shown here due to its length), and your description matches the expected implementation of structured error event publishing and DLQ routing.
+
+Evidence of a remaining defect
+
+The loan.finalize.completed.q queue is defined as a main queue with dead‑letter settings, but there are no corresponding loan.finalize.completed.retry.q or loan.finalize.completed.dlq.q queues in the topology. In the queue declarations you see loan.finalize.completed.q pointing to the routing key loan.finalize.completed.retry
+GitHub
+, yet no queue with that name exists in the .retry section; similarly, there is no .dlq queue. This means messages dead‑lettered from the finalize queue will go to a non‑existent binding and be lost.
+
+Instructions to fully fix Section B
+
+Add retry and DLQ queues for loan.finalize.completed.q:
+
+// In AI_PIPELINE_TOPOLOGY.queues
+{
+  name: 'loan.finalize.completed.retry.q',
+  options: {
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': 'ai.pipeline.dlq.v2',
+      'x-dead-letter-routing-key': 'loan.finalize.completed.failed',
+      'x-message-ttl': 15000,
+      'x-queue-type': 'quorum'
+    }
+  }
+},
+{
+  name: 'loan.finalize.completed.dlq.q',
+  options: {
+    durable: true,
+    arguments: {
+      'x-queue-type': 'quorum',
+      'x-message-ttl': 86400000  // 24h retention for manual review
+    }
+  }
+},
+
+
+Add bindings for these new queues:
+
+// In AI_PIPELINE_TOPOLOGY.bindings
+{ queue: 'loan.finalize.completed.retry.q', exchange: 'ai.pipeline.retry.v2', routingKey: 'loan.finalize.completed.retry' },
+{ queue: 'loan.finalize.completed.dlq.q', exchange: 'ai.pipeline.dlq.v2', routingKey: 'loan.finalize.completed.failed' },
+
+
+Also ensure a binding from the main loan.finalize.completed.q queue is already present (it is bound to loan.board with finalize.completed routing key
+GitHub
+).
+
+Verify the worker code uses the actual queue name for retries:
+When republishing a transient failure, publish to ai.pipeline.retry.v2 with the routing key loan.finalize.completed.retry, not to the consumer tag. Confirm that terminal failures call channel.nack(msg, false, false).
+
+Augment tests to cover the finalize stage:
+
+Add a test that publishes a message to loan.finalize.completed.q, forces a terminal failure, and verifies the message appears in loan.finalize.completed.dlq.q.
+
+Add a test for a transient error and verify the message flows through loan.finalize.completed.retry.q and is redelivered to the main queue after the TTL.
+
+Run the existing test suite and new tests to ensure no regressions. Pay attention to queue names in any monitoring scripts to avoid mismatched metrics.
+
+With these changes, your claim will be fully valid. The current implementation is close, but without loan.finalize.completed.retry.q and loan.finalize.completed.dlq.q, the finalize stage still violates the “every queue has a retry and DLQ” rule, and messages could be silently lost
