@@ -180,71 +180,75 @@ export class AIPipelineService {
     authorityDecision?: any;
     tenantId: string;
   }): Promise<LoanDatapoint> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(data.tenantId);
-    
-    // First try to find existing datapoint
-    const [existing] = await db
-      .select()
-      .from(loanDatapoints)
-      .where(and(
-        eq(loanDatapoints.loanId, data.loanId),
-        eq(loanDatapoints.key, data.key)
-      ))
-      .limit(1);
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      
+      // First try to find existing datapoint
+      const [existing] = await db
+        .select()
+        .from(loanDatapoints)
+        .where(and(
+          eq(loanDatapoints.loanId, data.loanId),
+          eq(loanDatapoints.key, data.key)
+        ))
+        .limit(1);
 
-    if (existing) {
-      // Update existing if new source has higher authority
-      if (data.authorityPriority >= (existing.authorityPriority || 0)) {
-        const [updated] = await db
-          .update(loanDatapoints)
-          .set({
-            value: data.value,
-            normalizedValue: data.normalizedValue,
-            confidence: data.confidence.toString(),
-            ingestSource: data.ingestSource,
-            autofilledFrom: data.autofilledFrom,
-            evidenceDocId: data.evidenceDocId,
-            evidencePage: data.evidencePage,
-            evidenceTextHash: data.evidenceTextHash,
-            evidenceBoundingBox: data.evidenceBoundingBox,
-            extractorVersion: data.extractorVersion,
-            promptVersion: data.promptVersion,
-            authorityPriority: data.authorityPriority,
-            authorityDecision: data.authorityDecision,
-            producedAt: sql`now()`
-          })
-          .where(eq(loanDatapoints.id, existing.id))
-          .returning();
-        
-        return updated;
+      if (existing) {
+        // Update existing if new source has higher authority
+        if (data.authorityPriority >= (existing.authorityPriority || 0)) {
+          const [updated] = await db
+            .update(loanDatapoints)
+            .set({
+              value: data.value,
+              normalizedValue: data.normalizedValue,
+              confidence: data.confidence.toString(),
+              ingestSource: data.ingestSource,
+              autofilledFrom: data.autofilledFrom,
+              evidenceDocId: data.evidenceDocId,
+              evidencePage: data.evidencePage,
+              evidenceTextHash: data.evidenceTextHash,
+              evidenceBoundingBox: data.evidenceBoundingBox,
+              extractorVersion: data.extractorVersion,
+              promptVersion: data.promptVersion,
+              authorityPriority: data.authorityPriority,
+              authorityDecision: data.authorityDecision,
+              producedAt: sql`now()`
+            })
+            .where(eq(loanDatapoints.id, existing.id))
+            .returning();
+          
+          return updated;
+        }
+        return existing;
       }
-      return existing;
-    }
 
-    // Create new datapoint
-    const [datapoint] = await db
-      .insert(loanDatapoints)
-      .values({
-        loanId: data.loanId,
-        key: data.key,
-        value: data.value,
-        normalizedValue: data.normalizedValue,
-        confidence: data.confidence.toString(),
-        ingestSource: data.ingestSource,
-        autofilledFrom: data.autofilledFrom,
-        evidenceDocId: data.evidenceDocId,
-        evidencePage: data.evidencePage,
-        evidenceTextHash: data.evidenceTextHash,
-        evidenceBoundingBox: data.evidenceBoundingBox,
-        extractorVersion: data.extractorVersion,
-        promptVersion: data.promptVersion,
-        authorityPriority: data.authorityPriority,
-        authorityDecision: data.authorityDecision
-      })
-      .returning();
+      // Create new datapoint
+      const [datapoint] = await db
+        .insert(loanDatapoints)
+        .values({
+          loanId: data.loanId,
+          key: data.key,
+          value: data.value,
+          normalizedValue: data.normalizedValue,
+          confidence: data.confidence.toString(),
+          ingestSource: data.ingestSource,
+          autofilledFrom: data.autofilledFrom,
+          evidenceDocId: data.evidenceDocId,
+          evidencePage: data.evidencePage,
+          evidenceTextHash: data.evidenceTextHash,
+          evidenceBoundingBox: data.evidenceBoundingBox,
+          extractorVersion: data.extractorVersion,
+          promptVersion: data.promptVersion,
+          authorityPriority: data.authorityPriority,
+          authorityDecision: data.authorityDecision
+        })
+        .returning();
 
-    return datapoint;
+      return datapoint;
+    });
   }
 
   /**
@@ -301,19 +305,22 @@ export class AIPipelineService {
     tenantId: string,
     resolverId?: string
   ): Promise<void> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(tenantId);
-    
-    await db
-      .update(loanConflicts)
-      .set({
-        selectedValue,
-        rationale,
-        resolverId,
-        status: 'resolved',
-        resolvedAt: sql`now()`
-      })
-      .where(eq(loanConflicts.id, id));
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .update(loanConflicts)
+        .set({
+          selectedValue,
+          rationale,
+          resolverId,
+          status: 'resolved',
+          resolvedAt: sql`now()`
+        })
+        .where(eq(loanConflicts.id, id));
+    });
   }
 
   /**
@@ -330,23 +337,29 @@ export class AIPipelineService {
     escrowInstructions?: any[];
     createdBy: string;
   }): Promise<Import> {
-    const [importRecord] = await db
-      .insert(imports)
-      .values({
-        tenantId: data.tenantId,
-        type: data.type,
-        filename: data.filename,
-        sizeBytes: data.sizeBytes,
-        sha256: data.sha256,
-        correlationId: data.correlationId,
-        investorDirectives: data.investorDirectives || [],
-        escrowInstructions: data.escrowInstructions || [],
-        createdBy: data.createdBy,
-        status: 'received'
-      })
-      .returning();
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      const [importRecord] = await db
+        .insert(imports)
+        .values({
+          tenantId: data.tenantId,
+          type: data.type,
+          filename: data.filename,
+          sizeBytes: data.sizeBytes,
+          sha256: data.sha256,
+          correlationId: data.correlationId,
+          investorDirectives: data.investorDirectives || [],
+          escrowInstructions: data.escrowInstructions || [],
+          createdBy: data.createdBy,
+          status: 'received'
+        })
+        .returning();
 
-    return importRecord;
+      return importRecord;
+    });
   }
 
   /**
@@ -356,17 +369,24 @@ export class AIPipelineService {
     id: string,
     status: string,
     progress: any,
+    tenantId: string,
     errorCount = 0
   ): Promise<void> {
-    await db
-      .update(imports)
-      .set({
-        status,
-        progress,
-        errorCount,
-        updatedAt: sql`now()`
-      })
-      .where(eq(imports.id, id));
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .update(imports)
+        .set({
+          status,
+          progress,
+          errorCount,
+          updatedAt: sql`now()`
+        })
+        .where(eq(imports.id, id));
+    });
   }
 
   /**
@@ -381,10 +401,17 @@ export class AIPipelineService {
     rawFragment?: any;
     suggestedCorrection?: any;
     canAutoCorrect?: boolean;
+    tenantId: string;
   }): Promise<void> {
-    await db
-      .insert(importErrors)
-      .values(data);
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .insert(importErrors)
+        .values(data);
+    });
   }
 
   /**
@@ -399,50 +426,69 @@ export class AIPipelineService {
     confidence?: number;
     autofilledFrom: string;
     transformationLog?: any[];
+    tenantId: string;
   }): Promise<void> {
-    await db
-      .insert(importMappings)
-      .values({
-        ...data,
-        confidence: data.confidence?.toString(),
-        transformationLog: data.transformationLog || []
-      });
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .insert(importMappings)
+        .values({
+          ...data,
+          confidence: data.confidence?.toString(),
+          transformationLog: data.transformationLog || []
+        });
+    });
   }
 
   /**
    * Create lineage record
    */
-  async createLineageRecord(data: NewLineageRecord): Promise<string> {
-    const lineageId = `lineage_${randomUUID()}_${Date.now()}`;
-    
-    await db
-      .insert(lineageRecords)
-      .values({
-        ...data,
-        lineageId,
-        confidence: data.confidence.toString()
-      });
+  async createLineageRecord(data: NewLineageRecord & { tenantId: string }): Promise<string> {
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      const lineageId = `lineage_${randomUUID()}_${Date.now()}`;
+      
+      await db
+        .insert(lineageRecords)
+        .values({
+          ...data,
+          lineageId,
+          confidence: data.confidence.toString()
+        });
 
-    return lineageId;
+      return lineageId;
+    });
   }
 
   /**
    * Get lineage record by ID
    */
-  async getLineageRecord(lineageId: string): Promise<any> {
-    const [record] = await db
-      .select()
-      .from(lineageRecords)
-      .where(eq(lineageRecords.lineageId, lineageId))
-      .limit(1);
+  async getLineageRecord(lineageId: string, tenantId: string): Promise<any> {
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      const [record] = await db
+        .select()
+        .from(lineageRecords)
+        .where(eq(lineageRecords.lineageId, lineageId))
+        .limit(1);
 
-    return record || null;
+      return record || null;
+    });
   }
 
   /**
    * Get lineage chain
    */
-  async getLineageChain(lineageId: string): Promise<any[]> {
+  async getLineageChain(lineageId: string, tenantId: string): Promise<any[]> {
     const visited = new Set<string>();
     const chain: any[] = [];
 
@@ -450,7 +496,7 @@ export class AIPipelineService {
       if (visited.has(id)) return;
       visited.add(id);
 
-      const record = await this.getLineageRecord(id);
+      const record = await this.getLineageRecord(id, tenantId);
       if (!record) return;
 
       chain.push(record);
@@ -468,7 +514,7 @@ export class AIPipelineService {
   }
 
   /**
-   * Update worker status
+   * Update worker status (global, no tenant isolation needed)
    */
   async updateWorkerStatus(data: {
     workerName: string;
@@ -479,7 +525,7 @@ export class AIPipelineService {
     cacheSize?: number;
     metadata?: any;
   }): Promise<void> {
-    // Upsert worker status
+    // Worker status is global - use direct db access (no tenant context needed)
     await db
       .insert(workerStatus)
       .values({
@@ -582,18 +628,21 @@ export class AIPipelineService {
     tenantId: string; // Now required for RLS
     correlationId?: string;
   }): Promise<void> {
-    // Enforce tenant context for RLS
-    await this.setTenantContext(data.tenantId);
-    
-    await db
-      .insert(monitoringEvents)
-      .values({
-        metric: data.metric,
-        value: data.value.toString(),
-        dim: data.dimensions || {},
-        tenantId: data.tenantId,
-        correlationId: data.correlationId
-      });
+    return withTenantClient(data.tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+      
+      const db = drizzle(client);
+      await db
+        .insert(monitoringEvents)
+        .values({
+          metric: data.metric,
+          value: data.value.toString(),
+          dim: data.dimensions || {},
+          tenantId: data.tenantId,
+          correlationId: data.correlationId
+        });
+    });
   }
 
   /**
@@ -623,7 +672,7 @@ export class AIPipelineService {
    * 
    * All database operations now enforced to use secure tenant-isolated connections
    */
-  private async __DEPRECATED_setTenantContext(): Promise<never> {
+  private async setTenantContext(): Promise<never> {
     throw new Error('SECURITY: setTenantContext is deprecated. Use withTenantClient() for proper tenant isolation.');
   }
 }

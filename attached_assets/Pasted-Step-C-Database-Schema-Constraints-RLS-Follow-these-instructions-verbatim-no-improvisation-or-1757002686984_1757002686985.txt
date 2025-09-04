@@ -1,0 +1,308 @@
+Step C – Database Schema, Constraints & RLS. Follow these instructions verbatim; no improvisation or assumptions are needed. This spec incorporates all missing migrations, enforces strict tenancy isolation, adds evidence/lineage fields, hardens foreign keys, updates repository code, and outlines necessary testing.
+
+📦 Migration Specifications
+
+Create the following migration files under migrations/ in numerical order. Each migration must wrap all statements in a BEGIN; … COMMIT; block.
+
+✅ mC02_add_lineage_fields_and_indexes.sql
+
+Add evidence & version fields to loan_datapoints:
+
+BEGIN;
+
+ALTER TABLE loan_datapoints
+  ADD COLUMN IF NOT EXISTS evidence_doc_id uuid NULL,
+  ADD COLUMN IF NOT EXISTS evidence_page integer NULL CHECK (evidence_page IS NULL OR evidence_page >= 0),
+  ADD COLUMN IF NOT EXISTS evidence_text_hash text NULL,
+  ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NULL CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+  ADD COLUMN IF NOT EXISTS extractor_version text NULL,
+  ADD COLUMN IF NOT EXISTS prompt_version text NULL;
+
+CREATE INDEX IF NOT EXISTS idx_ldp_loan_key        ON loan_datapoints (loan_id, key);
+CREATE INDEX IF NOT EXISTS idx_ldp_confidence      ON loan_datapoints (confidence);
+CREATE INDEX IF NOT EXISTS idx_ldp_evidence_docpage ON loan_datapoints (evidence_doc_id, evidence_page);
+
+COMMIT;
+
+
+Note: Do not drop any existing columns or indexes. Only append the above.
+
+✅ mC03_backfill_and_tenant_context_for_audits_outbox.sql
+
+Add tenant_id column to audits and backfill:
+
+BEGIN;
+
+ALTER TABLE audits ADD COLUMN IF NOT EXISTS tenant_id uuid;
+
+UPDATE audits
+SET tenant_id = (metadata ->> 'tenant_id')::uuid
+WHERE tenant_id IS NULL AND metadata ? 'tenant_id';
+
+ALTER TABLE audits ALTER COLUMN tenant_id SET NOT NULL;
+
+ALTER TABLE audits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_aud_tenant
+  ON audits
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+COMMIT;
+
+
+Add tenant_id column to event_outbox and backfill:
+
+BEGIN;
+
+ALTER TABLE event_outbox ADD COLUMN IF NOT EXISTS tenant_id uuid;
+
+UPDATE event_outbox
+SET tenant_id = (payload ->> 'tenant_id')::uuid
+WHERE tenant_id IS NULL AND payload ? 'tenant_id';
+
+ALTER TABLE event_outbox ALTER COLUMN tenant_id SET NOT NULL;
+
+ALTER TABLE event_outbox ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_outbox_tenant
+  ON event_outbox
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+COMMIT;
+
+✅ mC04_foreign_key_hygiene.sql
+
+Drop existing non‑cascading foreign keys and re‑add them with ON DELETE CASCADE:
+
+BEGIN;
+
+-- loan_documents → loan_candidates
+ALTER TABLE loan_documents
+  DROP CONSTRAINT IF EXISTS loan_documents_loan_id_fkey,
+  ADD CONSTRAINT loan_documents_loan_id_fkey
+    FOREIGN KEY (loan_id)
+    REFERENCES loan_candidates(id)
+    ON DELETE CASCADE;
+
+-- loan_datapoints → loan_candidates
+ALTER TABLE loan_datapoints
+  DROP CONSTRAINT IF EXISTS loan_datapoints_loan_id_fkey,
+  ADD CONSTRAINT loan_datapoints_loan_id_fkey
+    FOREIGN KEY (loan_id)
+    REFERENCES loan_candidates(id)
+    ON DELETE CASCADE;
+
+-- loan_conflicts → loan_candidates
+ALTER TABLE loan_conflicts
+  DROP CONSTRAINT IF EXISTS loan_conflicts_loan_id_fkey,
+  ADD CONSTRAINT loan_conflicts_loan_id_fkey
+    FOREIGN KEY (loan_id)
+    REFERENCES loan_candidates(id)
+    ON DELETE CASCADE;
+
+-- import_errors → imports
+ALTER TABLE import_errors
+  DROP CONSTRAINT IF EXISTS import_errors_import_id_fkey,
+  ADD CONSTRAINT import_errors_import_id_fkey
+    FOREIGN KEY (import_id)
+    REFERENCES imports(id)
+    ON DELETE CASCADE;
+
+-- import_mappings → imports
+ALTER TABLE import_mappings
+  DROP CONSTRAINT IF EXISTS import_mappings_import_id_fkey,
+  ADD CONSTRAINT import_mappings_import_id_fkey
+    FOREIGN KEY (import_id)
+    REFERENCES imports(id)
+    ON DELETE CASCADE;
+
+-- qc_defects → qc_rules and → loan_candidates
+ALTER TABLE qc_defects
+  DROP CONSTRAINT IF EXISTS qc_defects_rule_id_fkey,
+  ADD CONSTRAINT qc_defects_rule_id_fkey
+    FOREIGN KEY (rule_id)
+    REFERENCES qc_rules(id)
+    ON DELETE CASCADE;
+
+ALTER TABLE qc_defects
+  DROP CONSTRAINT IF EXISTS qc_defects_loan_id_fkey,
+  ADD CONSTRAINT qc_defects_loan_id_fkey
+    FOREIGN KEY (loan_id)
+    REFERENCES loan_candidates(id)
+    ON DELETE CASCADE;
+
+COMMIT;
+
+✅ mC05_tenant_id_hardening.sql
+
+Make tenant_id NOT NULL on core tables:
+
+BEGIN;
+
+ALTER TABLE loan_candidates ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE imports        ALTER COLUMN tenant_id SET NOT NULL;
+
+COMMIT;
+
+
+Repeat for any additional multi‑tenant tables if present (e.g., monitoring_events, pipeline_alerts, lineage_records).
+
+✅ mC06_backfill_extractor_version.sql
+BEGIN;
+
+UPDATE loan_datapoints
+  SET extractor_version = COALESCE(extractor_version, 'v2025.09.03')
+ WHERE extractor_version IS NULL;
+
+COMMIT;
+
+🔐 Row‑Level Security (RLS) Enforcement
+
+After applying the above migrations, ensure every multi‑tenant table has RLS enabled and a tenant‑scoped policy. Add the following to a single migration or split logically:
+
+BEGIN;
+
+-- Enable RLS & policies for core tables
+ALTER TABLE loan_candidates    ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_lc_tenant
+  ON loan_candidates
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+ALTER TABLE loan_documents     ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_ld_tenant
+  ON loan_documents
+  USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+ALTER TABLE loan_datapoints    ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_ldp_tenant
+  ON loan_datapoints
+  USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+ALTER TABLE loan_conflicts     ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_lcflt_tenant
+  ON loan_conflicts
+  USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+ALTER TABLE imports            ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_im_tenant
+  ON imports
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+ALTER TABLE import_errors      ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_ie_tenant
+  ON import_errors
+  USING (import_id IN (SELECT id FROM imports WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+ALTER TABLE import_mappings    ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_imap_tenant
+  ON import_mappings
+  USING (import_id IN (SELECT id FROM imports WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+ALTER TABLE qc_rules           ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_qcr_tenant
+  ON qc_rules
+  USING (TRUE); -- QC rules are global; optionally restrict by tenant if needed
+
+ALTER TABLE qc_defects         ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_qcd_tenant
+  ON qc_defects
+  USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+
+-- RLS for pipeline_alerts, lineage_records, monitoring_events, worker_status, etc.
+ALTER TABLE pipeline_alerts    ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_pa_tenant
+  ON pipeline_alerts
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+ALTER TABLE monitoring_events  ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_me_tenant
+  ON monitoring_events
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+ALTER TABLE lineage_records    ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_lr_tenant
+  ON lineage_records
+  USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+ALTER TABLE worker_status      ENABLE ROW LEVEL SECURITY;
+CREATE POLICY p_ws_tenant
+  ON worker_status
+  USING (TRUE); -- Worker status may be global; adjust if tenant‑specific.
+
+COMMIT;
+
+
+Important: For every INSERT/UPDATE, ensure there is a corresponding WITH CHECK or USING clause if needed (some policies can double as both read/write controls). Use ALTER TABLE … FORCE ROW LEVEL SECURITY if you want to prevent bypass even by table owners.
+
+👩‍💻 Code Refactoring Guidelines
+1. Centralize Tenant Context Enforcement
+
+Move all database operations (Drizzle or raw SQL) into calls that set the tenant context. Use the existing withTenantClient function:
+
+import { withTenantClient, assertTenantContext } from '../db/withTenantClient';
+import { drizzle } from 'drizzle-orm/postgres-js';
+
+// Example usage
+await withTenantClient(tenantId, async (client) => {
+  await assertTenantContext(client);
+  const db = drizzle(client);
+  // perform insert/update/select here
+});
+
+
+Do not call server/db.ts’s db or pool directly for any multi‑tenant table; these bypass the SET LOCAL app.tenant_id and can leak data. Only withAdminClient may bypass RLS for restricted admin tasks (e.g., schema migrations), and it must log a justification.
+
+2. Remove Deprecated setTenantContext
+
+Delete or fully deprecate AIPipelineService.setTenantContext. Replace calls to it with proper withTenantClient wrappers. For example, refactor upsertDatapoint:
+
+async upsertDatapoint(data: /* fields */): Promise<LoanDatapoint> {
+  return withTenantClient(data.tenantId, async (client) => {
+    await assertTenantContext(client);
+    const db = drizzle(client);
+    // fetch existing, update, or insert as needed
+  });
+}
+
+
+Any method currently outside of withTenantClient (e.g., createImport, updateImportProgress, createImportError, createLineageRecord, recordMonitoringEvent, etc.) must be refactored to use this pattern. See the existing createLoanCandidate method in ai-pipeline-service.ts as a template.
+
+3. Enforce Tenant‑Aware Helper Functions
+
+Define helper functions such as tenantSafeQuery for raw SQL. Always call assertTenantContext before executing queries. Never call client.query() directly unless the helper ensures tenant context.
+
+4. Add Static/Runtime Guards
+
+Implement a TypeScript linter or architectural tests to forbid imports of server/db.ts in any file except migration utilities. Use comments like // no direct db usage and a simple ESLint rule or unit test to scan for import { db } from.
+
+Add runtime assertion inside withTenantClient to check current_setting('app.tenant_id', true) is present; throw an error otherwise.
+
+✅ Acceptance Tests
+
+RLS Enforcement:
+
+Attempt to query any multi‑tenant table without using withTenantClient. Queries must return zero rows (or raise an error if FORCE ROW LEVEL SECURITY is used).
+
+Insert/update operations must fail when app.tenant_id is not set.
+
+Tenant Isolation:
+
+Create two tenants (A and B). Insert data under tenant A using withTenantClient('tenantA', …) and ensure it cannot be read/updated under tenant B and vice versa.
+
+Foreign Key Cascades:
+
+When a loan_candidate is deleted, verify all related loan_documents, loan_datapoints, loan_conflicts, and qc_defects cascade automatically.
+
+Lineage Fields Presence:
+
+Insert a loan_datapoint specifying evidence_doc_id, evidence_page, etc., and verify these columns exist and accept values.
+
+Attempt to insert a datapoint with confidence > 1 or < 0 and ensure it fails due to CHECK constraints.
+
+Backfill & Hardening:
+
+Confirm that audits and event_outbox records now have non‑null tenant_id.
+
+Verify tenant_id columns are NOT NULL on loan_candidates and imports.
+
+🔚 Final Check
+
+After implementing the above migrations and code changes, run the full test suite. If all tests pass and acceptance criteria are met, Step C is fully compliant and you may proceed to Step 20+. Do not merge until all items in this specification are implemented exactly as described.

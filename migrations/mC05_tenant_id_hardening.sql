@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE loan_candidates ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE imports        ALTER COLUMN tenant_id SET NOT NULL;
+
+COMMIT;

@@ -1,0 +1,61 @@
+The repository falls short of the Step C hardening requirements. Only one custom migration (mC01_missing_tables_for_rls.sql) exists and it merely creates a few tables and indexes
+raw.githubusercontent.com
+raw.githubusercontent.com
+; there are no migrations mC02–mC06 to add lineage/version columns, enable row‑level security (RLS) on all multi‑tenant tables, cascade foreign keys or backfill data. Code and schema examination revealed several critical issues.
+
+Findings & Defects
+#	Defect [severity][file:line]	Explanation / violation
+1	[High][migrations/mC01_missing_tables_for_rls.sql:0] – Only mC01_missing_tables_for_rls.sql is present.	Steps mC02–mC06 are missing entirely. No ALTER TABLE statements to add the lineage fields (evidence_doc_id, evidence_page, evidence_text_hash, confidence, extractor_version, prompt_version) or backfill extractor_version are present. There are no RLS ENABLE ROW LEVEL SECURITY commands or CREATE POLICY statements for any table
+raw.githubusercontent.com
+. Without these migrations, the core spec (tenancy isolation and evidence/lineage) is unfulfilled.
+2	[High][migrations/mC01_missing_tables_for_rls.sql:63‑81] – Absence of RLS policies on newly created tables.	The migration creates audits, event_outbox, qc_rules and qc_defects tables but does not enable RLS or add tenant‑scoped policies
+raw.githubusercontent.com
+. These tables therefore allow unrestricted reads/writes, violating the “tenancy isolation” non‑negotiable.
+3	[High][server/db.ts:0‑15] – Direct database access without tenant context.	server/db.ts exports a plain Pool and a Drizzle client with no SET LOCAL app.tenant_id enforcement
+raw.githubusercontent.com
+. Any code importing db can query without tenant context, bypassing RLS. This violates the requirement that all database calls run inside withTenant(tenantId, fn) and set app.tenant_id.
+4	[High][src/database/ai-pipeline-service.ts:320‑371,374‑390] – Service uses global db rather than withTenantClient for many operations.	Methods such as createImport, updateImportProgress, createImportError, createImportMapping, createLineageRecord, getLineageRecord, getLineageChain, updateWorkerStatus and recordMonitoringEvent directly call db from server/db.ts without calling withTenantClient or setting tenant context
+raw.githubusercontent.com
+raw.githubusercontent.com
+. Without SET LOCAL app.tenant_id, RLS either silently filters out data (returns no rows) or, worse, fails to enforce tenant isolation during inserts/updates. This is a critical data‑leak risk.
+5	[High][src/database/ai-pipeline-service.ts:184‑186] – Deprecated setTenantContext still in use.	The upsertDatapoint method and other functions call this.setTenantContext(tenantId)
+raw.githubusercontent.com
+. The class defines a __DEPRECATED_setTenantContext that throws an error if called
+raw.githubusercontent.com
+. Using this method bypasses transaction‑scoped tenant setting and is explicitly forbidden by Step C.
+6	[Medium][src/database/ai-pipeline-service.ts:38‑65] – Partial compliance is inconsistent.	Some methods correctly use withTenantClient and assertTenantContext
+raw.githubusercontent.com
+, but this is not uniform. Mixed approaches create confusion and raise the risk of future regressions. All methods must standardize on the withTenantClient pattern.
+7	[Medium] – Foreign key hygiene partially missing.	The migration only adds ON DELETE CASCADE for qc_defects.loan_id
+raw.githubusercontent.com
+. There is no evidence of dropping existing foreign keys and re‑adding them with ON DELETE CASCADE for loan_documents, loan_datapoints, loan_conflicts, imports, import_errors, import_mappings, etc., as specified in mC04.
+8	[Medium] – Tenant column hardening incomplete.	Although mC01 defines tenant_id as NOT NULL for audits and event_outbox, there are no ALTER statements to set tenant_id NOT NULL on loan_candidates and imports (mC05 requirement), nor backfill updates to copy tenant ID from existing metadata/payload (mC03).
+Summary of Required Fixes
+
+Implement missing migrations (mC02–mC06):
+
+Write separate migration files that:
+
+Enable RLS and add tenant policies to all multi‑tenant tables (loan_candidates, loan_documents, loan_datapoints, loan_conflicts, imports, import_errors, import_mappings, qc_rules, qc_defects, audits, event_outbox) using ALTER TABLE … ENABLE ROW LEVEL SECURITY; and CREATE POLICY … USING (tenant_id::text = current_setting('app.tenant_id', true));.
+
+Add lineage/evidence and version fields to loan_datapoints as specified, with proper CHECK constraints and indexes.
+
+Add or modify foreign keys with ON DELETE CASCADE for loan_documents.loan_id, loan_datapoints.loan_id, loan_conflicts.loan_id, import_errors.import_id, import_mappings.import_id, qc_defects.rule_id, etc.
+
+Add tenant_id columns to audits and event_outbox (already present) and backfill them from the metadata->>'tenant_id' or payload->>'tenant_id' fields; then set NOT NULL.
+
+Ensure tenant_id is NOT NULL on loan_candidates and imports and any other multi‑tenant tables.
+
+Update loan_datapoints.extractor_version to a default value where null.
+
+Refactor repository code:
+
+Remove deprecated setTenantContext and ensure all database operations occur inside withTenantClient(tenantId, fn) with assertTenantContext calls. Eliminate direct use of db from server/db.ts for tenant‑sensitive operations.
+
+Export a withTenant wrapper similar to withTenantClient for common usage; forbid direct pool.connect() or Drizzle operations outside this wrapper.
+
+Optionally provide tenantSafeQuery helper (already defined) and ensure all queries use it.
+
+Add enforcement tests / static checks so that no function can be merged unless it uses the tenant‑aware client. Consider adding a linter rule or architectural test.
+
+Until these corrections are made, Step C cannot be considered complete. The platform is at high risk of cross‑tenant data leakage and missing evidence/lineage tracking. Once the above actions are taken and verified, we can assert: “Step C verified — no regressions, ready to proceed with Step 20+.”
