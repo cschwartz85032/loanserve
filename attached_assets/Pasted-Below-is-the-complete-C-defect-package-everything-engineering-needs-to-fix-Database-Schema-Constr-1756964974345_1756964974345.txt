@@ -1,0 +1,369 @@
+Below is the complete “C” defect package—everything engineering needs to fix Database Schema, Constraints & RLS end-to-end. It includes:
+
+Diagnosis (what’s wrong, why it breaks the spec)
+
+Exact migrations (enable RLS, enforce tenant scoping, add missing lineage/version fields, constraints, indexes, FK hygiene)
+
+Repository code fixes (guarantee SET LOCAL app.tenant_id)
+
+Backfills for existing data
+
+Smoke & acceptance tests
+
+Rewrite/Redesign demands & objective acceptance criteria
+
+Paste these changes exactly as provided. No decisions are required beyond coding.
+
+0) Diagnosis (why this fails the spec)
+
+Critical issues found in DB layer (category C):
+
+RLS not enabled (or not consistently) on multi-tenant tables → cross-tenant read risk.
+
+Tenant guard not enforced on every DB call (SET LOCAL app.tenant_id) → RLS ineffective even if defined.
+
+Lineage/version fields missing or nullable on loan_datapoints → cannot certify provenance (auditability requirement).
+
+Weak constraints: missing CHECKs, NOT NULLs, or indexes → silent corruption + slow read paths.
+
+FK hygiene incomplete (e.g., missing ON DELETE policies) → dangling references and orphan rows.
+
+These violate our non-negotiables: tenancy isolation, explainability, and operational reliability.
+
+1) Migration set (apply in order)
+
+File names use a consistent prefix; if you already have some, keep both and adjust numbering. These are additive and safe for blue/green deploy.
+
+1.1 Enable RLS & tenant policies on all multi-tenant tables
+
+mC01_enable_rls_policies.sql
+
+BEGIN;
+
+-- Enable RLS on all multi-tenant tables
+ALTER TABLE IF NOT EXISTS loan_candidates          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS loan_documents           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS loan_datapoints          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS loan_conflicts           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS imports                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS import_errors            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS import_mappings          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS qc_rules                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS qc_defects               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS audits                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF NOT EXISTS event_outbox             ENABLE ROW LEVEL SECURITY;
+
+-- If these helper tables exist, protect them too (safe if not found):
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='monitoring_events') THEN
+    EXECUTE 'ALTER TABLE monitoring_events ENABLE ROW LEVEL SECURITY';
+  END IF;
+END$$;
+
+-- Uniform tenant policy for read/write (using app.tenant_id)
+CREATE POLICY p_lc_tenant     ON loan_candidates   USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY p_ld_tenant     ON loan_documents    USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_ldp_tenant    ON loan_datapoints   USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_lconf_tenant  ON loan_conflicts    USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_imp_tenant    ON imports           USING (tenant_id::text = current_setting('app.tenant_id', true));
+CREATE POLICY p_impe_tenant   ON import_errors     USING (import_id IN (SELECT id FROM imports WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_impm_tenant   ON import_mappings   USING (import_id IN (SELECT id FROM imports WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_qcr_tenant    ON qc_rules          USING (true);  -- rules are global in practice; allow read under app.tenant_id session
+CREATE POLICY p_qcd_tenant    ON qc_defects        USING (loan_id IN (SELECT id FROM loan_candidates WHERE tenant_id::text = current_setting('app.tenant_id', true)));
+CREATE POLICY p_aud_tenant    ON audits            USING ((metadata->>'tenant_id')::text = current_setting('app.tenant_id', true));
+CREATE POLICY p_outbox_tenant ON event_outbox      USING ((payload->>'tenant_id')::text = current_setting('app.tenant_id', true));
+
+-- Optional:
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='monitoring_events') THEN
+    EXECUTE $$CREATE POLICY p_mon_tenant ON monitoring_events USING ((dim->>'tenant_id')::text = current_setting('app.tenant_id', true))$$;
+  END IF;
+END$$;
+
+COMMIT;
+
+
+Note: If audits.metadata and event_outbox.payload don’t carry tenant_id, you must add it (see 1.3) or adjust policy to a stronger model (e.g., join to loan_candidates where applicable).
+
+1.2 Evidence + version fields (and guard rails) on loan_datapoints
+
+mC02_lineage_versions_on_loan_datapoints.sql
+
+BEGIN;
+
+-- Add lineage & version columns if missing
+ALTER TABLE loan_datapoints
+  ADD COLUMN IF NOT EXISTS evidence_doc_id uuid NULL,
+  ADD COLUMN IF NOT EXISTS evidence_page integer NULL CHECK (evidence_page IS NULL OR evidence_page >= 0),
+  ADD COLUMN IF NOT EXISTS evidence_text_hash text NULL,
+  ADD COLUMN IF NOT EXISTS confidence numeric(5,4) NULL CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+  ADD COLUMN IF NOT EXISTS extractor_version text NULL,
+  ADD COLUMN IF NOT EXISTS prompt_version text NULL;
+
+-- Tighten key/value controls
+ALTER TABLE loan_datapoints
+  ALTER COLUMN key SET NOT NULL;
+
+-- Helpful read-path indexes
+CREATE INDEX IF NOT EXISTS idx_ldp_loan_key         ON loan_datapoints(loan_id, key);
+CREATE INDEX IF NOT EXISTS idx_ldp_confidence       ON loan_datapoints(confidence);
+CREATE INDEX IF NOT EXISTS idx_ldp_evidence_docpage ON loan_datapoints(evidence_doc_id, evidence_page);
+
+COMMIT;
+
+1.3 Ensure tenant context on audit & outbox for RLS
+
+mC03_outbox_audit_tenant_enforcement.sql
+
+BEGIN;
+
+-- If audits lacks tenant context in metadata, add a tenant_id column for policy simplicity
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='audits' AND column_name='tenant_id') THEN
+    ALTER TABLE audits ADD COLUMN tenant_id uuid NULL;
+    UPDATE audits SET tenant_id = (metadata->>'tenant_id')::uuid WHERE metadata ? 'tenant_id';
+    -- Future writes should populate audits.tenant_id directly.
+  END IF;
+END$$;
+
+-- If event_outbox lacks tenant context in payload, add a column
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='event_outbox' AND column_name='tenant_id') THEN
+    ALTER TABLE event_outbox ADD COLUMN tenant_id uuid NULL;
+    UPDATE event_outbox SET tenant_id = (payload->>'tenant_id')::uuid WHERE payload ? 'tenant_id';
+    -- Future writes should populate event_outbox.tenant_id directly.
+  END IF;
+END$$;
+
+-- RLS alignment
+ALTER TABLE audits          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_outbox    ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS p_aud_tenant ON audits;
+CREATE POLICY p_aud_tenant ON audits       USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+DROP POLICY IF EXISTS p_outbox_tenant ON event_outbox;
+CREATE POLICY p_outbox_tenant ON event_outbox USING (tenant_id::text = current_setting('app.tenant_id', true));
+
+CREATE INDEX IF NOT EXISTS idx_aud_tenant_on_col    ON audits(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_tenant_on_col ON event_outbox(tenant_id);
+
+COMMIT;
+
+
+If you insist on avoiding tenant columns, you must keep tenant_id in JSON and adapt the policies accordingly—but this hurts performance. The column approach is recommended.
+
+1.4 FK hygiene & ON DELETE policies
+
+mC04_fk_hygiene.sql
+
+BEGIN;
+
+-- loan_documents → loan_candidates (CASCADE)
+ALTER TABLE loan_documents
+  DROP CONSTRAINT IF EXISTS loan_documents_loan_id_fkey,
+  ADD  CONSTRAINT loan_documents_loan_id_fkey
+       FOREIGN KEY (loan_id) REFERENCES loan_candidates(id) ON DELETE CASCADE;
+
+-- loan_datapoints → loan_candidates (CASCADE)
+ALTER TABLE loan_datapoints
+  DROP CONSTRAINT IF EXISTS loan_datapoints_loan_id_fkey,
+  ADD  CONSTRAINT loan_datapoints_loan_id_fkey
+       FOREIGN KEY (loan_id) REFERENCES loan_candidates(id) ON DELETE CASCADE;
+
+-- loan_conflicts → loan_candidates (CASCADE)
+ALTER TABLE loan_conflicts
+  DROP CONSTRAINT IF EXISTS loan_conflicts_loan_id_fkey,
+  ADD  CONSTRAINT loan_conflicts_loan_id_fkey
+       FOREIGN KEY (loan_id) REFERENCES loan_candidates(id) ON DELETE CASCADE;
+
+-- import_errors & import_mappings → imports (CASCADE)
+ALTER TABLE import_errors
+  DROP CONSTRAINT IF EXISTS import_errors_import_id_fkey,
+  ADD  CONSTRAINT import_errors_import_id_fkey
+       FOREIGN KEY (import_id) REFERENCES imports(id) ON DELETE CASCADE;
+
+ALTER TABLE import_mappings
+  DROP CONSTRAINT IF EXISTS import_mappings_import_id_fkey,
+  ADD  CONSTRAINT import_mappings_import_id_fkey
+       FOREIGN KEY (import_id) REFERENCES imports(id) ON DELETE CASCADE;
+
+-- qc_defects → loan_candidates/qc_rules
+ALTER TABLE qc_defects
+  DROP CONSTRAINT IF EXISTS qc_defects_loan_id_fkey,
+  ADD  CONSTRAINT qc_defects_loan_id_fkey
+       FOREIGN KEY (loan_id) REFERENCES loan_candidates(id) ON DELETE CASCADE;
+
+ALTER TABLE qc_defects
+  DROP CONSTRAINT IF EXISTS qc_defects_rule_id_fkey,
+  ADD  CONSTRAINT qc_defects_rule_id_fkey
+       FOREIGN KEY (rule_id) REFERENCES qc_rules(id) ON DELETE CASCADE;
+
+COMMIT;
+
+1.5 Optional: minimal NOT NULL hardening on tenant columns
+
+mC05_tenant_notnull.sql
+
+BEGIN;
+
+-- Enforce tenant_id NOT NULL where applicable (skip if you need phased backfill)
+ALTER TABLE loan_candidates ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE imports        ALTER COLUMN tenant_id SET NOT NULL;
+
+-- Add more as you standardize tenant_id presence on tables
+
+COMMIT;
+
+2) Repository code changes (guarantee tenant guard)
+
+Problem: Some repo functions open a connection but don’t set SET LOCAL app.tenant_id, weakening RLS.
+
+Fix: Centralize connection acquisition and automatically inject the tenant guard.
+
+src/repo/db.ts
+
+import { Pool } from "pg";
+export const pool = new Pool({ connectionString: process.env.DB_URL });
+
+export async function withTenant<T>(tenantId:string, fn:(client:any)=>Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    return await fn(client);
+  } finally {
+    client.release();
+  }
+}
+
+
+Usage—replace all direct pool.connect() calls:
+
+import { withTenant } from "./repo/db";
+
+// BEFORE
+// const client = await pool.connect(); await client.query(...)
+
+// AFTER
+export async function getLoanCandidates(tenantId:string) {
+  return withTenant(tenantId, async (client) => {
+    const r = await client.query(`SELECT id, created_at FROM loan_candidates ORDER BY created_at DESC LIMIT 100`);
+    return r.rows;
+  });
+}
+
+
+Rewrite Demand: Replace all direct pool usage in repos/services/workers with withTenant(tenantId, fn) pattern. Provide a grep report showing zero remaining direct calls.
+
+3) Backfill & safety scripts
+
+mC06_backfill_versions.sql
+
+BEGIN;
+
+-- Backfill extractor_version where missing (use current EXTRACTOR_VERSION)
+UPDATE loan_datapoints
+   SET extractor_version = COALESCE(extractor_version, 'v2025.09.03')
+ WHERE extractor_version IS NULL;
+
+-- Prompt version remains NULL for deterministic rows (by design)
+
+COMMIT;
+
+
+If you already have a version string, replace 'v2025.09.03' accordingly.
+
+4) Tests (smoke & acceptance)
+4.1 RLS isolation — reject cross-tenant read
+
+tests/rls.isolation.test.ts
+
+import { pool } from "../src/repo/db";
+
+it("denies cross-tenant reads", async () => {
+  const c = await pool.connect();
+  try {
+    // Simulate tenant A
+    await c.query(`SET LOCAL app.tenant_id = $1`, ['00000000-0000-0000-0000-00000000000A']);
+    // Insert a loan for tenant A
+    const a = await c.query(`INSERT INTO loan_candidates (id, tenant_id, status) VALUES (gen_random_uuid(), $1, 'new') RETURNING id`, ['00000000-0000-0000-0000-00000000000A']);
+    // Switch to tenant B
+    await c.query(`SET LOCAL app.tenant_id = $1`, ['00000000-0000-0000-0000-00000000000B']);
+    const r = await c.query(`SELECT * FROM loan_candidates WHERE id=$1`, [a.rows[0].id]);
+    expect(r.rowCount).toBe(0); // RLS blocked
+  } finally { c.release(); }
+});
+
+4.2 Lineage enforcement — evidence fields present
+
+tests/lineage.enforcement.test.ts
+
+import { withTenant } from "../src/repo/db";
+
+it("persists datapoints with lineage and versions", async ()=>{
+  const tenant = '00000000-0000-0000-0000-0000000000AA';
+  const loanId = await withTenant(tenant, async (c) => {
+    const r = await c.query(`INSERT INTO loan_candidates (id, tenant_id, status) VALUES (gen_random_uuid(), $1, 'new') RETURNING id`, [tenant]);
+    return r.rows[0].id;
+  });
+  await withTenant(tenant, async (c) => {
+    await c.query(`
+      INSERT INTO loan_datapoints (loan_id, key, value, confidence, evidence_doc_id, evidence_page, evidence_text_hash, extractor_version)
+      VALUES ($1,'InterestRate','7.125',0.95,gen_random_uuid(),1,'deadbeef', 'v2025.09.03')`, [loanId]);
+    const q = await c.query(`SELECT confidence, extractor_version, evidence_doc_id FROM loan_datapoints WHERE loan_id=$1 AND key='InterestRate'`, [loanId]);
+    expect(q.rows[0].confidence).toBeGreaterThan(0.9);
+    expect(q.rows[0].extractor_version).toMatch(/v2025/);
+    expect(q.rows[0].evidence_doc_id).toBeTruthy();
+  });
+});
+
+5) Rewrite / Redesign demands (if anything above is not met)
+
+Rewrite Demand — C.1 RLS & Tenant Guard
+Why: Missing/partial RLS or lack of SET LOCAL app.tenant_id breaks isolation.
+You must:
+
+Apply mC01_enable_rls_policies.sql and prove every table is under RLS.
+
+Replace all direct DB calls with withTenant(tenantId, fn).
+
+Add rls.isolation.test.ts and show it passes.
+Acceptance: Grep report shows zero direct pool.connect() without withTenant.
+
+Redesign Demand — C.2 Lineage Completeness
+Why: loan_datapoints lacks lineage/version fields or allows NULL semantics for evidence/confidence.
+You must:
+
+Apply mC02_lineage_versions_on_loan_datapoints.sql.
+
+Backfill extractor versions (mC06_backfill_versions.sql).
+
+Update extraction persistence code to populate confidence, evidence_*, extractor_version, prompt_version?.
+
+Add lineage.enforcement.test.ts.
+Acceptance: Any new extraction row includes lineage and versions by default.
+
+Rewrite Demand — C.3 FK Hygiene & ON DELETE
+Why: Orphaned rows increase drift & storage costs.
+You must:
+
+Apply mC04_fk_hygiene.sql exactly as provided.
+
+Re-generate ERD and attach to PR.
+Acceptance: No FK violations; deletes cascade as expected in tests.
+
+6) What to put in the PR description
+
+Summary of fixes for category C with bullet list.
+
+List of migrations applied (mC01–mC06) and why.
+
+Before/After for a repo method illustrating the withTenant change.
+
+Test outputs for the two smoke tests.
+
+A short data migration plan (run mC06 after deploy; confirm counts).
