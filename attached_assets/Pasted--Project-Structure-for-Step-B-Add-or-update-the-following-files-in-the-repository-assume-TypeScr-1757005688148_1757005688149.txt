@@ -1,0 +1,478 @@
+📂 Project Structure for Step B
+
+Add or update the following files in the repository (assume TypeScript):
+
+src/init-queues.ts
+src/queues/topology.ts
+src/queues/consumer-utils.ts
+src/queues/vendors/ucdp-consumer.ts
+src/queues/vendors/flood-consumer.ts
+src/queues/vendors/hoi-consumer.ts
+src/queues/vendors/title-consumer.ts
+src/queues/import/import-consumer.ts
+src/queues/ocr/ocr-consumer.ts
+src/queues/datapoint/datapoint-consumer.ts
+src/queues/conflict/conflict-consumer.ts
+src/queues/disbursement/disbursement-consumer.ts
+src/queues/escrow/escrow-consumer.ts
+src/queues/notifications/notification-service.ts
+src/db/processedMessages.ts
+src/db/auditService.ts    (extend existing)
+src/db/eventOutboxService.ts (create)
+src/metrics/metrics.ts
+src/server/health.ts
+src/server/ready.ts
+.env.example              (update with new variables)
+
+🔢 B01 – Queue Topology & Declaration (src/init-queues.ts, src/queues/topology.ts)
+
+Define queue/exchange names in src/queues/topology.ts:
+
+export const Exchanges = {
+  COMMANDS: 'commands',         // direct exchange for commands
+  EVENTS:   'loan.events',      // topic exchange for emitted events
+};
+
+export const Queues = {
+  Import:        'import.command',
+  Ocr:           'ocr.command',
+  Datapoint:     'datapoint.command',
+  Conflict:      'conflict.command',
+  Disbursement:  'disbursement.command',
+  Escrow:        'escrow.command',
+  Ucdp:          'ucdp.command',
+  Flood:         'flood.command',
+  Hoi:           'hoi.command',
+  Title:         'title.command',
+};
+
+export function retry(queue: string, suffix: string) {
+  return `${queue}.retry.${suffix}`;
+}
+export function dlq(queue: string) {
+  return `${queue}.dlq`;
+}
+
+
+Create an idempotent queue‑initialization script in src/init-queues.ts:
+
+import amqp from 'amqplib';
+import { Exchanges, Queues, retry, dlq } from './queues/topology';
+
+const retryDelays = ['10s', '1m', '5m']; // define delays
+
+async function assertQueue(channel: amqp.Channel, queue: string) {
+  await channel.assertQueue(queue, { durable: true });
+}
+
+export async function initQueues() {
+  const conn = await amqp.connect(process.env.RABBITMQ_URL!);
+  const channel = await conn.createChannel();
+
+  // Declare exchanges
+  await channel.assertExchange(Exchanges.COMMANDS, 'direct', { durable: true });
+  await channel.assertExchange(Exchanges.EVENTS,   'topic',  { durable: true });
+
+  // For each queue, declare primary + retry + DLQ
+  for (const queue of Object.values(Queues)) {
+    await channel.assertQueue(queue, {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': '',
+        'x-dead-letter-routing-key': dlq(queue),
+      },
+    });
+    // Bind primary queue to its exchange/routing key
+    await channel.bindQueue(queue, Exchanges.COMMANDS, queue);
+
+    // Declare retry queues with TTL
+    for (const delay of retryDelays) {
+      const [value, unit] = delay.match(/(\d+)(s|m)/)!.slice(1);
+      const ttl = Number(value) * (unit === 's' ? 1000 : 60_000);
+      const retryQueue = retry(queue, delay);
+      await channel.assertQueue(retryQueue, {
+        durable: true,
+        arguments: {
+          'x-dead-letter-exchange': '',
+          'x-dead-letter-routing-key': queue,
+          'x-message-ttl': ttl,
+        },
+      });
+    }
+
+    // Declare DLQ
+    await channel.assertQueue(dlq(queue), { durable: true });
+  }
+
+  await channel.close();
+  await conn.close();
+}
+
+if (require.main === module) {
+  initQueues().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+
+Environment variable: Add RABBITMQ_URL to .env.example with a description (e.g. amqp://user:pass@host/vhost).
+
+Deployment: Ensure initQueues() runs as part of your application startup or as a separate one‑time script.
+
+📑 B02 – Processed Messages Table (src/db/processedMessages.ts)
+
+Add a new table to store processed message IDs per tenant. Include a migration:
+
+CREATE TABLE IF NOT EXISTS processed_messages (
+  message_id uuid NOT NULL,
+  tenant_id  uuid NOT NULL,
+  processed_at timestamp with time zone DEFAULT now(),
+  PRIMARY KEY (message_id, tenant_id)
+);
+
+
+In TypeScript (src/db/processedMessages.ts):
+
+import { pool } from '../repo/db'; // or your db client
+
+export async function recordProcessedMessage(messageId: string, tenantId: string): Promise<boolean> {
+  const result = await pool.query(
+    `INSERT INTO processed_messages (message_id, tenant_id) VALUES ($1, $2)
+       ON CONFLICT DO NOTHING RETURNING 1`,
+    [messageId, tenantId],
+  );
+  return result.rowCount > 0; // true if this is first time processing
+}
+
+📊 B03 – Consumer Utility (src/queues/consumer-utils.ts)
+
+Provide a reusable helper for consumers:
+
+import amqp, { ConsumeMessage } from 'amqplib';
+import { withTenant } from '../db/withTenant';
+import { recordProcessedMessage } from '../db/processedMessages';
+import { dlq, retry } from './topology';
+import { collectMetrics } from '../metrics/metrics';
+
+export interface ConsumerOptions {
+  queue: string;
+  handler: (payload: any, helpers: { client: any, msg: ConsumeMessage }) => Promise<void>;
+}
+
+export async function startConsumer(conn: amqp.Connection, opts: ConsumerOptions) {
+  const channel = await conn.createChannel();
+  await channel.prefetch(5);
+
+  channel.consume(opts.queue, async (msg) => {
+    if (!msg) return;
+    const startTime = Date.now();
+    let status: 'success' | 'transient' | 'fatal' = 'success';
+
+    try {
+      const content = JSON.parse(msg.content.toString());
+      const { messageId, tenantId } = content;
+      if (!messageId || !tenantId) throw new Error('Missing messageId/tenantId');
+
+      // Idempotency check
+      const firstTime = await recordProcessedMessage(messageId, tenantId);
+      if (!firstTime) {
+        channel.ack(msg);
+        collectMetrics(opts.queue, 'success', Date.now() - startTime);
+        return;
+      }
+
+      // Execute handler in tenant context
+      await withTenant(tenantId, async (client) => {
+        await opts.handler(content, { client, msg });
+      });
+
+      channel.ack(msg);
+    } catch (err: any) {
+      console.error(`[${opts.queue}] error`, err);
+
+      // Decide fatal vs transient
+      const isFatal = err.message?.includes('schema') || err.message?.includes('invalid');
+      status = isFatal ? 'fatal' : 'transient';
+
+      const route = isFatal ? dlq(opts.queue) : retry(opts.queue, '10s');
+      // Republishing to retry/dlq
+      channel.publish('', route, msg.content, { persistent: true });
+      channel.nack(msg, false, false);
+    } finally {
+      collectMetrics(opts.queue, status, Date.now() - startTime);
+    }
+  });
+}
+
+🧠 B04 – Vendor Consumers
+
+Example for UCDP integration (src/queues/vendors/ucdp-consumer.ts):
+
+import amqp from 'amqplib';
+import axios from 'axios';
+import { startConsumer } from '../consumer-utils';
+import { Exchanges, Queues } from '../topology';
+import { auditAction } from '../../db/auditService';
+import { publishEvent } from '../../db/eventOutboxService';
+
+export async function initUcdpConsumer(conn: amqp.Connection) {
+  await startConsumer(conn, {
+    queue: Queues.Ucdp,
+    handler: async (payload, { client }) => {
+      // Example payload: { messageId, tenantId, loanId, ucdpData }
+      const { loanId, ucdpData } = payload;
+
+      // Call UCDP vendor
+      const response = await axios.post(process.env.UCDP_API_URL!, ucdpData, {
+        headers: { Authorization: `Bearer ${process.env.UCDP_API_KEY}` },
+        timeout: 10000,
+      });
+
+      const result = response.data;
+      // Persist result to DB, e.g. update appraisal status
+      await client.query(
+        'UPDATE loan_candidates SET ucdp_status=$1 WHERE id=$2',
+        [result.status, loanId],
+      );
+
+      // Audit log
+      await auditAction(client, {
+        tenantId: payload.tenantId,
+        targetType: 'loan_candidates',
+        targetId: loanId,
+        action: 'ucdp_submitted',
+        changes: { ucdp_status: result.status },
+      });
+
+      // Publish domain event (Outbox)
+      await publishEvent(client, {
+        tenantId: payload.tenantId,
+        aggregateId: loanId,
+        aggregateType: 'loan',
+        eventType: 'UcdpCompleted',
+        payload: { ucdpResult: result },
+      });
+    },
+  });
+}
+
+
+Replicate similar files for Flood, HOI, and Title integrations. Each vendor file must:
+
+Use its own queue defined in topology.ts.
+
+Read API_URL and API_KEY from environment variables.
+
+Enclose all DB updates inside the tenant context.
+
+Write an audit entry and an outbox event with the same tenantId.
+
+🗃️ B05 – Import, OCR, Datapoint, Conflict, Disbursement & Escrow Consumers
+
+For each domain consumer (e.g., src/queues/import/import-consumer.ts):
+
+Define a handler(payload, helpers) that performs the workflow:
+
+import-consumer: parse CSV/JSON import file from S3, create loan_candidates, loan_documents, imports records.
+
+ocr-consumer: fetch document from S3, run OCR engine (external service), store full text in doc_text table.
+
+datapoint-consumer: extract datapoints using GPT/ML model, insert into loan_datapoints with lineage fields.
+
+conflict-consumer: detect conflicting datapoints and insert into loan_conflicts.
+
+disbursement-consumer: allocate payments to principal/interest/escrow/fees using the payment‑allocation engine.
+
+escrow-consumer: perform escrow analysis and schedule disbursements.
+
+Use the startConsumer wrapper to enforce idempotency, retry, DLQ, metrics.
+
+All DB operations must use withTenant.
+
+At the end of each handler, call auditAction and publishEvent.
+
+📝 B06 – Audit & Event Outbox Services
+
+Extend the existing src/db/auditService.ts:
+
+export async function auditAction(
+  client: PoolClient,
+  params: { tenantId: string; targetType: string; targetId: string; action: string; changes: any },
+) {
+  await client.query(
+    `INSERT INTO audits (tenant_id, target_type, target_id, action, changes, created_at)
+       VALUES ($1, $2, $3, $4, $5, now())`,
+    [params.tenantId, params.targetType, params.targetId, params.action, params.changes],
+  );
+}
+
+
+Create src/db/eventOutboxService.ts:
+
+export async function publishEvent(
+  client: PoolClient,
+  params: {
+    tenantId: string;
+    aggregateId: string;
+    aggregateType: string;
+    eventType: string;
+    payload: any;
+    version?: number;
+  },
+) {
+  await client.query(
+    `INSERT INTO event_outbox (tenant_id, aggregate_id, aggregate_type, event_type, payload, version, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,now())`,
+    [
+      params.tenantId,
+      params.aggregateId,
+      params.aggregateType,
+      params.eventType,
+      params.payload,
+      params.version || 1,
+    ],
+  );
+}
+
+
+A separate service (not part of Step B) should periodically read unsent events and publish them to loan.events exchange, then mark them as sent.
+
+📈 B07 – Metrics & Health (src/metrics/metrics.ts, src/server/health.ts, src/server/ready.ts)
+
+Install prom‑client library.
+
+Create metrics.ts:
+
+import client from 'prom-client';
+
+const queueProcessedTotal = new client.Counter({
+  name: 'queue_messages_processed_total',
+  help: 'Total number of messages processed by queue and status',
+  labelNames: ['queue', 'status'],
+});
+
+const queueDuration = new client.Histogram({
+  name: 'queue_processing_duration_seconds',
+  help: 'Processing duration for messages',
+  labelNames: ['queue', 'status'],
+  buckets: [0.01, 0.1, 0.5, 1, 2, 5, 10],
+});
+
+export function collectMetrics(queue: string, status: string, durationMs: number) {
+  queueProcessedTotal.labels(queue, status).inc();
+  queueDuration.labels(queue, status).observe(durationMs / 1000);
+}
+
+export function registerMetrics() {
+  client.collectDefaultMetrics();
+}
+
+export function metricsEndpoint(req: any, res: any) {
+  res.set('Content-Type', client.register.contentType);
+  res.end(client.register.metrics());
+}
+
+
+Health & Readiness endpoints (src/server/health.ts & src/server/ready.ts):
+
+import { pool } from '../db/repo';
+import amqp from 'amqplib';
+
+export async function healthHandler(req: any, res: any) {
+  try {
+    await pool.query('SELECT 1');
+    res.status(200).json({ status: 'ok' });
+  } catch {
+    res.status(503).json({ status: 'db_unreachable' });
+  }
+}
+
+let ready = false;
+export function markReady() { ready = true; }
+export function markNotReady() { ready = false; }
+export function readyHandler(req: any, res: any) {
+  res.status(ready ? 200 : 503).json({ ready });
+}
+
+
+Call markReady() once all queues are asserted and consumers started; call markNotReady() on fatal broker error.
+
+🔐 B08 – Environment & Secrets
+
+Update .env.example:
+
+# RabbitMQ
+RABBITMQ_URL=amqp://user:password@rabbitmq-host:5672/vhost
+
+# Vendor integrations
+UCDP_API_URL=https://vendor.example.com/ucdp
+UCDP_API_KEY=your-ucdp-api-key
+FLOOD_API_URL=...
+FLOOD_API_KEY=...
+HOI_API_URL=...
+HOI_API_KEY=...
+TITLE_API_URL=...
+TITLE_API_KEY=...
+
+# Metrics
+PORT=3000
+
+
+Document each variable. Never store actual keys in source control.
+
+🔬 B09 – Tests
+
+Unit tests for each consumer with mocked AMQP and DB:
+
+Verify recordProcessedMessage is called.
+
+Validate that on first processing, the handler executes and acknowledges.
+
+Validate that on duplicate message, the handler is not invoked.
+
+Validate that fatal errors send to DLQ; transient errors send to retry queue.
+
+Integration tests using a RabbitMQ test container (e.g., @testcontainers/rabbitmq) and a Postgres test container:
+
+Run initQueues() and assert that all *.dlq and *.retry.* queues exist.
+
+Publish a message and confirm the consumer processes it, writes DB rows, audit entries, and outbox events.
+
+Publish a malformed message and assert it appears in the correct DLQ.
+
+Metrics tests:
+
+After processing a message, fetch /metrics endpoint and assert counters/histograms increased.
+
+📣 B10 – Documentation & Deployment Notes
+
+Add a docs/queues.md describing queue names, retry delays, and DLQ usage.
+
+Provide example message payloads for each queue in docs/message-contracts.md.
+
+Update deployment scripts (Docker Compose, Kubernetes Helm charts, etc.) to expose port 3000 for metrics and health endpoints.
+
+Ensure your Procfile or entrypoint calls initQueues() before starting consumers.
+
+✅ Completion Criteria
+
+You have fully satisfied Step B when:
+
+All primary queues, retry queues, and DLQs are created automatically via initQueues().
+
+Every consumer uses startConsumer() to enforce tenant isolation, idempotency, retries, and metrics.
+
+No consumer performs DB operations without withTenant.
+
+Audit entries and outbox events are written for each state‑changing action.
+
+Prometheus metrics and /healthz//readyz endpoints are exposed and validated.
+
+Vendor integrations honour circuit‑breaker patterns and environment‑driven credentials.
+
+Tests pass for queue creation, message processing, error handling, idempotency, metrics, and health endpoints.
+
+Documentation and .env.example are up to date.
+
+With these detailed specifications, engineering should be able to implement Step B precisely and confidently, without the need for further interpretation or clarification.
