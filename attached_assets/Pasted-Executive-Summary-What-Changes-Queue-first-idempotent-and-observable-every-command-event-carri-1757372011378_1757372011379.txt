@@ -1,0 +1,480 @@
+Executive Summary — What Changes
+
+Queue-first, idempotent, and observable: every command/event carries tenantId, correlationId, causationId, idempotencyKey, and occurredAt.
+
+Outbox & inbox tables with transactional publishing and exactly-once in practice (at-least-once on the wire + idempotent consumers).
+
+Back-compat layer: introduce views & wrappers so legacy code keeps working while you move endpoints to async.
+
+Schema repairs shipped as additive migrations + safe data backfills (no big-bang renames).
+
+Canary & shadow traffic: dual-write & shadow-consume before cutting over routes.
+
+Per-tenant isolation enforced in DB constraints and message routing.
+
+Operational guardrails: DLX, retry budgets, poison-pill quarantine, SLOs, and Prometheus/Otel baked in.
+
+1) RabbitMQ Topology (additive, namespaced, safe)
+
+src/queues/topology.ts (extend, do not break existing bindings)
+
+// topology.ts
+export const Exchanges = {
+  Commands: 'ls.commands',
+  Events:   'ls.events',
+  Schedules:'ls.schedules',
+  Dlq:      'ls.dlq'
+} as const;
+
+export const Queues = {
+  // Existing preserved…
+
+  // New command queues (scoped)
+  LoanCreate:        'loan.create.v1',
+  LoanUpdate:        'loan.update.v1',
+  PaymentProcess:    'payment.process.v1',
+  PaymentAllocate:   'payment.allocate.v1',
+  EscrowDisburse:    'escrow.disburse.v1',
+
+  // ETL orchestration
+  EtlSchedule:       'etl.schedule.v1',
+  EtlJob:            'etl.job.v1',
+
+  // Events / status
+  StatusUpdate:      'status.update.v1',
+
+  // Dead-letter
+  Dlq:               'ls.dlq.v1'
+} as const;
+
+export function declareTopology(ch: amqp.Channel) {
+  // exchanges
+  ch.assertExchange(Exchanges.Commands, 'topic', { durable: true });
+  ch.assertExchange(Exchanges.Events,   'topic', { durable: true });
+  ch.assertExchange(Exchanges.Schedules,'topic', { durable: true });
+  ch.assertExchange(Exchanges.Dlq,      'fanout',{ durable: true });
+
+  // queues with DLX + per-queue retry TTLs
+  const withDlq = (q: string) => ({
+    durable: true,
+    arguments: {
+      'x-dead-letter-exchange': Exchanges.Dlq,
+      'x-queue-type': 'quorum' // crash-safe
+    }
+  });
+
+  Object.values(Queues).forEach(q => ch.assertQueue(q, withDlq(q)));
+
+  // bindings (tenant-aware via routing key: tenant.*)
+  ch.bindQueue(Queues.LoanCreate, Exchanges.Commands, 'tenant.*.loan.create');
+  ch.bindQueue(Queues.LoanUpdate, Exchanges.Commands, 'tenant.*.loan.update');
+
+  ch.bindQueue(Queues.PaymentProcess, Exchanges.Commands, 'tenant.*.payment.process');
+  ch.bindQueue(Queues.PaymentAllocate, Exchanges.Commands, 'tenant.*.payment.allocate');
+
+  ch.bindQueue(Queues.EscrowDisburse, Exchanges.Commands, 'tenant.*.escrow.disburse');
+
+  ch.bindQueue(Queues.EtlSchedule, Exchanges.Schedules, 'tenant.*.etl.schedule');
+  ch.bindQueue(Queues.EtlJob, Exchanges.Commands, 'tenant.*.etl.job');
+
+  ch.bindQueue(Queues.StatusUpdate, Exchanges.Events, 'tenant.*.status.#');
+
+  ch.bindQueue(Queues.Dlq, Exchanges.Dlq, '');
+}
+
+
+src/init-queues.ts: call declareTopology early; add health checks (queue depths, consumers online), surfacing to Prometheus.
+
+2) Message Contract (uniform envelope)
+
+Create src/types/messages.ts:
+
+export type Envelope<T> = {
+  tenantId: string;
+  correlationId: string; // end-to-end
+  causationId?: string;  // parent corr
+  idempotencyKey: string; // for exactly-once-in-practice
+  actor?: { userId?: string; service?: string };
+  occurredAt: string; // ISO
+  schemaVersion: 1;
+  payload: T;
+};
+
+
+Provide helpers in src/service.ts (or a new src/messaging.ts) to publish with consistent headers and to extract tracing context.
+
+3) Outbox/Inbox + Idempotency
+
+SQL migration (additive; adjust schema/table names as needed):
+
+-- V2025_09_08__messaging_outbox_inbox.sql
+
+-- Tenant-scoped outbox with unique idempotency
+CREATE TABLE IF NOT EXISTS messaging_outbox (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  routing_key TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  headers JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  published_at TIMESTAMPTZ,
+  error TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_outbox_tenant_idem
+  ON messaging_outbox (tenant_id, idempotency_key);
+
+-- Inbox for processed messages to de-dupe consumers
+CREATE TABLE IF NOT EXISTS messaging_inbox (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_inbox_tenant_idem
+  ON messaging_inbox (tenant_id, idempotency_key);
+
+-- Simple function to record inbox hit (idempotent)
+CREATE OR REPLACE FUNCTION record_inbox(p_tenant TEXT, p_idem TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+  INSERT INTO messaging_inbox (tenant_id, idempotency_key)
+  VALUES (p_tenant, p_idem)
+  ON CONFLICT DO NOTHING;
+  RETURN FOUND; -- true if inserted (first time), false if duplicate
+END;
+$$ LANGUAGE plpgsql;
+
+
+Publisher stub (transactional):
+
+// src/messaging/outbox-publisher.ts
+export async function enqueueCommand<T>(client: PoolClient, routingKey: string, env: Envelope<T>) {
+  await client.query(
+    `INSERT INTO messaging_outbox (tenant_id, topic, routing_key, idempotency_key, payload, headers)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
+     [env.tenantId, 'commands', routingKey, env.idempotencyKey, env.payload, {
+       correlationId: env.correlationId, causationId: env.causationId, schemaVersion: env.schemaVersion
+     }]
+  );
+}
+
+
+Outbox dispatcher worker (tie into init-queues.ts runloop): poll outbox rows with published_at IS NULL, publish to RMQ within a retry budget, then set published_at.
+
+Consumer wrapper (idempotent):
+
+// src/queues/utils/consumer.ts
+export function idempotentHandler<T>(fn: (payload: Envelope<T>, deps: Deps) => Promise<void>) {
+  return async (env: Envelope<T>, deps: Deps) => {
+    const inserted = await deps.db.query('SELECT record_inbox($1,$2)', [env.tenantId, env.idempotencyKey]);
+    if (!inserted.rows[0].record_inbox) return; // already processed
+    await fn(env, deps);
+  };
+}
+
+4) ETL Modernization (safer than timers)
+
+Replace setInterval with: (a) cron-like scheduler that publishes to ls.schedules exchange (tenant.{id}.etl.schedule), (b) ETL-job splitter (creates N shard jobs → tenant.{id}.etl.job), (c) ETL workers consuming jobs.
+
+Scheduler — src/queues/etl/etl-scheduler.ts
+
+export async function tickEtlSchedules(tenantId: string) {
+  const env = mkEnvelope({ tenantId, idempotencyKey: `etl-sched:${tenantId}:${dateKey()}`, payload: { window: 'last_5m' }});
+  await publish(Exchanges.Schedules, `tenant.${tenantId}.etl.schedule`, env);
+}
+
+
+Consumer — src/queues/etl/etl-consumer.ts
+
+export async function initEtlConsumers(conn: amqp.Connection) {
+  await startConsumer(conn, {
+    queue: Queues.EtlSchedule,
+    handler: idempotentHandler(async (env, { db, publish }) => {
+      const shards = await computeShards(db, env.payload.window); // e.g., by tenant/table
+      for (const s of shards) {
+        await publish(Exchanges.Commands, `tenant.${env.tenantId}.etl.job`, mkEnvelope({
+          tenantId: env.tenantId,
+          causationId: env.correlationId,
+          idempotencyKey: `etl-job:${env.tenantId}:${s.key}`,
+          payload: s
+        }));
+      }
+    })
+  });
+
+  await startConsumer(conn, {
+    queue: Queues.EtlJob,
+    handler: idempotentHandler(async (env, { db }) => {
+      await db.query('BEGIN');
+      try {
+        await runEtlShard(db, env.payload); // your existing ETL logic in a shard
+        await db.query('COMMIT');
+      } catch (e) {
+        await db.query('ROLLBACK'); throw e;
+      }
+    })
+  });
+}
+
+
+Routes back-compat: expose /api/etl/status?window= reading from ETL progress tables; emit etl.completed.event when a window finishes.
+
+5) Route Migration (async command + status polling)
+
+Example loans:
+
+src/routes.ts (convert incrementally with feature flags):
+
+app.post('/api/loans', async (req, res) => {
+  const useAsync = process.env.FEATURE_ASYNC_LOAN_CREATE === '1';
+  const validated = validateInput(insertLoanSchema, req.body);
+
+  if (!useAsync) {
+    // legacy path (keep while canarying)
+    const loan = await storage.createLoan(validated);
+    return res.status(201).json(loan);
+  }
+
+  const correlationId = generateId();
+  const idempotencyKey = req.headers['idempotency-key']?.toString() ?? `loan-create:${req.user.id}:${hash(validated)}`;
+
+  await enqueueCommand(req.dbClient, `tenant.${req.user.tenantId}.loan.create`, mkEnvelope({
+    tenantId: req.user.tenantId,
+    correlationId,
+    idempotencyKey,
+    actor: { userId: req.user.id },
+    payload: { loanData: validated }
+  }));
+
+  return res.status(202).json({ status: 'processing', correlationId });
+});
+
+// Status endpoint (reads projection)
+app.get('/api/loans/:id/status', async (req,res) => {
+  const s = await storage.getLoanStatus(req.params.id, req.user.tenantId);
+  res.json(s);
+});
+
+
+Loan consumer (wire to your modules: payment-allocation-engine.ts, auditService.ts, etc.):
+
+// src/queues/loan/loan-consumer.ts
+export async function initLoanConsumer(conn: amqp.Connection) {
+  await startConsumer(conn, {
+    queue: Queues.LoanCreate,
+    handler: idempotentHandler(async (env, { db, publish, audit }) => {
+      const { loanData } = env.payload;
+      await db.query('BEGIN');
+      try {
+        const loan = await createLoanWithTransaction(db, loanData); // your repo.ts
+        await audit.record(db, {
+          tenantId: env.tenantId,
+          actor: env.actor,
+          action: 'loan_created',
+          targetType: 'loan',
+          targetId: loan.id,
+          correlationId: env.correlationId
+        });
+        await db.query('COMMIT');
+
+        await publish(Exchanges.Events, `tenant.${env.tenantId}.loan.created`, mkEnvelope({
+          tenantId: env.tenantId,
+          causationId: env.correlationId,
+          idempotencyKey: `evt:loan.created:${loan.id}`,
+          payload: { loan }
+        }));
+      } catch (e) {
+        await db.query('ROLLBACK'); throw e;
+      }
+    })
+  });
+}
+
+6) Data Schema Fixes (safe, additive, backfilled)
+
+Issue A: borrowers vs borrower_entities
+
+Do not rename immediately. Create a compat view so legacy SQL keeps working:
+
+-- V2025_09_08__borrowers_compat_view.sql
+CREATE OR REPLACE VIEW borrowers AS
+SELECT be.*
+FROM borrower_entities be;
+
+
+Add FKs & tenant scoping where missing:
+
+-- V2025_09_08__tenant_fk_enforcement.sql
+ALTER TABLE borrower_entities
+  ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default';
+
+CREATE INDEX IF NOT EXISTS idx_borrower_entities_tenant ON borrower_entities(tenant_id);
+
+-- Example foreign keys (adjust names)
+ALTER TABLE loans
+  ADD CONSTRAINT fk_loans_borrower
+  FOREIGN KEY (borrower_entity_id) REFERENCES borrower_entities(id) ON DELETE RESTRICT;
+
+ALTER TABLE loans
+  ADD CONSTRAINT chk_tenant_consistency
+  CHECK (tenant_id = (SELECT tenant_id FROM borrower_entities be WHERE be.id = borrower_entity_id));
+
+
+Issue B: float → integer insertion
+
+Add strict casting functions and migrate columns to NUMERIC(18,4) where they logically are money/ratios; avoid integer unless truly a count:
+
+-- V2025_09_08__numeric_money_fix.sql
+ALTER TABLE payments
+  ALTER COLUMN amount TYPE NUMERIC(18,4) USING ROUND(amount::numeric, 4);
+
+-- Guardrail domain for cents, if needed
+CREATE DOMAIN money4 AS NUMERIC(18,4) CHECK (VALUE >= 0);
+
+
+For places that must be integer (e.g., term months), ensure server-side validation before insert; never parseInt—use schema validation (Zod/Yup) and reject bad data with 422.
+
+7) Observability & Ops
+
+OpenTelemetry trace start in routes, propagate to envelope headers. Export to your collector.
+
+Prometheus: expose
+
+loanserve_queue_depth{queue=...}
+
+loanserve_consumer_lag_seconds{queue=...}
+
+loanserve_messages_processed_total{queue, result}
+
+loanserve_consumer_runtime_ms_bucket
+
+SLOs:
+
+Async create loan: p95 ≤ 3s from command accepted → loan.created event.
+
+ETL window: 99% within 5m of schedule tick.
+
+DLQ rate: <0.5% rolling 1h.
+
+Alerting:
+
+DLQ > threshold for 5m
+
+Consumer heartbeat missed (no processed_total for 2m)
+
+p95 runtime over SLO for 10m
+
+8) Deployment & Rollout (no big-bang)
+
+Ship schema & topology (no traffic change).
+
+Shadow mode: keep legacy synchronous writes, but dual-publish outbox messages from the same TX. Start shadow consumers that do all work but do not commit DB mutations (dry-run with validation + diffs to logs).
+
+Canary: enable FEATURE_ASYNC_* for 1% of tenants (or a single internal tenant).
+
+Ramp: 1% → 10% → 50% → 100% with DLQ & latency monitors.
+
+Cut legacy: once stable, flip routes to 202 Accepted flow; keep compat view for 1–2 releases.
+
+Remove compat: after dashboards show no legacy consumers of borrowers view (pg_stat views), drop view.
+
+9) Security & Tenancy
+
+Per-tenant routing keys (already shown).
+
+Enforce tenant scoping at:
+
+route layer (JWT → tenantId)
+
+DB layer (RLS if you’re ready; else FK + CHECK constraints as above)
+
+message layer (reject any tenant mismatch in consumer wrapper)
+
+Secrets: RabbitMQ creds in your secret manager; rotate with app-level reconnect.
+
+10) Acceptance Tests (Gherkin skeletons)
+Feature: Async loan creation
+  Scenario: Client submits valid loan
+    Given tenant "acme" and user "u1"
+    When POST /api/loans with a valid payload and Idempotency-Key "k1"
+    Then response is 202 with a correlationId
+    And within 3 seconds an event "loan.created" is published for tenant "acme"
+    And the loan record exists with status "created"
+    And an audit record exists with action "loan_created"
+
+  Scenario: Idempotent retry
+    Given same request with Idempotency-Key "k1"
+    When POST /api/loans again
+    Then response is 202
+    And exactly one loan record exists
+
+11) Concrete To-Dos (by week, tightened)
+
+Weeks 1–2 (Critical)
+
+✅ Apply migrations: outbox/inbox, compat view, numeric fixes, tenant FKs.
+
+✅ Extend topology & boot declareTopology() in init-queues.ts.
+
+✅ Implement outbox dispatcher worker (cron/loop) with retry budget + jitter.
+
+✅ Wrap consumers with idempotentHandler.
+
+✅ Convert ETL timers → etl.schedule + etl.job split; add status endpoints.
+
+Weeks 3–4 (High-traffic endpoints)
+
+Loans: POST async + /status.
+
+Payments: POST /api/payments → payment.process.v1; integrate payment-allocation-engine.ts.
+
+Documents: POST analyze → document.process (re-use existing OCR workers); emit progress to StatusUpdate.
+
+Weeks 5–6 (Service boundaries)
+
+Extract Loan, Payment, Document, Escrow consumer modules; map to existing service files (escrow-manager.ts, accounting-service.ts, auditService.ts).
+
+Add Otel spans + Prometheus metrics; add DLQ dashboard.
+
+Weeks 7–8 (Hardening)
+
+Circuit breakers (axios/pool wrappers) with retry budget (not infinite).
+
+DLQ triage CLI: requeue with backoff or quarantine with tag poison.
+
+Tenant validation middleware in both publishers & consumers.
+
+Remove legacy intervals; enable canary ramps → 100%.
+
+12) Improvements vs Original (why this is safer)
+
+Exactly-once-in-practice: inbox/outbox + idempotency keys (original plan only mentioned outbox).
+
+No breaking renames: compat views + staged backfill (instead of “fix references” only).
+
+Observability baked: concrete metrics, SLOs, alerts (not just “monitoring”).
+
+Rollout discipline: shadow mode + canary; avoids dual-write hazards.
+
+Tenant enforcement at 3 layers: route, DB, message.
+
+Schema clarity: money/ratio fields to NUMERIC(18,4); no silent parseInt.
+
+Quorum queues + DLX: RabbitMQ tuned for durability and predictable failure modes.
+
+Uniform envelope: correlation/causation/idempotency standardized across services.
+
+13) Small but Important Nits
+
+Never use Math.round for currency; always NUMERIC(18,4) + server-side validation.
+
+Backpressure: add prefetch limits per consumer (e.g., channel.prefetch(16)).
+
+Retries: capped (e.g., 5) with exponential backoff via delayed exchange or requeue-with-TTL pattern, then DLQ.
+
+WebSockets vs polling: keep polling /status first; WS can be added later, but don’t block migration on it.
+
+Schema versioning: schemaVersion in envelope; bump only when consumer contract changes.
