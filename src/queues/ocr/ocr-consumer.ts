@@ -53,32 +53,58 @@ export async function initOcrConsumer(conn: amqp.Connection) {
 }
 
 async function fetchDocumentFromS3(s3Uri: string): Promise<Buffer> {
-  const AWS = require('aws-sdk');
-  const s3 = new AWS.S3();
+  const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
   
   const bucketAndKey = s3Uri.replace('s3://', '').split('/');
   const bucket = bucketAndKey[0];
   const key = bucketAndKey.slice(1).join('/');
   
-  const params = { Bucket: bucket, Key: key };
-  const result = await s3.getObject(params).promise();
-  return Buffer.from(result.Body);
+  const s3Client = new S3Client({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!
+    }
+  });
+  
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key
+  });
+  
+  const result = await s3Client.send(command);
+  
+  // Convert stream to buffer
+  const chunks: Buffer[] = [];
+  const readable = result.Body as any;
+  
+  return new Promise((resolve, reject) => {
+    readable.on('data', (chunk: Buffer) => chunks.push(chunk));
+    readable.on('end', () => resolve(Buffer.concat(chunks)));
+    readable.on('error', reject);
+  });
 }
 
 async function performOcr(content: Buffer): Promise<{ text: string; confidence: number }> {
-  // Real AWS Textract integration
-  const AWS = require('aws-sdk');
-  const textract = new AWS.Textract({ region: process.env.AWS_REGION || 'us-east-1' });
+  // Real AWS Textract integration using AWS SDK v3
+  const { TextractClient, DetectDocumentTextCommand } = await import('@aws-sdk/client-textract');
+  
+  const textractClient = new TextractClient({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!
+    }
+  });
   
   try {
-    const params = {
+    const command = new DetectDocumentTextCommand({
       Document: {
         Bytes: content
-      },
-      FeatureTypes: ['TABLES', 'FORMS']
-    };
+      }
+    });
     
-    const result = await textract.detectDocumentText(params).promise();
+    const result = await textractClient.send(command);
     
     let extractedText = '';
     let totalConfidence = 0;
@@ -98,9 +124,8 @@ async function performOcr(content: Buffer): Promise<{ text: string; confidence: 
       text: extractedText.trim(),
       confidence: averageConfidence
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Textract OCR failed:', error);
-    // Fallback to basic text extraction or throw error
     throw new Error(`OCR processing failed: ${error.message}`);
   }
 }
