@@ -25,9 +25,12 @@ export async function initOcrConsumer(conn: amqp.Connection) {
       // Update document with OCR text
       await db.update(documents)
         .set({ 
-          extractedText: ocrResult.text,
-          ocrConfidence: ocrResult.confidence.toString(),
-          ocrProcessedAt: new Date()
+          notes: ocrResult.text,
+          metadata: {
+            ocrConfidence: ocrResult.confidence,
+            ocrProcessedAt: new Date().toISOString(),
+            textLength: ocrResult.text.length
+          }
         })
         .where(eq(documents.id, documentId));
 
