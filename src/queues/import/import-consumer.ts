@@ -84,6 +84,71 @@ async function fetchImportFile(s3Key: string): Promise<string> {
 }
 
 async function processImportData(content: string): Promise<any[]> {
-  // Placeholder - would parse CSV/JSON and validate
-  return [{ loanNumber: "12345", documents: [] }];
+  // Real CSV/JSON parsing implementation
+  const lines = content.trim().split('\n');
+  if (lines.length === 0) return [];
+  
+  // Check if it's JSON format
+  if (content.trim().startsWith('[') || content.trim().startsWith('{')) {
+    try {
+      const jsonData = JSON.parse(content);
+      return Array.isArray(jsonData) ? jsonData : [jsonData];
+    } catch (error) {
+      throw new Error(`Invalid JSON format: ${error.message}`);
+    }
+  }
+  
+  // Parse as CSV
+  const headers = lines[0].split(',').map(h => h.trim());
+  const records: any[] = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.trim());
+    const record: any = {};
+    
+    // Map CSV columns to record fields
+    headers.forEach((header, index) => {
+      const value = values[index] || '';
+      
+      // Map common CSV columns to loan fields
+      switch (header.toLowerCase()) {
+        case 'loan_number':
+        case 'loannumber':
+          record.loanNumber = value;
+          break;
+        case 'borrower_name':
+        case 'borrowername':
+          record.borrowerName = value;
+          break;
+        case 'property_address':
+        case 'propertyaddress':
+          record.propertyAddress = value;
+          break;
+        case 'loan_amount':
+        case 'loanamount':
+          record.loanAmount = parseFloat(value) || 0;
+          break;
+        case 'interest_rate':
+        case 'interestrate':
+          record.interestRate = parseFloat(value) || 0;
+          break;
+        case 'loan_type':
+        case 'loantype':
+          record.loanType = value.toLowerCase();
+          break;
+        case 'status':
+          record.status = value.toLowerCase();
+          break;
+        default:
+          record[header] = value;
+      }
+    });
+    
+    // Skip empty rows
+    if (record.loanNumber) {
+      records.push(record);
+    }
+  }
+  
+  return records;
 }
