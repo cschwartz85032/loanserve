@@ -59,8 +59,16 @@ export async function initOcrConsumer(conn: amqp.Connection) {
 }
 
 async function fetchDocumentFromS3(s3Uri: string): Promise<Buffer> {
-  // Placeholder - would integrate with AWS S3
-  return Buffer.from("mock document content");
+  const AWS = require('aws-sdk');
+  const s3 = new AWS.S3();
+  
+  const bucketAndKey = s3Uri.replace('s3://', '').split('/');
+  const bucket = bucketAndKey[0];
+  const key = bucketAndKey.slice(1).join('/');
+  
+  const params = { Bucket: bucket, Key: key };
+  const result = await s3.getObject(params).promise();
+  return Buffer.from(result.Body);
 }
 
 async function performOcr(content: Buffer): Promise<{ text: string; confidence: number }> {

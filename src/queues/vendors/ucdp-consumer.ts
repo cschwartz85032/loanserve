@@ -4,6 +4,10 @@ import { startConsumer } from '../consumer-utils';
 import { Exchanges, Queues } from '../topology';
 import { auditAction } from '../../db/auditService';
 import { publishEvent } from '../../db/eventOutboxService';
+import { CircuitBreaker, RetryWithBackoff } from '../vendor-circuit-breaker';
+
+const circuitBreaker = new CircuitBreaker(5, 60000);
+const retryWithBackoff = new RetryWithBackoff(3, 1000, 30000);
 
 export async function initUcdpConsumer(conn: amqp.Connection) {
   await startConsumer(conn, {
@@ -12,11 +16,15 @@ export async function initUcdpConsumer(conn: amqp.Connection) {
       // Example payload: { messageId, tenantId, loanId, ucdpData }
       const { loanId, ucdpData } = payload;
 
-      // Call UCDP vendor
-      const response = await axios.post(process.env.UCDP_API_URL!, ucdpData, {
-        headers: { Authorization: `Bearer ${process.env.UCDP_API_KEY}` },
-        timeout: 10000,
-      });
+      // Call UCDP vendor with circuit breaker and retry logic
+      const response = await circuitBreaker.execute(() =>
+        retryWithBackoff.execute(() =>
+          axios.post(process.env.UCDP_API_URL!, ucdpData, {
+            headers: { Authorization: `Bearer ${process.env.UCDP_API_KEY}` },
+            timeout: parseInt(process.env.UCDP_TIMEOUT_MS || '15000'),
+          })
+        )
+      );
 
       const result = response.data;
       // Persist result to DB, e.g. update appraisal status

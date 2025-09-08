@@ -75,8 +75,16 @@ export async function initImportConsumer(conn: amqp.Connection) {
 }
 
 async function fetchImportFile(s3Key: string): Promise<string> {
-  // Placeholder - would integrate with AWS S3
-  return "mock,csv,content";
+  const AWS = require('aws-sdk');
+  const s3 = new AWS.S3();
+  
+  const params = {
+    Bucket: process.env.ARTIFACT_STORE_BUCKET?.replace('s3://', ''),
+    Key: s3Key
+  };
+  
+  const result = await s3.getObject(params).promise();
+  return result.Body.toString();
 }
 
 async function processImportData(content: string): Promise<any[]> {
