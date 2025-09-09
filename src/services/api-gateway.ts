@@ -3,8 +3,8 @@
  * Routes requests to appropriate microservices and handles service discovery
  */
 
-import express from 'express';
-import httpProxy from 'http-proxy-middleware';
+import express, { type Request, type Response, type NextFunction } from 'express';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import type { Connection } from 'amqplib';
 import { globalServiceRegistry, type ServiceInstance } from './service-registry';
 
@@ -33,11 +33,12 @@ const SERVICE_ROUTES = {
 } as const;
 
 type ServiceRoute = keyof typeof SERVICE_ROUTES;
+type ServiceRouteConfig = (typeof SERVICE_ROUTES)[ServiceRoute];
 
 export class ApiGateway {
   private app: express.Application;
   private connection: Connection | null = null;
-  private serviceRoutes: Map<string, any> = new Map();
+  private serviceRoutes: Map<string, express.RequestHandler> = new Map();
 
   constructor() {
     this.app = express();
@@ -64,7 +65,7 @@ export class ApiGateway {
    */
   private setupMiddleware(): void {
     // CORS middleware
-    this.app.use((req, res, next) => {
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
       res.header('Access-Control-Allow-Origin', '*');
       res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
       res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
@@ -77,13 +78,13 @@ export class ApiGateway {
     });
 
     // Request logging
-    this.app.use((req, res, next) => {
+    this.app.use((req: Request, _res: Response, next: NextFunction) => {
       console.log(`[API Gateway] ${req.method} ${req.path} -> ${this.getTargetService(req.path)}`);
       next();
     });
 
     // Health checks for services
-    this.app.use('/api/v3/*/health', (req, res, next) => {
+    this.app.use('/api/v3/*/health', (req: Request, res: Response, next: NextFunction) => {
       const serviceName = this.getServiceNameFromPath(req.path);
       const healthyInstances = globalServiceRegistry.getHealthyInstances(serviceName);
       
@@ -104,7 +105,7 @@ export class ApiGateway {
    */
   private setupRoutes(): void {
     // Gateway health endpoint
-    this.app.get('/api/v3/gateway/health', (req, res) => {
+    this.app.get('/api/v3/gateway/health', (_req: Request, res: Response) => {
       const stats = globalServiceRegistry.getStats();
       const services = globalServiceRegistry.getAllServices();
       
@@ -131,7 +132,7 @@ export class ApiGateway {
     });
 
     // Service discovery endpoint
-    this.app.get('/api/v3/gateway/services', (req, res) => {
+    this.app.get('/api/v3/gateway/services', (req: Request, res: Response) => {
       const { capability, service_name } = req.query;
       
       let services: ServiceInstance[];
@@ -162,16 +163,15 @@ export class ApiGateway {
     });
 
     // Load balancer status
-    this.app.get('/api/v3/gateway/load-balancer', (req, res) => {
-      const routeStats = Array.from(this.serviceRoutes.entries()).map(([route, proxy]) => {
-        const routeConfig = SERVICE_ROUTES[route as ServiceRoute];
-        return {
-          route,
-          target: routeConfig?.target,
-          service_name: routeConfig?.serviceName,
-          healthy_instances: globalServiceRegistry.getHealthyInstances(routeConfig?.serviceName || '').length
-        };
-      });
+    this.app.get('/api/v3/gateway/load-balancer', (_req: Request, res: Response) => {
+      const routeStats = Array.from(this.serviceRoutes.entries()).map(([route]) => ({
+        route,
+        target: (SERVICE_ROUTES as Record<string, ServiceRouteConfig>)[route]?.target,
+        service_name: (SERVICE_ROUTES as Record<string, ServiceRouteConfig>)[route]?.serviceName,
+        healthy_instances: globalServiceRegistry.getHealthyInstances(
+          (SERVICE_ROUTES as Record<string, ServiceRouteConfig>)[route]?.serviceName || ''
+        ).length
+      }));
 
       res.json({
         success: true,
@@ -182,15 +182,15 @@ export class ApiGateway {
     });
 
     // Frontend redirect - redirect non-API routes to core server  
-    this.app.use('*', (req, res, next) => {
+    this.app.use('*', (req: Request, res: Response, next: NextFunction) => {
       // Skip API routes - they're handled by service proxies
       if (req.path.startsWith('/api/v3/')) {
         return next();
       }
       
-      // Redirect frontend requests to core server instead of proxying
+      // Build URL safely; Express Request has no `search`
       const url = new URL(req.originalUrl, `http://${req.headers.host ?? 'localhost'}`);
-      const coreServerUrl = `http://localhost:4000${req.path}${url.search || ''}`;
+      const coreServerUrl = `http://localhost:4000${url.pathname}${url.search}`;
       console.log(`[API Gateway] Redirecting frontend request to: ${coreServerUrl}`);
       res.redirect(302, coreServerUrl);
     });
@@ -201,24 +201,24 @@ export class ApiGateway {
    */
   private setupServiceProxies(): void {
     Object.entries(SERVICE_ROUTES).forEach(([route, config]) => {
-      const proxyMiddleware = httpProxy.createProxyMiddleware({
+      const proxyMiddleware = createProxyMiddleware({
         target: config.target,
         changeOrigin: true,
         pathRewrite: {
           [`^${route}`]: '' // Remove route prefix when forwarding
         },
-        onProxyReq: (proxyReq, req, res) => {
+        onProxyReq: (proxyReq: any, req: Request, _res: Response) => {
           // Add service routing headers
           proxyReq.setHeader('X-Gateway-Route', route);
           proxyReq.setHeader('X-Service-Name', config.serviceName);
           proxyReq.setHeader('X-Request-ID', this.generateRequestId());
         },
-        onProxyRes: (proxyRes, req, res) => {
+        onProxyRes: (proxyRes: any, _req: Request, _res: Response) => {
           // Add gateway response headers
           proxyRes.headers['X-Gateway'] = 'api-gateway-v1';
           proxyRes.headers['X-Service-Route'] = route;
         },
-        onError: (err, req, res) => {
+        onError: (err: Error, _req: Request, res: Response) => {
           console.error(`[API Gateway] Proxy error for ${route}:`, err.message);
           
           // Handle service unavailable
@@ -232,7 +232,7 @@ export class ApiGateway {
             });
           }
         }
-      });
+      } as any);
 
       this.app.use(route, proxyMiddleware);
       this.serviceRoutes.set(route, proxyMiddleware);
