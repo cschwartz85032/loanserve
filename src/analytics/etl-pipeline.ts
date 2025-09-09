@@ -8,6 +8,25 @@ import { randomUUID } from "crypto";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+/**
+ * Ensure time dimension key exists before using it in fact tables
+ */
+async function ensureTimeKey(client: any, date: Date): Promise<number> {
+  const YYYY = date.getUTCFullYear();
+  const MM = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+  const DD = date.getUTCDate().toString().padStart(2, '0');
+  const timeKey = Number(`${YYYY}${MM}${DD}`);
+  
+  // Insert time dimension record if it doesn't exist
+  await client.query(`
+    INSERT INTO dim_time (time_key, year, month, day, date)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (time_key) DO NOTHING
+  `, [timeKey, YYYY, parseInt(MM), parseInt(DD), date.toISOString().slice(0, 10)]);
+  
+  return timeKey;
+}
+
 export interface ETLJobConfig {
   jobName: string;
   sourceQuery: string;
@@ -85,7 +104,7 @@ export class ETLPipeline {
             lb.current_principal_balance_cents,
             lb.current_interest_rate,
             lb.current_payment_amount_cents,
-            b.id as borrower_id,
+            COALESCE(lb_join.borrower_id, NULL) as borrower_id,
             COALESCE(p.total_amount_cents, 0) as payment_amount_cents,
             CASE 
               WHEN p.received_date IS NOT NULL AND p.received_date <= p.scheduled_date THEN 'on_time'
@@ -99,7 +118,8 @@ export class ETLPipeline {
             CURRENT_DATE as snapshot_date
           FROM loans l
           LEFT JOIN loan_balances lb ON l.id = lb.loan_id
-          LEFT JOIN borrowers b ON l.borrower_id = b.id
+          LEFT JOIN loan_borrowers lb_join ON l.id = lb_join.loan_id AND (lb_join.is_primary = TRUE OR lb_join.is_primary IS NULL)
+          LEFT JOIN borrowers b ON lb_join.borrower_id = b.id
           LEFT JOIN payments p ON l.id = p.loan_id 
             AND p.scheduled_date >= CURRENT_DATE - INTERVAL '30 days'
           WHERE l.status IN ('active', 'current', 'delinquent')
@@ -194,9 +214,9 @@ export class ETLPipeline {
       const c = await pool.connect();
       
       try {
-        // Extract service metrics from various sources
-        const today = new Date().toISOString().split('T')[0];
-        const timeKey = await this.getTimeKey(today);
+        // Extract service metrics from various sources  
+        const today = new Date();
+        const timeKey = await ensureTimeKey(c, today);
 
         // Aggregate daily service metrics
         const serviceMetrics = {

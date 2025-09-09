@@ -25,8 +25,15 @@ export async function runMigrations() {
     const { runStartupValidations } = await import('./utils/schema-validator');
     await runStartupValidations();
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Migration] Error running migrations:', error);
+    
+    // Handle duplicate object errors gracefully (enum/type already exists)
+    if (error?.code === '42710') {
+      console.warn('[Migration] Duplicate object detected (enum/type); continuing:', error.message);
+      return; // Continue startup instead of crashing
+    }
+    
     // Don't crash the app, but log the error for monitoring
     // In production, this should trigger alerts
     if (process.env.NODE_ENV === 'production') {
