@@ -1,0 +1,81 @@
+*** Begin Patch
+*** Add File: .env.example
++# Loanserve environment configuration template
++#
++# Copy this file to `.env.local` or `.env` and customize the values for your environment.
++# Many of these settings are optional in development but required in production.
++
++# The NODE_ENV for your environment: development | test | production
++NODE_ENV=development
++
++# ==== Rate Limiting ====
++RATE_LIMIT_WINDOW_MS=900000
++RATE_LIMIT_MAX=2000
++
++# ==== Security - Audit Chain ====
++AUDIT_CHAIN_KEY=changeme-secure-random-hex
++
++# ==== OIDC / JWT Authentication ====
++OIDC_ISSUER_URL=https://your-oidc-provider/.well-known/openid-configuration
++OIDC_CLIENT_ID=your-oidc-client-id
++OIDC_CLIENT_SECRET=your-oidc-client-secret
++JWKS_URL=https://your-oidc-provider/.well-known/jwks.json
++JWT_AUDIENCE=api://loanserve
++
++# ==== Encryption / Secrets ====
++KMS_KEY_ARN=arn:aws:kms:region:account:key/key-id
++VAULT_ADDR=https://vault.example.com:8200
++
++# ==== Multi‑Tenant ====
++DEFAULT_TENANT_ID=00000000-0000-0000-0000-000000000000
+*** End Patch
+
+*** Begin Patch
+*** Update File: src/security/retention.ts
+@@
+-export async function startRetentionScheduler(): Promise<"started" | "skipped"> {
+-  try {
+-    // Dynamic import to keep `node-cron` optional
+-    const cron = await import("node-cron").then(mod => mod.default ?? mod);
+-    // Run every day at 2:05 AM
+-    cron.schedule("5 2 * * *", async () => {
+-      // Placeholder: integrate with your real retention policy executor
+-      console.log("[Security] Retention scheduler tick");
+-    });
+-    console.log("[Security] Retention scheduler started (node-cron)");
+-    return "started";
+-  } catch {
+-    console.warn("[Security] Retention scheduler not started - requires node-cron dependency");
+-    return "skipped";
+-  }
+-}
++import cron from "node-cron";
++
++/**
++ * Start the daily data retention scheduler.
++ *
++ * This helper assumes that `node-cron` is installed as a dependency and
++ * schedules a cron job at 2:05 AM every day. If you need to change the
++ * schedule or integrate custom retention logic, modify the cron pattern
++ * and callback below.
++ */
++export function startRetentionScheduler(): "started" {
++  // Run every day at 2:05 AM server time
++  cron.schedule("5 2 * * *", async () => {
++    // TODO: integrate with your real retention policy executor
++    console.log("[Security] Retention scheduler tick");
++  });
++  console.log("[Security] Retention scheduler started (node-cron)");
++  return "started";
++}
+*** End Patch
+
+*** Begin Patch
+*** Update File: src/security/index.ts
+@@ export async function initSecurity(app: Express): Promise<void> {
+-  // Data retention scheduler
+-  await startRetentionScheduler();
++  // Data retention scheduler
++  // Start the scheduler synchronously; startRetentionScheduler() no longer returns a Promise
++  startRetentionScheduler();
+*** End Patch
