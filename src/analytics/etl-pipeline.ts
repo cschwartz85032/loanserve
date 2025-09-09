@@ -206,7 +206,7 @@ export class ETLPipeline {
           documents_processed: Math.floor(Math.random() * 200),
           payments_processed: Math.floor(Math.random() * 300),
           first_call_resolution_rate: 0.75 + Math.random() * 0.2,
-          average_handle_time_seconds: 180 + Math.random() * 120,
+          average_handle_time_seconds: Math.round(180 + Math.random() * 120), // Convert to integer
           customer_satisfaction_score: 3.5 + Math.random() * 1.5,
           sla_compliance_rate: 0.85 + Math.random() * 0.1,
           automation_rate: 0.6 + Math.random() * 0.3
