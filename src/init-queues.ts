@@ -106,6 +106,11 @@ export async function initQueues() {
   const { setPublishFunction } = await import('../server/routes/payment-async');
   setPublishFunction(publishFunction);
   console.log('[Queue Init] Payment route publisher configured');
+  
+  // Initialize comprehensive queue monitoring (Phase 2)
+  const { globalQueueMonitor } = await import('./queues/monitoring/queue-monitor');
+  await globalQueueMonitor.initialize(conn);
+  console.log('[Queue Init] Queue monitoring initialized');
 
   // Start ETL scheduler (replaces setInterval timer)
   startEtlScheduler(publishFunction);
