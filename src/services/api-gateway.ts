@@ -187,8 +187,16 @@ export class ApiGateway {
       const frontendProxy = httpProxy.createProxyMiddleware({
         target: 'http://localhost:4000',
         changeOrigin: true,
+        secure: false,
+        headers: {
+          'Host': 'localhost:4000'
+        },
+        onProxyReq: (proxyReq, req, res) => {
+          // Ensure we're only forwarding the path, not the full URL
+          console.log(`[API Gateway] Proxying frontend request: ${req.method} ${req.path}`);
+        },
         onError: (err, req, res) => {
-          console.error(`[API Gateway] Frontend proxy error:`, err.message);
+          console.error(`[API Gateway] Frontend proxy error for ${req.path}:`, err.message);
           if (res && !res.headersSent) {
             (res as express.Response).status(503).send('Frontend temporarily unavailable');
           }
