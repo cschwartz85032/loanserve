@@ -13,16 +13,32 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
  */
 async function ensureTimeKey(client: any, date: Date): Promise<number> {
   const YYYY = date.getUTCFullYear();
-  const MM = (date.getUTCMonth() + 1).toString().padStart(2, '0');
-  const DD = date.getUTCDate().toString().padStart(2, '0');
-  const timeKey = Number(`${YYYY}${MM}${DD}`);
+  const MM = date.getUTCMonth() + 1;
+  const DD = date.getUTCDate();
+  const timeKey = Number(`${YYYY}${MM.toString().padStart(2, '0')}${DD.toString().padStart(2, '0')}`);
   
-  // Insert time dimension record if it doesn't exist
+  // Calculate additional time dimensions
+  const quarter = Math.ceil(MM / 3);
+  const dayOfWeek = date.getUTCDay();
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 
+                      'July', 'August', 'September', 'October', 'November', 'December'];
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  
+  // Simple week calculation
+  const startOfYear = new Date(YYYY, 0, 1);
+  const weekOfYear = Math.ceil(((date.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7);
+  
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+  
+  // Insert time dimension record if it doesn't exist (with all required fields)
   await client.query(`
-    INSERT INTO dim_time (time_key, year, month, day)
-    VALUES ($1, $2, $3, $4)
+    INSERT INTO dim_time (time_key, full_date, year, quarter, month, month_name, day, 
+                         day_of_week, day_name, week_of_year, is_weekend, is_holiday, 
+                         business_day, fiscal_year, fiscal_quarter)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     ON CONFLICT (time_key) DO NOTHING
-  `, [timeKey, YYYY, parseInt(MM), parseInt(DD)]);
+  `, [timeKey, date.toISOString().slice(0, 10), YYYY, quarter, MM, monthNames[MM-1], 
+      DD, dayOfWeek, dayNames[dayOfWeek], weekOfYear, isWeekend, false, !isWeekend, YYYY, quarter]);
   
   return timeKey;
 }
@@ -105,23 +121,23 @@ export class ETLPipeline {
             lb.current_interest_rate,
             lb.current_payment_amount_cents,
             COALESCE(lb_join.borrower_id, NULL) as borrower_id,
-            COALESCE(p.total_amount_cents, 0) as payment_amount_cents,
+            COALESCE(p.total_amount, 0) * 100 as payment_amount_cents,
             CASE 
-              WHEN p.received_date IS NOT NULL AND p.received_date <= p.scheduled_date THEN 'on_time'
-              WHEN p.received_date IS NOT NULL AND p.received_date > p.scheduled_date THEN 'late'
-              WHEN p.received_date IS NULL AND p.scheduled_date < CURRENT_DATE THEN 'missed'
+              WHEN p.received_date IS NOT NULL AND p.received_date <= p.due_date THEN 'on_time'
+              WHEN p.received_date IS NOT NULL AND p.received_date > p.due_date THEN 'late'
+              WHEN p.received_date IS NULL AND p.due_date < CURRENT_DATE THEN 'missed'
               ELSE 'scheduled'
             END as payment_status,
             COALESCE(
-              EXTRACT(DAYS FROM (CURRENT_DATE - p.scheduled_date)), 0
+              EXTRACT(DAYS FROM (CURRENT_DATE - p.due_date)), 0
             ) as days_delinquent,
             CURRENT_DATE as snapshot_date
           FROM loans l
           LEFT JOIN loan_balances lb ON l.id = lb.loan_id
-          LEFT JOIN loan_borrowers lb_join ON l.id = lb_join.loan_id AND (lb_join.is_primary = TRUE OR lb_join.is_primary IS NULL)
+          LEFT JOIN loan_borrowers lb_join ON l.id = lb_join.loan_id
           LEFT JOIN borrowers b ON lb_join.borrower_id = b.id
           LEFT JOIN payments p ON l.id = p.loan_id 
-            AND p.scheduled_date >= CURRENT_DATE - INTERVAL '30 days'
+            AND p.due_date >= CURRENT_DATE - INTERVAL '30 days'
           WHERE l.status IN ('active', 'current', 'delinquent')
         `;
 
