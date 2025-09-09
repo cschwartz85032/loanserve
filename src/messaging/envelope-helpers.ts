@@ -5,22 +5,35 @@
 import { randomUUID } from 'crypto';
 import { Envelope } from '../types/messages';
 
+const NIL = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Normalize tenant ID - convert 'default' to proper UUID
+ */
+function normalizeTenantId(tenantId?: string): string {
+  if (!tenantId || tenantId === 'default') {
+    return process.env.DEFAULT_TENANT_ID ?? NIL;
+  }
+  return tenantId;
+}
+
 /**
  * Create a standardized envelope for queue messages
  */
 export function createEnvelope<T>(params: {
-  tenantId: string;
+  tenantId?: string;
   payload: T;
   correlationId?: string;
+  messageId?: string;
   causationId?: string;
   idempotencyKey?: string;
   actor?: { userId?: string; service?: string };
 }): Envelope<T> {
-  const msgId = params.correlationId || randomUUID();
+  const msgId = params.messageId ?? randomUUID();
   return {
-    messageId: msgId,  // Add messageId for consumer compatibility
-    tenantId: params.tenantId,
-    correlationId: msgId,
+    messageId: msgId,  // Explicit messageId for consumer compatibility
+    tenantId: normalizeTenantId(params.tenantId),
+    correlationId: params.correlationId ?? msgId,
     causationId: params.causationId,
     idempotencyKey: params.idempotencyKey || randomUUID(),
     actor: params.actor,

@@ -20,7 +20,11 @@ export async function startConsumer(conn: amqp.Connection, opts: ConsumerOptions
 
     try {
       const content = JSON.parse(msg.content.toString());
-      const { messageId, tenantId } = content;
+      
+      // Prefer payload fields, fallback to headers for compatibility
+      const messageId = content.messageId ?? msg.properties?.messageId;
+      const tenantId = content.tenantId ?? msg.properties?.headers?.tenantId;
+      
       if (!messageId || !tenantId) throw new Error('Missing messageId/tenantId');
 
       // Idempotency check - temporarily disabled to resolve SQL syntax issues

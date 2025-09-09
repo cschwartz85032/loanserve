@@ -19,10 +19,10 @@ async function ensureTimeKey(client: any, date: Date): Promise<number> {
   
   // Insert time dimension record if it doesn't exist
   await client.query(`
-    INSERT INTO dim_time (time_key, year, month, day, date)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO dim_time (time_key, year, month, day)
+    VALUES ($1, $2, $3, $4)
     ON CONFLICT (time_key) DO NOTHING
-  `, [timeKey, YYYY, parseInt(MM), parseInt(DD), date.toISOString().slice(0, 10)]);
+  `, [timeKey, YYYY, parseInt(MM), parseInt(DD)]);
   
   return timeKey;
 }
