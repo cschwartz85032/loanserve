@@ -111,6 +111,11 @@ export async function initQueues() {
   const { globalQueueMonitor } = await import('./queues/monitoring/queue-monitor');
   await globalQueueMonitor.initialize(conn);
   console.log('[Queue Init] Queue monitoring initialized');
+  
+  // Initialize microservice orchestrator (Phase 3)
+  const { microserviceOrchestrator } = await import('./services/microservice-orchestrator');
+  await microserviceOrchestrator.initialize(conn);
+  console.log('[Queue Init] ✅ Microservice orchestration initialized');
 
   // Start ETL scheduler (replaces setInterval timer)
   startEtlScheduler(publishFunction);
