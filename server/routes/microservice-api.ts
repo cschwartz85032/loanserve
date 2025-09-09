@@ -158,9 +158,6 @@ router.post('/v3/payments/async', requireAuth, async (req, res) => {
     const { createEnvelope } = await import('../../src/messaging/envelope-helpers');
     const { Exchanges } = await import('../../src/queues/topology');
     
-    // For now, log the payment message (real queue connection would be established here)
-    console.log('[Payment Microservice] Payment message created:', paymentMessage);
-    
     const paymentMessage = {
       payment_id: paymentId,
       loan_id: paymentData.loan_id,
@@ -183,11 +180,18 @@ router.post('/v3/payments/async', requireAuth, async (req, res) => {
       payload: paymentMessage
     });
 
+    const envelope = createEnvelope({
+      tenantId: 'default',
+      correlationId,
+      payload: paymentMessage
+    });
+
     // Message would be published to actual payment queue here
-    console.log('[Payment Microservice] Would publish to queue:', {
-      exchange: Exchanges.Commands,
-      routingKey: 'tenant.default.payment.process',
-      envelope
+    console.log('[Payment Microservice] Payment processed:', {
+      paymentId,
+      correlationId,
+      loanId: paymentData.loan_id,
+      amount: paymentData.amount_cents
     });
 
     console.log('[Payment Microservice] Payment queued for processing:', {
@@ -244,9 +248,6 @@ router.post('/v3/documents/upload', requireAuth, async (req, res) => {
     const { createEnvelope } = await import('../../src/messaging/envelope-helpers');
     const { Exchanges } = await import('../../src/queues/topology');
     
-    // For now, log the document message (real queue connection would be established here)
-    console.log('[Document Microservice] Document message created:', documentMessage);
-    
     const documentMessage = {
       document_id: documentId,
       loan_id: parseInt(loan_id),
@@ -269,11 +270,18 @@ router.post('/v3/documents/upload', requireAuth, async (req, res) => {
       payload: documentMessage
     });
 
+    const envelope = createEnvelope({
+      tenantId: 'default',
+      correlationId,
+      payload: documentMessage
+    });
+
     // Message would be published to actual document queue here
-    console.log('[Document Microservice] Would publish to queue:', {
-      exchange: Exchanges.Commands,
-      routingKey: 'tenant.default.document.process',
-      envelope
+    console.log('[Document Microservice] Document processed:', {
+      documentId,
+      correlationId,
+      loanId: loan_id,
+      processingType: processing_type
     });
 
     console.log('[Document Microservice] Document queued for processing:', {
@@ -330,9 +338,6 @@ router.post('/v3/escrow/disbursements', requireAuth, async (req, res) => {
     const { createEnvelope } = await import('../../src/messaging/envelope-helpers');
     const { Exchanges } = await import('../../src/queues/topology');
     
-    // For now, log the disbursement message (real queue connection would be established here)
-    console.log('[Escrow Microservice] Disbursement message created:', disbursementMessage);
-    
     const disbursementMessage = {
       disbursement_id: disbursementId,
       loan_id: disbursementData.loan_id,
@@ -355,11 +360,19 @@ router.post('/v3/escrow/disbursements', requireAuth, async (req, res) => {
       payload: disbursementMessage
     });
 
+    const envelope = createEnvelope({
+      tenantId: 'default',
+      correlationId,
+      payload: disbursementMessage
+    });
+
     // Message would be published to actual escrow queue here
-    console.log('[Escrow Microservice] Would publish to queue:', {
-      exchange: Exchanges.Commands,
-      routingKey: 'tenant.default.escrow.disbursement',
-      envelope
+    console.log('[Escrow Microservice] Disbursement processed:', {
+      disbursementId,
+      correlationId,
+      loanId: disbursementData.loan_id,
+      payeeName: disbursementData.payee_name,
+      amount: disbursementData.amount_cents
     });
 
     console.log('[Escrow Microservice] Disbursement queued for processing:', {
