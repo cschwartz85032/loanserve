@@ -16,18 +16,23 @@ export async function withTenantClient<T>(
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   if (!tenantId) throw new Error('Tenant ID is required for database operations');
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
-    throw new Error(`Invalid tenant ID format: ${tenantId}`);
+  
+  // Convert "default" tenant to a valid UUID for database compatibility
+  const normalizedTenantId = tenantId === 'default' ? '00000000-0000-0000-0000-000000000000' : tenantId;
+  
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedTenantId)) {
+    throw new Error(`Invalid tenant ID format: ${normalizedTenantId}`);
   }
 
   const client = await pool.connect();
   try {
     // Start transaction so SET LOCAL is truly transaction-scoped
     await client.query('BEGIN');
-    await client.query('SET LOCAL app.tenant_id = $1', [tenantId]);
+    await client.query('SET LOCAL app.tenant_id = $1', [normalizedTenantId]);
     
     console.debug('[DB] Tenant context set for session', {
-      tenantId: redactUuid(tenantId),
+      tenantId: redactUuid(normalizedTenantId),
+      originalTenantId: tenantId !== normalizedTenantId ? tenantId : undefined,
       timestamp: new Date().toISOString()
     });
 
