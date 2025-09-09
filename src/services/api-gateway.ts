@@ -176,34 +176,17 @@ export class ApiGateway {
       });
     });
 
-    // Frontend fallback - proxy all non-API routes to core server
+    // Frontend redirect - redirect non-API routes to core server  
     this.app.use('*', (req, res, next) => {
       // Skip API routes - they're handled by service proxies
       if (req.path.startsWith('/api/v3/')) {
         return next();
       }
       
-      // Proxy frontend requests to core server
-      const frontendProxy = httpProxy.createProxyMiddleware({
-        target: 'http://localhost:4000',
-        changeOrigin: true,
-        secure: false,
-        headers: {
-          'Host': 'localhost:4000'
-        },
-        onProxyReq: (proxyReq, req, res) => {
-          // Ensure we're only forwarding the path, not the full URL
-          console.log(`[API Gateway] Proxying frontend request: ${req.method} ${req.path}`);
-        },
-        onError: (err, req, res) => {
-          console.error(`[API Gateway] Frontend proxy error for ${req.path}:`, err.message);
-          if (res && !res.headersSent) {
-            (res as express.Response).status(503).send('Frontend temporarily unavailable');
-          }
-        }
-      });
-      
-      frontendProxy(req, res, next);
+      // Redirect frontend requests to core server instead of proxying
+      const coreServerUrl = `http://localhost:4000${req.path}${req.search || ''}`;
+      console.log(`[API Gateway] Redirecting frontend request to: ${coreServerUrl}`);
+      res.redirect(302, coreServerUrl);
     });
   }
 
