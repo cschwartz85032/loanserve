@@ -39,7 +39,7 @@ export type DocumentProcessingMessage = z.infer<typeof DocumentProcessingSchema>
 /**
  * Perform OCR processing on document using AWS Textract with Grok AI fallback
  */
-async function performOCR(message: DocumentProcessingMessage): Promise<{ text: string; confidence: number }> {
+export async function performOCR(message: DocumentProcessingMessage): Promise<{ text: string; confidence: number }> {
   console.log(`[Document OCR] Processing OCR for document: ${message.document_id}`);
   
   const { TextractClient, DetectDocumentTextCommand } = await import('@aws-sdk/client-textract');
@@ -124,7 +124,7 @@ async function performOCR(message: DocumentProcessingMessage): Promise<{ text: s
 /**
  * Perform AI analysis and classification using Grok AI
  */
-async function performAIAnalysis(message: DocumentProcessingMessage, ocrText: string): Promise<{
+export async function performAIAnalysis(message: DocumentProcessingMessage, ocrText: string): Promise<{
   classification: string;
   confidence: number;
   extracted_data: any;

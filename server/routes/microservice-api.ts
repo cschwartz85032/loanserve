@@ -250,19 +250,13 @@ router.post('/v3/documents/upload', requireAuth, async (req, res) => {
       mime_type: mime_type || 'application/pdf',
       file_size: file_size || 0,
       processing_type,
-      uploaded_by: req.user?.id,
+      uploaded_by: (req as any).user?.id,
       ocr_language: 'en',
       extract_tables: processing_type === 'full',
       analyze_content: ['ai_analysis', 'full'].includes(processing_type),
       classify_document: ['classification', 'full'].includes(processing_type),
       extract_datapoints: processing_type === 'full'
     };
-
-    const envelope = createEnvelope({
-      tenantId: 'default',
-      correlationId,
-      payload: documentMessage
-    });
 
     const docEnvelope = createEnvelope({
       tenantId: 'default',
@@ -339,7 +333,7 @@ router.post('/v3/escrow/disbursements', requireAuth, async (req, res) => {
       payee_name: disbursementData.payee_name,
       amount_cents: disbursementData.amount_cents,
       due_date: disbursementData.due_date,
-      created_by: req.user?.id,
+      created_by: (req as any).user?.id,
       processing_options: {
         validate_balance: true,
         check_approval: true,
