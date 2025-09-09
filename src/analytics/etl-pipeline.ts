@@ -42,8 +42,8 @@ export class ETLPipeline {
   private runningJobs: Map<string, ETLJobResult> = new Map();
 
   constructor() {
-    // Schedule periodic ETL jobs
-    setInterval(() => this.runScheduledJobs(), 300000); // 5 minutes
+    // Timer-based ETL disabled - now using queue-based processing
+    // See src/queues/etl/ for modern queue-based ETL implementation
   }
 
   static getInstance(): ETLPipeline {

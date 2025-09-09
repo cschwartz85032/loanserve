@@ -209,6 +209,16 @@ app.use((req, res, next) => {
     console.error('[Server] Failed to start boarding worker:', error);
   }
   
+  // Initialize modern queue-based system (Phase 1 Migration)
+  try {
+    const { initQueues } = await import('../src/init-queues');
+    await initQueues();
+    console.log('[Server] ✅ Modern queue system initialized - ETL now queue-based');
+  } catch (error) {
+    console.error('[Server] Failed to initialize queue system:', error);
+    console.error('[Server] ⚠️  Falling back to legacy operations');
+  }
+  
   const server = await registerRoutes(app);
 
   // Use correlation error handler
