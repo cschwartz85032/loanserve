@@ -4,6 +4,7 @@
  */
 
 export type Envelope<T> = {
+  messageId: string;      // For consumer compatibility
   tenantId: string;
   correlationId: string; // end-to-end tracing
   causationId?: string;  // parent correlation ID

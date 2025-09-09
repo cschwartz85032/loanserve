@@ -1,0 +1,198 @@
+1) src/services/api-gateway.ts
+A) Line 118: typo fix (unhealyServices → unhealthyServices)
+-  const unhealyServices = services.filter(s => !s.healthy);
+-  const healthyCount = services.length - unhealyServices.length;
++  const unhealthyServices = services.filter(s => !s.healthy);
++  const healthyCount = services.length - unhealthyServices.length;
+
+B) Lines 166–168: type-safe indexing of SERVICE_ROUTES
+-const SERVICE_ROUTES = {
++const SERVICE_ROUTES = {
+   payments: '/api/v3/payments',
+   documents: '/api/v3/documents',
+   escrow: '/api/v3/escrow',
+   loans: '/api/v3/loans',
+-};
++} as const;
++
++type ServiceKey = keyof typeof SERVICE_ROUTES;
++
++function routeFor(service: ServiceKey): (typeof SERVICE_ROUTES)[ServiceKey] {
++  return SERVICE_ROUTES[service];
++}
+
+
+Wherever you currently index SERVICE_ROUTES[someVar], change someVar’s type to ServiceKey or call routeFor(someVar).
+
+C) Line 187: Express Request has no search—use URL (typed)
+-import { Request, Response, NextFunction } from 'express';
++import { Request, Response, NextFunction } from 'express';
+
+ // ...
+-const search = req.search; // ❌ not on Request
++const url = new URL(req.originalUrl, `http://${req.headers.host ?? 'localhost'}`);
++const search = url.search; // ✅ string
++const params = url.searchParams; // ✅ URLSearchParams (fully typed)
+
+
+If you were using req.searchParams, replace with params above—or use req.query when appropriate.
+
+D) Lines 204–215: http-proxy-middleware callback typings
+-import { createProxyMiddleware } from 'http-proxy-middleware';
++import type { Request, Response } from 'express';
++import { createProxyMiddleware } from 'http-proxy-middleware';
++import type {
++  Options as ProxyOptions,
++  OnProxyReqCallback,
++  OnProxyResCallback,
++  ErrorCallback,
++} from 'http-proxy-middleware';
+
+-const proxy = createProxyMiddleware({...});
++const proxy = createProxyMiddleware({
++  target: process.env.API_UPSTREAM ?? 'http://localhost:5004',
++  changeOrigin: true,
++  // ensure the options object is typed to avoid 'any'
++} as ProxyOptions);
+
+-opts.onProxyReq = (proxyReq, req, res) => { /* ... */ };
+-opts.onProxyRes = (proxyRes, req, res) => { /* ... */ };
+-opts.onError = (err, req, res) => { /* ... */ };
++const onProxyReq: OnProxyReqCallback = (proxyReq, req: Request, _res: Response) => {
++  // e.g., forward auth
++  const auth = req.header('authorization');
++  if (auth) proxyReq.setHeader('authorization', auth);
++};
++
++const onProxyRes: OnProxyResCallback = (_proxyRes, _req: Request, _res: Response) => {
++  // optional: header rewrites, metrics, etc.
++};
++
++const onError: ErrorCallback = (err: Error, _req: Request, res: Response) => {
++  res.status(502).json({ error: 'Bad gateway', detail: err.message });
++};
++
++// attach the callbacks in a typed-safe way
++(proxy as any).options = { ...(proxy as any).options, onProxyReq, onProxyRes, onError };
+
+2) shared/schema.ts
+
+These fixes assume Drizzle ORM style schema/relations. The goal is to remove implicit-anys, wrong boolean defaults, and missing return types without changing runtime behavior.
+
+A) Implicit any in relations at lines 1241, 1463, 3031, 3360, 3494
+
+Use a tiny helper type to annotate the relation callbacks:
+
+// near top of file, once:
+type RelHelpers = {
+  one: (...args: any[]) => any;
+  many: (...args: any[]) => any;
+};
+
+// Example fix for each 'relations' block that destructures { one, many }:
+-export const loanRelations = relations(loans, ({ one, many }) => ({
++export const loanRelations = relations(loans, ({ one, many }: RelHelpers) => ({
+  lender: one(lenders, { fields: [loans.lenderId], references: [lenders.id] }),
+  payments: many(payments),
+}));
+
+
+Apply that same (: RelHelpers) annotation to the relations blocks at those five locations.
+
+B) true not assignable to never at lines 2291, 3577–3596
+
+That happens when a boolean column’s default isn’t typed. Make the column explicitly boolean via .$type<boolean>() or use SQL-typed default:
+
+-const isActive = boolean('is_active').notNull().default(true);
++const isActive = boolean('is_active').$type<boolean>().notNull().default(true as const);
+
+
+Alternatively (also very clean):
+
+import { sql } from 'drizzle-orm';
+
+const isActive = boolean('is_active')
+  .notNull()
+  .default(sql<boolean>`true`);
+
+
+Apply this same pattern to each problematic boolean with default(true) mentioned in your diagnostics.
+
+C) Missing return type annotations at lines 1277, 1490, 3034, 3373, 3551
+
+When exporting builders/helpers that return objects or relations, add explicit return types:
+
+- export const buildFoo = () => ({
++ export const buildFoo = (): Record<string, unknown> => ({
+    /* ... */
+  });
+
+- export const borrowerRelations = relations(borrowers, (r) => ({
++ type RelationShape = Record<string, unknown>;
++ export const borrowerRelations = relations(borrowers, (r: RelHelpers): RelationShape => ({
+    /* ... */
+  }));
+
+
+If any of those are actual functions (not relations), choose a precise return type (e.g., string, number, void, Promise<void>) instead of Record<string, unknown>.
+
+3) vite.config.ts (Line 10)
+
+Vite key is mode, not process.env.NODE_ENV. Compare against mode === 'production'.
+
+-import { defineConfig } from 'vite';
++import { defineConfig } from 'vite';
+
+-export default defineConfig({
+-  // ...
+-  build: {
+-    sourcemap: process.env.NODE_ENV !== 'production',
+-  },
+-});
++export default defineConfig(({ mode }) => ({
++  build: {
++    sourcemap: mode !== 'production',
++  },
++  define: {
++    __PROD__: mode === 'production',
++  },
++}));
+
+Operational fixes you mentioned
+
+These aren’t the TS errors, but here are the concrete patches:
+
+A) ETL message headers (missing messageId / tenantId)
+diff --git a/src/queues/etl-scheduler.ts b/src/queues/etl-scheduler.ts
++import { randomUUID } from 'node:crypto';
+ // ...
+ channel.publish(
+   'etl',
+   'etl.schedule.v1',
+   Buffer.from(JSON.stringify({ ts: Date.now(), kind: 'etl.schedule.tick' })),
+   {
+     contentType: 'application/json',
+     persistent: true,
++    messageId: randomUUID(),
++    headers: { tenantId: process.env.DEFAULT_TENANT_ID ?? 'default' },
+   }
+ );
+
+B) Service registry health checks (count, names, and typing)
+
+If your health reporter used the misspelled variable for status, correct and keep the types tight:
+
+-type HealthEntry = { name: string; healthy: boolean; url?: string };
++type HealthEntry = { name: string; healthy: boolean; url?: string };
+
+-const unhealyServices = services.filter(s => !s.healthy);
++const unhealthyServices = services.filter((s: HealthEntry) => !s.healthy);
+ const healthyCount: number = services.length - unhealthyServices.length;
+
+ res.json({
+   total: services.length,
+   healthy: healthyCount,
+   unhealthy: unhealthyServices.length,
+-  services: services.map(s => ({ name: s.name, healthy: s.healthy, url: s.url })),
++  services: services.map((s: HealthEntry) => ({ name: s.name, healthy: s.healthy, url: s.url })),
+ });

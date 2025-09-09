@@ -16,9 +16,11 @@ export function createEnvelope<T>(params: {
   idempotencyKey?: string;
   actor?: { userId?: string; service?: string };
 }): Envelope<T> {
+  const msgId = params.correlationId || randomUUID();
   return {
+    messageId: msgId,  // Add messageId for consumer compatibility
     tenantId: params.tenantId,
-    correlationId: params.correlationId || randomUUID(),
+    correlationId: msgId,
     causationId: params.causationId,
     idempotencyKey: params.idempotencyKey || randomUUID(),
     actor: params.actor,

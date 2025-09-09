@@ -72,13 +72,15 @@ export async function initQueues() {
   // Create publish function for consumers  
   const publishFunction = async (exchange: string, routingKey: string, message: any) => {
     const messageBuffer = Buffer.from(JSON.stringify(message));
+    const msgId = message.correlationId || randomUUID();
     await channel.publish(exchange, routingKey, messageBuffer, {
       persistent: true,
-      messageId: message.correlationId || randomUUID(),
-      correlationId: message.correlationId || randomUUID(),
+      contentType: 'application/json',
+      messageId: msgId,
+      correlationId: msgId,
       timestamp: Date.now(),
       headers: {
-        tenantId: message.tenantId || 'default',
+        tenantId: message.tenantId || process.env.DEFAULT_TENANT_ID || 'default',
         schemaVersion: message.schemaVersion || 1
       }
     });

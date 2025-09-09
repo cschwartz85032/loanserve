@@ -3,6 +3,7 @@
  * Publishes schedule messages instead of running ETL directly
  */
 
+import { randomUUID } from 'crypto';
 import { createEnvelope, createRoutingKey, createEtlIdempotencyKey, createDateKey } from '../../messaging/envelope-helpers';
 import { EtlSchedulePayload } from '../../types/messages';
 import { Exchanges } from '../topology';

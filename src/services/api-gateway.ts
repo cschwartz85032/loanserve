@@ -30,7 +30,9 @@ const SERVICE_ROUTES = {
     capability: 'loan.management',
     target: 'http://localhost:5004' // Future loan service
   }
-};
+} as const;
+
+type ServiceRoute = keyof typeof SERVICE_ROUTES;
 
 export class ApiGateway {
   private app: express.Application;
@@ -115,7 +117,7 @@ export class ApiGateway {
         services: {
           total: stats.totalServices,
           healthy: stats.healthyServices,
-          unhealthy: stats.unhealyServices,
+          unhealthy: stats.unhealthyServices,
           by_name: stats.servicesByName
         },
         instances: services.map(service => ({
@@ -161,12 +163,15 @@ export class ApiGateway {
 
     // Load balancer status
     this.app.get('/api/v3/gateway/load-balancer', (req, res) => {
-      const routeStats = Array.from(this.serviceRoutes.entries()).map(([route, proxy]) => ({
-        route,
-        target: SERVICE_ROUTES[route]?.target,
-        service_name: SERVICE_ROUTES[route]?.serviceName,
-        healthy_instances: globalServiceRegistry.getHealthyInstances(SERVICE_ROUTES[route]?.serviceName || '').length
-      }));
+      const routeStats = Array.from(this.serviceRoutes.entries()).map(([route, proxy]) => {
+        const routeConfig = SERVICE_ROUTES[route as ServiceRoute];
+        return {
+          route,
+          target: routeConfig?.target,
+          service_name: routeConfig?.serviceName,
+          healthy_instances: globalServiceRegistry.getHealthyInstances(routeConfig?.serviceName || '').length
+        };
+      });
 
       res.json({
         success: true,
@@ -184,7 +189,8 @@ export class ApiGateway {
       }
       
       // Redirect frontend requests to core server instead of proxying
-      const coreServerUrl = `http://localhost:4000${req.path}${req.search || ''}`;
+      const url = new URL(req.originalUrl, `http://${req.headers.host ?? 'localhost'}`);
+      const coreServerUrl = `http://localhost:4000${req.path}${url.search || ''}`;
       console.log(`[API Gateway] Redirecting frontend request to: ${coreServerUrl}`);
       res.redirect(302, coreServerUrl);
     });
