@@ -115,7 +115,8 @@ export async function initQueues() {
   });
 }
 
-if (require.main === module) {
+// ES module compatible check
+if (import.meta.url === `file://${process.argv[1]}`) {
   initQueues().catch((err) => {
     console.error(err);
     process.exit(1);
