@@ -35,6 +35,7 @@ import { BorrowerMakePayment } from "@/pages/portal/make-payment";
 function Router() {
   return (
     <Switch>
+      <Route path="/auth" component={AuthPage} />
       <ProtectedRoute path="/" component={Dashboard} />
       <ProtectedRoute path="/dashboard" component={Dashboard} />
       <ProtectedRoute path="/loans" component={Loans} />
