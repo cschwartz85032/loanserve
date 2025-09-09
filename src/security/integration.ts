@@ -7,7 +7,7 @@ import { Application } from 'express';
 import { securityRoutes } from './routes';
 import { oidcRouter } from '../routes/oidc-routes';
 import { configureSecurityHeaders, apiSecurityHeaders } from './headers';
-import { RetentionScheduler } from './retention-policies';
+// Retention is now handled by ETL Scheduler maintenance tasks
 
 /**
  * Initialize all security components
@@ -27,15 +27,8 @@ export async function initializeSecurity(app: Application): Promise<void> {
   app.use(securityRoutes);
   console.log('[Security] Security API routes registered');
 
-  // 4. Start retention scheduler
-  try {
-    const { pool } = await import('../server/db');
-    const retentionScheduler = new RetentionScheduler(pool);
-    retentionScheduler.start();
-    console.log('[Security] Data retention scheduler started');
-  } catch (error) {
-    console.warn('[Security] Retention scheduler not started - requires node-cron dependency');
-  }
+  // 4. Data retention is now handled by ETL Scheduler maintenance tasks
+  console.log('[Security] Data retention integrated with ETL Scheduler (replaces node-cron)');
 
   // 5. Initialize mTLS for service-to-service communication
   try {

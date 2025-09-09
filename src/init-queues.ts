@@ -114,6 +114,11 @@ export async function initQueues() {
   await startBoardingWorker();
   console.log('[Queue Init] Boarding worker initialized');
   
+  // Initialize maintenance consumer (replaces node-cron)
+  const { initMaintenanceConsumer } = await import('./queues/maintenance/maintenance-consumer');
+  await initMaintenanceConsumer(conn, publishFunction);
+  console.log('[Queue Init] Maintenance consumer initialized');
+  
   // Set publish function for async payment routes
   const { setPublishFunction } = await import('../server/routes/payment-async');
   setPublishFunction(publishFunction);

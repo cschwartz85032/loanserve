@@ -14,6 +14,7 @@ const DEFAULT_TENANT = process.env.DEFAULT_TENANT_ID ?? NIL;
 export class EtlScheduler {
   private publishFunction: (exchange: string, routingKey: string, message: any) => Promise<void>;
   private intervalId: NodeJS.Timeout | null = null;
+  private lastMaintenanceRun: Date | null = null;
 
   constructor(publishFn: (exchange: string, routingKey: string, message: any) => Promise<void>) {
     this.publishFunction = publishFn;
@@ -60,7 +61,8 @@ export class EtlScheduler {
       const tenantId = 'default';
       const dateKey = createDateKey();
       
-      const envelope = createEnvelope<EtlSchedulePayload>({
+      // Always run ETL jobs (every 5 minutes)
+      const etlEnvelope = createEnvelope<EtlSchedulePayload>({
         tenantId,
         idempotencyKey: createEtlIdempotencyKey(tenantId, 'schedule', dateKey),
         payload: {
@@ -70,14 +72,57 @@ export class EtlScheduler {
         actor: { service: 'etl-scheduler' }
       });
 
-      const routingKey = createRoutingKey(tenantId, 'etl.schedule');
-      await this.publishFunction(Exchanges.Schedules, routingKey, envelope);
+      const etlRoutingKey = createRoutingKey(tenantId, 'etl.schedule');
+      await this.publishFunction(Exchanges.Schedules, etlRoutingKey, etlEnvelope);
       
-      console.log(`[ETL Scheduler] Published schedule for tenant ${tenantId}`);
+      console.log(`[ETL Scheduler] Published ETL schedule for tenant ${tenantId}`);
+      
+      // Check if we should run daily maintenance tasks (2:00 AM server time)
+      if (this.shouldRunMaintenance()) {
+        const maintenanceEnvelope = createEnvelope<EtlSchedulePayload>({
+          tenantId,
+          idempotencyKey: createEtlIdempotencyKey(tenantId, 'maintenance', dateKey),
+          payload: {
+            window: 'daily',
+            jobTypes: ['retention_cleanup', 'audit_maintenance']
+          },
+          actor: { service: 'etl-scheduler' }
+        });
+
+        const maintenanceRoutingKey = createRoutingKey(tenantId, 'maintenance.schedule');
+        await this.publishFunction(Exchanges.Schedules, maintenanceRoutingKey, maintenanceEnvelope);
+        
+        this.lastMaintenanceRun = new Date();
+        console.log(`[ETL Scheduler] Published maintenance schedule for tenant ${tenantId}`);
+      }
       
     } catch (error) {
       console.error('[ETL Scheduler] Failed to publish schedule:', error);
     }
+  }
+
+  /**
+   * Check if we should run daily maintenance tasks
+   * Runs once per day at 2:00 AM server time
+   */
+  private shouldRunMaintenance(): boolean {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    
+    // Target: 2:00 AM (allow 5-minute window since scheduler runs every 5 minutes)
+    const isMaintenanceWindow = currentHour === 2 && currentMinute < 5;
+    
+    if (!isMaintenanceWindow) return false;
+    
+    // Don't run if we already ran today
+    if (this.lastMaintenanceRun) {
+      const today = now.toDateString();
+      const lastRunDay = this.lastMaintenanceRun.toDateString();
+      if (today === lastRunDay) return false;
+    }
+    
+    return true;
   }
 }
 

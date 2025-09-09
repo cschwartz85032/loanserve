@@ -38,6 +38,9 @@ export const Queues = {
   EtlSchedule:       'etl.schedule.v1',
   EtlJob:            'etl.job.v1',
 
+  // Maintenance tasks (replaces node-cron)
+  MaintenanceSchedule: 'maintenance.schedule.v1',
+
   // Events / status
   StatusUpdate:      'status.update.v1',
 
@@ -107,6 +110,7 @@ export async function declareTopology(ch: any) {
     Queues.LoanBoardRequest,
     Queues.EtlSchedule,
     Queues.EtlJob,
+    Queues.MaintenanceSchedule,
     Queues.StatusUpdate,
     Queues.Dlq
   ];
@@ -129,6 +133,9 @@ export async function declareTopology(ch: any) {
   
   await ch.bindQueue(Queues.EtlSchedule, Exchanges.Schedules, 'tenant.*.etl.schedule');
   await ch.bindQueue(Queues.EtlJob, Exchanges.Commands, 'tenant.*.etl.job');
+  
+  // Maintenance scheduling bindings (replaces node-cron)
+  await ch.bindQueue(Queues.MaintenanceSchedule, Exchanges.Schedules, 'tenant.*.maintenance.schedule');
   
   await ch.bindQueue(Queues.StatusUpdate, Exchanges.Events, 'tenant.*.status.#');
   

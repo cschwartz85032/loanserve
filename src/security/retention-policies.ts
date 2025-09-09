@@ -377,9 +377,10 @@ export class RetentionService {
 }
 
 /**
- * Scheduled retention job
+ * Retention operations for queue-based execution
+ * Replaces node-cron scheduled retention with ETL Scheduler integration
  */
-export class RetentionScheduler {
+export class RetentionOperations {
   private client: any;
 
   constructor(client: any) {
@@ -387,22 +388,15 @@ export class RetentionScheduler {
   }
 
   /**
-   * Start retention scheduler (runs based on RETENTION_JOB_CRON)
+   * Run retention for all tenants (called by maintenance consumer)
    */
-  start(): void {
-    const cron = require('node-cron');
-    const cronSchedule = process.env.RETENTION_JOB_CRON || '0 2 * * *'; // Daily at 2 AM
-
-    cron.schedule(cronSchedule, async () => {
-      console.log('[Retention] Starting scheduled retention job');
-      await this.runRetentionForAllTenants();
-    });
-
-    console.log(`[Retention] Scheduler started with cron: ${cronSchedule}`);
-  }
-
-  private async runRetentionForAllTenants(): Promise<void> {
+  async runRetentionForAllTenants(): Promise<{ processedTenants: number; errors: number }> {
+    let processedTenants = 0;
+    let errors = 0;
+    
     try {
+      console.log('[Retention] Starting retention job for all tenants');
+      
       // Get all tenants
       const tenantResult = await this.client.query(`
         SELECT DISTINCT tenant_id FROM retention_policies
@@ -422,12 +416,17 @@ export class RetentionScheduler {
           const results = await retentionService.executeAllRetentions(false);
           
           console.log(`[Retention] Completed retention for tenant ${tenantId}:`, results);
+          processedTenants++;
         } catch (error) {
           console.error(`[Retention] Error processing tenant ${tenantId}:`, error);
+          errors++;
         }
       }
     } catch (error) {
-      console.error('[Retention] Scheduler error:', error);
+      console.error('[Retention] Retention job error:', error);
+      errors++;
     }
+    
+    return { processedTenants, errors };
   }
 }
