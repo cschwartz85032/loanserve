@@ -49,7 +49,7 @@ export class PaymentService {
    */
   async initialize(connection: Connection): Promise<void> {
     this.connection = connection;
-    this.publishChannel = await connection.createChannel();
+    this.publishChannel = await connection.createConfirmChannel();
     
     console.log('[Payment Service] Initializing independent payment microservice...');
     
@@ -114,7 +114,7 @@ export class PaymentService {
         const paymentMessage: PaymentProcessingMessage = {
           payment_id: paymentId,
           loan_id: paymentData.loan_id,
-          payment_method: paymentData.payment_method,
+          source: paymentData.payment_method,
           amount_cents: paymentData.amount_cents,
           payment_date: paymentData.payment_date,
           reference_number: paymentData.reference_number,
@@ -153,7 +153,7 @@ export class PaymentService {
         console.error('[Payment Service] Error creating payment:', error);
         res.status(400).json({
           success: false,
-          error: error.message
+          error: error instanceof Error ? error.message : 'Unknown error'
         });
       }
     });
@@ -201,7 +201,7 @@ export class PaymentService {
         console.error('[Payment Service] Error allocating payment:', error);
         res.status(400).json({
           success: false,
-          error: error.message
+          error: error instanceof Error ? error.message : 'Unknown error'
         });
       }
     });
@@ -225,7 +225,7 @@ export class PaymentService {
         console.error('[Payment Service] Error getting payment status:', error);
         res.status(500).json({
           success: false,
-          error: error.message
+          error: error instanceof Error ? error.message : 'Unknown error'
         });
       }
     });

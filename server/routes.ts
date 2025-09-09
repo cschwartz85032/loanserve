@@ -194,6 +194,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register queue health monitoring routes (Phase 2)
   const queueHealthRoutes = (await import('./routes/queue-health')).default;
   app.use('/api', queueHealthRoutes);
+  
+  // Register microservice API routes (Phase 3)
+  const microserviceApiRoutes = (await import('./routes/microservice-api')).default;
+  app.use('/api', microserviceApiRoutes);
 
   // Register Column banking routes (Step 17)
   const columnWebhookRoutes = await import('./routes/column-webhooks');

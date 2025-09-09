@@ -105,7 +105,7 @@ export class ServiceRegistry {
         }
       });
 
-      const channel = await this.connection.createChannel();
+      const channel = await this.connection.createConfirmChannel();
       await channel.publish(Exchanges.Events, 'service.registered', Buffer.from(JSON.stringify(registrationEvent)));
       await channel.close();
     }
@@ -143,7 +143,7 @@ export class ServiceRegistry {
         }
       });
 
-      const channel = await this.connection.createChannel();
+      const channel = await this.connection.createConfirmChannel();
       await channel.publish(Exchanges.Events, 'service.deregistered', Buffer.from(JSON.stringify(deregistrationEvent)));
       await channel.close();
     }
@@ -247,7 +247,7 @@ export class ServiceRegistry {
     return {
       totalServices: services.length,
       healthyServices: services.filter(s => s.status === 'healthy').length,
-      unhealyServices: services.filter(s => s.status === 'unhealthy').length,
+      unhealthyServices: services.filter(s => s.status === 'unhealthy').length,
       servicesByName
     };
   }
