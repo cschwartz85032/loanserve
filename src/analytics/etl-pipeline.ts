@@ -114,12 +114,12 @@ export class ETLPipeline {
           SELECT 
             l.id as loan_id,
             l.loan_number,
-            l.product_type,
-            l.current_balance_cents,
+            l.loan_type as product_type,
+            l.principal_balance * 100 as current_balance_cents,
             l.status,
-            lb.current_principal_balance_cents,
-            lb.current_interest_rate,
-            lb.current_payment_amount_cents,
+            COALESCE(lb.current_principal_balance_cents, l.principal_balance * 100) as current_principal_balance_cents,
+            COALESCE(lb.current_interest_rate, l.interest_rate) as current_interest_rate,
+            COALESCE(lb.current_payment_amount_cents, l.payment_amount * 100) as current_payment_amount_cents,
             COALESCE(lb_join.borrower_id, NULL) as borrower_id,
             COALESCE(p.total_amount, 0) * 100 as payment_amount_cents,
             CASE 
