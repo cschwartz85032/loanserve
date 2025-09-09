@@ -1,0 +1,192 @@
+1) Crash: duplicate identifier envelope (esbuild TransformError)
+
+What happened:
+server/routes/microservice-api.ts declares const envelope = … twice in the same scope (lines ~267 and ~357). ES modules don’t allow redeclaring the same symbol in the same scope; esbuild halts the build and your process dies.
+
+Fix (rename the second variable + references):
+
+diff --git a/server/routes/microservice-api.ts b/server/routes/microservice-api.ts
+@@
+-  const envelope = await buildEnvelope({
++  const respEnvelope = await buildEnvelope({
+      status: 'ok',
+      data: result,
+   });
+-  return reply.code(200).send(envelope);
++  return reply.code(200).send(respEnvelope);
+@@
+-  const envelope = await buildEnvelope({
++  const respEnvelope = await buildEnvelope({
+      status: 'ok',
+      data: out,
+   });
+-  return reply.code(200).send(envelope);
++  return reply.code(200).send(respEnvelope);
+
+
+If those two blocks live in different handlers, they’re still in module scope during build if not wrapped — the rename is the safest zero-risk fix.
+
+2) Hard error (but app survives): Cannot find package 'postgres' (Drizzle postgres-js driver)
+
+What happened:
+You’re using drizzle-orm/postgres-js which depends on the postgres driver (aka postgres.js). It isn’t in node_modules.
+
+Fix (install the driver):
+
+# pick your package manager
+npm i postgres
+# or
+pnpm add postgres
+# or
+yarn add postgres
+
+
+No code change needed unless you meant to use node-pg; in that case switch imports to drizzle-orm/node-postgres and install pg. As written, the least-change fix is to install postgres.
+
+3) Worker startup error: Cannot find module 'src/messaging/topology' (BoardingWorker)
+
+What happened:
+src/workers/BoardingWorker.ts imports ../messaging/topology (resolved to /src/messaging/topology), but there’s no file at that path. You do have a topology.ts elsewhere.
+
+Two easy ways to fix (pick one):
+
+A) Add a thin re-export shim (no refactors)
+
+Create the missing module and re-export your real topology:
+
+// File: src/messaging/topology.ts
+export * from '../topology';           // if the file is at src/topology.ts
+// or:
+// export * from '../queues/topology';  // if it lives under src/queues/topology.ts
+
+B) Point the import to the real file
+diff --git a/src/workers/BoardingWorker.ts b/src/workers/BoardingWorker.ts
+- import { declareTopology } from '../messaging/topology';
++ import { declareTopology } from '../topology';          // adjust if path differs
+
+
+(Option A is safest if multiple files import ../messaging/topology.)
+
+4) Migrations warning/error: error: type "collection_status" already exists (Postgres error 42710)
+
+What happened:
+A migration runs CREATE TYPE collection_status AS ENUM (...) without guarding for prior runs. On Neon, this throws 42710 when the type already exists.
+
+Fix (make the enum creation idempotent):
+Replace the raw CREATE TYPE with a guard block. Update the existing migration file that creates the enum, or add a corrective migration after it.
+
+-- File: server/sql/20250909__harden_collection_status_enum.sql
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type t WHERE t.typname = 'collection_status') THEN
+    CREATE TYPE collection_status AS ENUM ('open','in_grace','in_demand','assigned','closed');
+  ELSE
+    -- Ensure required labels exist (safe even if already present)
+    BEGIN
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'open';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'in_grace';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'in_demand';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'assigned';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'closed';
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+      -- If an older enum ordering conflicts, you can recreate by:
+      -- 1) creating a new enum, 2) casting columns, 3) dropping old type, 4) renaming.
+    END;
+  END IF;
+END$$;
+
+
+If your migration tool doesn’t like DO $$ … $$;, create a small SQL file executed by your migrator (Neon serverless accepts this). Don’t DROP TYPE if the type is used by columns.
+
+5) Runtime warnings (non-fatal): libuuid.so.1 missing (pdf/canvas polyfills)
+
+What happened:
+Your PDF rendering polyfills (e.g., canvas/skia-canvas) need libuuid. It’s not installed in your Linux image, so DOMMatrix/Path2D polyfills can’t load.
+
+Fix (container/VM):
+
+Debian/Ubuntu:
+
+apt-get update && apt-get install -y libuuid1
+
+
+Alpine:
+
+apk add --no-cache util-linux-libs
+
+
+Add the correct command to your Dockerfile/base image so CI/dev match.
+
+6) Noise you can safely ignore or clean up later
+
+The fetchConnectionCache option is deprecated — remove that option from your Redis/Upstash client config (it’s always true now).
+
+Huge [SchemaValidator] warning list — not a crash. It just means your validator’s “desired schema” file doesn’t enumerate all existing operational tables yet. We can sync schema.ts later; not urgent.
+
+Quick “apply & try” checklist
+
+Patch the duplicate variable in server/routes/microservice-api.ts.
+
+Add the topology shim (src/messaging/topology.ts) or fix the import path in BoardingWorker.ts.
+
+Install postgres (for drizzle’s postgres-js driver).
+
+Add the enum-safe migration and re-run migrations.
+
+(Optional but recommended) add libuuid1 to your image.
+
+Copy-paste patch set (grouped)
+A) Duplicate envelope fix
+diff --git a/server/routes/microservice-api.ts b/server/routes/microservice-api.ts
+@@
+-const envelope = await buildEnvelope({ status: 'ok', data: result });
+-return reply.code(200).send(envelope);
++const respEnvelope = await buildEnvelope({ status: 'ok', data: result });
++return reply.code(200).send(respEnvelope);
+@@
+-const envelope = await buildEnvelope({ status: 'ok', data: out });
+-return reply.code(200).send(envelope);
++const respEnvelope = await buildEnvelope({ status: 'ok', data: out });
++return reply.code(200).send(respEnvelope);
+
+B) Topology shim (new file)
+// File: src/messaging/topology.ts
+export * from '../topology';  // or '../queues/topology' if that’s where it actually lives
+
+C) Drizzle driver dependency
+diff --git a/package.json b/package.json
+@@
+   "dependencies": {
++    "postgres": "^3.4.0",
+     "drizzle-orm": "^0.31.0",
+     ...
+   }
+
+
+Version pin can be any current 3.x; keep it aligned with your lockfile.
+
+D) Idempotent enum migration
+-- File: server/sql/20250909__harden_collection_status_enum.sql
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'collection_status') THEN
+    CREATE TYPE collection_status AS ENUM ('open','in_grace','in_demand','assigned','closed');
+  ELSE
+    BEGIN
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'open';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'in_grace';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'in_demand';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'assigned';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'closed';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+
+E) Dockerfile (optional)
+diff --git a/Dockerfile b/Dockerfile
+@@
+ RUN apt-get update \
+- && apt-get install -y --no-install-recommends ca-certificates
++ && apt-get install -y --no-install-recommends ca-certificates libuuid1

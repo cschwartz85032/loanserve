@@ -264,7 +264,7 @@ router.post('/v3/documents/upload', requireAuth, async (req, res) => {
       payload: documentMessage
     });
 
-    const envelope = createEnvelope({
+    const docEnvelope = createEnvelope({
       tenantId: 'default',
       correlationId,
       payload: documentMessage
@@ -354,7 +354,7 @@ router.post('/v3/escrow/disbursements', requireAuth, async (req, res) => {
       payload: disbursementMessage
     });
 
-    const envelope = createEnvelope({
+    const escrowEnvelope = createEnvelope({
       tenantId: 'default',
       correlationId,
       payload: disbursementMessage
