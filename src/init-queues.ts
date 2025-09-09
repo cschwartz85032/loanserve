@@ -1,6 +1,9 @@
 import amqp from 'amqplib';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 import { Exchanges, Queues, retry, dlq, declareTopology } from './queues/topology';
+
+const NIL = '00000000-0000-0000-0000-000000000000';
+const DEFAULT_TENANT = process.env.DEFAULT_TENANT_ID ?? NIL;
 import { initEtlConsumers } from './queues/etl/etl-consumer';
 import { startEtlScheduler, stopEtlScheduler } from './queues/etl/etl-scheduler';
 

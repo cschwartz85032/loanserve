@@ -3,10 +3,13 @@
  * Publishes schedule messages instead of running ETL directly
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 import { createEnvelope, createRoutingKey, createEtlIdempotencyKey, createDateKey } from '../../messaging/envelope-helpers';
 import { EtlSchedulePayload } from '../../types/messages';
 import { Exchanges } from '../topology';
+
+const NIL = '00000000-0000-0000-0000-000000000000';
+const DEFAULT_TENANT = process.env.DEFAULT_TENANT_ID ?? NIL;
 
 export class EtlScheduler {
   private publishFunction: (exchange: string, routingKey: string, message: any) => Promise<void>;

@@ -6,23 +6,29 @@
 import { PoolClient } from 'pg';
 import { pool } from '../../server/db';
 import { redactUuid } from '../logging/redact';
+import { z } from 'zod';
+
+const NIL = '00000000-0000-0000-0000-000000000000';
+const DEFAULT_TENANT = process.env.DEFAULT_TENANT_ID ?? NIL;
 
 /**
  * Execute database operations with tenant context set
  * This ensures all queries run with proper RLS enforcement
  */
+const tenantIdSchema = z
+  .string()
+  .transform(v => (v === 'default' || !v ? DEFAULT_TENANT : v))
+  .refine(v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v), 
+    'Invalid UUID format');
+
 export async function withTenantClient<T>(
   tenantId: string,
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   if (!tenantId) throw new Error('Tenant ID is required for database operations');
   
-  // Convert "default" tenant to a valid UUID for database compatibility
-  const normalizedTenantId = tenantId === 'default' ? '00000000-0000-0000-0000-000000000000' : tenantId;
-  
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedTenantId)) {
-    throw new Error(`Invalid tenant ID format: ${normalizedTenantId}`);
-  }
+  // Use zod to normalize and validate tenant ID
+  const normalizedTenantId = tenantIdSchema.parse(tenantId);
 
   const client = await pool.connect();
   try {
