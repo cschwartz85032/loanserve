@@ -180,12 +180,6 @@ router.post('/v3/payments/async', requireAuth, async (req, res) => {
       payload: paymentMessage
     });
 
-    const envelope = createEnvelope({
-      tenantId: 'default',
-      correlationId,
-      payload: paymentMessage
-    });
-
     // Message would be published to actual payment queue here
     console.log('[Payment Microservice] Payment processed:', {
       paymentId,
