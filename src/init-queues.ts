@@ -108,6 +108,12 @@ export async function initQueues() {
   await initEscrowConsumer(conn, publishFunction);
   console.log('[Queue Init] Escrow consumers initialized');
   
+  // Initialize boarding worker (legacy)
+  const { setConnection, startBoardingWorker } = await import('./workers/BoardingWorker');
+  setConnection(conn);
+  await startBoardingWorker();
+  console.log('[Queue Init] Boarding worker initialized');
+  
   // Set publish function for async payment routes
   const { setPublishFunction } = await import('../server/routes/payment-async');
   setPublishFunction(publishFunction);

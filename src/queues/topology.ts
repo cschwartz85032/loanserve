@@ -30,6 +30,10 @@ export const Queues = {
   EscrowDisburse:    'escrow.disburse.v1',
   DocumentProcess:   'document.process.v1',
 
+  // Boarding and finalization queues (Legacy)
+  LoanFinalizeCompleted: 'loan.finalize.completed.q',
+  LoanBoardRequest:      'loan.board.request.q',
+
   // ETL orchestration
   EtlSchedule:       'etl.schedule.v1',
   EtlJob:            'etl.job.v1',
@@ -99,6 +103,8 @@ export async function declareTopology(ch: any) {
     Queues.PaymentAllocate,
     Queues.EscrowDisburse,
     Queues.DocumentProcess,
+    Queues.LoanFinalizeCompleted,
+    Queues.LoanBoardRequest,
     Queues.EtlSchedule,
     Queues.EtlJob,
     Queues.StatusUpdate,
@@ -116,6 +122,10 @@ export async function declareTopology(ch: any) {
   await ch.bindQueue(Queues.PaymentAllocate, Exchanges.Commands, 'tenant.*.payment.allocate');
   await ch.bindQueue(Queues.EscrowDisburse, Exchanges.Commands, 'tenant.*.escrow.disburse');
   await ch.bindQueue(Queues.DocumentProcess, Exchanges.Commands, 'tenant.*.document.process');
+  
+  // Boarding workflow bindings (legacy)
+  await ch.bindQueue(Queues.LoanFinalizeCompleted, Exchanges.Events, 'tenant.*.loan.finalize.completed');
+  await ch.bindQueue(Queues.LoanBoardRequest, Exchanges.Commands, 'tenant.*.loan.board.request');
   
   await ch.bindQueue(Queues.EtlSchedule, Exchanges.Schedules, 'tenant.*.etl.schedule');
   await ch.bindQueue(Queues.EtlJob, Exchanges.Commands, 'tenant.*.etl.job');
