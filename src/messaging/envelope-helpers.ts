@@ -53,3 +53,25 @@ export function createDateKey(date?: Date): string {
   const d = date || new Date();
   return d.toISOString().split('T')[0]; // YYYY-MM-DD format
 }
+
+/**
+ * Validate and extract payload from envelope
+ */
+export function validateMessage<T>(envelope: any, schema: any): T {
+  // Validate envelope structure
+  if (!envelope || typeof envelope !== 'object') {
+    throw new Error('Invalid envelope: must be an object');
+  }
+  
+  if (!envelope.payload) {
+    throw new Error('Invalid envelope: missing payload');
+  }
+  
+  // Validate payload against schema
+  const result = schema.safeParse(envelope.payload);
+  if (!result.success) {
+    throw new Error(`Invalid payload: ${result.error.message}`);
+  }
+  
+  return result.data;
+}

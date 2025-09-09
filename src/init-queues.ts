@@ -86,6 +86,16 @@ export async function initQueues() {
   // Initialize modern ETL consumers (replaces timer-based ETL)
   await initEtlConsumers(conn as any, publishFunction);
   console.log('[Queue Init] ETL consumers initialized');
+  
+  // Initialize payment processing consumers (Phase 2)
+  const { initPaymentConsumer } = await import('./queues/payment/payment-consumer');
+  await initPaymentConsumer(conn, publishFunction);
+  console.log('[Queue Init] Payment consumers initialized');
+  
+  // Set publish function for async payment routes
+  const { setPublishFunction } = await import('../server/routes/payment-async');
+  setPublishFunction(publishFunction);
+  console.log('[Queue Init] Payment route publisher configured');
 
   // Start ETL scheduler (replaces setInterval timer)
   startEtlScheduler(publishFunction);

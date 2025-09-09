@@ -40,6 +40,27 @@ export const Queues = {
   Dlq:               'ls.dlq.v1'
 } as const;
 
+// Routing keys for modern queue operations
+export const ROUTING_KEYS = {
+  // Payment processing
+  PAYMENT_PROCESS: Queues.PaymentProcess,
+  PAYMENT_ALLOCATE: Queues.PaymentAllocate,
+  
+  // Loan operations  
+  LOAN_CREATE: Queues.LoanCreate,
+  LOAN_UPDATE: Queues.LoanUpdate,
+  
+  // Escrow operations
+  ESCROW_DISBURSE: Queues.EscrowDisburse,
+  
+  // ETL operations
+  ETL_SCHEDULE: Queues.EtlSchedule,
+  ETL_JOB: Queues.EtlJob,
+  
+  // Status updates
+  STATUS_UPDATE: Queues.StatusUpdate
+} as const;
+
 export function retry(queue: string, suffix: string) {
   return `${queue}.retry.${suffix}`;
 }

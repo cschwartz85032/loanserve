@@ -186,6 +186,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register payment processing routes
   app.use('/api', paymentRoutes);
+  
+  // Register async payment processing routes (Phase 2)
+  const paymentAsyncRoutes = (await import('./routes/payment-async')).default;
+  app.use('/api/v2', paymentAsyncRoutes);
 
   // Register Column banking routes (Step 17)
   const columnWebhookRoutes = await import('./routes/column-webhooks');
