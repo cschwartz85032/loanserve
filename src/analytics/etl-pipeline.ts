@@ -109,15 +109,24 @@ export class ETLPipeline {
       const c = await pool.connect();
       
       try {
-        // Extract loan data with payments
+        // Extract loan data with payments - derive current balance from latest loan_ledger snapshot
         const extractQuery = `
+          WITH latest_ledger AS (
+            SELECT DISTINCT ON (ll.loan_id)
+              ll.loan_id,
+              (ll.principal_balance + ll.interest_balance) AS balance_amount
+            FROM loan_ledger ll
+            WHERE ll.status = 'posted'
+            ORDER BY ll.loan_id, ll.transaction_date DESC, ll.id DESC
+          )
           SELECT 
             l.id as loan_id,
             l.loan_number,
             l.loan_type as product_type,
-            l.principal_balance * 100 as current_balance_cents,
+            COALESCE(lat.balance_amount, 0)::numeric AS current_balance_amount,
+            ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint AS current_balance_cents,
             l.status,
-            COALESCE(lb.current_principal_balance_cents, l.principal_balance * 100) as current_principal_balance_cents,
+            COALESCE(lb.current_principal_balance_cents, ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint) as current_principal_balance_cents,
             COALESCE(lb.current_interest_rate, l.interest_rate) as current_interest_rate,
             COALESCE(lb.current_payment_amount_cents, l.payment_amount * 100) as current_payment_amount_cents,
             COALESCE(lb_join.borrower_id, NULL) as borrower_id,
@@ -133,6 +142,7 @@ export class ETLPipeline {
             ) as days_delinquent,
             CURRENT_DATE as snapshot_date
           FROM loans l
+          LEFT JOIN latest_ledger lat ON lat.loan_id = l.id
           LEFT JOIN loan_balances lb ON l.id = lb.loan_id
           LEFT JOIN loan_borrowers lb_join ON l.id = lb_join.loan_id
           LEFT JOIN borrowers b ON lb_join.borrower_id = b.id
