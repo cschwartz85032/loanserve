@@ -92,6 +92,16 @@ export async function initQueues() {
   await initPaymentConsumer(conn, publishFunction);
   console.log('[Queue Init] Payment consumers initialized');
   
+  // Initialize document processing consumers (Phase 2)
+  const { initDocumentConsumer } = await import('./queues/document/document-consumer');
+  await initDocumentConsumer(conn, publishFunction);
+  console.log('[Queue Init] Document consumers initialized');
+  
+  // Initialize escrow processing consumers (Phase 2)
+  const { initEscrowConsumer } = await import('./queues/escrow/escrow-consumer');
+  await initEscrowConsumer(conn, publishFunction);
+  console.log('[Queue Init] Escrow consumers initialized');
+  
   // Set publish function for async payment routes
   const { setPublishFunction } = await import('../server/routes/payment-async');
   setPublishFunction(publishFunction);

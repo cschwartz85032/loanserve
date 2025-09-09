@@ -28,6 +28,7 @@ export const Queues = {
   PaymentProcess:    'payment.process.v1',
   PaymentAllocate:   'payment.allocate.v1',
   EscrowDisburse:    'escrow.disburse.v1',
+  DocumentProcess:   'document.process.v1',
 
   // ETL orchestration
   EtlSchedule:       'etl.schedule.v1',
@@ -52,6 +53,9 @@ export const ROUTING_KEYS = {
   
   // Escrow operations
   ESCROW_DISBURSE: Queues.EscrowDisburse,
+  
+  // Document processing
+  DOCUMENT_PROCESS: Queues.DocumentProcess,
   
   // ETL operations
   ETL_SCHEDULE: Queues.EtlSchedule,
@@ -94,6 +98,7 @@ export async function declareTopology(ch: any) {
     Queues.PaymentProcess,
     Queues.PaymentAllocate,
     Queues.EscrowDisburse,
+    Queues.DocumentProcess,
     Queues.EtlSchedule,
     Queues.EtlJob,
     Queues.StatusUpdate,
@@ -110,6 +115,7 @@ export async function declareTopology(ch: any) {
   await ch.bindQueue(Queues.PaymentProcess, Exchanges.Commands, 'tenant.*.payment.process');
   await ch.bindQueue(Queues.PaymentAllocate, Exchanges.Commands, 'tenant.*.payment.allocate');
   await ch.bindQueue(Queues.EscrowDisburse, Exchanges.Commands, 'tenant.*.escrow.disburse');
+  await ch.bindQueue(Queues.DocumentProcess, Exchanges.Commands, 'tenant.*.document.process');
   
   await ch.bindQueue(Queues.EtlSchedule, Exchanges.Schedules, 'tenant.*.etl.schedule');
   await ch.bindQueue(Queues.EtlJob, Exchanges.Commands, 'tenant.*.etl.job');
