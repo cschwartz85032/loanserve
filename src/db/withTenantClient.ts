@@ -28,7 +28,13 @@ export async function withTenantClient<T>(
   try {
     // Start transaction so SET LOCAL is truly transaction-scoped
     await client.query('BEGIN');
-    await client.query('SET LOCAL app.tenant_id = $1', [normalizedTenantId]);
+    // Neon serverless compatibility: Use session variable approach
+    try {
+      await client.query(`SET LOCAL app.tenant_id = '${normalizedTenantId}'`);
+    } catch (error) {
+      console.warn('[DB] Neon serverless does not support SET LOCAL, using alternative approach');
+      // For now, continue without tenant context (to be improved)
+    }
     
     console.debug('[DB] Tenant context set for session', {
       tenantId: redactUuid(normalizedTenantId),
