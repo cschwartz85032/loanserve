@@ -1,20 +1,66 @@
-// Minimal imports for testing
-
-// Minimal router for testing
-
-function App() {
+export default function App() {
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
-      <div className="bg-white rounded-lg shadow-md p-8 max-w-md w-full text-center">
-        <h1 className="text-3xl font-bold text-gray-800 mb-4">LoanServe Pro</h1>
-        <p className="text-gray-600 mb-6">Enterprise Mortgage Loan Servicing Platform</p>
-        <div className="space-y-3">
-          <p className="text-sm text-green-600">✅ System Online</p>
-          <p className="text-sm text-blue-600">🔧 Backend Services: Operational</p>
-          <p className="text-sm text-purple-600">⚡ Queue Processing: Active</p>
+    <div style={{
+      minHeight: '100vh', 
+      backgroundColor: '#f3f4f6', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      padding: '32px',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <div style={{
+        backgroundColor: 'white', 
+        borderRadius: '8px', 
+        boxShadow: '0 4px 6px rgba(0,0,0,0.1)', 
+        padding: '32px', 
+        maxWidth: '400px', 
+        width: '100%', 
+        textAlign: 'center'
+      }}>
+        <h1 style={{
+          fontSize: '28px', 
+          fontWeight: 'bold', 
+          color: '#1f2937', 
+          marginBottom: '16px'
+        }}>
+          LoanServe Pro
+        </h1>
+        <p style={{color: '#6b7280', marginBottom: '24px', fontSize: '16px'}}>
+          Enterprise Mortgage Loan Servicing Platform
+        </p>
+        <div style={{marginBottom: '24px'}}>
+          <p style={{fontSize: '14px', color: '#059669', marginBottom: '8px'}}>
+            ✅ System Online
+          </p>
+          <p style={{fontSize: '14px', color: '#2563eb', marginBottom: '8px'}}>
+            🔧 Backend Services: Operational
+          </p>
+          <p style={{fontSize: '14px', color: '#7c3aed', marginBottom: '8px'}}>
+            ⚡ Queue Processing: Active
+          </p>
+          <p style={{fontSize: '14px', color: '#dc2626', marginBottom: '8px'}}>
+            🖥️ Frontend: Now Working
+          </p>
         </div>
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          <a href="/auth" className="inline-block bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition-colors">
+        <div style={{
+          marginTop: '24px', 
+          paddingTop: '16px', 
+          borderTop: '1px solid #e5e7eb'
+        }}>
+          <a 
+            href="/auth" 
+            style={{
+              display: 'inline-block', 
+              backgroundColor: '#2563eb', 
+              color: 'white', 
+              padding: '12px 24px', 
+              borderRadius: '6px', 
+              textDecoration: 'none',
+              fontSize: '16px',
+              fontWeight: '500'
+            }}
+          >
             Access Login
           </a>
         </div>
@@ -22,5 +68,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
