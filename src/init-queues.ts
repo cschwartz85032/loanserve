@@ -1,4 +1,5 @@
 import amqp from 'amqplib';
+import { randomUUID } from 'crypto';
 import { Exchanges, Queues, retry, dlq, declareTopology } from './queues/topology';
 import { initEtlConsumers } from './queues/etl/etl-consumer';
 import { startEtlScheduler, stopEtlScheduler } from './queues/etl/etl-scheduler';
@@ -68,17 +69,17 @@ export async function initQueues() {
   await declareTopology(channel);
   console.log('[Queue Init] Modern topology declared');
 
-  // Create publish function for consumers
+  // Create publish function for consumers  
   const publishFunction = async (exchange: string, routingKey: string, message: any) => {
     const messageBuffer = Buffer.from(JSON.stringify(message));
     await channel.publish(exchange, routingKey, messageBuffer, {
       persistent: true,
-      messageId: message.correlationId,
-      correlationId: message.correlationId,
+      messageId: message.correlationId || randomUUID(),
+      correlationId: message.correlationId || randomUUID(),
       timestamp: Date.now(),
       headers: {
-        tenantId: message.tenantId,
-        schemaVersion: message.schemaVersion
+        tenantId: message.tenantId || 'default',
+        schemaVersion: message.schemaVersion || 1
       }
     });
   };

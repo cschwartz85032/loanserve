@@ -1,0 +1,179 @@
+1) Migration keeps dying: type "collection_status" already exists (42710)
+
+Your migrator is still executing a CREATE TYPE collection_status … that isn’t idempotent. You have two ways to stop the noise:
+
+A) Make the original enum migration idempotent (best)
+
+Edit the migration file that creates collection_status and replace the naked CREATE TYPE with this guard:
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'collection_status') THEN
+    CREATE TYPE collection_status AS ENUM ('open','in_grace','in_demand','assigned','closed');
+  ELSE
+    BEGIN
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'open';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'in_grace';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'in_demand';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'assigned';
+      ALTER TYPE collection_status ADD VALUE IF NOT EXISTS 'closed';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+
+
+This is safe on Neon/Postgres and re-runnable.
+
+B) (Optional belt-and-suspenders) Tolerate 42710 in your migrator
+
+If you can’t easily edit the old SQL file, catch and ignore 42710 once during type creation so boot continues cleanly.
+
+diff --git a/server/migrations.ts b/server/migrations.ts
+@@
+ export async function runMigrations() {
+   console.log('[Migration] Starting database migrations...');
+   try {
+     await migrate();
+     console.log('[Migration] ✓ Migrations complete');
+   } catch (err: any) {
+-    console.error('[Migration] Error running migrations:', err);
++    if (err?.code === '42710') {
++      console.warn('[Migration] Duplicate object (likely enum) detected; continuing:', err.message);
++    } else {
++      console.error('[Migration] Error running migrations:', err);
++      throw err;
++    }
+   }
+ }
+
+2) BoardingWorker import still failing: topology doesn’t export mq
+
+You created a path shim, but the worker imports a named export mq that doesn’t exist. Export it.
+
+// File: src/messaging/topology.ts
+// Re-export everything AND provide an 'mq' bag so old imports work.
+import * as Topology from '../topology';
+export * from '../topology';
+export const mq = Topology;
+
+
+This keeps legacy code (import { mq } ...) and modern code (import { declareTopology } ...) working simultaneously.
+
+3) ETL scheduler message is rejected: Missing messageId/tenantId
+
+Your consumer enforces these AMQP properties:
+
+// src/queues/consumer-utils.ts (pseudocode)
+const { messageId, headers: { tenantId } = {} } = msg.properties || {};
+if (!messageId || !tenantId) throw new Error('Missing messageId/tenantId');
+
+
+Patch the publisher to always include them:
+
+diff --git a/src/queues/etl-scheduler.ts b/src/queues/etl-scheduler.ts
+@@
++import { randomUUID } from 'node:crypto';
+ 
+ function publishScheduleTick(ch: amqplib.ConfirmChannel) {
+   const payload = { ts: Date.now(), kind: 'etl.schedule.tick' };
+-  ch.publish('etl', 'etl.schedule.v1', Buffer.from(JSON.stringify(payload)));
++  ch.publish(
++    'etl',
++    'etl.schedule.v1',
++    Buffer.from(JSON.stringify(payload)),
++    {
++      contentType: 'application/json',
++      persistent: true,
++      messageId: randomUUID(),
++      headers: { tenantId: process.env.DEFAULT_TENANT_ID ?? 'default' }
++    }
++  );
+ }
+
+
+If you’re using sendToQueue, the same options object works there too.
+
+4) Audit chain can’t resolve DB: Cannot find module 'src/server/db'
+
+Create the module it expects and export your Drizzle/Neon connection. This keeps the import stable and avoids invasive refactors.
+
+// File: src/server/db.ts
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+
+const url = process.env.DATABASE_URL!;
+export const sql = postgres(url, {
+  ssl: 'require',
+  max: 10,
+  prepare: false,
+});
+export const db = drizzle(sql);
+
+
+If you already have a central DB module (e.g., src/db/index.ts), you can re-export it here instead:
+export * from '../db';
+
+5) Port collision: EADDRINUSE 0.0.0.0:5000
+
+You’re starting two HTTP servers on 5000 (the API gateway and something in server/index.ts). Give the core server its own port and add a guard.
+
+diff --git a/server/index.ts b/server/index.ts
+@@
+-const PORT = parseInt(process.env.PORT ?? '5000', 10);
++const PORT = parseInt(process.env.CORE_HTTP_PORT ?? '4000', 10);
+ app.listen(PORT, () => {
+   console.log(`[Server] listening on ${PORT}`);
+ });
+
+diff --git a/src/orchestrator/gateway.ts b/src/orchestrator/gateway.ts
+@@
+-const GATEWAY_PORT = parseInt(process.env.API_GATEWAY_PORT ?? '5000', 10);
++const GATEWAY_PORT = parseInt(process.env.API_GATEWAY_PORT ?? '5000', 10);
+ server.listen(GATEWAY_PORT, () =>
+   console.log(`[API Gateway] 🚀 API Gateway running on port ${GATEWAY_PORT}`)
+ );
+
+
+And add to your .env.local:
+
+API_GATEWAY_PORT=5000
+CORE_HTTP_PORT=4000
+
+
+(Optional) If you want belt-and-suspenders, catch EADDRINUSE and skip starting the second server instead of crashing:
+
+server.on('error', (e: any) => {
+  if (e.code === 'EADDRINUSE') {
+    console.warn('[Server] Port in use; not starting duplicate listener.');
+    return;
+  }
+  throw e;
+});
+
+6) OS warning (non-fatal): libuuid.so.1 missing
+
+Install the lib so PDF/canvas polyfills can load:
+
+Debian/Ubuntu Dockerfile
+
+RUN apt-get update && apt-get install -y --no-install-recommends libuuid1
+
+
+Alpine
+
+apk add --no-cache util-linux-libs
+
+One-liner checklist (apply in this order)
+
+Edit enum migration to the guarded DO $$ … $$; (or add 42710 ignore in migrations.ts).
+
+Export mq from the topology shim (src/messaging/topology.ts).
+
+Add messageId + tenantId in the ETL scheduler publish options.
+
+Create src/server/db.ts and export a working db.
+
+Split ports: CORE_HTTP_PORT=4000, API_GATEWAY_PORT=5000.
+
+Install libuuid in your image/VM.
