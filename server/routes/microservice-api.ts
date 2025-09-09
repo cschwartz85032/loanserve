@@ -154,8 +154,13 @@ router.post('/v3/payments/async', requireAuth, async (req, res) => {
     const paymentId = ulid();
     const correlationId = ulid();
     
-    // This would normally route to the payment microservice
-    // For Phase 3 demonstration, we'll use the existing queue system
+    // Use actual payment processing via queue system
+    const { getConnection } = await import('../../src/messaging/connection');
+    const { Exchanges } = await import('../../src/queues/topology');
+    
+    const connection = await getConnection();
+    const channel = await connection.createConfirmChannel();
+    
     const paymentMessage = {
       payment_id: paymentId,
       loan_id: paymentData.loan_id,
@@ -172,8 +177,22 @@ router.post('/v3/payments/async', requireAuth, async (req, res) => {
       }
     };
 
-    // TODO: Publish to payment processing queue via microservice
-    console.log('[Payment Microservice] Processing payment via service:', {
+    const envelope = createEnvelope({
+      tenantId: 'default',
+      correlationId,
+      payload: paymentMessage
+    });
+
+    // Publish to actual payment processing queue
+    await channel.publish(
+      Exchanges.Commands,
+      'tenant.default.payment.process',
+      Buffer.from(JSON.stringify(envelope))
+    );
+    
+    await channel.close();
+
+    console.log('[Payment Microservice] Payment queued for processing:', {
       paymentId,
       correlationId,
       loanId: paymentData.loan_id,
@@ -185,8 +204,8 @@ router.post('/v3/payments/async', requireAuth, async (req, res) => {
       service: 'payment-service',
       payment_id: paymentId,
       correlation_id: correlationId,
-      status: 'accepted',
-      message: 'Payment submitted to payment microservice for processing',
+      status: 'queued',
+      message: 'Payment submitted to payment processing queue',
       endpoints: {
         status: `/api/v3/payments/${paymentId}/status`,
         service_health: '/api/v3/gateway/services?service_name=payment-service'
@@ -210,21 +229,58 @@ router.post('/v3/payments/async', requireAuth, async (req, res) => {
  */
 router.post('/v3/documents/upload', requireAuth, async (req, res) => {
   try {
-    const { loan_id, processing_type = 'full' } = req.body;
+    const { loan_id, processing_type = 'full', file_path, file_name, mime_type, file_size } = req.body;
     
-    if (!loan_id) {
+    if (!loan_id || !file_path || !file_name) {
       return res.status(400).json({
         success: false,
         service: 'document-service',
-        error: 'loan_id is required'
+        error: 'loan_id, file_path, and file_name are required'
       });
     }
     
     const documentId = ulid();
     const correlationId = ulid();
     
-    // This would normally route to the document microservice
-    console.log('[Document Microservice] Processing document via service:', {
+    // Use actual document processing via queue system
+    const { getConnection } = await import('../../src/messaging/connection');
+    const { Exchanges } = await import('../../src/queues/topology');
+    
+    const connection = await getConnection();
+    const channel = await connection.createConfirmChannel();
+    
+    const documentMessage = {
+      document_id: documentId,
+      loan_id: parseInt(loan_id),
+      file_path,
+      file_name,
+      mime_type: mime_type || 'application/pdf',
+      file_size: file_size || 0,
+      processing_type,
+      uploaded_by: req.user?.id,
+      ocr_language: 'en',
+      extract_tables: processing_type === 'full',
+      analyze_content: ['ai_analysis', 'full'].includes(processing_type),
+      classify_document: ['classification', 'full'].includes(processing_type),
+      extract_datapoints: processing_type === 'full'
+    };
+
+    const envelope = createEnvelope({
+      tenantId: 'default',
+      correlationId,
+      payload: documentMessage
+    });
+
+    // Publish to actual document processing queue
+    await channel.publish(
+      Exchanges.Commands,
+      'tenant.default.document.process',
+      Buffer.from(JSON.stringify(envelope))
+    );
+    
+    await channel.close();
+
+    console.log('[Document Microservice] Document queued for processing:', {
       documentId,
       correlationId,
       loanId: loan_id,
@@ -238,7 +294,7 @@ router.post('/v3/documents/upload', requireAuth, async (req, res) => {
       correlation_id: correlationId,
       status: 'queued',
       processing_type: processing_type,
-      message: 'Document submitted to document microservice for processing',
+      message: 'Document submitted to document processing queue',
       endpoints: {
         status: `/api/v3/documents/${documentId}/status`,
         service_health: '/api/v3/gateway/services?service_name=document-service'
@@ -274,8 +330,45 @@ router.post('/v3/escrow/disbursements', requireAuth, async (req, res) => {
     const disbursementId = ulid();
     const correlationId = ulid();
     
-    // This would normally route to the escrow microservice
-    console.log('[Escrow Microservice] Processing disbursement via service:', {
+    // Use actual escrow processing via queue system
+    const { getConnection } = await import('../../src/messaging/connection');
+    const { Exchanges } = await import('../../src/queues/topology');
+    
+    const connection = await getConnection();
+    const channel = await connection.createConfirmChannel();
+    
+    const disbursementMessage = {
+      disbursement_id: disbursementId,
+      loan_id: disbursementData.loan_id,
+      disbursement_type: disbursementData.disbursement_type,
+      payee_name: disbursementData.payee_name,
+      amount_cents: disbursementData.amount_cents,
+      due_date: disbursementData.due_date,
+      created_by: req.user?.id,
+      processing_options: {
+        validate_balance: true,
+        check_approval: true,
+        generate_check: true,
+        update_escrow: true
+      }
+    };
+
+    const envelope = createEnvelope({
+      tenantId: 'default',
+      correlationId,
+      payload: disbursementMessage
+    });
+
+    // Publish to actual escrow processing queue
+    await channel.publish(
+      Exchanges.Commands,
+      'tenant.default.escrow.disbursement',
+      Buffer.from(JSON.stringify(envelope))
+    );
+    
+    await channel.close();
+
+    console.log('[Escrow Microservice] Disbursement queued for processing:', {
       disbursementId,
       correlationId,
       loanId: disbursementData.loan_id,
@@ -288,11 +381,11 @@ router.post('/v3/escrow/disbursements', requireAuth, async (req, res) => {
       service: 'escrow-service',
       disbursement_id: disbursementId,
       correlation_id: correlationId,
-      status: 'processing',
+      status: 'queued',
       disbursement_type: disbursementData.disbursement_type,
       payee_name: disbursementData.payee_name,
       amount_cents: disbursementData.amount_cents,
-      message: 'Disbursement submitted to escrow microservice for processing',
+      message: 'Disbursement submitted to escrow processing queue',
       endpoints: {
         status: `/api/v3/escrow/disbursements/${disbursementId}/status`,
         service_health: '/api/v3/gateway/services?service_name=escrow-service'

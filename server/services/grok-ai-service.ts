@@ -533,15 +533,63 @@ export class GrokAIService {
    * Get loan context for AI analysis
    */
   private async getLoanContext(loanId: string): Promise<any> {
-    // TODO: Fetch actual loan data from database
-    // For now, return mock context
+    try {
+      // Query actual loan data from database
+      const loanQuery = await db.query(`
+        SELECT 
+          l.id,
+          l.loan_number,
+          l.current_balance,
+          l.monthly_payment,
+          l.interest_rate,
+          l.next_due_date,
+          l.days_past_due,
+          l.status,
+          l.created_at,
+          p.street_address,
+          p.city,
+          p.state,
+          p.zip_code,
+          b.first_name,
+          b.last_name,
+          b.email,
+          b.phone
+        FROM loans l
+        LEFT JOIN properties p ON l.property_id = p.id
+        LEFT JOIN borrowers b ON l.primary_borrower_id = b.id
+        WHERE l.loan_number = $1 OR l.id = $2
+        LIMIT 1
+      `, [loanId, parseInt(loanId) || 0]);
+
+      if (loanQuery.rows.length > 0) {
+        const loan = loanQuery.rows[0];
+        return {
+          loanId: loan.loan_number || loan.id,
+          regularPaymentAmount: parseFloat(loan.monthly_payment) || 0,
+          currentBalance: parseFloat(loan.current_balance) || 0,
+          interestRate: parseFloat(loan.interest_rate) || 0,
+          nextDueDate: loan.next_due_date,
+          isDelinquent: loan.days_past_due > 0,
+          daysPastDue: loan.days_past_due || 0,
+          status: loan.status,
+          borrowerName: `${loan.first_name || ''} ${loan.last_name || ''}`.trim(),
+          propertyAddress: `${loan.street_address || ''} ${loan.city || ''} ${loan.state || ''} ${loan.zip_code || ''}`.trim()
+        };
+      }
+    } catch (error) {
+      console.warn(`[GrokAI] Failed to fetch loan context for ${loanId}:`, error);
+    }
+
+    // Fallback to basic context if database query fails
     return {
       loanId,
-      regularPaymentAmount: 2500.00,
-      currentBalance: 350000.00,
-      nextDueDate: '2025-09-01',
+      regularPaymentAmount: 0,
+      currentBalance: 0,
+      nextDueDate: null,
       isDelinquent: false,
-      daysPastDue: 0
+      daysPastDue: 0,
+      status: 'unknown',
+      error: 'Could not fetch loan data from database'
     };
   }
 
@@ -549,13 +597,39 @@ export class GrokAIService {
    * Get payment history for pattern analysis
    */
   private async getPaymentHistory(loanId: string): Promise<any[]> {
-    // TODO: Fetch actual payment history from database
-    // For now, return mock history
-    return [
-      { date: '2025-07-01', amount: 2500.00, method: 'ach' },
-      { date: '2025-06-01', amount: 2500.00, method: 'ach' },
-      { date: '2025-05-01', amount: 2500.00, method: 'ach' }
-    ];
+    try {
+      // Query actual payment history from database
+      const paymentQuery = await db.query(`
+        SELECT 
+          p.payment_date,
+          p.amount_cents,
+          p.payment_method,
+          p.reference_number,
+          p.status,
+          p.created_at
+        FROM payments p
+        JOIN loans l ON p.loan_id = l.id
+        WHERE l.loan_number = $1 OR l.id = $2
+        ORDER BY p.payment_date DESC
+        LIMIT 12
+      `, [loanId, parseInt(loanId) || 0]);
+
+      if (paymentQuery.rows.length > 0) {
+        return paymentQuery.rows.map(payment => ({
+          date: payment.payment_date,
+          amount: parseFloat(payment.amount_cents) / 100,
+          method: payment.payment_method,
+          reference: payment.reference_number,
+          status: payment.status,
+          created_at: payment.created_at
+        }));
+      }
+    } catch (error) {
+      console.warn(`[GrokAI] Failed to fetch payment history for ${loanId}:`, error);
+    }
+
+    // Return empty array if no payments found or query fails
+    return [];
   }
 
   /**

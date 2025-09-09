@@ -37,24 +37,92 @@ export const DocumentProcessingSchema = z.object({
 export type DocumentProcessingMessage = z.infer<typeof DocumentProcessingSchema>;
 
 /**
- * Perform OCR processing on document
+ * Perform OCR processing on document using AWS Textract with Grok AI fallback
  */
 async function performOCR(message: DocumentProcessingMessage): Promise<{ text: string; confidence: number }> {
   console.log(`[Document OCR] Processing OCR for document: ${message.document_id}`);
   
-  // TODO: Implement actual OCR processing using pdf2pic and Tesseract
-  // For now, simulate OCR processing
-  await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate OCR time
+  const { TextractClient, DetectDocumentTextCommand } = await import('@aws-sdk/client-textract');
+  const { readFileSync } = await import('fs');
   
-  // Mock OCR results
-  return {
-    text: `Mock OCR text extracted from ${message.file_name}. This would contain the actual text content from the document.`,
-    confidence: 0.95
-  };
+  try {
+    // Read document file
+    const documentBuffer = readFileSync(message.file_path);
+    
+    // Initialize Textract client
+    const textractClient = new TextractClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!
+      }
+    });
+    
+    // Call Textract
+    const command = new DetectDocumentTextCommand({
+      Document: {
+        Bytes: documentBuffer
+      }
+    });
+    
+    const result = await textractClient.send(command);
+    
+    // Extract text from Textract response
+    let extractedText = '';
+    let totalConfidence = 0;
+    let blockCount = 0;
+    
+    for (const block of result.Blocks || []) {
+      if (block.BlockType === 'LINE') {
+        extractedText += block.Text + '\n';
+        totalConfidence += block.Confidence || 0;
+        blockCount++;
+      }
+    }
+    
+    const averageConfidence = blockCount > 0 ? totalConfidence / blockCount / 100 : 0;
+    
+    console.log(`[Document OCR] Textract OCR completed for ${message.document_id}`);
+    
+    return {
+      text: extractedText.trim(),
+      confidence: averageConfidence
+    };
+    
+  } catch (error: any) {
+    console.warn(`[Document OCR] Textract failed for ${message.document_id}:`, error.message);
+    
+    // Fallback to Grok AI for unsupported documents
+    if (error.name === 'UnsupportedDocumentException' || error.message.includes('unsupported')) {
+      console.log(`[Document OCR] Falling back to Grok AI for ${message.document_id}`);
+      
+      const { grokAIService } = await import('../../../server/services/grok-ai-service');
+      const documentBuffer = readFileSync(message.file_path);
+      
+      const grokResult = await grokAIService.analyzeDocument(documentBuffer);
+      
+      // Extract text from Grok AI analysis
+      const grokText = [
+        grokResult.extractedData.payerName,
+        grokResult.extractedData.amount?.toString(),
+        grokResult.extractedData.referenceNumber,
+        grokResult.extractedData.transactionDate,
+        ...(grokResult.aiInsights || [])
+      ].filter(Boolean).join('\n');
+      
+      return {
+        text: grokText || 'Document processed by AI but text extraction failed',
+        confidence: grokResult.confidence
+      };
+    }
+    
+    // Re-throw other errors
+    throw new Error(`OCR processing failed: ${error.message}`);
+  }
 }
 
 /**
- * Perform AI analysis and classification
+ * Perform AI analysis and classification using Grok AI
  */
 async function performAIAnalysis(message: DocumentProcessingMessage, ocrText: string): Promise<{
   classification: string;
@@ -64,25 +132,68 @@ async function performAIAnalysis(message: DocumentProcessingMessage, ocrText: st
 }> {
   console.log(`[Document AI] Analyzing document: ${message.document_id}`);
   
-  // TODO: Implement actual AI analysis using X.AI Grok API
-  // For now, simulate AI processing
-  await new Promise(resolve => setTimeout(resolve, 3000)); // Simulate AI analysis time
+  const { grokAIService } = await import('../../../server/services/grok-ai-service');
+  const { readFileSync } = await import('fs');
   
-  // Mock AI analysis results
-  const documentTypes = ['loan_application', 'income_verification', 'bank_statement', 'tax_return', 'insurance_policy', 'appraisal', 'title_document'];
-  const classification = documentTypes[Math.floor(Math.random() * documentTypes.length)];
-  
-  return {
-    classification,
-    confidence: 0.88,
-    extracted_data: {
-      borrower_name: 'John Doe',
-      loan_amount: message.loan_id * 100000, // Mock based on loan ID
-      property_address: '123 Main St, Anytown, ST 12345',
-      document_date: new Date().toISOString().split('T')[0]
-    },
-    summary: `Document classified as ${classification}. Contains ${ocrText.length} characters of text content.`
-  };
+  try {
+    // Read document for AI analysis
+    const documentBuffer = readFileSync(message.file_path);
+    
+    // Use Grok AI for document analysis
+    const grokResult = await grokAIService.analyzeDocument(documentBuffer, message.file_name);
+    
+    // Convert Grok AI results to expected format
+    const classification = grokResult.documentType === 'unknown' 
+      ? 'unclassified_document' 
+      : grokResult.documentType;
+    
+    const extractedData = {
+      borrower_name: grokResult.extractedData.payerName || null,
+      loan_amount: grokResult.extractedData.amount || null,
+      loan_identifier: grokResult.extractedData.loanIdentifier || null,
+      transaction_date: grokResult.extractedData.transactionDate || null,
+      reference_number: grokResult.extractedData.referenceNumber || null,
+      payment_method: grokResult.extractedData.paymentMethod || null,
+      account_number: grokResult.extractedData.payerAccount || null,
+      ...grokResult.extractedData.metadata
+    };
+    
+    const summary = grokResult.aiInsights?.join('. ') || 
+      `Document classified as ${classification} with ${grokResult.confidence * 100}% confidence. OCR text length: ${ocrText.length} characters.`;
+    
+    console.log(`[Document AI] Grok AI analysis completed for ${message.document_id}:`, {
+      classification,
+      confidence: grokResult.confidence,
+      extractedFields: Object.keys(extractedData).length
+    });
+    
+    return {
+      classification,
+      confidence: grokResult.confidence,
+      extracted_data: extractedData,
+      summary
+    };
+    
+  } catch (error: any) {
+    console.error(`[Document AI] Grok AI analysis failed for ${message.document_id}:`, error);
+    
+    // Fallback to basic analysis using OCR text
+    const classification = message.file_name.toLowerCase().includes('bank') ? 'bank_statement' :
+                          message.file_name.toLowerCase().includes('tax') ? 'tax_document' :
+                          message.file_name.toLowerCase().includes('pay') ? 'payment_document' :
+                          'unclassified_document';
+    
+    return {
+      classification,
+      confidence: 0.3, // Low confidence for fallback
+      extracted_data: {
+        ocr_text_length: ocrText.length,
+        filename: message.file_name,
+        processing_error: error.message
+      },
+      summary: `AI analysis failed, classified by filename as ${classification}. Error: ${error.message}`
+    };
+  }
 }
 
 /**
