@@ -34,8 +34,7 @@ router.get("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
         userId
       },
       userId,
-      ipAddress: getRealUserIP(req),
-      userAgent: req.headers['user-agent']
+      ipAddress: getRealUserIP(req)
     });
     
     res.json(disbursements);
@@ -75,8 +74,7 @@ router.get("/api/escrow-disbursements/:id", async (req: any, res) => {
         userId
       },
       userId,
-      ipAddress: getRealUserIP(req),
-      userAgent: req.headers['user-agent']
+      ipAddress: getRealUserIP(req)
     });
     
     res.json(disbursement);
@@ -121,8 +119,7 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
           userId
         },
         userId,
-        ipAddress: getRealUserIP(req),
-        userAgent: req.headers['user-agent']
+        ipAddress: getRealUserIP(req)
       });
     }
     
@@ -395,8 +392,7 @@ router.delete("/api/escrow-disbursements/:id", async (req: any, res) => {
         },
         previousValues: disbursement,
         userId,
-        ipAddress: getRealUserIP(req),
-        userAgent: req.headers['user-agent']
+        ipAddress: getRealUserIP(req)
       });
     }
     
@@ -510,8 +506,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
       },
       newValues: result,
       userId,
-      ipAddress: getRealUserIP(req),
-      userAgent: req.headers['user-agent']
+      ipAddress: getRealUserIP(req)
     });
     
     res.status(201).json(result);
@@ -550,8 +545,7 @@ router.get("/api/loans/:loanId/escrow-summary", async (req: any, res) => {
         userId
       },
       userId,
-      ipAddress: getRealUserIP(req),
-      userAgent: req.headers['user-agent']
+      ipAddress: getRealUserIP(req)
     });
     
     res.json(summary);
@@ -606,8 +600,7 @@ router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
       },
       newValues: result,
       userId,
-      ipAddress: getRealUserIP(req),
-      userAgent: req.headers['user-agent']
+      ipAddress: getRealUserIP(req)
     });
     
     res.json(result);

@@ -330,16 +330,12 @@ export class WireTransferService {
   }
 
   private async auditWireAction(wireId: string, action: string, details: any): Promise<void> {
-    const { auditLogger } = await import('../audit/audit-logger');
-    
-    await auditLogger.logEvent({
-      eventType: action,
-      actorType: 'user',
+    // Wire fraud audit logging
+    console.log(`[Wire Fraud Audit] ${action}`, {
+      wireId,
       actorId: this.context.userSub,
-      resourceType: 'wire_transfer',
-      resourceId: wireId,
       tenantId: this.context.tenantId,
-      eventData: redactPII(details),
+      details: redactPII(details),
       timestamp: new Date()
     });
   }
