@@ -31,6 +31,7 @@ import {
   PenTool
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { generateServicingAccountNumber } from "@shared/utils";
 
 interface EnhancedNewLoanDialogProps {
   open: boolean;
@@ -60,7 +61,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
   // Form data that can be filled by AI or manually
   const [formData, setFormData] = useState({
     // Loan Information
-    loanNumber: "",
     loanType: "conventional",
     originalAmount: "",
     principalBalance: "",
@@ -345,7 +345,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     setFormData(prev => ({
       ...prev,
       // Loan Information
-      loanNumber: cleanString(extractedData.loanNumber) || prev.loanNumber,
       loanType: extractedData.loanType ? normalizeLoanType(extractedData.loanType) : prev.loanType,
       // Fixed: prioritize loanAmount first, then originalAmount
       originalAmount: toString(extractedData.loanAmount || extractedData.originalAmount || extractedData.principal) || prev.originalAmount,
@@ -564,7 +563,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       
       // Create the loan with the property ID
       const loanData = {
-        loanNumber: data.loanNumber || `LN${Date.now()}`,
+        loanNumber: generateServicingAccountNumber(),
         loanType: data.loanType,
         propertyId: property.id,
         originalAmount: data.originalAmount.toString(),
@@ -768,7 +767,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
   const resetForm = () => {
     setFormData({
-      loanNumber: "",
       loanType: "conventional",
       originalAmount: "",
       principalBalance: "",
