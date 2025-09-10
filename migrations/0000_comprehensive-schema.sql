@@ -304,6 +304,23 @@ BEGIN
   END IF;
 END$$;
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "loan_balances" (
+        "loan_id" integer PRIMARY KEY NOT NULL,
+        "current_principal_balance_cents" bigint DEFAULT 0 NOT NULL,
+        "current_interest_rate" numeric,
+        "current_payment_amount_cents" bigint,
+        "principal_minor" bigint DEFAULT 0 NOT NULL,
+        "interest_accrued_minor" bigint DEFAULT 0 NOT NULL,
+        "escrow_minor" bigint DEFAULT 0 NOT NULL,
+        "late_fees_minor" bigint DEFAULT 0 NOT NULL,
+        "total_paid_minor" bigint DEFAULT 0 NOT NULL,
+        "last_payment_date" date,
+        "last_payment_minor" bigint,
+        "next_payment_due" date,
+        "delinquent_days" integer DEFAULT 0 NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "audit_logs" (
         "id" serial PRIMARY KEY NOT NULL,
         "user_id" integer,
