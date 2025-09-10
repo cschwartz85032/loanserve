@@ -815,7 +815,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
               const formData = new FormData();
               formData.append('file', fileData.file);
-              formData.append('loanId', loan.data.id.toString());
+              formData.append('loanId', (loan.data?.id || loan.id).toString());
               formData.append('category', mapDocumentCategory(fileData.documentType || ''));
               formData.append('description', `AI-analyzed: ${fileData.documentType || 'Unknown document type'}`);
               
@@ -854,7 +854,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       resetForm();
       onOpenChange(false);
       if (onLoanCreated) {
-        onLoanCreated(loan.id.toString());
+        onLoanCreated((loan.data?.id || loan.id).toString());
       }
     },
     onError: (error: Error) => {
