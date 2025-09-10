@@ -316,8 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Observability dashboard data API
-  // Public observability endpoint - no authentication required for monitoring
-  app.get('/api/observability/dashboard-data', async (req, res) => {
+  app.get('/api/observability/dashboard-data', requireAuth, async (req, res) => {
     try {
       const { getQueueStats, getOutboxStats, getReconcileStats, getPaymentStats } = await import('./observability/metrics-collector');
       
