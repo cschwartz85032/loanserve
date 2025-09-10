@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { generateServicingAccountNumber } from "@shared/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +24,6 @@ export function LoanForm({ onSuccess, onCancel }: LoanFormProps) {
   const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState({
-    loanNumber: "",
     borrowerId: "",
     lenderId: user?.id || "",
     investorId: "",
@@ -76,6 +76,7 @@ export function LoanForm({ onSuccess, onCancel }: LoanFormProps) {
       // Convert string values to appropriate types
       const processedData = {
         ...formData,
+        loanNumber: generateServicingAccountNumber(),
         originalAmount: parseFloat(formData.originalAmount),
         currentBalance: parseFloat(formData.currentBalance || formData.originalAmount),
         interestRate: parseFloat(formData.interestRate),
@@ -107,11 +108,6 @@ export function LoanForm({ onSuccess, onCancel }: LoanFormProps) {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const generateLoanNumber = () => {
-    const timestamp = Date.now().toString().slice(-8);
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    setFormData(prev => ({ ...prev, loanNumber: `LN${timestamp}${random}` }));
-  };
 
   return (
     <Card className="w-full max-w-4xl mx-auto">
@@ -122,22 +118,6 @@ export function LoanForm({ onSuccess, onCancel }: LoanFormProps) {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Loan Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="loanNumber">Loan Number *</Label>
-              <div className="flex space-x-2">
-                <Input
-                  id="loanNumber"
-                  value={formData.loanNumber}
-                  onChange={(e) => handleInputChange("loanNumber", e.target.value)}
-                  placeholder="Enter loan number"
-                  required
-                />
-                <Button type="button" variant="outline" onClick={generateLoanNumber}>
-                  Generate
-                </Button>
-              </div>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
               <Select value={formData.status} onValueChange={(value) => handleInputChange("status", value)}>

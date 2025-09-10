@@ -1,0 +1,179 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/client/src/components/loans/loan-form.tsx b/client/src/components/loans/loan-form.tsx
+index cb001d50aed7fd920fd7bdc674bb0e8defb462ff..e3a62854b346720f9be5d970edd02e201c06d07e 100644
+--- a/client/src/components/loans/loan-form.tsx
++++ b/client/src/components/loans/loan-form.tsx
+@@ -1,51 +1,51 @@
+ import { useState } from "react";
+ import { useMutation, useQueryClient } from "@tanstack/react-query";
+ import { useAuth } from "@/hooks/use-auth";
+ import { apiRequest } from "@/lib/queryClient";
+ import { insertLoanSchema } from "@shared/schema";
+ import { useToast } from "@/hooks/use-toast";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+ import { Label } from "@/components/ui/label";
++import { generateServicingAccountNumber } from "@shared/utils";
+ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+ import { Textarea } from "@/components/ui/textarea";
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+ import { LOAN_STATUSES, LOAN_TYPES } from "@/lib/constants";
+ 
+ interface LoanFormProps {
+   onSuccess?: () => void;
+   onCancel?: () => void;
+ }
+ 
+ export function LoanForm({ onSuccess, onCancel }: LoanFormProps) {
+   const { user } = useAuth();
+   const { toast } = useToast();
+   const queryClient = useQueryClient();
+ 
+   const [formData, setFormData] = useState({
+-    loanNumber: "",
+     borrowerId: "",
+     lenderId: user?.id || "",
+     investorId: "",
+     originalAmount: "",
+     currentBalance: "",
+     interestRate: "",
+     termMonths: "",
+     monthlyPayment: "",
+     nextPaymentDate: "",
+     maturityDate: "",
+     status: "originated",
+     propertyAddress: "",
+     propertyCity: "",
+     propertyState: "",
+     propertyZip: "",
+     propertyValue: "",
+     loanToValue: "",
+     originationDate: "",
+     firstPaymentDate: "",
+     notes: ""
+   });
+ 
+   const createLoanMutation = useMutation({
+     mutationFn: async (loanData: any) => {
+       const res = await apiRequest("POST", "/api/loans", loanData);
+diff --git a/client/src/components/loans/loan-form.tsx b/client/src/components/loans/loan-form.tsx
+index cb001d50aed7fd920fd7bdc674bb0e8defb462ff..e3a62854b346720f9be5d970edd02e201c06d07e 100644
+--- a/client/src/components/loans/loan-form.tsx
++++ b/client/src/components/loans/loan-form.tsx
+@@ -54,112 +54,91 @@ export function LoanForm({ onSuccess, onCancel }: LoanFormProps) {
+     onSuccess: () => {
+       queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
+       queryClient.invalidateQueries({ queryKey: ["/api/loans/metrics"] });
+       toast({
+         title: "Success",
+         description: "Loan created successfully",
+       });
+       onSuccess?.();
+     },
+     onError: (error: Error) => {
+       toast({
+         title: "Error",
+         description: error.message,
+         variant: "destructive",
+       });
+     },
+   });
+ 
+   const handleSubmit = (e: React.FormEvent) => {
+     e.preventDefault();
+     
+     try {
+       // Convert string values to appropriate types
+       const processedData = {
+         ...formData,
++        loanNumber: generateServicingAccountNumber(),
+         originalAmount: parseFloat(formData.originalAmount),
+         currentBalance: parseFloat(formData.currentBalance || formData.originalAmount),
+         interestRate: parseFloat(formData.interestRate),
+         termMonths: parseInt(formData.termMonths),
+         monthlyPayment: parseFloat(formData.monthlyPayment),
+         propertyValue: formData.propertyValue ? parseFloat(formData.propertyValue) : null,
+         loanToValue: formData.loanToValue ? parseFloat(formData.loanToValue) : null,
+         nextPaymentDate: formData.nextPaymentDate || null,
+         maturityDate: formData.maturityDate || null,
+         originationDate: formData.originationDate || null,
+         firstPaymentDate: formData.firstPaymentDate || null,
+         borrowerId: formData.borrowerId || null,
+         investorId: formData.investorId || null,
+       };
+ 
+       // Validate with schema
+       const validatedData = insertLoanSchema.parse(processedData);
+       createLoanMutation.mutate(validatedData);
+     } catch (error: any) {
+       toast({
+         title: "Validation Error",
+         description: error.message || "Please check all required fields",
+         variant: "destructive",
+       });
+     }
+   };
+ 
+   const handleInputChange = (field: string, value: string) => {
+     setFormData(prev => ({ ...prev, [field]: value }));
+   };
+ 
+-  const generateLoanNumber = () => {
+-    const timestamp = Date.now().toString().slice(-8);
+-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+-    setFormData(prev => ({ ...prev, loanNumber: `LN${timestamp}${random}` }));
+-  };
+-
+   return (
+     <Card className="w-full max-w-4xl mx-auto">
+       <CardHeader>
+         <CardTitle>Create New Loan</CardTitle>
+       </CardHeader>
+       <CardContent>
+         <form onSubmit={handleSubmit} className="space-y-6">
+           {/* Loan Information */}
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+-            <div className="space-y-2">
+-              <Label htmlFor="loanNumber">Loan Number *</Label>
+-              <div className="flex space-x-2">
+-                <Input
+-                  id="loanNumber"
+-                  value={formData.loanNumber}
+-                  onChange={(e) => handleInputChange("loanNumber", e.target.value)}
+-                  placeholder="Enter loan number"
+-                  required
+-                />
+-                <Button type="button" variant="outline" onClick={generateLoanNumber}>
+-                  Generate
+-                </Button>
+-              </div>
+-            </div>
+-
+             <div className="space-y-2">
+               <Label htmlFor="status">Status</Label>
+               <Select value={formData.status} onValueChange={(value) => handleInputChange("status", value)}>
+                 <SelectTrigger>
+                   <SelectValue />
+                 </SelectTrigger>
+                 <SelectContent>
+                   {LOAN_STATUSES.map((status) => (
+                     <SelectItem key={status.value} value={status.value}>
+                       {status.label}
+                     </SelectItem>
+                   ))}
+                 </SelectContent>
+               </Select>
+             </div>
+ 
+             <div className="space-y-2">
+               <Label htmlFor="originalAmount">Original Amount *</Label>
+               <Input
+                 id="originalAmount"
+                 type="number"
+                 step="0.01"
+                 value={formData.originalAmount}
+                 onChange={(e) => handleInputChange("originalAmount", e.target.value)}
+                 placeholder="0.00"
+ 
+EOF
+)
