@@ -1544,3 +1544,4 @@ function IpAllowlistTab({ userId, ipAllowlist }: any) {
     </Card>
   );
 }
+export default AdminUserDetail;

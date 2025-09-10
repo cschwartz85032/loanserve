@@ -20,6 +20,7 @@ import FeeManagement from "@/pages/FeeManagement";
 import ServicingCycle from "@/pages/servicing-cycle";
 import Mailroom from "@/pages/Mailroom";
 import AdminUsers from "@/pages/AdminUsers";
+import AdminUserDetail from "@/pages/AdminUserDetail";
 import AdminEscrow from "@/pages/admin/AdminEscrow";
 import QueueMonitor from "@/pages/admin/QueueMonitor";
 
@@ -143,6 +144,13 @@ function AppRoutes() {
           {() => (
             <ProtectedRoute>
               <AdminUsers />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/admin/users/:id">
+          {(params) => (
+            <ProtectedRoute>
+              <AdminUserDetail />
             </ProtectedRoute>
           )}
         </Route>
