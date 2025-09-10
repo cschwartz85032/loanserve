@@ -90,7 +90,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     interestRate: "",
     rateType: "fixed",
     loanTerm: "",
-    originationDate: new Date().toISOString().split('T')[0],
+    originationDate: "", // Should be extracted from documents, not defaulted to today
     prepaidInterest: "0",
     defaultRate: "",
     gracePeriodDays: "15",
@@ -464,6 +464,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       // Payment Information
       paymentAmount: toString(extractedData.paymentAmount || extractedData.monthlyPayment) || prev.paymentAmount,
       escrowAmount: toString(extractedData.escrowAmount) || prev.escrowAmount,
+      
+      // Date Information - extract from documents, not default to today
+      originationDate: (cleanString(extractedData.originationDate || extractedData.fundingDate || extractedData.closingDate || extractedData.loanDate) && !cleanString(extractedData.originationDate || extractedData.fundingDate || extractedData.closingDate || extractedData.loanDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.originationDate || extractedData.fundingDate || extractedData.closingDate || extractedData.loanDate) : prev.originationDate,
       firstPaymentDate: (cleanString(extractedData.firstPaymentDate) && !cleanString(extractedData.firstPaymentDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.firstPaymentDate) : prev.firstPaymentDate,
       nextPaymentDate: (cleanString(extractedData.nextPaymentDate) && !cleanString(extractedData.nextPaymentDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.nextPaymentDate) : prev.nextPaymentDate,
       maturityDate: (cleanString(extractedData.maturityDate) && !cleanString(extractedData.maturityDate).includes('YYYY-MM-DD')) ? cleanString(extractedData.maturityDate) : prev.maturityDate,
@@ -663,6 +666,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         paymentAmount: monthlyPayment?.toString() || "0",
         escrowAmount: data.escrowAmount?.toString() || "0",
         status: "active",
+        fundingDate: cleanDate(data.originationDate), // Map origination date to funding date in database
         maturityDate: cleanDate(data.maturityDate) || calculatedMaturityDate,
         firstPaymentDate: cleanDate(data.firstPaymentDate),
         nextPaymentDate: cleanDate(data.nextPaymentDate) || cleanDate(data.firstPaymentDate),
@@ -881,7 +885,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       interestRate: "",
       rateType: "fixed",
       loanTerm: "",
-      originationDate: new Date().toISOString().split('T')[0],
+      originationDate: "", // Should be extracted from documents, not defaulted to today
       prepaidInterest: "0",
       defaultRate: "",
       propertyType: "single_family",
