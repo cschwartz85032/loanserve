@@ -208,10 +208,20 @@ export function DocumentManager() {
   });
 
   const handleDelete = (document: any) => {
+    const id = document?.id;
+    if (id === undefined || id === null) {
+      toast({
+        title: "Error",
+        description: "Document is missing an identifier",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (confirm(`Are you sure you want to delete "${document.title}"?`)) {
-      deleteMutation.mutate(document.id.toString());
+      deleteMutation.mutate(String(id));
       // If we're viewing this document, close the viewer
-      if (selectedDocument?.id === document.id) {
+      if (selectedDocument?.id === id) {
         setSelectedDocument(null);
         setShowInlineViewer(false);
       }
