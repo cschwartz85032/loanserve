@@ -50,6 +50,13 @@ function AppRoutes() {
             </ProtectedRoute>
           )}
         </Route>
+        <Route path="/dashboard">
+          {() => (
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          )}
+        </Route>
         <Route path="/loans">
           {() => (
             <ProtectedRoute>

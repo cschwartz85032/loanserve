@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { toast } from '@/hooks/use-toast';
 
-function Mailroom() {
+export default function Mailroom() {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [categoryFilter, setCategoryFilter] = React.useState('all');
   const [loanFilter, setLoanFilter] = React.useState('all');
@@ -296,4 +296,3 @@ function Mailroom() {
   );
 }
 
-export default Mailroom;
