@@ -27,7 +27,7 @@ router.get("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
       loanId: loanId,
       ipAddr: getRealUserIP(req),
       userAgent: req.headers?.['user-agent'],
-      details: {
+      metadata: {
         action: 'view_escrow_disbursements',
         loanId,
         disbursementCount: disbursements.length,
@@ -66,7 +66,7 @@ router.get("/api/escrow-disbursements/:id", async (req: any, res) => {
       loanId: disbursement.loanId,
       ipAddr: getRealUserIP(req),
       userAgent: req.headers?.['user-agent'],
-      details: {
+      metadata: {
         action: 'view_disbursement_detail',
         disbursementId: id,
         disbursementType: disbursement.disbursementType,
@@ -112,7 +112,7 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
         loanId: loanId,
         ipAddr: getRealUserIP(req),
         userAgent: req.headers?.['user-agent'],
-        details: {
+        metadata: {
           action: 'create_escrow_account',
           loanId,
           accountNumber: escrowAccount.accountNumber,
@@ -223,8 +223,8 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
     
     // Remove null/undefined values from cleanedData to avoid overwriting defaults
     Object.keys(cleanedData).forEach(key => {
-      if (cleanedData[key] === null || cleanedData[key] === undefined) {
-        delete cleanedData[key];
+      if ((cleanedData as any)[key] === null || (cleanedData as any)[key] === undefined) {
+        delete (cleanedData as any)[key];
       }
     });
     
@@ -239,7 +239,7 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
     
     // Log disbursement creation with all created fields
     const createdFields = Object.keys(disbursement).filter(key => 
-      disbursement[key] !== null && disbursement[key] !== undefined && disbursement[key] !== ''
+      (disbursement as any)[key] !== null && (disbursement as any)[key] !== undefined && (disbursement as any)[key] !== ''
     );
     
     await complianceAudit.logEvent({
@@ -381,7 +381,7 @@ router.delete("/api/escrow-disbursements/:id", async (req: any, res) => {
         loanId: disbursement.loanId,
         ipAddr: getRealUserIP(req),
         userAgent: req.headers?.['user-agent'],
-        details: {
+        metadata: {
           action: 'delete_escrow_disbursement',
           disbursementId: id,
           loanId: disbursement.loanId,
@@ -434,7 +434,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
         .returning();
       
       // Create corresponding ledger entry
-      const [ledgerEntry] = await tx
+      const ledgerEntryResult = await tx
         .insert(loanLedger)
         .values({
           loanId: disbursement.loanId,
@@ -452,6 +452,8 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
           status: 'posted'
         })
         .returning();
+      
+      const ledgerEntry = Array.isArray(ledgerEntryResult) ? ledgerEntryResult[0] : ledgerEntryResult;
       
       // Update payment with ledger entry ID
       const [updatedPayment] = await tx
@@ -491,7 +493,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
       loanId: disbursement.loanId,
       ipAddr: getRealUserIP(req),
       userAgent: req.headers?.['user-agent'],
-      details: {
+      metadata: {
         action: 'process_escrow_payment',
         paymentId: result.id,
         disbursementId,
@@ -535,7 +537,7 @@ router.get("/api/loans/:loanId/escrow-summary", async (req: any, res) => {
       loanId: loanId,
       ipAddr: getRealUserIP(req),
       userAgent: req.headers?.['user-agent'],
-      details: {
+      metadata: {
         action: 'view_escrow_summary',
         loanId,
         totalDisbursements: summary.summary.totalDisbursements,
@@ -588,7 +590,7 @@ router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
       loanId: disbursement.loanId,
       ipAddr: getRealUserIP(req),
       userAgent: req.headers?.['user-agent'],
-      details: {
+      metadata: {
         action: action === 'hold' ? 'hold_escrow_disbursement' : 'release_escrow_disbursement',
         disbursementId: id,
         loanId: result.loanId,
