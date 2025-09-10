@@ -38,15 +38,15 @@ export class OptimizedTopologyManager extends TopologyManager {
     // Default optimized configuration
     this.config = {
       features: {
-        servicing: false, // Disabled to avoid CloudAMQP conflicts
-        settlement: false, // Disable by default until needed
-        reconciliation: false, // Disable by default until needed
+        servicing: true, // Enable for live system
+        settlement: true, // Enable for live system
+        reconciliation: true, // Enable for live system
         escrow: true,
-        compliance: false, // Disable by default until needed
-        aml: false, // Disable by default until needed
+        compliance: true, // Enable for live system
+        aml: true, // Enable for live system
         notifications: {
           email: true,
-          sms: false, // Disable by default
+          sms: true, // Enable for live system
           dashboard: true,
         },
       },
