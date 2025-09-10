@@ -1,70 +1,147 @@
-export default function App() {
-  return (
-    <div style={{
-      minHeight: '100vh', 
-      backgroundColor: '#f3f4f6', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      padding: '32px',
-      fontFamily: 'Arial, sans-serif'
-    }}>
-      <div style={{
-        backgroundColor: 'white', 
-        borderRadius: '8px', 
-        boxShadow: '0 4px 6px rgba(0,0,0,0.1)', 
-        padding: '32px', 
-        maxWidth: '400px', 
-        width: '100%', 
-        textAlign: 'center'
-      }}>
-        <h1 style={{
-          fontSize: '28px', 
-          fontWeight: 'bold', 
-          color: '#1f2937', 
-          marginBottom: '16px'
-        }}>
-          LoanServe Pro
-        </h1>
-        <p style={{color: '#6b7280', marginBottom: '24px', fontSize: '16px'}}>
-          Enterprise Mortgage Loan Servicing Platform
-        </p>
-        <div style={{marginBottom: '24px'}}>
-          <p style={{fontSize: '14px', color: '#059669', marginBottom: '8px'}}>
-            ✅ System Online
-          </p>
-          <p style={{fontSize: '14px', color: '#2563eb', marginBottom: '8px'}}>
-            🔧 Backend Services: Operational
-          </p>
-          <p style={{fontSize: '14px', color: '#7c3aed', marginBottom: '8px'}}>
-            ⚡ Queue Processing: Active
-          </p>
-          <p style={{fontSize: '14px', color: '#dc2626', marginBottom: '8px'}}>
-            🖥️ Frontend: Now Working
-          </p>
-        </div>
-        <div style={{
-          marginTop: '24px', 
-          paddingTop: '16px', 
-          borderTop: '1px solid #e5e7eb'
-        }}>
-          <a 
-            href="/auth" 
-            style={{
-              display: 'inline-block', 
-              backgroundColor: '#2563eb', 
-              color: 'white', 
-              padding: '12px 24px', 
-              borderRadius: '6px', 
-              textDecoration: 'none',
-              fontSize: '16px',
-              fontWeight: '500'
-            }}
-          >
-            Access Login
-          </a>
+import { Router, Route, Switch } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { ProtectedRoute } from "@/lib/protected-route";
+import { useAuth } from "@/hooks/use-auth";
+
+// Import pages with correct imports
+import AuthPage from "@/pages/auth-page";
+import Dashboard from "@/pages/dashboard";
+import NotFound from "@/pages/not-found";
+import Loans from "@/pages/loans";
+import Payments from "@/pages/payments";
+import Documents from "@/pages/documents";
+import Escrow from "@/pages/escrow";
+import Reports from "@/pages/reports";
+import Settings from "@/pages/Settings";
+import MfaSettings from "@/pages/MfaSettings";
+import Compliance from "@/pages/compliance";
+import FeeManagement from "@/pages/FeeManagement";
+import ServicingCycle from "@/pages/servicing-cycle";
+import Mailroom from "@/pages/Mailroom";
+
+import { queryClient } from "@/lib/queryClient";
+
+function AppRoutes() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+          <p className="mt-4">Loading...</p>
         </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <Router>
+      <Switch>
+        {/* Auth page */}
+        <Route path="/auth" component={AuthPage} />
+        
+        {/* Main app routes */}
+        <Route path="/">
+          {() => (
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/loans">
+          {() => (
+            <ProtectedRoute>
+              <Loans />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/payments">
+          {() => (
+            <ProtectedRoute>
+              <Payments />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/documents">
+          {() => (
+            <ProtectedRoute>
+              <Documents />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/escrow">
+          {() => (
+            <ProtectedRoute>
+              <Escrow />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/reports">
+          {() => (
+            <ProtectedRoute>
+              <Reports />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/settings">
+          {() => (
+            <ProtectedRoute>
+              <Settings />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/mfa">
+          {() => (
+            <ProtectedRoute>
+              <MfaSettings />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/compliance">
+          {() => (
+            <ProtectedRoute>
+              <Compliance />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/fees">
+          {() => (
+            <ProtectedRoute>
+              <FeeManagement />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/servicing">
+          {() => (
+            <ProtectedRoute>
+              <ServicingCycle />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/mailroom">
+          {() => (
+            <ProtectedRoute>
+              <Mailroom />
+            </ProtectedRoute>
+          )}
+        </Route>
+
+        {/* 404 page */}
+        <Route>
+          <NotFound />
+        </Route>
+      </Switch>
+    </Router>
+  );
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppRoutes />
+      <Toaster />
+    </QueryClientProvider>
   );
 }
