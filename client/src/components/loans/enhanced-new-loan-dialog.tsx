@@ -84,6 +84,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
   // Enhanced form data with better defaults and auto-calculations
   const [formData, setFormData] = useState({
     // Loan Information
+    loanNumber: "",
     loanType: "conventional",
     originalAmount: "",
     principalBalance: "",
@@ -671,7 +672,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         escrowBalance: data.escrowAmount?.toString() || "0",
         lateFeeAmount: data.lateCharge?.toString() || "25",
         gracePeriodDays: data.gracePeriodDays ? parseInt(data.gracePeriodDays) : 15,
-        prepaymentPenalty: "0",
+        prepaymentPenalty: false,
         // Borrower information
         borrowerName: cleanString(data.borrowerName) || null,
         borrowerEmail: cleanString(data.borrowerEmail) || null,  
@@ -872,6 +873,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
   const resetForm = () => {
     setFormData({
+      loanNumber: "",
       loanType: "conventional",
       originalAmount: "",
       principalBalance: "",
@@ -945,6 +947,12 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       pmiAmount: "",
       servicingFee: "25",
       servicingFeeType: "percentage",
+      lateCharge: "10",
+      lateChargeType: "percentage",
+      feePayer: "B",
+      gracePeriodDays: "15",
+      investorLoanNumber: "",
+      poolNumber: "",
       loanDocuments: null,
       defaultConditions: null,
       insuranceRequirements: null,
