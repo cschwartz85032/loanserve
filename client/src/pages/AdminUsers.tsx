@@ -812,3 +812,4 @@ function BulkInviteDialog({ roles }: { roles: Role[] }) {
     </Dialog>
   );
 }
+export default AdminUsers;
