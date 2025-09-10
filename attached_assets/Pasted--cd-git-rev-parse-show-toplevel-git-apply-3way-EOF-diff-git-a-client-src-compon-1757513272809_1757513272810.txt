@@ -1,0 +1,75 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/client/src/components/documents/document-manager.tsx b/client/src/components/documents/document-manager.tsx
+index 0a7b67d93f29c16024e943db81f460f07fda3855..551b7c714c3a9b0ce3c635a4bcbcdbfbeecf2028 100644
+--- a/client/src/components/documents/document-manager.tsx
++++ b/client/src/components/documents/document-manager.tsx
+@@ -186,54 +186,64 @@ export function DocumentManager() {
+ 
+   const deleteMutation = useMutation({
+     mutationFn: async (documentId: string) => {
+       const res = await apiRequest("DELETE", `/api/documents/${documentId}`);
+       if (!res.ok) throw new Error('Failed to delete document');
+       // 204 No Content response has no body to parse
+       return null;
+     },
+     onSuccess: () => {
+       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+       toast({
+         title: "Success",
+         description: "Document deleted successfully",
+       });
+     },
+     onError: () => {
+       toast({
+         title: "Error",
+         description: "Failed to delete document",
+         variant: "destructive",
+       });
+     }
+   });
+ 
+   const handleDelete = (document: any) => {
++    const id = document?.id;
++    if (id === undefined || id === null) {
++      toast({
++        title: "Error",
++        description: "Document is missing an identifier",
++        variant: "destructive",
++      });
++      return;
++    }
++
+     if (confirm(`Are you sure you want to delete "${document.title}"?`)) {
+-      deleteMutation.mutate(document.id.toString());
++      deleteMutation.mutate(String(id));
+       // If we're viewing this document, close the viewer
+-      if (selectedDocument?.id === document.id) {
++      if (selectedDocument?.id === id) {
+         setSelectedDocument(null);
+         setShowInlineViewer(false);
+       }
+     }
+   };
+ 
+   const handleViewDocument = (document: any) => {
+     setSelectedDocument(document);
+     setShowInlineViewer(true);
+   };
+ 
+   const handleCloseViewer = () => {
+     setSelectedDocument(null);
+     setShowInlineViewer(false);
+   };
+ 
+   return (
+     <div 
+       className={cn(
+         "space-y-6 min-h-[600px] relative",
+         dragActive && "bg-primary-50 border-2 border-dashed border-primary-400 rounded-lg"
+       )}
+       onDragEnter={handleDrag}
+       onDragLeave={handleDrag}
+       onDragOver={handleDrag}
+ 
+EOF
+)
