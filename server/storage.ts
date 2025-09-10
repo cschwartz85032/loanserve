@@ -544,18 +544,18 @@ export class DatabaseStorage implements IStorage {
     const [activeLoansResult] = await db
       .select({ count: count() })
       .from(loans)
-      .where(and(
+      .where(whereClause ? and(
         eq(loans.status, "active"),
         whereClause
-      ));
+      ) : eq(loans.status, "active"));
 
     const [delinquentResult] = await db
       .select({ count: count() })
       .from(loans)
-      .where(and(
+      .where(whereClause ? and(
         eq(loans.status, "delinquent"),
         whereClause
-      ));
+      ) : eq(loans.status, "delinquent"));
 
     const currentYear = new Date().getFullYear();
     const yearStart = new Date(currentYear, 0, 1);
@@ -564,10 +564,10 @@ export class DatabaseStorage implements IStorage {
       .select({ total: sum(payments.totalReceived) })
       .from(payments)
       .innerJoin(loans, eq(payments.loanId, loans.id))
-      .where(and(
+      .where(whereClause ? and(
         gte(payments.effectiveDate, yearStart.toISOString().split('T')[0]),
         whereClause
-      ));
+      ) : gte(payments.effectiveDate, yearStart.toISOString().split('T')[0]));
 
     return {
       totalPortfolio: totalPortfolioResult?.total || "0",
