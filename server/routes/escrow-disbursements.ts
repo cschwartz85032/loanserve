@@ -18,23 +18,16 @@ router.get("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
     const disbursements = await storage.getEscrowDisbursements(loanId);
     
     // Log escrow disbursements access
-    await complianceAudit.logEvent({
-      eventType: COMPLIANCE_EVENTS.ESCROW.VIEWED,
-      actorType: 'user',
-      actorId: userId?.toString(),
-      resourceType: 'escrow_disbursements',
-      resourceId: loanId.toString(),
-      loanId: loanId,
-      ipAddr: getRealUserIP(req),
-      userAgent: req.headers?.['user-agent'],
+    await complianceAudit.log({
+      type: 'escrow_disbursement.viewed',
+      actorId: userId,
+      resourceId: loanId,
+      loanId,
       metadata: {
         action: 'view_escrow_disbursements',
-        loanId,
-        disbursementCount: disbursements.length,
-        userId
+        disbursement_count: disbursements.length
       },
-      userId,
-      ipAddress: getRealUserIP(req)
+      req
     });
     
     res.json(disbursements);
@@ -221,26 +214,32 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
       insuranceTracking: req.body.insuranceTracking
     };
     
-    // Remove null/undefined values from cleanedData to avoid overwriting defaults
-    Object.keys(cleanedData).forEach(key => {
-      if ((cleanedData as any)[key] === null || (cleanedData as any)[key] === undefined) {
-        delete (cleanedData as any)[key];
+    // Remove null/undefined values from cleanedData to avoid overwriting defaults  
+    type CleanedDataDict = Record<string, unknown>;
+    const cleanedDataDict: CleanedDataDict = cleanedData;
+    for (const key of Object.keys(cleanedDataDict)) {
+      const val = cleanedDataDict[key];
+      if (val === null || val === undefined) {
+        delete cleanedDataDict[key];
       }
-    });
+    }
     
     console.log("Processing escrow disbursement request");
     console.log("Data validation in progress...");
     
-    const validatedData = insertEscrowDisbursementSchema.parse(cleanedData);
+    const validatedData = insertEscrowDisbursementSchema.parse(cleanedDataDict);
     
     console.log("Validation complete, creating disbursement...");
     
     const disbursement = await storage.createEscrowDisbursement(validatedData);
     
     // Log disbursement creation with all created fields
-    const createdFields = Object.keys(disbursement).filter(key => 
-      (disbursement as any)[key] !== null && (disbursement as any)[key] !== undefined && (disbursement as any)[key] !== ''
-    );
+    type DisbursementDict = Record<string, unknown>;
+    const disbursementDict: DisbursementDict = disbursement;
+    const createdFields = Object.keys(disbursementDict).filter(key => {
+      const val = disbursementDict[key];
+      return val !== null && val !== undefined && val !== '';
+    });
     
     await complianceAudit.logEvent({
       eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_CREATED,
@@ -434,7 +433,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
         .returning();
       
       // Create corresponding ledger entry
-      const ledgerEntryResult = await tx
+      const [ledgerEntry] = await tx
         .insert(loanLedger)
         .values({
           loanId: disbursement.loanId,
@@ -452,8 +451,6 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
           status: 'posted'
         })
         .returning();
-      
-      const ledgerEntry = Array.isArray(ledgerEntryResult) ? ledgerEntryResult[0] : ledgerEntryResult;
       
       // Update payment with ledger entry ID
       const [updatedPayment] = await tx
