@@ -1,0 +1,93 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/src/analytics/etl-pipeline.ts b/src/analytics/etl-pipeline.ts
+index 5d2e6741fd96b556885518fb14cac97e1bef2eb5..aa294c85de091ac9c99c7d20eba0ecd07c484f87 100644
+--- a/src/analytics/etl-pipeline.ts
++++ b/src/analytics/etl-pipeline.ts
+@@ -97,78 +97,78 @@ export class ETLPipeline {
+       jobId,
+       jobName: 'loan_performance_etl',
+       status: 'running',
+       recordsExtracted: 0,
+       recordsTransformed: 0,
+       recordsLoaded: 0,
+       startTime: new Date()
+     };
+ 
+     this.runningJobs.set(jobId, jobResult);
+ 
+     try {
+       const c = await pool.connect();
+       
+       try {
+         // Extract loan data with payments - derive current balance from latest loan_ledger snapshot
+         const extractQuery = `
+           WITH latest_ledger AS (
+             SELECT DISTINCT ON (ll.loan_id)
+               ll.loan_id,
+               (ll.principal_balance + ll.interest_balance) AS balance_amount
+             FROM loan_ledger ll
+             WHERE ll.status = 'posted'
+             ORDER BY ll.loan_id, ll.transaction_date DESC, ll.id DESC
+           )
+-          SELECT 
++          SELECT
+             l.id as loan_id,
+             l.loan_number,
+             l.loan_type as product_type,
+             COALESCE(lat.balance_amount, 0)::numeric AS current_balance_amount,
+             ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint AS current_balance_cents,
+             l.status,
+-            COALESCE(lb.current_principal_balance_cents, ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint) as current_principal_balance_cents,
+-            COALESCE(lb.current_interest_rate, l.interest_rate) as current_interest_rate,
+-            COALESCE(lb.current_payment_amount_cents, l.payment_amount * 100) as current_payment_amount_cents,
++            COALESCE(lb.principal_minor, ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint) as current_principal_balance_cents,
++            l.interest_rate as current_interest_rate,
++            ROUND(l.payment_amount * 100)::bigint as current_payment_amount_cents,
+             COALESCE(lb_join.borrower_id, NULL) as borrower_id,
+             COALESCE(p.total_amount, 0) * 100 as payment_amount_cents,
+-            CASE 
++            CASE
+               WHEN p.received_date IS NOT NULL AND p.received_date <= p.due_date THEN 'on_time'
+               WHEN p.received_date IS NOT NULL AND p.received_date > p.due_date THEN 'late'
+               WHEN p.received_date IS NULL AND p.due_date < CURRENT_DATE THEN 'missed'
+               ELSE 'scheduled'
+             END as payment_status,
+             COALESCE(
+               EXTRACT(DAYS FROM (CURRENT_DATE - p.due_date)), 0
+             ) as days_delinquent,
+             CURRENT_DATE as snapshot_date
+           FROM loans l
+           LEFT JOIN latest_ledger lat ON lat.loan_id = l.id
+           LEFT JOIN loan_balances lb ON l.id = lb.loan_id
+           LEFT JOIN loan_borrowers lb_join ON l.id = lb_join.loan_id
+           LEFT JOIN borrowers b ON lb_join.borrower_id = b.id
+-          LEFT JOIN payments p ON l.id = p.loan_id 
++          LEFT JOIN payments p ON l.id = p.loan_id
+             AND p.due_date >= CURRENT_DATE - INTERVAL '30 days'
+           WHERE l.status IN ('active', 'current', 'delinquent')
+         `;
+ 
+         const extractResult = await c.query(extractQuery);
+         jobResult.recordsExtracted = extractResult.rowCount || 0;
+ 
+         // Transform and load data
+         let transformedRecords = 0;
+         let loadedRecords = 0;
+ 
+         for (const row of extractResult.rows) {
+           // Get or create time dimension key
+           const timeKey = await this.getTimeKey(row.snapshot_date);
+           
+           // Get or create loan dimension key
+           const loanKey = await this.getLoanDimensionKey(c, row);
+           
+           // Get or create borrower dimension key
+           const borrowerKey = await this.getBorrowerDimensionKey(c, row);
+ 
+           // Calculate derived metrics
+           const delinquencyBucket = this.calculateDelinquencyBucket(row.days_delinquent);
+           const paymentTimingCategory = this.calculatePaymentTiming(row.payment_status);
+ 
+ 
+EOF
+)

@@ -126,9 +126,9 @@ export class ETLPipeline {
             COALESCE(lat.balance_amount, 0)::numeric AS current_balance_amount,
             ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint AS current_balance_cents,
             l.status,
-            COALESCE(lb.current_principal_balance_cents, ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint) as current_principal_balance_cents,
-            COALESCE(lb.current_interest_rate, l.interest_rate) as current_interest_rate,
-            COALESCE(lb.current_payment_amount_cents, l.payment_amount * 100) as current_payment_amount_cents,
+            COALESCE(lb.principal_minor, ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint) as current_principal_balance_cents,
+            l.interest_rate as current_interest_rate,
+            (l.payment_amount * 100)::bigint as current_payment_amount_cents,
             COALESCE(lb_join.borrower_id, NULL) as borrower_id,
             COALESCE(p.total_amount, 0) * 100 as payment_amount_cents,
             CASE 

@@ -391,16 +391,17 @@ export class PredictiveEngine {
   private async extractLoanFeatures(client: any, loanId: string): Promise<Record<string, any>> {
     try {
       const result = await client.query(`
-        SELECT 
-          l.current_balance_cents / 100.0 as current_balance,
-          l.original_balance_cents / 100.0 as original_balance,
-          lb.current_interest_rate,
-          lb.current_payment_amount_cents / 100.0 as payment_amount,
+        SELECT
+          COALESCE(lb.principal_minor, 0) / 100.0 as current_balance,
+          l.original_amount::numeric as original_balance,
+          l.interest_rate as current_interest_rate,
+          l.payment_amount as payment_amount,
           b.credit_score,
-          EXTRACT(DAYS FROM (CURRENT_DATE - l.origination_date)) as loan_age_days
+          EXTRACT(DAYS FROM (CURRENT_DATE - l.funding_date)) as loan_age_days
         FROM loans l
         LEFT JOIN loan_balances lb ON l.id = lb.loan_id
-        LEFT JOIN borrowers b ON l.borrower_id = b.id
+        LEFT JOIN loan_borrowers lbj ON l.id = lbj.loan_id
+        LEFT JOIN borrowers b ON lbj.borrower_id = b.id
         WHERE l.id = $1
       `, [loanId]);
 

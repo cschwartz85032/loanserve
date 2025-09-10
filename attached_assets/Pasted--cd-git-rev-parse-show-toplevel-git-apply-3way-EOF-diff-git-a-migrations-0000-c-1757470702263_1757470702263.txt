@@ -1,0 +1,62 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/migrations/0000_comprehensive-schema.sql b/migrations/0000_comprehensive-schema.sql
+index fd6776ba1ceebd53bfddfb9a316a0683d1b80de4..62f2dcb3aae85259711f1a035d2392368385edbf 100644
+--- a/migrations/0000_comprehensive-schema.sql
++++ b/migrations/0000_comprehensive-schema.sql
+@@ -284,53 +284,50 @@ BEGIN
+   END IF;
+ END$$;
+ --> statement-breakpoint
+ DO $$
+ BEGIN
+   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+     CREATE TYPE "public"."user_role" AS ENUM(
+       'lender', 'borrower', 'investor', 'escrow_officer', 'legal', 'servicer', 'admin'
+     );
+   ELSE
+     BEGIN
+       ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'lender';
+       ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'borrower';
+       ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'investor';
+       ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'escrow_officer';
+       ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'legal';
+       ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'servicer';
+       ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'admin';
+     EXCEPTION WHEN duplicate_object THEN NULL;
+     END;
+   END IF;
+ END$$;
+ --> statement-breakpoint
+ CREATE TABLE IF NOT EXISTS "loan_balances" (
+         "loan_id" integer PRIMARY KEY NOT NULL,
+-        "current_principal_balance_cents" bigint DEFAULT 0 NOT NULL,
+-        "current_interest_rate" numeric,
+-        "current_payment_amount_cents" bigint,
+         "principal_minor" bigint DEFAULT 0 NOT NULL,
+         "interest_accrued_minor" bigint DEFAULT 0 NOT NULL,
+         "escrow_minor" bigint DEFAULT 0 NOT NULL,
+         "late_fees_minor" bigint DEFAULT 0 NOT NULL,
+         "total_paid_minor" bigint DEFAULT 0 NOT NULL,
+         "last_payment_date" date,
+         "last_payment_minor" bigint,
+         "next_payment_due" date,
+         "delinquent_days" integer DEFAULT 0 NOT NULL,
+         "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+ );
+ --> statement-breakpoint
+ CREATE TABLE "audit_logs" (
+         "id" serial PRIMARY KEY NOT NULL,
+         "user_id" integer,
+         "entity_type" text NOT NULL,
+         "entity_id" integer NOT NULL,
+         "action" text NOT NULL,
+         "previous_values" jsonb,
+         "new_values" jsonb,
+         "changed_fields" text[],
+         "ip_address" text,
+         "user_agent" text,
+         "session_id" text,
+         "created_at" timestamp DEFAULT now() NOT NULL
+ 
+EOF
+)
