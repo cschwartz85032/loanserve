@@ -19,6 +19,9 @@ import Compliance from "@/pages/compliance";
 import FeeManagement from "@/pages/FeeManagement";
 import ServicingCycle from "@/pages/servicing-cycle";
 import Mailroom from "@/pages/Mailroom";
+import AdminUsers from "@/pages/AdminUsers";
+import AdminEscrow from "@/pages/admin/AdminEscrow";
+import QueueMonitor from "@/pages/admin/QueueMonitor";
 
 import { queryClient } from "@/lib/queryClient";
 
@@ -131,6 +134,29 @@ function AppRoutes() {
           {() => (
             <ProtectedRoute>
               <Mailroom />
+            </ProtectedRoute>
+          )}
+        </Route>
+
+        {/* Admin routes */}
+        <Route path="/admin/users">
+          {() => (
+            <ProtectedRoute>
+              <AdminUsers />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/admin/escrow">
+          {() => (
+            <ProtectedRoute>
+              <AdminEscrow />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/admin/queue-monitor">
+          {() => (
+            <ProtectedRoute>
+              <QueueMonitor />
             </ProtectedRoute>
           )}
         </Route>
