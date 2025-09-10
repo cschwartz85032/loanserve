@@ -306,9 +306,6 @@ END$$;
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "loan_balances" (
         "loan_id" integer PRIMARY KEY NOT NULL,
-        "current_principal_balance_cents" bigint DEFAULT 0 NOT NULL,
-        "current_interest_rate" numeric,
-        "current_payment_amount_cents" bigint,
         "principal_minor" bigint DEFAULT 0 NOT NULL,
         "interest_accrued_minor" bigint DEFAULT 0 NOT NULL,
         "escrow_minor" bigint DEFAULT 0 NOT NULL,
