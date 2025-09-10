@@ -84,7 +84,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
   // Enhanced form data with better defaults and auto-calculations
   const [formData, setFormData] = useState({
     // Loan Information
-    loanNumber: "",
     loanType: "conventional",
     originalAmount: "",
     principalBalance: "",
@@ -873,7 +872,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
 
   const resetForm = () => {
     setFormData({
-      loanNumber: "",
       loanType: "conventional",
       originalAmount: "",
       principalBalance: "",
@@ -1137,15 +1135,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Loan Information</h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="loanNumber">Loan Number</Label>
-                      <Input
-                        id="loanNumber"
-                        value={formData.loanNumber}
-                        onChange={(e) => handleInputChange('loanNumber', e.target.value)}
-                        placeholder="Auto-generated if empty"
-                      />
-                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="loanType">Loan Type</Label>
                       <Select value={formData.loanType} onValueChange={(value) => handleInputChange('loanType', value)}>
@@ -1759,15 +1748,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold">Loan Information</h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="loanNumber-manual">Loan Number</Label>
-                      <Input
-                        id="loanNumber-manual"
-                        value={formData.loanNumber}
-                        onChange={(e) => handleInputChange('loanNumber', e.target.value)}
-                        placeholder="Auto-generated if empty"
-                      />
-                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="loanType-manual">Loan Type</Label>
                       <Select value={formData.loanType} onValueChange={(value) => handleInputChange('loanType', value)}>
