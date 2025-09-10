@@ -1,0 +1,389 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/client/src/components/loans/enhanced-new-loan-dialog.tsx b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+index 18f3b8949902307cffcad33e08f21a5f5f215cef..fbe8c09f1dc2ca81d0b8abc53f3b1dc81c23a55c 100644
+--- a/client/src/components/loans/enhanced-new-loan-dialog.tsx
++++ b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+@@ -9,80 +9,80 @@ import {
+   DialogDescription,
+   DialogHeader,
+   DialogTitle,
+ } from "@/components/ui/dialog";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+ import { Label } from "@/components/ui/label";
+ import { Card, CardContent } from "@/components/ui/card";
+ import { Badge } from "@/components/ui/badge";
+ import { Progress } from "@/components/ui/progress";
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+ import { ScrollArea } from "@/components/ui/scroll-area";
+ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+ import { 
+   CloudUpload, 
+   File, 
+   X, 
+   CheckCircle, 
+   AlertCircle, 
+   Loader2,
+   FileText,
+   Sparkles,
+   PenTool
+ } from "lucide-react";
+ import { cn } from "@/lib/utils";
++import { generateServicingAccountNumber } from "@shared/utils";
+ 
+ interface EnhancedNewLoanDialogProps {
+   open: boolean;
+   onOpenChange: (open: boolean) => void;
+   onLoanCreated?: (loanId: string) => void;
+ }
+ 
+ interface UploadedFile {
+   file: File;
+   status: 'pending' | 'processing' | 'completed' | 'error';
+   documentType?: string;
+   extractedData?: any;
+   error?: string;
+ }
+ 
+ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: EnhancedNewLoanDialogProps) {
+   const { user } = useAuth();
+   const { toast } = useToast();
+   const queryClient = useQueryClient();
+ 
+   const [activeTab, setActiveTab] = useState("ai");
+   const [files, setFiles] = useState<UploadedFile[]>([]);
+   const [dragActive, setDragActive] = useState(false);
+   const [isProcessing, setIsProcessing] = useState(false);
+   const [currentProcessingIndex, setCurrentProcessingIndex] = useState(-1);
+   
+   // Form data that can be filled by AI or manually
+   const [formData, setFormData] = useState({
+     // Loan Information
+-    loanNumber: "",
+     loanType: "conventional",
+     originalAmount: "",
+     principalBalance: "",
+     interestRate: "",
+     rateType: "fixed",
+     loanTerm: "",
+     
+     // Property Information
+     propertyType: "single_family",
+     propertyAddress: "",
+     propertyCity: "",
+     propertyState: "",
+     propertyZip: "",
+     propertyValue: "",
+     
+     // Borrower Information (separate from property)
+     borrowerName: "",
+     borrowerCompanyName: "",
+     borrowerEmail: "",
+     borrowerPhone: "",
+     borrowerAddress: "",
+     borrowerCity: "",
+     borrowerState: "",
+     borrowerZip: "",
+     borrowerSSN: "",
+diff --git a/client/src/components/loans/enhanced-new-loan-dialog.tsx b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+index 18f3b8949902307cffcad33e08f21a5f5f215cef..fbe8c09f1dc2ca81d0b8abc53f3b1dc81c23a55c 100644
+--- a/client/src/components/loans/enhanced-new-loan-dialog.tsx
++++ b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+@@ -323,51 +323,50 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
+     
+     // Helper to normalize loan type
+     const normalizeLoanType = (type: string) => {
+       if (!type) return "conventional";
+       const normalized = type.toLowerCase();
+       if (normalized.includes('conventional') || normalized.includes('fixed')) return 'conventional';
+       if (normalized.includes('fha')) return 'fha';
+       if (normalized.includes('va')) return 'va';
+       if (normalized.includes('usda')) return 'usda';
+       return 'conventional';
+     };
+ 
+     // Debug loan term extraction
+     console.log("Loan term extraction from AI:", {
+       loanTermMonths: extractedData.loanTermMonths,
+       loanTerm: extractedData.loanTerm,
+       termMonths: extractedData.termMonths,
+       term: extractedData.term,
+       raw: extractedData
+     });
+ 
+     // Always set a value for each field (never undefined) to prevent controlled/uncontrolled issues
+     setFormData(prev => ({
+       ...prev,
+       // Loan Information
+-      loanNumber: cleanString(extractedData.loanNumber) || prev.loanNumber,
+       loanType: extractedData.loanType ? normalizeLoanType(extractedData.loanType) : prev.loanType,
+       // Fixed: prioritize loanAmount first, then originalAmount
+       originalAmount: toString(extractedData.loanAmount || extractedData.originalAmount || extractedData.principal) || prev.originalAmount,
+       principalBalance: toString(extractedData.principalBalance || extractedData.currentBalance || extractedData.loanAmount || extractedData.originalAmount) || prev.principalBalance,
+       interestRate: toString(extractedData.interestRate) || prev.interestRate,
+       rateType: cleanString(extractedData.rateType) || prev.rateType,
+       loanTerm: toString(extractedData.loanTermMonths || extractedData.loanTerm || extractedData.termMonths || extractedData.term) || prev.loanTerm,
+       
+       // Property Information  
+       propertyType: extractedData.propertyType ? normalizePropertyType(extractedData.propertyType) : prev.propertyType,
+       propertyAddress: cleanString(extractedData.propertyStreetAddress || extractedData.propertyAddress || extractedData.address) || prev.propertyAddress,
+       propertyCity: cleanString(extractedData.propertyCity || extractedData.city) || prev.propertyCity,
+       propertyState: cleanString(extractedData.propertyState || extractedData.state) || prev.propertyState,
+       propertyZip: cleanString(extractedData.propertyZipCode || extractedData.propertyZip || extractedData.zipCode) || prev.propertyZip,
+       propertyValue: toString(extractedData.propertyValue || extractedData.appraisedValue) || prev.propertyValue,
+       
+       // Borrower Information
+       borrowerName: cleanString(extractedData.borrowerName || extractedData.primaryBorrower) || prev.borrowerName,
+       borrowerEmail: cleanString(extractedData.borrowerEmail) || prev.borrowerEmail,
+       borrowerPhone: cleanString(extractedData.borrowerPhone) || prev.borrowerPhone,
+       
+       // Borrower Address (separate from property address)
+       borrowerAddress: cleanString(extractedData.borrowerStreetAddress) || prev.borrowerAddress,
+       borrowerCity: cleanString(extractedData.borrowerCity) || prev.borrowerCity,
+       borrowerState: cleanString(extractedData.borrowerState) || prev.borrowerState,
+diff --git a/client/src/components/loans/enhanced-new-loan-dialog.tsx b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+index 18f3b8949902307cffcad33e08f21a5f5f215cef..fbe8c09f1dc2ca81d0b8abc53f3b1dc81c23a55c 100644
+--- a/client/src/components/loans/enhanced-new-loan-dialog.tsx
++++ b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+@@ -542,51 +541,51 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
+         if (!value || 
+             value === 'extracted_value_or_null' || 
+             value === 'null' || 
+             value.includes('_or_null')) {
+           return '';
+         }
+         return value;
+       };
+ 
+       // Calculate maturity date properly (loan term is in MONTHS)
+       const parsedLoanTerm = parseInt(data.loanTerm);
+       const loanTermMonths = isNaN(parsedLoanTerm) ? 360 : parsedLoanTerm; // Default to 360 months (30 years)
+       console.log("Loan term processing:", { input: data.loanTerm, parsed: parsedLoanTerm, final: loanTermMonths });
+       const today = new Date();
+       const maturityDate = new Date(today.setMonth(today.getMonth() + loanTermMonths)).toISOString().split('T')[0];
+ 
+       console.log("=== PREPARING LOAN DATA ===");
+       
+       if (!property || !property.id) {
+         console.error("Property object or ID is missing:", property);
+         throw new Error('Property creation did not return a valid ID');
+       }
+       
+       // Create the loan with the property ID
+       const loanData = {
+-        loanNumber: data.loanNumber || `LN${Date.now()}`,
++        loanNumber: generateServicingAccountNumber(),
+         loanType: data.loanType,
+         propertyId: property.id,
+         originalAmount: data.originalAmount.toString(),
+         principalBalance: (data.principalBalance || data.originalAmount).toString(),
+         interestRate: data.interestRate.toString(),
+         rateType: data.rateType,
+         loanTerm: loanTermMonths,
+         paymentAmount: monthlyPayment?.toString() || "0",
+         escrowAmount: data.escrowAmount?.toString() || "0",
+         status: "active",
+         maturityDate: cleanDate(data.maturityDate) || maturityDate,
+         firstPaymentDate: cleanDate(data.firstPaymentDate),
+         nextPaymentDate: cleanDate(data.nextPaymentDate),
+         prepaymentExpirationDate: data.prepaymentExpirationDate ? cleanDate(data.prepaymentExpirationDate) : null,
+         lenderId: user?.id,
+         servicerId: user?.id,
+         // Borrower information
+         borrowerName: cleanString(data.borrowerName) || null,
+         borrowerEmail: cleanString(data.borrowerEmail) || null,  
+         borrowerPhone: cleanString(data.borrowerPhone) || null,
+         // Borrower mailing address (separate from property)
+         borrowerAddress: cleanString(data.borrowerAddress) || null,
+         borrowerCity: cleanString(data.borrowerCity) || null,
+         borrowerState: cleanString(data.borrowerState) || null,
+         borrowerZip: cleanString(data.borrowerZip) || null,
+diff --git a/client/src/components/loans/enhanced-new-loan-dialog.tsx b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+index 18f3b8949902307cffcad33e08f21a5f5f215cef..fbe8c09f1dc2ca81d0b8abc53f3b1dc81c23a55c 100644
+--- a/client/src/components/loans/enhanced-new-loan-dialog.tsx
++++ b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+@@ -746,51 +745,50 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
+         description: "Loan created successfully with documents",
+       });
+       queryClient.invalidateQueries({ queryKey: ["/api/loans"] });
+       queryClient.invalidateQueries({ queryKey: ["/api/loans/metrics"] });
+       resetForm();
+       onOpenChange(false);
+       if (onLoanCreated) {
+         onLoanCreated(loan.id.toString());
+       }
+     },
+     onError: (error: Error) => {
+       console.error("=== LOAN CREATION ERROR ===");
+       console.error("Error object:", error);
+       console.error("Error message:", error.message);
+       console.error("Error stack:", error.stack);
+       toast({
+         title: "Error",
+         description: error.message || "Failed to create loan",
+         variant: "destructive",
+       });
+     },
+   });
+ 
+   const resetForm = () => {
+     setFormData({
+-      loanNumber: "",
+       loanType: "conventional",
+       originalAmount: "",
+       principalBalance: "",
+       interestRate: "",
+       rateType: "fixed",
+       loanTerm: "",
+       propertyType: "single_family",
+       propertyAddress: "",
+       propertyCity: "",
+       propertyState: "",
+       propertyZip: "",
+       propertyValue: "",
+       borrowerName: "",
+       borrowerEmail: "",
+       borrowerPhone: "",
+       borrowerAddress: "",
+       borrowerCity: "",
+       borrowerState: "",
+       borrowerZip: "",
+       borrowerCompanyName: "",
+       borrowerSSN: "",
+       borrowerIncome: "",
+       creditScoreEquifax: "",
+       creditScoreExperian: "",
+       creditScoreTransunion: "",
+diff --git a/client/src/components/loans/enhanced-new-loan-dialog.tsx b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+index 18f3b8949902307cffcad33e08f21a5f5f215cef..fbe8c09f1dc2ca81d0b8abc53f3b1dc81c23a55c 100644
+--- a/client/src/components/loans/enhanced-new-loan-dialog.tsx
++++ b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+@@ -1004,59 +1002,50 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
+                           
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             onClick={() => removeFile(index)}
+                             disabled={uploadFile.status === 'processing'}
+                           >
+                             <X className="h-4 w-4" />
+                           </Button>
+                         </div>
+                       </div>
+                     </Card>
+                   ))}
+                   
+                   {isProcessing && (
+                     <Progress value={(currentProcessingIndex + 1) / files.length * 100} className="h-2" />
+                   )}
+                 </div>
+               )}
+ 
+               {/* AI-Filled Form */}
+               <form onSubmit={handleSubmit} className="space-y-6">
+                 <div className="space-y-4">
+                   <h3 className="text-lg font-semibold">Loan Information</h3>
+                   <div className="grid grid-cols-2 gap-4">
+-                    <div className="space-y-2">
+-                      <Label htmlFor="loanNumber">Loan Number</Label>
+-                      <Input
+-                        id="loanNumber"
+-                        value={formData.loanNumber}
+-                        onChange={(e) => handleInputChange('loanNumber', e.target.value)}
+-                        placeholder="Auto-generated if empty"
+-                      />
+-                    </div>
+                     <div className="space-y-2">
+                       <Label htmlFor="loanType">Loan Type</Label>
+                       <Select value={formData.loanType} onValueChange={(value) => handleInputChange('loanType', value)}>
+                         <SelectTrigger>
+                           <SelectValue />
+                         </SelectTrigger>
+                         <SelectContent>
+                           <SelectItem value="conventional">Conventional</SelectItem>
+                           <SelectItem value="fha">FHA</SelectItem>
+                           <SelectItem value="va">VA</SelectItem>
+                           <SelectItem value="usda">USDA</SelectItem>
+                         </SelectContent>
+                       </Select>
+                     </div>
+                     <div className="space-y-2">
+                       <Label htmlFor="originalAmount">Original Amount *</Label>
+                       <Input
+                         id="originalAmount"
+                         type="number"
+                         value={formData.originalAmount}
+                         onChange={(e) => handleInputChange('originalAmount', e.target.value)}
+                         required
+                       />
+                     </div>
+                     <div className="space-y-2">
+diff --git a/client/src/components/loans/enhanced-new-loan-dialog.tsx b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+index 18f3b8949902307cffcad33e08f21a5f5f215cef..fbe8c09f1dc2ca81d0b8abc53f3b1dc81c23a55c 100644
+--- a/client/src/components/loans/enhanced-new-loan-dialog.tsx
++++ b/client/src/components/loans/enhanced-new-loan-dialog.tsx
+@@ -1625,60 +1614,51 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
+                         id="escrowCompanyState"
+                         value={formData.escrowCompanyState}
+                         onChange={(e) => handleInputChange('escrowCompanyState', e.target.value)}
+                         maxLength={2}
+                       />
+                     </div>
+                     <div className="space-y-2">
+                       <Label htmlFor="escrowCompanyZipCode">ZIP Code</Label>
+                       <Input
+                         id="escrowCompanyZipCode"
+                         value={formData.escrowCompanyZipCode}
+                         onChange={(e) => handleInputChange('escrowCompanyZipCode', e.target.value)}
+                       />
+                     </div>
+                   </div>
+                 </div>
+               </form>
+             </TabsContent>
+ 
+             <TabsContent value="manual" className="space-y-4">
+               {/* Same form without the drop zone */}
+               <form onSubmit={handleSubmit} className="space-y-6">
+                 {/* Copy all form sections from AI tab */}
+                 <div className="space-y-4">
+                   <h3 className="text-lg font-semibold">Loan Information</h3>
+-                  <div className="grid grid-cols-2 gap-4">
+-                    <div className="space-y-2">
+-                      <Label htmlFor="loanNumber-manual">Loan Number</Label>
+-                      <Input
+-                        id="loanNumber-manual"
+-                        value={formData.loanNumber}
+-                        onChange={(e) => handleInputChange('loanNumber', e.target.value)}
+-                        placeholder="Auto-generated if empty"
+-                      />
+-                    </div>
++                <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-2">
+                       <Label htmlFor="loanType-manual">Loan Type</Label>
+                       <Select value={formData.loanType} onValueChange={(value) => handleInputChange('loanType', value)}>
+                         <SelectTrigger>
+                           <SelectValue />
+                         </SelectTrigger>
+                         <SelectContent>
+                           <SelectItem value="conventional">Conventional</SelectItem>
+                           <SelectItem value="fha">FHA</SelectItem>
+                           <SelectItem value="va">VA</SelectItem>
+                           <SelectItem value="usda">USDA</SelectItem>
+                         </SelectContent>
+                       </Select>
+                     </div>
+                     <div className="space-y-2">
+                       <Label htmlFor="originalAmount-manual">Original Amount</Label>
+                       <Input
+                         id="originalAmount-manual"
+                         type="number"
+                         value={formData.originalAmount}
+                         onChange={(e) => handleInputChange('originalAmount', e.target.value)}
+                         required
+                       />
+                     </div>
+                     <div className="space-y-2">
+ 
+EOF
+)

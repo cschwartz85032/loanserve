@@ -70,7 +70,11 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
   }, [loans]); // Only re-run when loans change
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ file, loanId }: { file: File; loanId: number }) => {
+    mutationFn: async ({ file, loanId }: { file: File; loanId?: number }) => {
+      if (loanId === undefined || loanId === null || Number.isNaN(loanId)) {
+        throw new Error('Loan ID is required to upload a document');
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('loanId', loanId.toString());
@@ -197,8 +201,13 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
       fileName: file.name
     });
     
-    if (!loanIdToUse) {
+    if (loanIdToUse === undefined || loanIdToUse === null || Number.isNaN(loanIdToUse)) {
       console.error('No loan ID available for upload');
+      toast({
+        title: 'Select a loan',
+        description: 'Please choose a valid loan before uploading documents.',
+        variant: 'destructive',
+      });
       return;
     }
 
