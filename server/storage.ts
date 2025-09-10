@@ -500,7 +500,16 @@ export class DatabaseStorage implements IStorage {
       console.log(`Deleted escrow disbursements for loan ${id}`);
       
       // Delete escrow transactions and accounts
-      await tx.delete(escrowTransactions).where(eq(escrowTransactions.loanId, id));
+      // Delete escrow transactions first (through escrowAccountId relationship)
+      await tx.delete(escrowTransactions)
+        .where(
+          inArray(
+            escrowTransactions.escrowAccountId,
+            tx.select({ id: escrowAccounts.id })
+              .from(escrowAccounts)
+              .where(eq(escrowAccounts.loanId, id))
+          )
+        );
       await tx.delete(escrowAccounts).where(eq(escrowAccounts.loanId, id));
       console.log(`Deleted escrow accounts for loan ${id}`);
       
