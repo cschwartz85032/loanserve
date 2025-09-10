@@ -1,0 +1,96 @@
+September 9, 2025
+
+Via Certified Mail, Return Receipt Requested
+
+For Cox
+CT Corporation System
+Registered Agent for Cox Arizona Telcom, L.L.C. d/b/a “Cox Mobile”
+3800 N. Central Ave., Suite 460
+Phoenix, AZ 85012
+
+Cox Communications, Inc.
+Attn: Sonya Middleton, Senior Vice President and General Counsel
+6205-B Peachtree Dunwoody Road NE
+Atlanta, GA 30328
+
+Courtesy copy:
+Cox Communications
+Department #102285
+P.O. Box 1259
+Oaks, PA 19456
+
+For Citizens
+Corporation Service Company
+Registered Agent for Citizens Bank, N.A. d/b/a “Citizens Pay”
+8825 N. 23rd Ave., Suite 100
+Phoenix, AZ 85021
+
+Citizens Bank, N.A.
+Attn: Michelle Moosally, General Counsel and Chief Legal Officer
+One Citizens Plaza
+Providence, RI 02903
+
+Re: Confidential pre-litigation settlement offer regarding Cox Mobile device financing and Cox Business early-termination penalties; Citizens Pay credit reporting and TILA/FCRA issues
+
+Rule 408 communication. Without prejudice to any claims or defenses.
+
+To Counsel:
+
+I write to offer a businesslike resolution of the disputes described in the enclosed draft Verified Complaint before filing. I am prepared to file in Maricopa County Superior Court if needed, but I prefer to resolve this efficiently.
+
+Summary of key facts, with dates and objective records
+
+July 15, 2024. A Cox agent solicited me to switch to Cox Mobile, representing two smartphones would be free and that any credit, if any, would be limited to routine monthly service charges. I did not knowingly apply for or execute device financing.
+
+Cox transmitted my personal information to Citizens. A “Citizens Pay” device-financing account was opened without my informed consent and without Truth in Lending Act disclosures.
+
+August 6–10, 2024. I discovered the account, immediately reported fraud to Cox, returned the unopened devices, and Cox reversed all device charges.
+
+August 15, 2024. Despite a zero balance, Citizens reported the account as delinquent to consumer reporting agencies.
+
+I disputed with Cox, Citizens, and the CRAs. Correction did not occur with reasonable reinvestigation. I experienced credit damage, reduced credit lines or increased rates, time loss, costs, and distress.
+
+July 20–August 30, 2024. The same Cox agent referenced above represented that my Cox Business account could be transferred to residential service without penalties. Relying on that representation, I authorized the transfer. Cox terminated the business account on or about August 23, 2024, then attempted to impose early-termination penalties. A collection notice issued from General Revenue Corporation on or about August 30, 2024.
+
+Legal theories pleaded in the draft complaint
+Arizona Consumer Fraud Act, fraudulent and negligent misrepresentation, TILA, FCRA furnisher liability, identity theft under A.R.S. § 44-1691, defamation, negligence, unjust enrichment, breach of contract, declaratory and injunctive relief, and punitive damages. The enclosure details the allegations, jurisdiction, parties, and prayer for relief.
+
+Proposed global settlement terms
+
+Non-monetary relief
+1.1 Written confirmation that the Citizens Pay account was unauthorized and is void.
+1.2 Immediate deletion of all related tradelines and hard inquiries with Equifax, Experian, and TransUnion using ACDV/AUD workflows and direct-to-bureau communications. Provide bureau confirmation letters within 14 days.
+1.3 Written confirmation that any Cox Business early-termination penalties are fully waived, all balances are zero, and all internal and third-party collections are recalled. Provide a zero-balance letter and instruct General Revenue Corporation to close the file.
+1.4 Identify a single point of contact at each company who will confirm completion status in writing.
+1.5 A 12-month bar on re-reporting or re-assigning the same debts absent new written consent from me.
+
+Monetary relief
+Rather than anchoring a number, I invite your written monetary proposal that makes me whole for actual harms and your statutory exposure. This should address:
+• Actual credit harm and reputational injury arising from inaccurate reporting and failed reinvestigation.
+• Out-of-pocket losses and documented time spent mitigating the harm.
+• Exposure under TILA and FCRA, and related state-law claims pleaded in the draft complaint.
+Please provide your proposal with supporting rationale within 10 days of this letter.
+
+Process and verification
+3.1 Within 7 days, please provide any evidence you believe shows my informed assent to device financing: signed application, e-signature logs with timestamps and IP metadata, call recordings, and screenshots of any disclosures shown prior to account opening.
+3.2 Upon settlement execution and non-monetary performance, I will refrain from publicity and will take reasonable steps to reinforce bureau corrections if requested.
+3.3 Mutual releases will be limited to the facts and time period described in the draft complaint. No non-disparagement beyond truthful regulatory or credit reporting communications.
+
+Deadlines
+Please confirm in writing by 5:00 p.m. Arizona time on Friday, September 19, 2025 that you accept the non-monetary framework and will submit a monetary proposal within 10 days. If you need brief additional time solely to route for signatures, acknowledge acceptance by the deadline and propose a short, specific signing date.
+
+Evidence preservation
+Please preserve all relevant ESI and paper records, including CRM notes, chat logs, call recordings, e-signature audit trails, data sent to or from Citizens, ACDV and AUD records, and communications with third-party collectors.
+
+I am available to work with you on a concise settlement agreement that mirrors the steps above. You can reach me at 602-558-1833 or cschwartz@loanatik.com
+.
+
+Sincerely,
+
+Corey Schwartz
+4701 E Grandview Road
+Phoenix, AZ 85032
+Phone: 602.558.1833
+Email: cschwartz@loanatik.com
+
+Enclosure: Draft Verified Complaint, Schwartz v. Cox Arizona Telcom, L.L.C. and Citizens Bank, N.A.

@@ -22,17 +22,288 @@ BEGIN
   END IF;
 END$$;
 --> statement-breakpoint
-CREATE TYPE "public"."document_category" AS ENUM('loan_application', 'loan_agreement', 'promissory_note', 'deed_of_trust', 'mortgage', 'security_agreement', 'ucc_filing', 'assignment', 'modification', 'forbearance_agreement', 'insurance_policy', 'tax_document', 'escrow_statement', 'title_report', 'appraisal', 'inspection', 'financial_statement', 'income_verification', 'closing_disclosure', 'settlement_statement', 'reconveyance', 'release', 'legal_notice', 'correspondence', 'servicing_transfer', 'compliance', 'other');--> statement-breakpoint
-CREATE TYPE "public"."entity_type" AS ENUM('individual', 'corporation', 'llc', 'partnership', 'trust', 'estate', 'government');--> statement-breakpoint
-CREATE TYPE "public"."frequency" AS ENUM('once', 'daily', 'weekly', 'bi_weekly', 'semi_monthly', 'monthly', 'quarterly', 'semi_annual', 'annual');--> statement-breakpoint
-CREATE TYPE "public"."loan_status" AS ENUM('application', 'underwriting', 'approved', 'active', 'current', 'delinquent', 'default', 'forbearance', 'modification', 'foreclosure', 'reo', 'closed', 'paid_off', 'charged_off');--> statement-breakpoint
-CREATE TYPE "public"."loan_type" AS ENUM('conventional', 'fha', 'va', 'usda', 'jumbo', 'portfolio', 'hard_money', 'bridge', 'construction', 'commercial', 'reverse_mortgage');--> statement-breakpoint
-CREATE TYPE "public"."notification_type" AS ENUM('payment_due', 'payment_received', 'payment_failed', 'payment_late', 'document_required', 'document_received', 'escrow_shortage', 'escrow_surplus', 'escrow_analysis', 'insurance_expiring', 'tax_due', 'rate_change', 'maturity_approaching', 'system', 'legal', 'compliance');--> statement-breakpoint
-CREATE TYPE "public"."payment_status" AS ENUM('scheduled', 'pending', 'processing', 'completed', 'failed', 'reversed', 'partial', 'late', 'nsf', 'waived');--> statement-breakpoint
-CREATE TYPE "public"."priority" AS ENUM('low', 'medium', 'high', 'urgent', 'critical');--> statement-breakpoint
-CREATE TYPE "public"."property_type" AS ENUM('single_family', 'condo', 'townhouse', 'multi_family', 'manufactured', 'commercial', 'land', 'mixed_use');--> statement-breakpoint
-CREATE TYPE "public"."transaction_type" AS ENUM('deposit', 'withdrawal', 'transfer', 'payment_principal', 'payment_interest', 'payment_escrow', 'payment_fee', 'payment_late_fee', 'insurance_premium', 'property_tax', 'hoa_fee', 'disbursement', 'adjustment', 'refund');--> statement-breakpoint
-CREATE TYPE "public"."user_role" AS ENUM('lender', 'borrower', 'investor', 'escrow_officer', 'legal', 'servicer', 'admin');--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'document_category') THEN
+    CREATE TYPE "public"."document_category" AS ENUM(
+      'loan_application', 'loan_agreement', 'promissory_note', 'deed_of_trust', 'mortgage',
+      'security_agreement', 'ucc_filing', 'assignment', 'modification', 'forbearance_agreement',
+      'insurance_policy', 'tax_document', 'escrow_statement', 'title_report', 'appraisal',
+      'inspection', 'financial_statement', 'income_verification', 'closing_disclosure',
+      'settlement_statement', 'reconveyance', 'release', 'legal_notice', 'correspondence',
+      'servicing_transfer', 'compliance', 'other'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'loan_application';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'loan_agreement';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'promissory_note';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'deed_of_trust';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'mortgage';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'security_agreement';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'ucc_filing';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'assignment';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'modification';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'forbearance_agreement';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'insurance_policy';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'tax_document';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'escrow_statement';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'title_report';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'appraisal';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'inspection';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'financial_statement';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'income_verification';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'closing_disclosure';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'settlement_statement';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'reconveyance';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'release';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'legal_notice';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'correspondence';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'servicing_transfer';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'compliance';
+      ALTER TYPE "public"."document_category" ADD VALUE IF NOT EXISTS 'other';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'entity_type') THEN
+    CREATE TYPE "public"."entity_type" AS ENUM(
+      'individual', 'corporation', 'llc', 'partnership', 'trust', 'estate', 'government'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'individual';
+      ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'corporation';
+      ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'llc';
+      ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'partnership';
+      ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'trust';
+      ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'estate';
+      ALTER TYPE "public"."entity_type" ADD VALUE IF NOT EXISTS 'government';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'frequency') THEN
+    CREATE TYPE "public"."frequency" AS ENUM(
+      'once', 'daily', 'weekly', 'bi_weekly', 'semi_monthly', 'monthly', 'quarterly', 'semi_annual', 'annual'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'once';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'daily';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'weekly';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'bi_weekly';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'semi_monthly';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'monthly';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'quarterly';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'semi_annual';
+      ALTER TYPE "public"."frequency" ADD VALUE IF NOT EXISTS 'annual';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'loan_status') THEN
+    CREATE TYPE "public"."loan_status" AS ENUM(
+      'application', 'underwriting', 'approved', 'active', 'current', 'delinquent',
+      'default', 'forbearance', 'modification', 'foreclosure', 'reo', 'closed', 'paid_off', 'charged_off'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'application';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'underwriting';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'approved';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'active';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'current';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'delinquent';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'default';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'forbearance';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'modification';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'foreclosure';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'reo';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'closed';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'paid_off';
+      ALTER TYPE "public"."loan_status" ADD VALUE IF NOT EXISTS 'charged_off';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'loan_type') THEN
+    CREATE TYPE "public"."loan_type" AS ENUM(
+      'conventional', 'fha', 'va', 'usda', 'jumbo', 'portfolio', 'hard_money',
+      'bridge', 'construction', 'commercial', 'reverse_mortgage'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'conventional';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'fha';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'va';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'usda';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'jumbo';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'portfolio';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'hard_money';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'bridge';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'construction';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'commercial';
+      ALTER TYPE "public"."loan_type" ADD VALUE IF NOT EXISTS 'reverse_mortgage';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notification_type') THEN
+    CREATE TYPE "public"."notification_type" AS ENUM(
+      'payment_due', 'payment_received', 'payment_failed', 'payment_late', 'document_required',
+      'document_received', 'escrow_shortage', 'escrow_surplus', 'escrow_analysis', 'insurance_expiring',
+      'tax_due', 'rate_change', 'maturity_approaching', 'system', 'legal', 'compliance'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'payment_due';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'payment_received';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'payment_failed';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'payment_late';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'document_required';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'document_received';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'escrow_shortage';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'escrow_surplus';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'escrow_analysis';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'insurance_expiring';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'tax_due';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'rate_change';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'maturity_approaching';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'system';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'legal';
+      ALTER TYPE "public"."notification_type" ADD VALUE IF NOT EXISTS 'compliance';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status') THEN
+    CREATE TYPE "public"."payment_status" AS ENUM(
+      'scheduled', 'pending', 'processing', 'completed', 'failed', 'reversed', 'partial', 'late', 'nsf', 'waived'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'scheduled';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'pending';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'processing';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'completed';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'failed';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'reversed';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'partial';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'late';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'nsf';
+      ALTER TYPE "public"."payment_status" ADD VALUE IF NOT EXISTS 'waived';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'priority') THEN
+    CREATE TYPE "public"."priority" AS ENUM(
+      'low', 'medium', 'high', 'urgent', 'critical'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."priority" ADD VALUE IF NOT EXISTS 'low';
+      ALTER TYPE "public"."priority" ADD VALUE IF NOT EXISTS 'medium';
+      ALTER TYPE "public"."priority" ADD VALUE IF NOT EXISTS 'high';
+      ALTER TYPE "public"."priority" ADD VALUE IF NOT EXISTS 'urgent';
+      ALTER TYPE "public"."priority" ADD VALUE IF NOT EXISTS 'critical';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'property_type') THEN
+    CREATE TYPE "public"."property_type" AS ENUM(
+      'single_family', 'condo', 'townhouse', 'multi_family', 'manufactured', 'commercial', 'land', 'mixed_use'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'single_family';
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'condo';
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'townhouse';
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'multi_family';
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'manufactured';
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'commercial';
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'land';
+      ALTER TYPE "public"."property_type" ADD VALUE IF NOT EXISTS 'mixed_use';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transaction_type') THEN
+    CREATE TYPE "public"."transaction_type" AS ENUM(
+      'deposit', 'withdrawal', 'transfer', 'payment_principal', 'payment_interest', 'payment_escrow',
+      'payment_fee', 'payment_late_fee', 'insurance_premium', 'property_tax', 'hoa_fee',
+      'disbursement', 'adjustment', 'refund'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'deposit';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'withdrawal';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'transfer';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'payment_principal';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'payment_interest';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'payment_escrow';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'payment_fee';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'payment_late_fee';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'insurance_premium';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'property_tax';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'hoa_fee';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'disbursement';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'adjustment';
+      ALTER TYPE "public"."transaction_type" ADD VALUE IF NOT EXISTS 'refund';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    CREATE TYPE "public"."user_role" AS ENUM(
+      'lender', 'borrower', 'investor', 'escrow_officer', 'legal', 'servicer', 'admin'
+    );
+  ELSE
+    BEGIN
+      ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'lender';
+      ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'borrower';
+      ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'investor';
+      ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'escrow_officer';
+      ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'legal';
+      ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'servicer';
+      ALTER TYPE "public"."user_role" ADD VALUE IF NOT EXISTS 'admin';
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END$$;
+--> statement-breakpoint
 CREATE TABLE "audit_logs" (
         "id" serial PRIMARY KEY NOT NULL,
         "user_id" integer,
