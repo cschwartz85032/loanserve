@@ -1,0 +1,201 @@
+Bulk Upload Tab Implementation Plan
+Overview
+Add a comprehensive bulk upload capability to the enhanced loan creation dialog that dynamically processes multiple file formats using the existing microservices architecture.
+
+Architecture Design
+1. UI Component Structure
+Enhanced Loan Creation Dialog
+├── Loan Details Tab (existing)
+├── AI Document Analysis Tab (existing) 
+└── Bulk Upload Tab (NEW)
+    ├── File Drop Zone
+    ├── Processing Status Panel
+    ├── Import Preview Grid
+    └── Validation Results Panel
+2. File Type Detection & Routing
+Dynamic Processing Pipeline:
+
+File Analysis Service - Detect file type, format, and structure
+Format Router - Route to appropriate processor based on detection
+Processing Orchestrator - Coordinate multi-file processing
+Supported Formats:
+
+CSV/Excel → Import Consumer (existing)
+MISMO XML → AI Pipeline (existing)
+PDF Documents → Document Service (existing)
+JSON Arrays → Import Consumer (existing)
+Mixed Archives → Decompose and route individually
+Implementation Plan
+Phase 1: Core Infrastructure
+1.1 File Detection Service
+Location: server/services/file-detection-service.ts
+
+interface FileAnalysisResult {
+  fileType: 'csv' | 'excel' | 'pdf' | 'xml' | 'json' | 'archive' | 'unknown';
+  format: 'loan_data' | 'document' | 'mismo' | 'mixed';
+  confidence: number;
+  processingRoute: 'import' | 'ai_analysis' | 'document' | 'hybrid';
+  metadata: {
+    rowCount?: number;
+    columns?: string[];
+    documentType?: string;
+    mismoVersion?: string;
+  };
+}
+1.2 Bulk Processing Orchestrator
+Location: server/services/bulk-processing-orchestrator.ts
+
+Coordinate multi-file processing
+Queue management for large batches
+Progress tracking and status updates
+Error aggregation and reporting
+1.3 Queue Enhancement
+New Queues:
+
+q.bulk.analysis - File type detection
+q.bulk.orchestration - Processing coordination
+q.bulk.status - Progress updates
+q.bulk.validation - QC checks
+Phase 2: UI Components
+2.1 Bulk Upload Tab Component
+Location: client/src/components/loans/bulk-upload-tab.tsx
+
+Features:
+
+Multi-file drag & drop zone
+Real-time upload progress
+File type detection preview
+Processing status dashboard
+Import preview with editable grid
+Validation error display
+2.2 Processing Status Panel
+interface ProcessingStatus {
+  stage: 'uploading' | 'analyzing' | 'processing' | 'validating' | 'complete';
+  filesTotal: number;
+  filesProcessed: number;
+  loansCreated: number;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+}
+Phase 3: Microservice Integration
+3.1 API Gateway Enhancements
+New Endpoints:
+
+POST /api/v3/gateway/bulk/upload - Multi-file upload
+GET /api/v3/gateway/bulk/status/:batchId - Processing status
+POST /api/v3/gateway/bulk/validate - Pre-process validation
+DELETE /api/v3/gateway/bulk/cancel/:batchId - Cancel processing
+3.2 Document Service Integration
+Enhanced Capabilities:
+
+Batch document processing
+Mixed document type handling
+Parallel AI analysis for multiple PDFs
+Document classification and routing
+3.3 Payment Service Integration
+For Loan Setup:
+
+Bulk loan account creation
+Batch escrow account setup
+Mass payment schedule generation
+Phase 4: Processing Pipeline
+4.1 Dynamic File Processor
+class DynamicFileProcessor {
+  async processFile(file: UploadedFile): Promise<ProcessingResult> {
+    // 1. Detect file type and format
+    const analysis = await this.fileDetectionService.analyze(file);
+    
+    // 2. Route to appropriate processor
+    switch (analysis.processingRoute) {
+      case 'import':
+        return this.routeToImportConsumer(file, analysis);
+      case 'ai_analysis':
+        return this.routeToAIService(file, analysis);
+      case 'document':
+        return this.routeToDocumentService(file, analysis);
+      case 'hybrid':
+        return this.routeToHybridProcessor(file, analysis);
+    }
+  }
+}
+4.2 Hybrid Processing
+For Complex Files:
+
+MISMO XML with embedded documents
+Excel files with multiple sheets (loans + documents)
+ZIP archives with mixed content
+PDF portfolios with multiple loan packages
+Phase 5: Data Validation & QC
+5.1 Bulk Validation Engine
+Pre-Processing Checks:
+
+File format validation
+Required field presence
+Data type validation
+Business rule compliance
+Duplicate detection
+5.2 QC Integration
+Leverage Existing QC Infrastructure:
+
+Use existing QC rules engine
+Batch QC processing
+Aggregate validation reports
+Exception handling workflows
+Phase 6: Progress Tracking & Monitoring
+6.1 Real-time Status Updates
+WebSocket Integration:
+
+Live progress updates
+Processing stage notifications
+Error/warning alerts
+Completion notifications
+6.2 Audit & Compliance
+Enhanced Audit Trail:
+
+Bulk operation logging
+File-level audit records
+Processing decision audit
+User action tracking
+Implementation Sequence
+Week 1: Foundation
+File Detection Service
+Bulk Processing Orchestrator
+Queue Infrastructure
+API Gateway endpoints
+Week 2: UI Components
+Bulk Upload Tab component
+File drop zone with preview
+Processing status dashboard
+Error/validation displays
+Week 3: Microservice Integration
+Document Service enhancements
+Payment Service integration
+Enhanced queue consumers
+WebSocket status updates
+Week 4: Advanced Features
+Hybrid file processing
+Validation engine integration
+Progress tracking
+Error recovery mechanisms
+Technical Specifications
+File Upload Limits
+Single File: 50MB
+Batch Total: 500MB
+File Count: 100 files per batch
+Concurrent Batches: 5 per user
+Security Enhancements
+File Scanning: Virus/malware detection
+Content Validation: Deep file structure analysis
+Access Control: Permission-based upload limits
+Audit Logging: Complete processing audit trail
+Performance Targets
+File Analysis: <5 seconds per file
+Processing Start: <30 seconds for batch
+CSV Processing: 1000+ records/minute
+Document Analysis: 10+ documents/minute
+Error Handling Strategy
+Graceful Degradation: Continue processing valid files
+Partial Success: Report per-file results
+Retry Logic: Automatic retry for transient failures
+Manual Intervention: Queue items for manual review
+This implementation leverages the existing microservices architecture while adding sophisticated bulk processing capabilities that maintain enterprise-grade reliability, security, and observability standards.

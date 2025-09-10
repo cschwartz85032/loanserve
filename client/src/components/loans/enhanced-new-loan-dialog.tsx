@@ -29,10 +29,12 @@ import {
   Loader2,
   FileText,
   Sparkles,
-  PenTool
+  PenTool,
+  Package
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateServicingAccountNumber } from "@shared/utils";
+import { BulkIngestionTab } from "./bulk-ingestion-tab";
 
 interface EnhancedNewLoanDialogProps {
   open: boolean;
@@ -1007,7 +1009,7 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mx-6 grid w-auto grid-cols-2">
+          <TabsList className="mx-6 grid w-auto grid-cols-3">
             <TabsTrigger value="ai" className="flex items-center gap-2">
               <Sparkles className="h-4 w-4" />
               AI Document Analysis
@@ -1015,6 +1017,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
             <TabsTrigger value="manual" className="flex items-center gap-2">
               <PenTool className="h-4 w-4" />
               Manual Entry
+            </TabsTrigger>
+            <TabsTrigger value="ingest" className="flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Bulk Ingest
             </TabsTrigger>
           </TabsList>
 
@@ -2015,6 +2021,25 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                   </div>
                 </div>
               </form>
+            </TabsContent>
+
+            <TabsContent value="ingest" className="space-y-4">
+              <BulkIngestionTab 
+                onLoansCreated={(loanIds) => {
+                  toast({
+                    title: "Loans created successfully",
+                    description: `Successfully created ${loanIds.length} loans from bulk ingestion`
+                  });
+                  
+                  // Close dialog and navigate to first created loan if callback provided
+                  if (loanIds.length > 0) {
+                    onOpenChange(false);
+                    if (onLoanCreated) {
+                      onLoanCreated(loanIds[0]);
+                    }
+                  }
+                }}
+              />
             </TabsContent>
           </ScrollArea>
         </Tabs>
