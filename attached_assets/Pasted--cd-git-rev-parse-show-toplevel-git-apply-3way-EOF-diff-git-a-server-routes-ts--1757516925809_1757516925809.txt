@@ -1,0 +1,127 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/server/routes.ts b/server/routes.ts
+index 5a35340c00f3886d7de71a1e46e7d6ae8dc3eb91..b7793dee69454cc7cbe465015cbccf0af91fe193 100644
+--- a/server/routes.ts
++++ b/server/routes.ts
+@@ -37,50 +37,51 @@ import rabbitmqConfigRoutes from "./routes/rabbitmq-config";
+ import metricsRoutes from "./routes/metrics";
+ import { qcRouter } from "../src/routes/qc.routes";
+ import { exportRouter } from "../src/routes/export.routes";
+ import { notificationRouter } from "../src/routes/notification.routes";
+ import { storageRoutes } from "../src/routes/storage.routes";
+ import { metricsRouter } from "../src/routes/metrics.routes";
+ import { withHttpMetrics } from "../src/monitoring/httpMetrics";
+ import { vendorRouter } from "../src/routes/vendor.routes";
+ import { publicOAuthRouter } from "../src/routes/public.oauth.routes";
+ import { publicApiRouter } from "../src/routes/public.api.routes";
+ import { adminApiRouter } from "../src/routes/admin.api.routes";
+ import { 
+   insertLoanSchema, 
+   insertPaymentSchema, 
+   insertEscrowAccountSchema,
+   insertEscrowTransactionSchema,
+   insertDocumentSchema,
+   insertNotificationSchema,
+   insertBorrowerEntitySchema,
+   insertPropertySchema,
+   insertLoanBorrowerSchema,
+   insertPaymentScheduleSchema,
+   insertEscrowDisbursementSchema,
+   insertInvestorSchema
+ } from "@shared/schema";
++import { generateServicingAccountNumber } from "@shared/utils";
+ import {
+   loadUserPolicy,
+   requireAuth,
+   requirePermission,
+   applyPIIMasking,
+   requireAdmin,
+   requireRole,
+   auditLog
+ } from "./auth/middleware";
+ import { PermissionLevel } from "./auth/policy-engine";
+ import { 
+   handleError, 
+   asyncHandler, 
+   validateInput, 
+   successResponse, 
+   paginatedResponse, 
+   AppError, 
+   ErrorCode 
+ } from './utils/error-handler';
+ 
+ function isAuthenticated(req: any, res: any, next: any) {
+   if (req.isAuthenticated()) {
+     return next();
+   }
+   res.status(401).json({ error: "Unauthorized" });
+diff --git a/server/routes.ts b/server/routes.ts
+index 5a35340c00f3886d7de71a1e46e7d6ae8dc3eb91..b7793dee69454cc7cbe465015cbccf0af91fe193 100644
+--- a/server/routes.ts
++++ b/server/routes.ts
+@@ -580,54 +581,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
+     } catch (error) {
+       console.error("Error fetching loan metrics:", error);
+       res.status(500).json({ error: "Failed to fetch metrics" });
+     }
+   });
+ 
+   app.get("/api/loans/:id", async (req, res) => {
+     try {
+       const loan = await storage.getLoan(parseInt(req.params.id));
+       if (!loan) {
+         return res.status(404).json({ error: "Loan not found" });
+       }
+       res.json(loan);
+     } catch (error) {
+       console.error("Error fetching loan:", error);
+       res.status(500).json({ error: "Failed to fetch loan" });
+     }
+   });
+ 
+   app.post("/api/loans", isAuthenticated, asyncHandler(async (req, res) => {
+     console.log("=== BACKEND: LOAN CREATION ENDPOINT CALLED (v2) ===");
+     
+     // Validate input with centralized error handling
+     const validatedData = validateInput(insertLoanSchema, req.body, 'Invalid loan data');
+     console.log("Validation successful.");
+-    
++
++    // Ensure loan number exists
++    const loanData = {
++      ...validatedData,
++      loanNumber: validatedData.loanNumber ?? generateServicingAccountNumber(),
++    };
++
+     // Create loan with transaction (already implemented in storage)
+     console.log("Calling storage.createLoan...");
+-    const loan = await storage.createLoan(validatedData);
++    const loan = await storage.createLoan(loanData);
+     console.log("Loan created in database:", loan);
+     
+     await complianceAudit.logEvent({
+       actorType: 'user',
+       actorId: req.user?.id,
+       eventType: COMPLIANCE_EVENTS.LOAN.CREATED,
+       resourceType: 'loan',
+       resourceId: loan.id,
+       loanId: loan.id,
+       newValues: loan,
+       ipAddr: req.ip,
+       userAgent: req.headers['user-agent']
+     });
+ 
+     console.log("Sending success response");
+     return successResponse(res, loan, 201);
+   }));
+ 
+   app.delete("/api/loans/:id", isAuthenticated, asyncHandler(async (req, res) => {
+     const id = parseInt(req.params.id);
+     const existingLoan = await storage.getLoan(id);
+     if (!existingLoan) {
+       throw new AppError('Loan not found', ErrorCode.NOT_FOUND, 404);
+     }
+ 
+ 
+EOF
+)

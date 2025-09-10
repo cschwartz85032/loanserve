@@ -1,0 +1,73 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/shared/schema.ts b/shared/schema.ts
+index f8689d91b9a45c3bb8760a70e961b24e189989f2..28930d3d4450fea2a187a1387e29c7da06138ffa 100644
+--- a/shared/schema.ts
++++ b/shared/schema.ts
+@@ -2305,55 +2305,59 @@ export const insertSessionSchema = createInsertSchema(sessions).omit({
+   createdAt: true,
+   lastSeenAt: true,
+ });
+ 
+ // User Management System Types
+ export type Role = typeof roles.$inferSelect;
+ export type InsertRole = z.infer<typeof insertRoleSchema>;
+ export type UserRole = typeof userRoles.$inferSelect;
+ export type InsertUserRole = z.infer<typeof insertUserRoleSchema>;
+ export type Permission = typeof permissions.$inferSelect;
+ export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+ export type RolePermission = typeof rolePermissions.$inferSelect;
+ export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
+ export type UserIpAllowlist = typeof userIpAllowlist.$inferSelect;
+ export type InsertUserIpAllowlist = z.infer<typeof insertUserIpAllowlistSchema>;
+ export type AuthEvent = typeof authEvents.$inferSelect;
+ export type InsertAuthEvent = z.infer<typeof insertAuthEventSchema>;
+ export type LoginAttempt = typeof loginAttempts.$inferSelect;
+ export type InsertLoginAttempt = z.infer<typeof insertLoginAttemptSchema>;
+ export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+ export type InsertPasswordResetToken = z.infer<
+   typeof insertPasswordResetTokenSchema
+ >;
+ export type Session = typeof sessions.$inferSelect;
+ export type InsertSession = z.infer<typeof insertSessionSchema>;
+-export const insertLoanSchema = createInsertSchema(loans).omit({
+-  id: true,
+-  createdAt: true,
+-  updatedAt: true,
+-});
++export const insertLoanSchema = createInsertSchema(loans)
++  .omit({
++    id: true,
++    createdAt: true,
++    updatedAt: true,
++  })
++  .extend({
++    loanNumber: z.string().optional(),
++  });
+ export const insertLoanBorrowerSchema = createInsertSchema(loanBorrowers).omit({
+   id: true,
+   createdAt: true,
+ });
+ export const insertGuarantorSchema = createInsertSchema(guarantors).omit({
+   id: true,
+   createdAt: true,
+   updatedAt: true,
+ });
+ export const insertInvestorSchema = createInsertSchema(investors).omit({
+   id: true,
+   createdAt: true,
+   updatedAt: true,
+ });
+ 
+ // Payment schemas
+ export const insertPaymentScheduleSchema = createInsertSchema(
+   paymentSchedule,
+ ).omit({ id: true, createdAt: true });
+ export const insertPaymentSchema = createInsertSchema(payments).omit({
+   id: true,
+   createdAt: true,
+   updatedAt: true,
+ });
+ 
+ 
+EOF
+)

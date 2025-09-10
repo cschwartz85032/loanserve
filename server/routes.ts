@@ -59,6 +59,7 @@ import {
   insertEscrowDisbursementSchema,
   insertInvestorSchema
 } from "@shared/schema";
+import { generateServicingAccountNumber } from "@shared/utils";
 import {
   loadUserPolicy,
   requireAuth,
@@ -596,16 +597,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/loans", isAuthenticated, asyncHandler(async (req, res) => {
+  app.post("/api/loans", isAuthenticated, asyncHandler(async (req: any, res: any) => {
     console.log("=== BACKEND: LOAN CREATION ENDPOINT CALLED (v2) ===");
     
     // Validate input with centralized error handling
-    const validatedData = validateInput(insertLoanSchema, req.body, 'Invalid loan data');
+    const validatedData = validateInput(insertLoanSchema, req.body, 'Invalid loan data') as any;
     console.log("Validation successful.");
-    
+
+    // Ensure loan number exists
+    const loanData = {
+      ...validatedData,
+      loanNumber: validatedData.loanNumber ?? generateServicingAccountNumber(),
+    };
+
     // Create loan with transaction (already implemented in storage)
     console.log("Calling storage.createLoan...");
-    const loan = await storage.createLoan(validatedData);
+    const loan = await storage.createLoan(loanData);
     console.log("Loan created in database:", loan);
     
     await complianceAudit.logEvent({
