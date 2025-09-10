@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LOAN_STATUSES, LOAN_TYPES } from "@/lib/constants";
+import { generateServicingAccountNumber } from "@shared/utils";
 
 interface NewLoanDialogProps {
   open: boolean;
@@ -30,7 +31,6 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
   const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState({
-    loanNumber: "",
     propertyId: null as number | null,
     borrowerId: "",
     lenderId: "",
@@ -111,12 +111,9 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
       const maturityDate = new Date(firstPaymentDate);
       maturityDate.setMonth(maturityDate.getMonth() + termMonths);
       
-      // Generate loan number if not provided
-      const loanNumber = loanData.loanNumber || `LN${Date.now()}`;
-      
       // Format the data to match the database schema
       const formattedData = {
-        loanNumber: loanNumber,
+        loanNumber: generateServicingAccountNumber(),
         propertyId: property.id, // Use the created property ID
         lenderId: loanData.lenderId ? parseInt(loanData.lenderId) : null,
         servicerId: loanData.servicerId ? parseInt(loanData.servicerId) : null,
@@ -230,16 +227,9 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
     });
   };
 
-  const generateLoanNumber = () => {
-    const prefix = "LN";
-    const timestamp = Date.now().toString().slice(-6);
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    handleInputChange("loanNumber", `${prefix}${timestamp}${random}`);
-  };
 
   const resetForm = () => {
     setFormData({
-      loanNumber: "",
       propertyId: null,
       borrowerId: "",
       lenderId: "",
@@ -331,22 +321,6 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
               
               <TabsContent value="basic" className="space-y-4 mt-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="loanNumber">Loan Number *</Label>
-                    <div className="flex space-x-2">
-                      <Input
-                        id="loanNumber"
-                        value={formData.loanNumber}
-                        onChange={(e) => handleInputChange("loanNumber", e.target.value)}
-                        placeholder="Enter or generate"
-                        required
-                      />
-                      <Button type="button" variant="outline" onClick={generateLoanNumber}>
-                        Generate
-                      </Button>
-                    </div>
-                  </div>
-                  
                   <div className="space-y-2">
                     <Label htmlFor="loanType">Loan Type *</Label>
                     <Select value={formData.loanType} onValueChange={(value) => handleInputChange("loanType", value)}>

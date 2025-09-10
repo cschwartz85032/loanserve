@@ -1,0 +1,275 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/client/src/components/loans/new-loan-dialog.tsx b/client/src/components/loans/new-loan-dialog.tsx
+index 5fc51e425608e0b4dbf09d459592a2a37ae47817..f201bb3390859271c357e1beee843a27d163d2ed 100644
+--- a/client/src/components/loans/new-loan-dialog.tsx
++++ b/client/src/components/loans/new-loan-dialog.tsx
+@@ -1,58 +1,58 @@
+ import { useState } from "react";
+ import { useMutation, useQueryClient } from "@tanstack/react-query";
+ import { useAuth } from "@/hooks/use-auth";
+ import { apiRequest } from "@/lib/queryClient";
+ import { useToast } from "@/hooks/use-toast";
+ import {
+   Dialog,
+   DialogContent,
+   DialogDescription,
+   DialogHeader,
+   DialogTitle,
+ } from "@/components/ui/dialog";
+ import { Button } from "@/components/ui/button";
+ import { Input } from "@/components/ui/input";
+ import { Label } from "@/components/ui/label";
+ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+ import { Textarea } from "@/components/ui/textarea";
+ import { ScrollArea } from "@/components/ui/scroll-area";
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+ import { LOAN_STATUSES, LOAN_TYPES } from "@/lib/constants";
++import { generateServicingAccountNumber } from "@shared/utils";
+ 
+ interface NewLoanDialogProps {
+   open: boolean;
+   onOpenChange: (open: boolean) => void;
+ }
+ 
+ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
+   const { user } = useAuth();
+   const { toast } = useToast();
+   const queryClient = useQueryClient();
+ 
+   const [formData, setFormData] = useState({
+-    loanNumber: "",
+     propertyId: null as number | null,
+     borrowerId: "",
+     lenderId: "",
+     servicerId: "",
+     investorId: "",
+     originalAmount: "",
+     principalBalance: "",
+     interestRate: "",
+     rateType: "fixed",
+     termMonths: "",
+     monthlyPaymentAmount: "",
+     monthlyPayment: "",
+     nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+     maturityDate: "",
+     status: "active",
+     loanType: "conventional",
+     propertyAddress: "",
+     propertyCity: "",
+     propertyState: "",
+     propertyZip: "",
+     propertyValue: "",
+     propertyType: "single_family",
+     loanToValue: "",
+     originationDate: new Date().toISOString().split('T')[0],
+     firstPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+diff --git a/client/src/components/loans/new-loan-dialog.tsx b/client/src/components/loans/new-loan-dialog.tsx
+index 5fc51e425608e0b4dbf09d459592a2a37ae47817..f201bb3390859271c357e1beee843a27d163d2ed 100644
+--- a/client/src/components/loans/new-loan-dialog.tsx
++++ b/client/src/components/loans/new-loan-dialog.tsx
+@@ -82,63 +82,60 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
+         method: "POST",
+         body: JSON.stringify(propertyData)
+       });
+       
+       // Better error handling for non-JSON responses
+       if (!propertyRes.ok) {
+         const contentType = propertyRes.headers.get("content-type");
+         let errorMessage = "Failed to create property";
+         
+         if (contentType && contentType.includes("application/json")) {
+           try {
+             const error = await propertyRes.json();
+             errorMessage = error.error || errorMessage;
+           } catch (e) {
+             errorMessage = `Server error: ${propertyRes.status} ${propertyRes.statusText}`;
+           }
+         } else {
+           // If HTML response, it's likely a server error page
+           errorMessage = `Server error: ${propertyRes.status} ${propertyRes.statusText}`;
+         }
+         
+         throw new Error(errorMessage);
+       }
+       
+       const property = await propertyRes.json();
+-      
++
+       // Calculate maturity date based on term months
+       const termMonths = parseInt(loanData.termMonths);
+       const firstPaymentDate = new Date(loanData.firstPaymentDate);
+       const maturityDate = new Date(firstPaymentDate);
+       maturityDate.setMonth(maturityDate.getMonth() + termMonths);
+-      
+-      // Generate loan number if not provided
+-      const loanNumber = loanData.loanNumber || `LN${Date.now()}`;
+-      
++
+       // Format the data to match the database schema
+       const formattedData = {
+-        loanNumber: loanNumber,
++        loanNumber: generateServicingAccountNumber(),
+         propertyId: property.id, // Use the created property ID
+         lenderId: loanData.lenderId ? parseInt(loanData.lenderId) : null,
+         servicerId: loanData.servicerId ? parseInt(loanData.servicerId) : null,
+         investorId: loanData.investorId ? parseInt(loanData.investorId) : null,
+         originalAmount: loanData.originalAmount,
+         principalBalance: loanData.principalBalance || loanData.originalAmount,
+         interestRate: loanData.interestRate,
+         currentInterestRate: loanData.currentInterestRate || loanData.interestRate,
+         loanTerm: termMonths, // Changed from termMonths to loanTerm
+         paymentAmount: loanData.monthlyPaymentAmount, // Changed from monthlyPaymentAmount to paymentAmount
+         monthlyPaymentAmount: loanData.monthlyPaymentAmount, // Keep this for compatibility
+         currentPaymentAmount: loanData.currentPaymentAmount || loanData.monthlyPaymentAmount,
+         nextPaymentDate: loanData.nextPaymentDate || loanData.firstPaymentDate,
+         maturityDate: maturityDate.toISOString().split('T')[0], // Calculate and format maturity date
+         status: loanData.status || 'active', // Default to 'active' status
+         loanType: loanData.loanType || 'conventional',
+         originationDate: loanData.originationDate,
+         firstPaymentDate: loanData.firstPaymentDate,
+         escrowBalance: loanData.escrowBalance || "0",
+         lateFeeAmount: loanData.lateFeeAmount || "25",
+         gracePeroidDays: loanData.gracePeroidDays || 15,
+         prepaymentPenalty: loanData.prepaymentPenalty || "0",
+         notes: loanData.notes,
+         paymentFrequency: 'monthly', // Add default payment frequency
+         rateType: loanData.rateType || 'fixed' // Add default rate type
+diff --git a/client/src/components/loans/new-loan-dialog.tsx b/client/src/components/loans/new-loan-dialog.tsx
+index 5fc51e425608e0b4dbf09d459592a2a37ae47817..f201bb3390859271c357e1beee843a27d163d2ed 100644
+--- a/client/src/components/loans/new-loan-dialog.tsx
++++ b/client/src/components/loans/new-loan-dialog.tsx
+@@ -208,60 +205,52 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
+           updated.monthlyPaymentAmount = monthlyPayment.toFixed(2);
+           updated.monthlyPayment = monthlyPayment.toFixed(2);
+           updated.currentPaymentAmount = monthlyPayment.toFixed(2);
+           updated.principalBalance = updated.originalAmount;
+           
+           // Calculate maturity date
+           const maturityDate = new Date(updated.originationDate);
+           maturityDate.setMonth(maturityDate.getMonth() + months);
+           updated.maturityDate = maturityDate.toISOString().split('T')[0];
+         }
+       }
+       
+       // Calculate LTV
+       if (field === "originalAmount" || field === "propertyValue") {
+         const loanAmount = parseFloat(updated.originalAmount) || 0;
+         const propertyValue = parseFloat(updated.propertyValue) || 0;
+         if (loanAmount > 0 && propertyValue > 0) {
+           updated.loanToValue = ((loanAmount / propertyValue) * 100).toFixed(2);
+         }
+       }
+       
+       return updated;
+     });
+   };
+ 
+-  const generateLoanNumber = () => {
+-    const prefix = "LN";
+-    const timestamp = Date.now().toString().slice(-6);
+-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+-    handleInputChange("loanNumber", `${prefix}${timestamp}${random}`);
+-  };
+-
+   const resetForm = () => {
+     setFormData({
+-      loanNumber: "",
+       propertyId: null,
+       borrowerId: "",
+       lenderId: "",
+       servicerId: "",
+       investorId: "",
+       originalAmount: "",
+       principalBalance: "",
+       interestRate: "",
+       termMonths: "",
+       monthlyPaymentAmount: "",
+       monthlyPayment: "",
+       nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+       maturityDate: "",
+       status: "active",
+       loanType: "conventional",
+       propertyAddress: "",
+       propertyCity: "",
+       propertyState: "",
+       propertyZip: "",
+       propertyValue: "",
+       loanToValue: "",
+       originationDate: new Date().toISOString().split('T')[0],
+       firstPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+       notes: "",
+       currentInterestRate: "",
+diff --git a/client/src/components/loans/new-loan-dialog.tsx b/client/src/components/loans/new-loan-dialog.tsx
+index 5fc51e425608e0b4dbf09d459592a2a37ae47817..f201bb3390859271c357e1beee843a27d163d2ed 100644
+--- a/client/src/components/loans/new-loan-dialog.tsx
++++ b/client/src/components/loans/new-loan-dialog.tsx
+@@ -309,66 +298,50 @@ export function NewLoanDialog({ open, onOpenChange }: NewLoanDialogProps) {
+     console.log("Prepared submission data:", submitData);
+     createLoanMutation.mutate(submitData);
+   };
+ 
+   return (
+     <Dialog open={open} onOpenChange={onOpenChange}>
+       <DialogContent className="max-w-3xl max-h-[90vh]">
+         <DialogHeader>
+           <DialogTitle>Create New Loan</DialogTitle>
+           <DialogDescription>
+             Enter the loan details below to create a new loan account.
+           </DialogDescription>
+         </DialogHeader>
+         
+         <form onSubmit={handleSubmit}>
+           <ScrollArea className="h-[60vh] px-1">
+             <Tabs defaultValue="basic" className="w-full">
+               <TabsList className="grid w-full grid-cols-3">
+                 <TabsTrigger value="basic">Basic Information</TabsTrigger>
+                 <TabsTrigger value="property">Property Details</TabsTrigger>
+                 <TabsTrigger value="parties">Parties & Notes</TabsTrigger>
+               </TabsList>
+               
+               <TabsContent value="basic" className="space-y-4 mt-4">
+                 <div className="grid grid-cols-2 gap-4">
+-                  <div className="space-y-2">
+-                    <Label htmlFor="loanNumber">Loan Number *</Label>
+-                    <div className="flex space-x-2">
+-                      <Input
+-                        id="loanNumber"
+-                        value={formData.loanNumber}
+-                        onChange={(e) => handleInputChange("loanNumber", e.target.value)}
+-                        placeholder="Enter or generate"
+-                        required
+-                      />
+-                      <Button type="button" variant="outline" onClick={generateLoanNumber}>
+-                        Generate
+-                      </Button>
+-                    </div>
+-                  </div>
+-                  
+                   <div className="space-y-2">
+                     <Label htmlFor="loanType">Loan Type *</Label>
+                     <Select value={formData.loanType} onValueChange={(value) => handleInputChange("loanType", value)}>
+                       <SelectTrigger>
+                         <SelectValue />
+                       </SelectTrigger>
+                       <SelectContent>
+                         {LOAN_TYPES.map((type) => (
+                           <SelectItem key={type.value} value={type.value}>
+                             {type.label}
+                           </SelectItem>
+                         ))}
+                       </SelectContent>
+                     </Select>
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="originalAmount">Original Amount *</Label>
+                     <Input
+                       id="originalAmount"
+                       type="number"
+                       step="0.01"
+                       value={formData.originalAmount}
+                       onChange={(e) => handleInputChange("originalAmount", e.target.value)}
+                       placeholder="0.00"
+ 
+EOF
+)

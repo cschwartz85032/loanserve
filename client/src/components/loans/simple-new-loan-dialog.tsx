@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { generateServicingAccountNumber } from "@shared/utils";
 
 interface SimpleNewLoanDialogProps {
   open: boolean;
@@ -25,7 +26,6 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
   const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState({
-    loanNumber: "",
     originalAmount: "",
     interestRate: "",
     termMonths: "",
@@ -52,7 +52,7 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
       // Then create the loan with the property ID
       // Convert numbers to strings for decimal fields as required by database
       const loanData = {
-        loanNumber: data.loanNumber,
+        loanNumber: generateServicingAccountNumber(),
         loanType: "conventional",
         propertyId: property.id,
         originalAmount: data.originalAmount.toString(),
@@ -93,7 +93,6 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
 
   const resetForm = () => {
     setFormData({
-      loanNumber: "",
       originalAmount: "",
       interestRate: "",
       termMonths: "",
@@ -118,7 +117,6 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
     }
     
     const submitData = {
-      loanNumber: formData.loanNumber,
       originalAmount: formData.originalAmount,
       principalBalance: formData.originalAmount,
       interestRate: formData.interestRate,
@@ -139,12 +137,6 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
     createLoanMutation.mutate(submitData);
   };
 
-  const generateLoanNumber = () => {
-    const prefix = "LN";
-    const timestamp = Date.now().toString().slice(-6);
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    setFormData(prev => ({ ...prev, loanNumber: `${prefix}${timestamp}${random}` }));
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -157,22 +149,6 @@ export function SimpleNewLoanDialog({ open, onOpenChange }: SimpleNewLoanDialogP
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="loanNumber">Loan Number</Label>
-            <div className="flex space-x-2">
-              <Input
-                id="loanNumber"
-                value={formData.loanNumber}
-                onChange={(e) => setFormData(prev => ({ ...prev, loanNumber: e.target.value }))}
-                placeholder="Enter or generate"
-                required
-              />
-              <Button type="button" variant="outline" onClick={generateLoanNumber}>
-                Generate
-              </Button>
-            </div>
-          </div>
-          
           <div className="space-y-2">
             <Label htmlFor="originalAmount">Loan Amount</Label>
             <Input
