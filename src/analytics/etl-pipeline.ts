@@ -138,7 +138,7 @@ export class ETLPipeline {
               ELSE 'scheduled'
             END as payment_status,
             COALESCE(
-              EXTRACT(DAYS FROM (CURRENT_DATE - p.due_date)), 0
+              EXTRACT(DAYS FROM (CURRENT_DATE - p.due_date::date)), 0
             ) as days_delinquent,
             CURRENT_DATE as snapshot_date
           FROM loans l
