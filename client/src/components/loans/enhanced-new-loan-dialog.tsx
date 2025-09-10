@@ -1,8 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { insertLoanSchema } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -58,7 +59,29 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentProcessingIndex, setCurrentProcessingIndex] = useState(-1);
   
-  // Form data that can be filled by AI or manually
+  // Real-time auto-calculation function
+  const calculateMonthlyPayment = useCallback((principal: number, rate: number, termMonths: number): number => {
+    if (principal <= 0 || rate <= 0 || termMonths <= 0) return 0;
+    
+    const monthlyRate = rate / 100 / 12;
+    const monthlyPayment = (principal * monthlyRate * Math.pow(1 + monthlyRate, termMonths)) / 
+                          (Math.pow(1 + monthlyRate, termMonths) - 1);
+    
+    return Math.round(monthlyPayment * 100) / 100; // Round to 2 decimal places
+  }, []);
+
+  // Calculate maturity date based on first payment date and term
+  const calculateMaturityDate = useCallback((firstPaymentDate: string, termMonths: number): string => {
+    if (!firstPaymentDate || termMonths <= 0) return "";
+    
+    const startDate = new Date(firstPaymentDate);
+    const maturityDate = new Date(startDate);
+    maturityDate.setMonth(maturityDate.getMonth() + termMonths);
+    
+    return maturityDate.toISOString().split('T')[0];
+  }, []);
+
+  // Enhanced form data with better defaults and auto-calculations
   const [formData, setFormData] = useState({
     // Loan Information
     loanType: "conventional",
@@ -135,21 +158,27 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     escrowCompanyState: "",
     escrowCompanyZipCode: "",
     
-    // Payment Information
+    // Payment Information with enhanced defaults
     paymentAmount: "",
-    escrowAmount: "",
-    firstPaymentDate: "",
-    nextPaymentDate: "",
+    escrowAmount: "0",
+    firstPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+    nextPaymentDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
     maturityDate: "",
     prepaymentExpirationDate: "",
     
-    // Additional Fees
-    hazardInsurance: "",
-    propertyTaxes: "",
-    hoaFees: "",
-    pmiAmount: "",
+    // Additional Fees with enhanced defaults
+    hazardInsurance: "0",
+    propertyTaxes: "0",
+    hoaFees: "0",
+    pmiAmount: "0",
     servicingFee: "25",
     servicingFeeType: "percentage",
+    lateCharge: "10",
+    lateChargeType: "percentage",
+    feePayer: "B",
+    gracePeriodDays: "15",
+    investorLoanNumber: "",
+    poolNumber: "",
     
     // Other fields
     loanDocuments: null as any,
@@ -159,6 +188,45 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     closingCosts: "",
     downPayment: ""
   });
+
+  // Enhanced form data handler with real-time calculations
+  const handleFormDataChange = useCallback((field: string, value: any) => {
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      
+      // Auto-calculate monthly payment when loan parameters change
+      if (field === "originalAmount" || field === "interestRate" || field === "loanTerm") {
+        const principal = parseFloat(updated.originalAmount) || 0;
+        const rate = parseFloat(updated.interestRate) || 0;
+        const termMonths = parseInt(updated.loanTerm) || 0;
+        
+        if (principal > 0 && rate > 0 && termMonths > 0) {
+          const monthlyPayment = calculateMonthlyPayment(principal, rate, termMonths);
+          updated.paymentAmount = monthlyPayment.toFixed(2);
+        }
+        
+        // Auto-sync principal balance with original amount
+        if (field === "originalAmount") {
+          updated.principalBalance = updated.originalAmount;
+        }
+      }
+      
+      // Auto-calculate maturity date when first payment date or term changes
+      if ((field === "firstPaymentDate" || field === "loanTerm") && updated.firstPaymentDate && updated.loanTerm) {
+        const termMonths = parseInt(updated.loanTerm) || 0;
+        if (termMonths > 0) {
+          updated.maturityDate = calculateMaturityDate(updated.firstPaymentDate, termMonths);
+        }
+      }
+      
+      // Auto-sync next payment date with first payment date if not manually set
+      if (field === "firstPaymentDate" && updated.firstPaymentDate && !prev.nextPaymentDate) {
+        updated.nextPaymentDate = updated.firstPaymentDate;
+      }
+      
+      return updated;
+    });
+  }, [calculateMonthlyPayment, calculateMaturityDate]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -469,54 +537,28 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       console.log("=== STARTING LOAN CREATION ===");
       console.log("Full form data received:", data);
       
-      // First create the property
-      const propertyData = {
-        propertyType: data.propertyType,
-        address: data.propertyAddress,
-        city: data.propertyCity,
-        state: data.propertyState,
-        zipCode: data.propertyZip,
-        value: data.propertyValue || "0"
-      };
-      
-      console.log("Property data to be created:", propertyData);
-      
-      console.log("Sending property creation request...");
-      const propertyResponse = await apiRequest("/api/properties", {
-        method: "POST",
-        body: JSON.stringify(propertyData)
-      });
-      console.log("Property response status:", propertyResponse.status);
-      
-      if (!propertyResponse.ok) {
-        const errorData = await propertyResponse.json();
-        console.error("Property creation failed:", errorData);
-        throw new Error(errorData.error || errorData.message || 'Failed to create property');
-      }
-      let property;
-      try {
-        property = await propertyResponse.json();
-        console.log("Property created successfully:", property);
-        console.log("Property ID:", property.id);
-      } catch (jsonError) {
-        console.error("Error parsing property response:", jsonError);
-        console.error("Response status:", propertyResponse.status);
-        console.error("Response text:", await propertyResponse.text());
-        throw new Error('Failed to parse property response');
-      }
-      
-      // Calculate monthly payment if not provided
-      let monthlyPayment = data.paymentAmount;
-      if (!monthlyPayment && data.originalAmount && data.interestRate && data.loanTerm) {
-        const principal = parseFloat(data.originalAmount);
-        const rate = parseFloat(data.interestRate) / 100 / 12;
-        const months = parseInt(data.loanTerm);
+      // Enhanced error handling helper
+      const handleApiError = async (response: Response, context: string): Promise<never> => {
+        const contentType = response.headers.get("content-type");
+        let errorMessage = `Failed to ${context}`;
         
-        if (principal > 0 && rate > 0 && months > 0) {
-          monthlyPayment = (principal * rate * Math.pow(1 + rate, months)) / (Math.pow(1 + rate, months) - 1);
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            const error = await response.json();
+            errorMessage = error.error || error.message || errorMessage;
+            console.error(`${context} error details:`, error);
+          } catch (e) {
+            errorMessage = `Server error: ${response.status} ${response.statusText}`;
+          }
+        } else {
+          // Handle HTML error pages or other non-JSON responses
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+          console.error(`Server returned non-JSON response for ${context}`);
         }
-      }
-      
+        
+        throw new Error(errorMessage);
+      };
+
       // Helper function to clean date values
       const cleanDate = (dateValue: string | null | undefined): string => {
         if (!dateValue || 
@@ -547,39 +589,89 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         return value;
       };
 
-      // Calculate maturity date properly (loan term is in MONTHS)
-      const parsedLoanTerm = parseInt(data.loanTerm);
-      const loanTermMonths = isNaN(parsedLoanTerm) ? 360 : parsedLoanTerm; // Default to 360 months (30 years)
-      console.log("Loan term processing:", { input: data.loanTerm, parsed: parsedLoanTerm, final: loanTermMonths });
-      const today = new Date();
-      const maturityDate = new Date(today.setMonth(today.getMonth() + loanTermMonths)).toISOString().split('T')[0];
-
-      console.log("=== PREPARING LOAN DATA ===");
+      // First create the property with enhanced error handling
+      const propertyData = {
+        propertyType: data.propertyType,
+        address: data.propertyAddress,
+        city: data.propertyCity,
+        state: data.propertyState,
+        zipCode: data.propertyZip,
+        value: data.propertyValue || "0"
+      };
+      
+      console.log("Property data to be created:", propertyData);
+      console.log("Sending property creation request...");
+      
+      const propertyResponse = await apiRequest("/api/properties", {
+        method: "POST",
+        body: JSON.stringify(propertyData)
+      });
+      console.log("Property response status:", propertyResponse.status);
+      
+      if (!propertyResponse.ok) {
+        await handleApiError(propertyResponse, "create property");
+      }
+      
+      const property = await propertyResponse.json();
+      console.log("Property created successfully:", property);
+      console.log("Property ID:", property.id);
       
       if (!property || !property.id) {
         console.error("Property object or ID is missing:", property);
         throw new Error('Property creation did not return a valid ID');
       }
+
+      // Calculate monthly payment if not provided (using enhanced calculation)
+      let monthlyPayment = data.paymentAmount;
+      if (!monthlyPayment && data.originalAmount && data.interestRate && data.loanTerm) {
+        const principal = parseFloat(data.originalAmount);
+        const rate = parseFloat(data.interestRate);
+        const termMonths = parseInt(data.loanTerm);
+        
+        monthlyPayment = calculateMonthlyPayment(principal, rate, termMonths);
+      }
+
+      // Smart date calculations
+      const parsedLoanTerm = parseInt(data.loanTerm);
+      const loanTermMonths = isNaN(parsedLoanTerm) ? 360 : parsedLoanTerm; // Default to 360 months (30 years)
+      console.log("Loan term processing:", { input: data.loanTerm, parsed: parsedLoanTerm, final: loanTermMonths });
       
-      // Create the loan with the property ID
-      const loanData = {
+      // Calculate maturity date based on first payment date
+      let calculatedMaturityDate;
+      if (data.firstPaymentDate) {
+        calculatedMaturityDate = calculateMaturityDate(data.firstPaymentDate, loanTermMonths);
+      } else {
+        const today = new Date();
+        calculatedMaturityDate = new Date(today.setMonth(today.getMonth() + loanTermMonths)).toISOString().split('T')[0];
+      }
+
+      console.log("=== PREPARING LOAN DATA ===");
+      
+      // Create the loan with enhanced field defaults
+      const rawLoanData = {
         loanNumber: generateServicingAccountNumber(),
-        loanType: data.loanType,
+        loanType: data.loanType || "conventional",
         propertyId: property.id,
         originalAmount: data.originalAmount.toString(),
         principalBalance: (data.principalBalance || data.originalAmount).toString(),
         interestRate: data.interestRate.toString(),
-        rateType: data.rateType,
+        rateType: data.rateType || "fixed",
         loanTerm: loanTermMonths,
         paymentAmount: monthlyPayment?.toString() || "0",
         escrowAmount: data.escrowAmount?.toString() || "0",
         status: "active",
-        maturityDate: cleanDate(data.maturityDate) || maturityDate,
+        maturityDate: cleanDate(data.maturityDate) || calculatedMaturityDate,
         firstPaymentDate: cleanDate(data.firstPaymentDate),
-        nextPaymentDate: cleanDate(data.nextPaymentDate),
+        nextPaymentDate: cleanDate(data.nextPaymentDate) || cleanDate(data.firstPaymentDate),
         prepaymentExpirationDate: data.prepaymentExpirationDate ? cleanDate(data.prepaymentExpirationDate) : null,
-        lenderId: user?.id,
-        servicerId: user?.id,
+        lenderId: user?.id || 1,
+        servicerId: user?.id || 1,
+        // Enhanced defaults for optional fields
+        paymentFrequency: 'monthly',
+        escrowBalance: data.escrowAmount?.toString() || "0",
+        lateFeeAmount: data.lateCharge?.toString() || "25",
+        gracePeriodDays: data.gracePeriodDays ? parseInt(data.gracePeriodDays) : 15,
+        prepaymentPenalty: "0",
         // Borrower information
         borrowerName: cleanString(data.borrowerName) || null,
         borrowerEmail: cleanString(data.borrowerEmail) || null,  
@@ -639,45 +731,58 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
         crossDefaultParties: data.crossDefaultParties ? JSON.stringify(data.crossDefaultParties) : null,
         closingCosts: data.closingCosts?.toString() || null,
         downPayment: data.downPayment?.toString() || null,
-        // Additional fields
+        // Additional fields with enhanced defaults
         hazardInsurance: data.hazardInsurance?.toString() || "0",
         propertyTaxes: data.propertyTaxes?.toString() || "0",
         hoaFees: data.hoaFees?.toString() || "0",
         pmiAmount: data.pmiAmount?.toString() || "0",
-        // Servicing Settings - single field with toggle
+        // Servicing Settings with enhanced defaults
         servicingFee: data.servicingFee?.toString() || "25",
         servicingFeeType: cleanString(data.servicingFeeType) || "percentage",
-        lateCharge: data.lateCharge?.toString() || null,
+        lateCharge: data.lateCharge?.toString() || "10",
         lateChargeType: cleanString(data.lateChargeType) || "percentage",
-        feePayer: cleanString(data.feePayer) || null,
-        gracePeriodDays: data.gracePeriodDays ? parseInt(data.gracePeriodDays) : null,
+        feePayer: cleanString(data.feePayer) || "B",
         investorLoanNumber: cleanString(data.investorLoanNumber) || null,
         poolNumber: cleanString(data.poolNumber) || null
       };
-      
-      console.log("=== LOAN DATA TO BE SENT ===");
-      console.log(JSON.stringify(loanData, null, 2));
-      console.log("Sending loan creation request...");
-      
-      const response = await apiRequest("/api/loans", {
-        method: "POST",
-        body: JSON.stringify(loanData)
-      });
-      console.log("Loan response status:", response.status);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("=== LOAN CREATION FAILED ===");
-        console.error("Error details:", errorData);
-        console.error("Error message:", errorData.error || errorData.message);
-        throw new Error(errorData.error || errorData.message || 'Failed to create loan');
+
+      // Zod validation for data integrity
+      try {
+        console.log("=== VALIDATING LOAN DATA WITH ZOD ===");
+        const validatedData = insertLoanSchema.parse(rawLoanData);
+        console.log("✅ Validation successful");
+        
+        console.log("=== LOAN DATA TO BE SENT ===");
+        console.log(JSON.stringify(validatedData, null, 2));
+        console.log("Sending loan creation request...");
+        
+        const response = await apiRequest("/api/loans", {
+          method: "POST",
+          body: JSON.stringify(validatedData)
+        });
+        console.log("Loan response status:", response.status);
+        
+        if (!response.ok) {
+          await handleApiError(response, "create loan");
+        }
+        
+        const createdLoan = await response.json();
+        console.log("=== LOAN CREATED SUCCESSFULLY ===");
+        console.log("Created loan:", createdLoan);
+        
+        return createdLoan;
+        
+      } catch (validationError: any) {
+        console.error("=== ZOD VALIDATION FAILED ===");
+        console.error("Validation errors:", validationError.errors || validationError.message);
+        
+        // Provide user-friendly validation error messages
+        const errorMessage = validationError.errors 
+          ? `Validation failed: ${validationError.errors.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ')}`
+          : `Validation failed: ${validationError.message}`;
+          
+        throw new Error(errorMessage);
       }
-      
-      const createdLoan = await response.json();
-      console.log("=== LOAN CREATED SUCCESSFULLY ===");
-      console.log("Created loan:", createdLoan);
-      
-      return createdLoan;
     },
     onSuccess: async (loan) => {
       // If there are uploaded files, create document records
