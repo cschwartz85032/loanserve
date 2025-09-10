@@ -4754,37 +4754,37 @@ var init_storage = __esm({
         return disbursements;
       }
       async getEscrowDisbursement(id) {
-        const [disbursement2] = await db.select().from(escrowDisbursements2).where(eq3(escrowDisbursements2.id, id));
-        return disbursement2 || void 0;
+        const [disbursement] = await db.select().from(escrowDisbursements2).where(eq3(escrowDisbursements2.id, id));
+        return disbursement || void 0;
       }
-      async createEscrowDisbursement(disbursement2) {
-        const [newDisbursement] = await db.insert(escrowDisbursements2).values(disbursement2).returning();
+      async createEscrowDisbursement(disbursement) {
+        const [newDisbursement] = await db.insert(escrowDisbursements2).values(disbursement).returning();
         return newDisbursement;
       }
-      async updateEscrowDisbursement(id, disbursement2) {
-        const [updatedDisbursement] = await db.update(escrowDisbursements2).set(disbursement2).where(eq3(escrowDisbursements2.id, id)).returning();
+      async updateEscrowDisbursement(id, disbursement) {
+        const [updatedDisbursement] = await db.update(escrowDisbursements2).set(disbursement).where(eq3(escrowDisbursements2.id, id)).returning();
         return updatedDisbursement;
       }
       async deleteEscrowDisbursement(id) {
         await db.delete(escrowDisbursements2).where(eq3(escrowDisbursements2.id, id));
       }
       async holdEscrowDisbursement(id, reason, requestedBy) {
-        const [disbursement2] = await db.update(escrowDisbursements2).set({
+        const [disbursement] = await db.update(escrowDisbursements2).set({
           isOnHold: true,
           holdReason: reason,
           holdRequestedBy: requestedBy,
           holdDate: /* @__PURE__ */ new Date()
         }).where(eq3(escrowDisbursements2.id, id)).returning();
-        return disbursement2;
+        return disbursement;
       }
       async releaseEscrowDisbursement(id) {
-        const [disbursement2] = await db.update(escrowDisbursements2).set({
+        const [disbursement] = await db.update(escrowDisbursements2).set({
           isOnHold: false,
           holdReason: null,
           holdRequestedBy: null,
           holdDate: null
         }).where(eq3(escrowDisbursements2.id, id)).returning();
-        return disbursement2;
+        return disbursement;
       }
       async getEscrowSummary(loanId) {
         const disbursements = await this.getEscrowDisbursements(loanId);
@@ -19621,17 +19621,17 @@ var init_disbursement_service = __esm({
       /**
        * Post a single disbursement to the ledger
        */
-      async postDisbursement(disbursement2) {
-        const amountMinor = BigInt(disbursement2.amount_minor);
-        const escrowBalance2 = BigInt(Math.round(parseFloat(disbursement2.escrow_balance) * 100));
-        console.log(`[EscrowDisbursement] Posting ${disbursement2.escrow_type} disbursement of $${(Number(amountMinor) / 100).toFixed(2)} for loan ${disbursement2.loan_number}`);
+      async postDisbursement(disbursement) {
+        const amountMinor = BigInt(disbursement.amount_minor);
+        const escrowBalance2 = BigInt(Math.round(parseFloat(disbursement.escrow_balance) * 100));
+        console.log(`[EscrowDisbursement] Posting ${disbursement.escrow_type} disbursement of $${(Number(amountMinor) / 100).toFixed(2)} for loan ${disbursement.loan_number}`);
         const hasInsufficientFunds = escrowBalance2 < amountMinor;
         try {
           await this.db.query("BEGIN");
           const { eventId } = await postEvent(this.ledgerRepo, {
-            loanId: disbursement2.loan_id,
-            effectiveDate: disbursement2.due_date.toISOString().split("T")[0],
-            correlationId: `escrow_disb_${disbursement2.disb_id}`,
+            loanId: disbursement.loan_id,
+            effectiveDate: disbursement.due_date.toISOString().split("T")[0],
+            correlationId: `escrow_disb_${disbursement.disb_id}`,
             schema: "escrow.disbursement.v1",
             currency: "USD",
             lines: hasInsufficientFunds ? [
@@ -19639,7 +19639,7 @@ var init_disbursement_service = __esm({
               {
                 account: "suspense",
                 debitMinor: amountMinor - escrowBalance2,
-                memo: `Escrow advance for ${disbursement2.escrow_type} - ${disbursement2.payee_name}`
+                memo: `Escrow advance for ${disbursement.escrow_type} - ${disbursement.payee_name}`
               },
               {
                 account: "cash",
@@ -19650,7 +19650,7 @@ var init_disbursement_service = __esm({
               {
                 account: "escrow_liability",
                 debitMinor: escrowBalance2,
-                memo: `${disbursement2.escrow_type} payment to ${disbursement2.payee_name}`
+                memo: `${disbursement.escrow_type} payment to ${disbursement.payee_name}`
               },
               {
                 account: "cash",
@@ -19662,12 +19662,12 @@ var init_disbursement_service = __esm({
               {
                 account: "escrow_liability",
                 debitMinor: amountMinor,
-                memo: `${disbursement2.escrow_type} payment to ${disbursement2.payee_name}`
+                memo: `${disbursement.escrow_type} payment to ${disbursement.payee_name}`
               },
               {
                 account: "cash",
                 creditMinor: amountMinor,
-                memo: `Escrow disbursement to ${disbursement2.payee_name}`
+                memo: `Escrow disbursement to ${disbursement.payee_name}`
               }
             ]
           });
@@ -19677,14 +19677,14 @@ var init_disbursement_service = __esm({
             event_id = $1,
             posted_at = NOW()
         WHERE disb_id = $2
-      `, [eventId, disbursement2.disb_id]);
+      `, [eventId, disbursement.disb_id]);
           await this.db.query(`
         UPDATE escrow_accounts
         SET last_disbursement_date = $1
         WHERE loan_id = $2
-      `, [disbursement2.due_date, disbursement2.loan_id]);
+      `, [disbursement.due_date, disbursement.loan_id]);
           await this.db.query("COMMIT");
-          console.log(`[EscrowDisbursement] Successfully posted disbursement ${disbursement2.disb_id} with event ${eventId}`);
+          console.log(`[EscrowDisbursement] Successfully posted disbursement ${disbursement.disb_id} with event ${eventId}`);
         } catch (error) {
           await this.db.query("ROLLBACK");
           throw error;
@@ -28499,8 +28499,8 @@ var init_escrow_disbursements = __esm({
       try {
         const id = parseInt(req.params.id);
         const userId = req.user?.id || req.session?.userId;
-        const disbursement2 = await storage.getEscrowDisbursement(id);
-        if (!disbursement2) {
+        const disbursement = await storage.getEscrowDisbursement(id);
+        if (!disbursement) {
           return res.status(404).json({ error: "Disbursement not found" });
         }
         await complianceAudit.logEvent({
@@ -28509,17 +28509,17 @@ var init_escrow_disbursements = __esm({
           actorId: userId?.toString(),
           resourceType: "escrow_disbursement",
           resourceId: id.toString(),
-          loanId: disbursement2.loanId,
+          loanId: disbursement.loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
           metadata: {
             action: "view_disbursement_detail",
             disbursementId: id,
-            disbursementType: disbursement2.disbursementType,
-            payeeName: disbursement2.payeeName
+            disbursementType: disbursement.disbursementType,
+            payeeName: disbursement.payeeName
           }
         });
-        res.json(disbursement2);
+        res.json(disbursement);
       } catch (error) {
         console.error("Error fetching disbursement:", error);
         res.status(500).json({ error: "Failed to fetch disbursement" });
@@ -28656,8 +28656,8 @@ var init_escrow_disbursements = __esm({
         console.log("Data validation in progress...");
         const validatedData = insertEscrowDisbursementSchema.parse(cleanedDataDict);
         console.log("Validation complete, creating disbursement...");
-        const disbursement2 = await storage.createEscrowDisbursement(validatedData);
-        const disbursementDict = disbursement2;
+        const disbursement = await storage.createEscrowDisbursement(validatedData);
+        const disbursementDict = disbursement;
         const createdFields = Object.keys(disbursementDict).filter((key) => {
           const val = disbursementDict[key];
           return val !== null && val !== void 0 && val !== "";
@@ -28667,14 +28667,14 @@ var init_escrow_disbursements = __esm({
           actorType: "user",
           actorId: userId?.toString(),
           resourceType: "escrow_disbursement",
-          resourceId: disbursement2.id.toString(),
+          resourceId: disbursement.id.toString(),
           loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
-          newValues: disbursement2,
+          newValues: disbursement,
           changedFields: createdFields
         });
-        res.status(201).json(disbursement2);
+        res.status(201).json(disbursement);
       } catch (error) {
         console.error("Error creating disbursement:", error);
         const errorMessage = error.issues ? error.issues[0].message : error.message || "Invalid disbursement data";
@@ -28757,27 +28757,27 @@ var init_escrow_disbursements = __esm({
       try {
         const id = parseInt(req.params.id);
         const userId = req.user?.id || req.session?.userId;
-        const disbursement2 = await storage.getEscrowDisbursement(id);
+        const disbursement = await storage.getEscrowDisbursement(id);
         await storage.deleteEscrowDisbursement(id);
-        if (disbursement2) {
+        if (disbursement) {
           await complianceAudit.logEvent({
             eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_DELETED,
             actorType: "user",
             actorId: userId?.toString(),
             resourceType: "escrow_disbursement",
             resourceId: id.toString(),
-            loanId: disbursement2.loanId,
+            loanId: disbursement.loanId,
             ipAddr: getRealUserIP(req),
             userAgent: req.headers?.["user-agent"],
             metadata: {
               action: "delete_escrow_disbursement",
               disbursementId: id,
-              loanId: disbursement2.loanId,
-              disbursementType: disbursement2.disbursementType,
-              payeeName: disbursement2.payeeName,
-              deletedData: disbursement2
+              loanId: disbursement.loanId,
+              disbursementType: disbursement.disbursementType,
+              payeeName: disbursement.payeeName,
+              deletedData: disbursement
             },
-            previousValues: disbursement2
+            previousValues: disbursement
           });
         }
         res.status(204).send();
@@ -28790,39 +28790,40 @@ var init_escrow_disbursements = __esm({
       try {
         const disbursementId = parseInt(req.params.id);
         const userId = req.user?.id || req.session?.userId;
-        const disbursement2 = await storage.getEscrowDisbursement(disbursementId);
-        if (!disbursement2) {
+        const disbursement = await storage.getEscrowDisbursement(disbursementId);
+        if (!disbursement) {
           return res.status(404).json({ error: "Disbursement not found" });
         }
         const validatedData = insertEscrowDisbursementPaymentSchema.parse({
           ...req.body,
           disbursementId,
-          loanId: disbursement2.loanId
+          loanId: disbursement.loanId
         });
         const result = await db.transaction(async (tx) => {
           const [payment] = await tx.insert(escrowDisbursementPayments).values(validatedData).returning();
-          const [ledgerEntry] = await tx.insert(loanLedger).values({
-            loanId: disbursement2.loanId,
+          const ledgerEntryResult = await tx.insert(loanLedger).values({
+            loanId: disbursement.loanId,
             transactionDate: validatedData.paymentDate,
             transactionId: `DISB-${payment.id}-${Date.now()}`,
-            description: `Escrow disbursement: ${disbursement2.description}`,
+            description: `Escrow disbursement: ${disbursement.description}`,
             transactionType: "disbursement",
             debitAmount: validatedData.amount,
             creditAmount: "0",
             category: "escrow",
-            notes: `Payment for ${disbursement2.disbursementType} - ${disbursement2.description}`,
+            notes: `Payment for ${disbursement.disbursementType} - ${disbursement.description}`,
             runningBalance: "0",
             // Will be calculated properly in production
             principalBalance: "0",
             interestBalance: "0",
             status: "posted"
           }).returning();
+          const ledgerEntry = Array.isArray(ledgerEntryResult) ? ledgerEntryResult[0] : ledgerEntryResult;
           const [updatedPayment] = await tx.update(escrowDisbursementPayments).set({ ledgerEntryId: ledgerEntry.id }).where(eq33(escrowDisbursementPayments.id, payment.id)).returning();
-          const [escrowAccount] = await tx.select().from(escrowAccounts2).where(eq33(escrowAccounts2.loanId, disbursement2.loanId)).limit(1);
+          const [escrowAccount] = await tx.select().from(escrowAccounts2).where(eq33(escrowAccounts2.loanId, disbursement.loanId)).limit(1);
           if (escrowAccount) {
-            const newBalance = (parseFloat(escrowAccount.balance) - parseFloat(validatedData.amount)).toFixed(2);
+            const newBalance = (parseFloat(escrowAccount.currentBalance) - parseFloat(validatedData.amount)).toFixed(2);
             await tx.update(escrowAccounts2).set({
-              balance: newBalance,
+              currentBalance: newBalance,
               lastTransactionDate: validatedData.paymentDate
             }).where(eq33(escrowAccounts2.id, escrowAccount.id));
           }
@@ -28834,24 +28835,21 @@ var init_escrow_disbursements = __esm({
           actorId: userId?.toString(),
           resourceType: "escrow_payment",
           resourceId: result.id.toString(),
-          loanId: disbursement2.loanId,
+          loanId: disbursement.loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
           metadata: {
             action: "process_escrow_payment",
             paymentId: result.id,
             disbursementId,
-            loanId: disbursement2.loanId,
+            loanId: disbursement.loanId,
             amount: validatedData.amount,
             paymentDate: validatedData.paymentDate,
             paymentMethod: validatedData.paymentMethod,
             checkNumber: validatedData.checkNumber,
-            transactionNumber: validatedData.transactionNumber,
             ledgerEntryId: result.ledgerEntryId
           },
-          newValues: result,
-          userId,
-          ipAddress: getRealUserIP(req)
+          newValues: result
         });
         res.status(201).json(result);
       } catch (error) {
@@ -28881,9 +28879,7 @@ var init_escrow_disbursements = __esm({
             activeDisbursements: summary.summary.activeDisbursements,
             onHoldDisbursements: summary.summary.onHoldDisbursements,
             totalAnnualAmount: summary.summary.totalAnnualAmount
-          },
-          userId,
-          ipAddress: getRealUserIP(req)
+          }
         });
         res.json(summary);
       } catch (error) {
@@ -28916,7 +28912,7 @@ var init_escrow_disbursements = __esm({
           actorId: userId?.toString(),
           resourceType: "escrow_disbursement",
           resourceId: id.toString(),
-          loanId: disbursement.loanId,
+          loanId: result.loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
           metadata: {
@@ -28928,9 +28924,7 @@ var init_escrow_disbursements = __esm({
             isOnHold: result.isOnHold,
             holdReason: result.holdReason
           },
-          newValues: result,
-          userId,
-          ipAddress: getRealUserIP(req)
+          newValues: result
         });
         res.json(result);
       } catch (error) {
@@ -40059,12 +40053,12 @@ async function performEscrowAnalysis(loanId, tenantId, client5) {
 }
 async function processEscrowDisbursement(loanId, disbursementId, tenantId, client5) {
   const db2 = drizzle3(client5);
-  const [disbursement2] = await db2.select().from(escrowDisbursements).where(eq(escrowDisbursements.id, disbursementId));
-  if (!disbursement2) {
+  const [disbursement] = await db2.select().from(escrowDisbursements).where(eq(escrowDisbursements.id, disbursementId));
+  if (!disbursement) {
     throw new Error(`Disbursement ${disbursementId} not found`);
   }
   await db2.update(escrowAccounts).set({
-    balance: sql`balance - ${disbursement2.amount}`,
+    balance: sql`balance - ${disbursement.amount}`,
     lastDisbursementDate: /* @__PURE__ */ new Date()
   }).where(eq(escrowAccounts.loanId, loanId));
   await db2.update(escrowDisbursements).set({
@@ -40078,9 +40072,9 @@ async function processEscrowDisbursement(loanId, disbursementId, tenantId, clien
     eventType: "EscrowDisbursementProcessed",
     payload: {
       disbursementId,
-      amount: disbursement2.amount,
-      payee: disbursement2.payee,
-      purpose: disbursement2.purpose
+      amount: disbursement.amount,
+      payee: disbursement.payee,
+      purpose: disbursement.purpose
     }
   });
   await auditAction(client5, {
@@ -40088,7 +40082,7 @@ async function processEscrowDisbursement(loanId, disbursementId, tenantId, clien
     targetType: "escrow_disbursements",
     targetId: disbursementId,
     action: "disbursement_processed",
-    changes: { amount: disbursement2.amount, processedAt: /* @__PURE__ */ new Date() }
+    changes: { amount: disbursement.amount, processedAt: /* @__PURE__ */ new Date() }
   });
 }
 async function detectEscrowShortage(loanId, tenantId, client5) {

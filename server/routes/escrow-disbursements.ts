@@ -427,7 +427,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
         .returning();
       
       // Create corresponding ledger entry
-      const [ledgerEntry] = await tx
+      const ledgerEntryResult = await tx
         .insert(loanLedger)
         .values({
           loanId: disbursement.loanId,
@@ -446,6 +446,8 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
         })
         .returning();
       
+      const ledgerEntry = Array.isArray(ledgerEntryResult) ? ledgerEntryResult[0] : ledgerEntryResult;
+      
       // Update payment with ledger entry ID
       const [updatedPayment] = await tx
         .update(escrowDisbursementPayments)
@@ -461,12 +463,11 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
         .limit(1);
       
       if (escrowAccount) {
-        const newBalance = (parseFloat(escrowAccount.balance) - parseFloat(validatedData.amount)).toFixed(2);
+        const newBalance = (parseFloat(escrowAccount.currentBalance) - parseFloat(validatedData.amount)).toFixed(2);
         await tx
           .update(escrowAccounts)
           .set({ 
-            balance: newBalance,
-            lastTransactionDate: validatedData.paymentDate
+            currentBalance: newBalance
           })
           .where(eq(escrowAccounts.id, escrowAccount.id));
       }
@@ -493,13 +494,9 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
         paymentDate: validatedData.paymentDate,
         paymentMethod: validatedData.paymentMethod,
         checkNumber: validatedData.checkNumber,
-        transactionNumber: validatedData.transactionNumber,
-        ledgerEntryId: result.ledgerEntryId,
-
+        ledgerEntryId: result.ledgerEntryId
       },
-      newValues: result,
-      userId,
-      ipAddress: getRealUserIP(req)
+      newValues: result
     });
     
     res.status(201).json(result);
@@ -534,11 +531,8 @@ router.get("/api/loans/:loanId/escrow-summary", async (req: any, res) => {
         totalDisbursements: summary.summary.totalDisbursements,
         activeDisbursements: summary.summary.activeDisbursements,
         onHoldDisbursements: summary.summary.onHoldDisbursements,
-        totalAnnualAmount: summary.summary.totalAnnualAmount,
-
-      },
-      userId,
-      ipAddress: getRealUserIP(req)
+        totalAnnualAmount: summary.summary.totalAnnualAmount
+      }
     });
     
     res.json(summary);
@@ -578,7 +572,7 @@ router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
       actorId: userId?.toString(),
       resourceType: 'escrow_disbursement',
       resourceId: id.toString(),
-      loanId: disbursement.loanId,
+      loanId: result.loanId,
       ipAddr: getRealUserIP(req),
       userAgent: req.headers?.['user-agent'],
       metadata: {
@@ -588,12 +582,9 @@ router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
         reason: reason || null,
         requestedBy: requestedBy || userId,
         isOnHold: result.isOnHold,
-        holdReason: result.holdReason,
-
+        holdReason: result.holdReason
       },
-      newValues: result,
-      userId,
-      ipAddress: getRealUserIP(req)
+      newValues: result
     });
     
     res.json(result);

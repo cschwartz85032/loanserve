@@ -237,11 +237,11 @@ class ComplianceAuditService {
       ...Object.keys(newValues || {})
     ]);
 
-    for (const key of allKeys) {
+    Array.from(allKeys).forEach(key => {
       if (JSON.stringify(previousValues[key]) !== JSON.stringify(newValues[key])) {
         changedFields.push(key);
       }
-    }
+    });
 
     return changedFields;
   }
