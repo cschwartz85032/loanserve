@@ -1,0 +1,128 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/client/src/components/documents/document-uploader.tsx b/client/src/components/documents/document-uploader.tsx
+index dc6fa6a912f5f026fa1e22dd5e11370288c66e6a..da7113e3bc88144fb6a91f49b211562b6e513951 100644
+--- a/client/src/components/documents/document-uploader.tsx
++++ b/client/src/components/documents/document-uploader.tsx
+@@ -48,51 +48,55 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
+   const { toast } = useToast();
+ 
+   // Keep ref in sync with state
+   useEffect(() => {
+     selectedLoanIdRef.current = selectedLoanId;
+   }, [selectedLoanId]);
+ 
+   // Fetch loans for selection if no loanId is provided
+   const { data: loans } = useQuery({
+     queryKey: ['/api/loans'],
+     enabled: !propLoanId && standalone
+   });
+ 
+   // Auto-select first loan if there's any loans and no loan is selected
+   useEffect(() => {
+     if (Array.isArray(loans) && loans.length > 0 && !propLoanId && standalone) {
+       // Only set if not already set
+       if (!selectedLoanId) {
+         console.log('Auto-selecting first loan:', loans[0].id);
+         setSelectedLoanId(loans[0].id);
+       }
+     }
+   }, [loans]); // Only re-run when loans change
+ 
+   const uploadMutation = useMutation({
+-    mutationFn: async ({ file, loanId }: { file: File; loanId: number }) => {
++    mutationFn: async ({ file, loanId }: { file: File; loanId?: number }) => {
++      if (loanId === undefined || loanId === null || Number.isNaN(loanId)) {
++        throw new Error('Loan ID is required to upload a document');
++      }
++
+       const formData = new FormData();
+       formData.append('file', file);
+       formData.append('loanId', loanId.toString());
+       formData.append('category', 'other');
+       formData.append('description', `Uploaded ${file.name}`);
+ 
+       const response = await fetch('/api/documents/upload', {
+         method: 'POST',
+         credentials: 'include',
+         body: formData
+       });
+ 
+       if (!response.ok) {
+         throw new Error('Upload failed');
+       }
+ 
+       return response.json();
+     },
+     onSuccess: (data, variables) => {
+       setFiles(prev => prev.map(f => 
+         f.file === variables.file 
+           ? { ...f, status: 'success', documentId: data.id }
+           : f
+       ));
+       
+diff --git a/client/src/components/documents/document-uploader.tsx b/client/src/components/documents/document-uploader.tsx
+index dc6fa6a912f5f026fa1e22dd5e11370288c66e6a..da7113e3bc88144fb6a91f49b211562b6e513951 100644
+--- a/client/src/components/documents/document-uploader.tsx
++++ b/client/src/components/documents/document-uploader.tsx
+@@ -175,52 +179,57 @@ export function DocumentUploader({ loanId: propLoanId, onUploadComplete, standal
+ 
+     const uploadFiles: UploadedFile[] = newFiles.map(file => ({
+       file,
+       progress: 0,
+       status: 'pending'
+     }));
+ 
+     setFiles(prev => [...prev, ...uploadFiles]);
+ 
+     // Start uploading each file
+     uploadFiles.forEach(uploadFile => {
+       uploadDocument(uploadFile.file);
+     });
+   };
+ 
+   const uploadDocument = async (file: File) => {
+     const loanIdToUse = selectedLoanIdRef.current || propLoanId;
+     
+     console.log('uploadDocument called with:', {
+       selectedLoanIdRef: selectedLoanIdRef.current,
+       propLoanId,
+       loanIdToUse,
+       fileName: file.name
+     });
+     
+-    if (!loanIdToUse) {
++    if (loanIdToUse === undefined || loanIdToUse === null || Number.isNaN(loanIdToUse)) {
+       console.error('No loan ID available for upload');
++      toast({
++        title: 'Select a loan',
++        description: 'Please choose a valid loan before uploading documents.',
++        variant: 'destructive',
++      });
+       return;
+     }
+ 
+     setFiles(prev => prev.map(f => 
+       f.file === file 
+         ? { ...f, status: 'uploading', progress: 50 }
+         : f
+     ));
+ 
+     uploadMutation.mutate({ file, loanId: loanIdToUse });
+   };
+ 
+   const removeFile = (file: File) => {
+     setFiles(prev => prev.filter(f => f.file !== file));
+   };
+ 
+   const getFileIcon = (file: File) => {
+     const type = file.type.toLowerCase();
+     if (type.includes('image')) return <FileImage className="h-5 w-5" />;
+     if (type.includes('video')) return <FileVideo className="h-5 w-5" />;
+     if (type.includes('audio')) return <FileAudio className="h-5 w-5" />;
+     if (type.includes('pdf')) return <FileText className="h-5 w-5 text-red-500" />;
+     return <File className="h-5 w-5" />;
+   };
+ 
+ 
+EOF
+)
