@@ -28484,14 +28484,10 @@ var init_escrow_disbursements = __esm({
           loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
-          details: {
+          metadata: {
             action: "view_escrow_disbursements",
-            loanId,
-            disbursementCount: disbursements.length,
-            userId
-          },
-          userId,
-          ipAddress: getRealUserIP(req)
+            disbursementCount: disbursements.length
+          }
         });
         res.json(disbursements);
       } catch (error) {
@@ -28516,15 +28512,12 @@ var init_escrow_disbursements = __esm({
           loanId: disbursement2.loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
-          details: {
+          metadata: {
             action: "view_disbursement_detail",
             disbursementId: id,
             disbursementType: disbursement2.disbursementType,
-            payeeName: disbursement2.payeeName,
-            userId
-          },
-          userId,
-          ipAddress: getRealUserIP(req)
+            payeeName: disbursement2.payeeName
+          }
         });
         res.json(disbursement2);
       } catch (error) {
@@ -28553,14 +28546,11 @@ var init_escrow_disbursements = __esm({
             loanId,
             ipAddr: getRealUserIP(req),
             userAgent: req.headers?.["user-agent"],
-            details: {
+            metadata: {
               action: "create_escrow_account",
               loanId,
-              accountNumber: escrowAccount.accountNumber,
-              userId
-            },
-            userId,
-            ipAddress: getRealUserIP(req)
+              accountNumber: escrowAccount.accountNumber
+            }
           });
         }
         const cleanNumeric = (value) => {
@@ -28655,19 +28645,23 @@ var init_escrow_disbursements = __esm({
           insuranceDocumentId: cleanNumeric(req.body.insuranceDocumentId),
           insuranceTracking: req.body.insuranceTracking
         };
-        Object.keys(cleanedData).forEach((key) => {
-          if (cleanedData[key] === null || cleanedData[key] === void 0) {
-            delete cleanedData[key];
+        const cleanedDataDict = cleanedData;
+        for (const key of Object.keys(cleanedDataDict)) {
+          const val = cleanedDataDict[key];
+          if (val === null || val === void 0) {
+            delete cleanedDataDict[key];
           }
-        });
+        }
         console.log("Processing escrow disbursement request");
         console.log("Data validation in progress...");
-        const validatedData = insertEscrowDisbursementSchema.parse(cleanedData);
+        const validatedData = insertEscrowDisbursementSchema.parse(cleanedDataDict);
         console.log("Validation complete, creating disbursement...");
         const disbursement2 = await storage.createEscrowDisbursement(validatedData);
-        const createdFields = Object.keys(disbursement2).filter(
-          (key) => disbursement2[key] !== null && disbursement2[key] !== void 0 && disbursement2[key] !== ""
-        );
+        const disbursementDict = disbursement2;
+        const createdFields = Object.keys(disbursementDict).filter((key) => {
+          const val = disbursementDict[key];
+          return val !== null && val !== void 0 && val !== "";
+        });
         await complianceAudit.logEvent({
           eventType: COMPLIANCE_EVENTS.ESCROW.DISBURSEMENT_CREATED,
           actorType: "user",
@@ -28775,18 +28769,15 @@ var init_escrow_disbursements = __esm({
             loanId: disbursement2.loanId,
             ipAddr: getRealUserIP(req),
             userAgent: req.headers?.["user-agent"],
-            details: {
+            metadata: {
               action: "delete_escrow_disbursement",
               disbursementId: id,
               loanId: disbursement2.loanId,
               disbursementType: disbursement2.disbursementType,
               payeeName: disbursement2.payeeName,
-              deletedData: disbursement2,
-              userId
+              deletedData: disbursement2
             },
-            previousValues: disbursement2,
-            userId,
-            ipAddress: getRealUserIP(req)
+            previousValues: disbursement2
           });
         }
         res.status(204).send();
@@ -28846,7 +28837,7 @@ var init_escrow_disbursements = __esm({
           loanId: disbursement2.loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
-          details: {
+          metadata: {
             action: "process_escrow_payment",
             paymentId: result.id,
             disbursementId,
@@ -28856,8 +28847,7 @@ var init_escrow_disbursements = __esm({
             paymentMethod: validatedData.paymentMethod,
             checkNumber: validatedData.checkNumber,
             transactionNumber: validatedData.transactionNumber,
-            ledgerEntryId: result.ledgerEntryId,
-            userId
+            ledgerEntryId: result.ledgerEntryId
           },
           newValues: result,
           userId,
@@ -28884,14 +28874,13 @@ var init_escrow_disbursements = __esm({
           loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
-          details: {
+          metadata: {
             action: "view_escrow_summary",
             loanId,
             totalDisbursements: summary.summary.totalDisbursements,
             activeDisbursements: summary.summary.activeDisbursements,
             onHoldDisbursements: summary.summary.onHoldDisbursements,
-            totalAnnualAmount: summary.summary.totalAnnualAmount,
-            userId
+            totalAnnualAmount: summary.summary.totalAnnualAmount
           },
           userId,
           ipAddress: getRealUserIP(req)
@@ -28930,15 +28919,14 @@ var init_escrow_disbursements = __esm({
           loanId: disbursement.loanId,
           ipAddr: getRealUserIP(req),
           userAgent: req.headers?.["user-agent"],
-          details: {
+          metadata: {
             action: action === "hold" ? "hold_escrow_disbursement" : "release_escrow_disbursement",
             disbursementId: id,
             loanId: result.loanId,
             reason: reason || null,
             requestedBy: requestedBy || userId,
             isOnHold: result.isOnHold,
-            holdReason: result.holdReason,
-            userId
+            holdReason: result.holdReason
           },
           newValues: result,
           userId,

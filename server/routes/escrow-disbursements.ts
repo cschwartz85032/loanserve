@@ -18,16 +18,19 @@ router.get("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => {
     const disbursements = await storage.getEscrowDisbursements(loanId);
     
     // Log escrow disbursements access
-    await complianceAudit.log({
-      type: 'escrow_disbursement.viewed',
-      actorId: userId,
-      resourceId: loanId,
-      loanId,
+    await complianceAudit.logEvent({
+      eventType: COMPLIANCE_EVENTS.ESCROW.VIEWED,
+      actorType: 'user',
+      actorId: userId?.toString(),
+      resourceType: 'escrow_disbursements',
+      resourceId: loanId.toString(),
+      loanId: loanId,
+      ipAddr: getRealUserIP(req),
+      userAgent: req.headers?.['user-agent'],
       metadata: {
         action: 'view_escrow_disbursements',
-        disbursement_count: disbursements.length
-      },
-      req
+        disbursementCount: disbursements.length
+      }
     });
     
     res.json(disbursements);
@@ -63,11 +66,8 @@ router.get("/api/escrow-disbursements/:id", async (req: any, res) => {
         action: 'view_disbursement_detail',
         disbursementId: id,
         disbursementType: disbursement.disbursementType,
-        payeeName: disbursement.payeeName,
-        userId
-      },
-      userId,
-      ipAddress: getRealUserIP(req)
+        payeeName: disbursement.payeeName
+      }
     });
     
     res.json(disbursement);
@@ -108,11 +108,8 @@ router.post("/api/loans/:loanId/escrow-disbursements", async (req: any, res) => 
         metadata: {
           action: 'create_escrow_account',
           loanId,
-          accountNumber: escrowAccount.accountNumber,
-          userId
-        },
-        userId,
-        ipAddress: getRealUserIP(req)
+          accountNumber: escrowAccount.accountNumber
+        }
       });
     }
     
@@ -386,12 +383,9 @@ router.delete("/api/escrow-disbursements/:id", async (req: any, res) => {
           loanId: disbursement.loanId,
           disbursementType: disbursement.disbursementType,
           payeeName: disbursement.payeeName,
-          deletedData: disbursement,
-          userId
+          deletedData: disbursement
         },
-        previousValues: disbursement,
-        userId,
-        ipAddress: getRealUserIP(req)
+        previousValues: disbursement
       });
     }
     
@@ -501,7 +495,7 @@ router.post("/api/escrow-disbursements/:id/payments", async (req: any, res) => {
         checkNumber: validatedData.checkNumber,
         transactionNumber: validatedData.transactionNumber,
         ledgerEntryId: result.ledgerEntryId,
-        userId
+
       },
       newValues: result,
       userId,
@@ -541,7 +535,7 @@ router.get("/api/loans/:loanId/escrow-summary", async (req: any, res) => {
         activeDisbursements: summary.summary.activeDisbursements,
         onHoldDisbursements: summary.summary.onHoldDisbursements,
         totalAnnualAmount: summary.summary.totalAnnualAmount,
-        userId
+
       },
       userId,
       ipAddress: getRealUserIP(req)
@@ -595,7 +589,7 @@ router.post("/api/escrow-disbursements/:id/hold", async (req: any, res) => {
         requestedBy: requestedBy || userId,
         isOnHold: result.isOnHold,
         holdReason: result.holdReason,
-        userId
+
       },
       newValues: result,
       userId,

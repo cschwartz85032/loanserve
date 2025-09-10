@@ -185,11 +185,11 @@ export interface AuditEventData {
   resourceType: string;
   resourceId?: string | number;
   loanId?: number;
-  previousValues?: Record<string, unknown>;
-  newValues?: Record<string, unknown>;
+  previousValues?: any;
+  newValues?: any;
   changedFields?: string[];
   description?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, any>;
   ipAddr?: string;
   userAgent?: string;
   sessionId?: string;
@@ -362,38 +362,6 @@ class ComplianceAuditService {
       resourceType,
       resourceId,
       description,
-      metadata,
-      ipAddr: req ? getRealUserIP(req) : undefined,
-      userAgent: req?.headers?.['user-agent'],
-      sessionId: req?.sessionID
-    });
-  }
-
-  /**
-   * Safer audit logging pattern - flattened primitives
-   */
-  async log({
-    type,
-    actorId,
-    resourceId,
-    loanId,
-    metadata = {},
-    req
-  }: {
-    type: string;
-    actorId?: string | number;
-    resourceId?: string | number;
-    loanId?: number;
-    metadata?: Record<string, unknown>;
-    req?: any;
-  }): Promise<void> {
-    await this.logEvent({
-      actorType: actorId ? 'user' : 'system',
-      actorId,
-      eventType: type,
-      resourceType: type.split('.')[0].toLowerCase(),
-      resourceId,
-      loanId,
       metadata,
       ipAddr: req ? getRealUserIP(req) : undefined,
       userAgent: req?.headers?.['user-agent'],
