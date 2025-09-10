@@ -2327,11 +2327,15 @@ export type InsertPasswordResetToken = z.infer<
 >;
 export type Session = typeof sessions.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
-export const insertLoanSchema = createInsertSchema(loans).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
+export const insertLoanSchema = createInsertSchema(loans)
+  .omit({
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    loanNumber: z.string().optional(),
+  });
 export const insertLoanBorrowerSchema = createInsertSchema(loanBorrowers).omit({
   id: true,
   createdAt: true,
