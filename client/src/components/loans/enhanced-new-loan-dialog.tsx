@@ -90,6 +90,10 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     interestRate: "",
     rateType: "fixed",
     loanTerm: "",
+    originationDate: new Date().toISOString().split('T')[0],
+    prepaidInterest: "0",
+    defaultRate: "",
+    gracePeriodDays: "15",
     
     // Property Information
     propertyType: "single_family",
@@ -176,7 +180,6 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
     lateCharge: "10",
     lateChargeType: "percentage",
     feePayer: "B",
-    gracePeriodDays: "15",
     investorLoanNumber: "",
     poolNumber: "",
     
@@ -878,6 +881,9 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
       interestRate: "",
       rateType: "fixed",
       loanTerm: "",
+      originationDate: new Date().toISOString().split('T')[0],
+      prepaidInterest: "0",
+      defaultRate: "",
       propertyType: "single_family",
       propertyAddress: "",
       propertyCity: "",
@@ -1188,6 +1194,60 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                         value={formData.paymentAmount}
                         onChange={(e) => handleInputChange('paymentAmount', e.target.value)}
                         placeholder="Auto-calculated if empty"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="originationDate">Origination Date *</Label>
+                      <Input
+                        id="originationDate"
+                        type="date"
+                        value={formData.originationDate}
+                        onChange={(e) => handleInputChange('originationDate', e.target.value)}
+                        required
+                        data-testid="input-origination-date"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="maturityDate">Maturity Date</Label>
+                      <Input
+                        id="maturityDate"
+                        type="date"
+                        value={formData.maturityDate}
+                        onChange={(e) => handleInputChange('maturityDate', e.target.value)}
+                        placeholder="Auto-calculated based on term"
+                        data-testid="input-maturity-date"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="prepaidInterest">Prepaid Interest</Label>
+                      <Input
+                        id="prepaidInterest"
+                        type="number"
+                        step="0.01"
+                        value={formData.prepaidInterest}
+                        onChange={(e) => handleInputChange('prepaidInterest', e.target.value)}
+                        data-testid="input-prepaid-interest"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultRate">Default Rate (%)</Label>
+                      <Input
+                        id="defaultRate"
+                        type="number"
+                        step="0.001"
+                        value={formData.defaultRate}
+                        onChange={(e) => handleInputChange('defaultRate', e.target.value)}
+                        data-testid="input-default-rate"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="gracePeriodDays">Grace Period (Days)</Label>
+                      <Input
+                        id="gracePeriodDays"
+                        type="number"
+                        value={formData.gracePeriodDays}
+                        onChange={(e) => handleInputChange('gracePeriodDays', e.target.value)}
+                        data-testid="input-grace-period"
                       />
                     </div>
                   </div>
@@ -1801,6 +1861,60 @@ export function EnhancedNewLoanDialog({ open, onOpenChange, onLoanCreated }: Enh
                         value={formData.paymentAmount}
                         onChange={(e) => handleInputChange('paymentAmount', e.target.value)}
                         placeholder="Auto-calculated if empty"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="originationDate-manual">Origination Date *</Label>
+                      <Input
+                        id="originationDate-manual"
+                        type="date"
+                        value={formData.originationDate}
+                        onChange={(e) => handleInputChange('originationDate', e.target.value)}
+                        required
+                        data-testid="input-origination-date-manual"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="maturityDate-manual">Maturity Date</Label>
+                      <Input
+                        id="maturityDate-manual"
+                        type="date"
+                        value={formData.maturityDate}
+                        onChange={(e) => handleInputChange('maturityDate', e.target.value)}
+                        placeholder="Auto-calculated based on term"
+                        data-testid="input-maturity-date-manual"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="prepaidInterest-manual">Prepaid Interest</Label>
+                      <Input
+                        id="prepaidInterest-manual"
+                        type="number"
+                        step="0.01"
+                        value={formData.prepaidInterest}
+                        onChange={(e) => handleInputChange('prepaidInterest', e.target.value)}
+                        data-testid="input-prepaid-interest-manual"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="defaultRate-manual">Default Rate (%)</Label>
+                      <Input
+                        id="defaultRate-manual"
+                        type="number"
+                        step="0.001"
+                        value={formData.defaultRate}
+                        onChange={(e) => handleInputChange('defaultRate', e.target.value)}
+                        data-testid="input-default-rate-manual"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="gracePeriodDays-manual">Grace Period (Days)</Label>
+                      <Input
+                        id="gracePeriodDays-manual"
+                        type="number"
+                        value={formData.gracePeriodDays}
+                        onChange={(e) => handleInputChange('gracePeriodDays', e.target.value)}
+                        data-testid="input-grace-period-manual"
                       />
                     </div>
                   </div>
