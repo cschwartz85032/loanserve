@@ -282,7 +282,7 @@ export class ApiGateway {
    * Start the API gateway server
    */
   async start(): Promise<void> {
-    const port = 5000; // Use main port for gateway
+    const port = 6000; // API Gateway port (separate from main app)
     
     this.app.listen(port, '0.0.0.0', () => {
       console.log(`[API Gateway] 🚀 API Gateway running on port ${port}`);

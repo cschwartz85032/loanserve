@@ -241,10 +241,10 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  // Core server serves the frontend and API routes.
-  // API Gateway (port 5000) routes requests here for frontend serving.
-  // Default to 4000 for core server, while gateway uses 5000.
-  const port = parseInt(process.env.CORE_HTTP_PORT || '4000', 10);
+  // Core server serves the frontend and API routes on the main port.
+  // This is the primary user-facing application port.
+  // Microservices run independently on their own ports (5001, 5002, 5003).
+  const port = parseInt(process.env.CORE_HTTP_PORT || '5000', 10);
   server.listen({
     port,
     host: "0.0.0.0",

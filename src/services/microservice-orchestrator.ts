@@ -101,7 +101,7 @@ export class MicroserviceOrchestrator {
     // Start API Gateway on main port
     try {
       await apiGateway.start();
-      console.log('[Orchestrator] ✅ API Gateway started on port 5000');
+      console.log('[Orchestrator] ✅ API Gateway started on port 6000');
     } catch (error) {
       console.error('[Orchestrator] ❌ Failed to start API Gateway:', error);
     }
