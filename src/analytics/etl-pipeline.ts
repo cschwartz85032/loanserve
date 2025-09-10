@@ -119,7 +119,7 @@ export class ETLPipeline {
             WHERE ll.status = 'posted'
             ORDER BY ll.loan_id, ll.transaction_date DESC, ll.id DESC
           )
-          SELECT 
+          SELECT
             l.id as loan_id,
             l.loan_number,
             l.loan_type as product_type,
@@ -128,10 +128,10 @@ export class ETLPipeline {
             l.status,
             COALESCE(lb.principal_minor, ROUND(COALESCE(lat.balance_amount, 0) * 100)::bigint) as current_principal_balance_cents,
             l.interest_rate as current_interest_rate,
-            (l.payment_amount * 100)::bigint as current_payment_amount_cents,
+            ROUND(l.payment_amount * 100)::bigint as current_payment_amount_cents,
             COALESCE(lb_join.borrower_id, NULL) as borrower_id,
             COALESCE(p.total_amount, 0) * 100 as payment_amount_cents,
-            CASE 
+            CASE
               WHEN p.received_date IS NOT NULL AND p.received_date <= p.due_date THEN 'on_time'
               WHEN p.received_date IS NOT NULL AND p.received_date > p.due_date THEN 'late'
               WHEN p.received_date IS NULL AND p.due_date < CURRENT_DATE THEN 'missed'
@@ -146,7 +146,7 @@ export class ETLPipeline {
           LEFT JOIN loan_balances lb ON l.id = lb.loan_id
           LEFT JOIN loan_borrowers lb_join ON l.id = lb_join.loan_id
           LEFT JOIN borrowers b ON lb_join.borrower_id = b.id
-          LEFT JOIN payments p ON l.id = p.loan_id 
+          LEFT JOIN payments p ON l.id = p.loan_id
             AND p.due_date >= CURRENT_DATE - INTERVAL '30 days'
           WHERE l.status IN ('active', 'current', 'delinquent')
         `;
