@@ -1917,6 +1917,10 @@ To implement full file serving:
   // Register Import routes
   const { importsRouter } = await import('../src/routes/imports.routes');
   app.use('/api', importsRouter);
+  
+  // Register Import Monitoring routes
+  const importMonitoringRouter = (await import('../src/routes/import-monitoring.routes')).default;
+  app.use('/api/imports/monitoring', importMonitoringRouter);
 
   // Register Investor routes
   const { investorRouter } = await import('../src/routes/investor.routes');
