@@ -4,12 +4,6 @@
  */
 
 import { PoolClient } from 'pg';
-import { 
-  importProgress, 
-  importMetrics, 
-  importAuditLog,
-  imports 
-} from '../database/ai-pipeline-schema';
 
 export type ImportStage = 
   | 'upload'
@@ -345,23 +339,23 @@ export class ImportMonitor {
     currentStage?: ImportStage;
     overallProgress: number;
   }> {
-    const [importData] = await this.db
-      .select()
-      .from(imports)
-      .where(eq(imports.id, this.importId))
-      .limit(1);
+    const importResult = await this.db.query(
+      'SELECT * FROM imports WHERE id = $1 LIMIT 1',
+      [this.importId]
+    );
+    const importData = importResult.rows[0];
 
-    const stages = await this.db
-      .select()
-      .from(importProgress)
-      .where(eq(importProgress.importId, this.importId))
-      .orderBy(importProgress.createdAt);
+    const stagesResult = await this.db.query(
+      'SELECT * FROM import_progress WHERE import_id = $1 ORDER BY created_at',
+      [this.importId]
+    );
+    const stages = stagesResult.rows;
 
     const currentStage = stages.find(s => s.status === 'in_progress')?.stage as ImportStage;
     
     // Calculate overall progress
-    const totalRecords = stages.reduce((sum, s) => sum + (s.recordsTotal || 0), 0);
-    const processedRecords = stages.reduce((sum, s) => sum + (s.recordsProcessed || 0), 0);
+    const totalRecords = stages.reduce((sum, s) => sum + (s.total_records || 0), 0);
+    const processedRecords = stages.reduce((sum, s) => sum + (s.processed_records || 0), 0);
     const overallProgress = totalRecords > 0 ? (processedRecords / totalRecords) * 100 : 0;
 
     return {
@@ -376,28 +370,28 @@ export class ImportMonitor {
    * Get recent events for this import
    */
   async getRecentEvents(limit: number = 100): Promise<any[]> {
-    return await this.db
-      .select()
-      .from(importAuditLog)
-      .where(eq(importAuditLog.importId, this.importId))
-      .orderBy(desc(importAuditLog.createdAt))
-      .limit(limit);
+    const result = await this.db.query(
+      'SELECT * FROM import_audit_log WHERE import_id = $1 ORDER BY created_at DESC LIMIT $2',
+      [this.importId, limit]
+    );
+    return result.rows;
   }
 
   /**
    * Update aggregated metrics (called after import completion)
    */
   async updateMetrics(): Promise<void> {
-    const stages = await this.db
-      .select()
-      .from(importProgress)
-      .where(eq(importProgress.importId, this.importId));
+    const stagesResult = await this.db.query(
+      'SELECT * FROM import_progress WHERE import_id = $1',
+      [this.importId]
+    );
+    const stages = stagesResult.rows;
 
-    const [importData] = await this.db
-      .select()
-      .from(imports)
-      .where(eq(imports.id, this.importId))
-      .limit(1);
+    const importResult = await this.db.query(
+      'SELECT * FROM imports WHERE id = $1 LIMIT 1',
+      [this.importId]
+    );
+    const importData = importResult.rows[0];
 
     if (!importData) return;
 
@@ -406,53 +400,60 @@ export class ImportMonitor {
     const periodEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 59, 59);
 
     // Calculate total processing time
-    const totalDurationMs = stages.reduce((sum, s) => sum + (s.durationMs || 0), 0);
-    const totalRecords = stages.reduce((sum, s) => sum + (s.recordsProcessed || 0), 0);
-    const successRecords = stages.reduce((sum, s) => sum + (s.recordsSuccess || 0), 0);
-    const failedRecords = stages.reduce((sum, s) => sum + (s.recordsFailed || 0), 0);
+    const totalDurationMs = stages.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
+    const totalRecords = stages.reduce((sum, s) => sum + (s.processed_records || 0), 0);
+    const successRecords = stages.reduce((sum, s) => sum + (s.success_records || 0), 0);
+    const failedRecords = stages.reduce((sum, s) => sum + (s.failed_records || 0), 0);
 
     // Update or create hourly metrics
-    const existing = await this.db
-      .select()
-      .from(importMetrics)
-      .where(and(
-        eq(importMetrics.tenantId, this.tenantId),
-        eq(importMetrics.period, 'hour'),
-        eq(importMetrics.periodStart, periodStart)
-      ))
-      .limit(1);
+    const existingResult = await this.db.query(
+      `SELECT * FROM import_metrics_hourly 
+       WHERE tenant_id = $1 AND period = $2 AND period_start = $3 LIMIT 1`,
+      [this.tenantId, 'hour', periodStart]
+    );
+    const existing = existingResult.rows;
 
     if (existing.length > 0) {
-      await this.db
-        .update(importMetrics)
-        .set({
-          totalImports: sql`${importMetrics.totalImports} + 1`,
-          successfulImports: importData.status === 'completed' 
-            ? sql`${importMetrics.successfulImports} + 1`
-            : importMetrics.successfulImports,
-          failedImports: importData.status === 'failed'
-            ? sql`${importMetrics.failedImports} + 1`
-            : importMetrics.failedImports,
-          totalRecords: sql`${importMetrics.totalRecords} + ${totalRecords}`,
-          successfulRecords: sql`${importMetrics.successfulRecords} + ${successRecords}`,
-          failedRecords: sql`${importMetrics.failedRecords} + ${failedRecords}`,
-          avgProcessingTimeMs: sql`(${importMetrics.avgProcessingTimeMs} * ${importMetrics.totalImports} + ${totalDurationMs}) / (${importMetrics.totalImports} + 1)`
-        })
-        .where(eq(importMetrics.id, existing[0].id));
+      await this.db.query(
+        `UPDATE import_metrics_hourly 
+         SET total_imports = total_imports + 1,
+             successful_imports = successful_imports + $1,
+             failed_imports = failed_imports + $2,
+             total_records = total_records + $3,
+             successful_records = successful_records + $4,
+             failed_records = failed_records + $5,
+             avg_processing_time_ms = (avg_processing_time_ms * total_imports + $6) / (total_imports + 1)
+         WHERE id = $7`,
+        [
+          importData.status === 'completed' ? 1 : 0,
+          importData.status === 'failed' ? 1 : 0,
+          totalRecords,
+          successRecords,
+          failedRecords,
+          totalDurationMs,
+          existing[0].id
+        ]
+      );
     } else {
-      await this.db.insert(importMetrics).values({
-        tenantId: this.tenantId,
-        period: 'hour',
-        periodStart,
-        periodEnd,
-        totalImports: 1,
-        successfulImports: importData.status === 'completed' ? 1 : 0,
-        failedImports: importData.status === 'failed' ? 1 : 0,
-        totalRecords,
-        successfulRecords: successRecords,
-        failedRecords: failedRecords,
-        avgProcessingTimeMs: totalDurationMs.toString()
-      });
+      await this.db.query(
+        `INSERT INTO import_metrics_hourly 
+         (tenant_id, period, period_start, period_end, total_imports, successful_imports, 
+          failed_imports, total_records, successful_records, failed_records, avg_processing_time_ms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          this.tenantId,
+          'hour',
+          periodStart,
+          periodEnd,
+          1,
+          importData.status === 'completed' ? 1 : 0,
+          importData.status === 'failed' ? 1 : 0,
+          totalRecords,
+          successRecords,
+          failedRecords,
+          totalDurationMs
+        ]
+      );
     }
   }
 }
