@@ -10,14 +10,26 @@ import { withTenantClient } from '../db/withTenantClient';
 
 const router = Router();
 
+// Default tenant ID for single-tenant deployments
+const DEFAULT_TENANT_ID = '00000000-0000-0000-0000-000000000000';
+
 // Authentication middleware - all monitoring routes require authentication
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!(req as any).isAuthenticated || !(req as any).isAuthenticated()) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  if (!(req as any).user?.tenantId) {
-    return res.status(403).json({ error: 'Invalid user session - missing tenant context' });
+  
+  // Set tenant ID - use from user session or default for single-tenant deployments
+  if (!(req as any).user) {
+    return res.status(403).json({ error: 'Invalid user session' });
   }
+  
+  // Ensure tenant context is available (use default if not set)
+  if (!(req as any).user.tenantId) {
+    (req as any).user.tenantId = DEFAULT_TENANT_ID;
+    console.log(`[Auth] Using default tenant ID for user ${(req as any).user.id}`);
+  }
+  
   next();
 }
 
