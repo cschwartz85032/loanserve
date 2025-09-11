@@ -130,7 +130,8 @@ const upload = multer({
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'text/plain', 'text/csv', 'application/csv',
       'image/png', 'image/jpeg', 'image/gif', 'image/tiff', 'image/bmp',
-      'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed'
+      'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
+      'application/octet-stream' // For FNM and other binary files
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
