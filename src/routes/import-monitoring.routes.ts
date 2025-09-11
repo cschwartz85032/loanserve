@@ -1,18 +1,11 @@
 /**
  * Import Monitoring API Routes
  * Provides real-time monitoring and progress tracking endpoints
+ * REFACTORED: Uses only raw SQL queries with PoolClient
  */
 
 import { Router, Request, Response } from 'express';
 import { ImportMonitor, getMonitoringDashboard } from '../services/import-monitor';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import { eq, and, desc, gte } from 'drizzle-orm';
-import { 
-  imports, 
-  importProgress, 
-  importAuditLog,
-  importMetrics 
-} from '../database/ai-pipeline-schema';
 import { withTenantClient } from '../db/withTenantClient';
 
 const router = Router();
@@ -79,39 +72,41 @@ router.get('/:importId/progress', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     
     const progress = await withTenantClient(tenantId, async (client) => {
-      const db = drizzle(client);
-    
-    // Verify import belongs to tenant
-    const importRecord = await db
-      .select()
-      .from(imports)
-      .where(and(
-        eq(imports.id, importId),
-        eq(imports.tenantId, tenantId)
-      ))
-      .limit(1);
-    
-    if (importRecord.length === 0) {
-      return res.status(404).json({ error: 'Import not found' });
-    }
+      // Verify import belongs to tenant
+      const importResult = await client.query(
+        'SELECT * FROM imports WHERE id = $1 AND tenant_id = $2 LIMIT 1',
+        [importId, tenantId]
+      );
+      
+      if (importResult.rows.length === 0) {
+        return null; // Will handle 404 outside callback
+      }
 
-    const progress = await db
-      .select()
-      .from(importProgress)
-      .where(eq(importProgress.importId, importId))
-      .orderBy(importProgress.createdAt);
+      // Get all progress stages
+      const progressResult = await client.query(
+        `SELECT * FROM import_progress 
+         WHERE import_id = $1 AND tenant_id = $2 
+         ORDER BY created_at`,
+        [importId, tenantId]
+      );
 
+      const progressStages = progressResult.rows;
+      
       return { 
         importId,
-        stages: progress,
+        stages: progressStages,
         summary: {
-          totalStages: progress.length,
-          completedStages: progress.filter(p => p.status === 'completed').length,
-          failedStages: progress.filter(p => p.status === 'failed').length,
-          currentStage: progress.find(p => p.status === 'in_progress')?.stage
+          totalStages: progressStages.length,
+          completedStages: progressStages.filter(p => p.status === 'completed').length,
+          failedStages: progressStages.filter(p => p.status === 'failed').length,
+          currentStage: progressStages.find(p => p.status === 'in_progress')?.stage
         }
       };
     });
+
+    if (!progress) {
+      return res.status(404).json({ error: 'Import not found' });
+    }
 
     res.json(progress);
   } catch (error) {
@@ -134,47 +129,45 @@ router.get('/:importId/events', async (req: Request, res: Response) => {
     const { limit = 100, severity, eventType } = req.query;
     
     const result = await withTenantClient(tenantId, async (client) => {
-      const db = drizzle(client);
-    
-    // Verify import belongs to tenant
-    const importRecord = await db
-      .select()
-      .from(imports)
-      .where(and(
-        eq(imports.id, importId),
-        eq(imports.tenantId, tenantId)
-      ))
-      .limit(1);
-    
-    if (importRecord.length === 0) {
-      return res.status(404).json({ error: 'Import not found' });
-    }
+      // Verify import belongs to tenant
+      const importResult = await client.query(
+        'SELECT * FROM imports WHERE id = $1 AND tenant_id = $2 LIMIT 1',
+        [importId, tenantId]
+      );
+      
+      if (importResult.rows.length === 0) {
+        return null; // Will handle 404 outside callback
+      }
 
-    let query = db
-      .select()
-      .from(importAuditLog)
-      .where(eq(importAuditLog.importId, importId))
-      .$dynamic();
+      // Build query with optional filters
+      let query = `
+        SELECT * FROM import_audit_log 
+        WHERE import_id = $1
+      `;
+      const params: any[] = [importId];
+      let paramIndex = 2;
+      
+      if (severity) {
+        query += ` AND severity = $${paramIndex}`;
+        params.push(severity);
+        paramIndex++;
+      }
+      
+      if (eventType) {
+        query += ` AND event_type = $${paramIndex}`;
+        params.push(eventType);
+        paramIndex++;
+      }
+      
+      query += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
+      params.push(Number(limit));
 
-    // Add filters if provided
-    const conditions = [eq(importAuditLog.importId, importId)];
-    
-    if (severity) {
-      conditions.push(eq(importAuditLog.severity, severity as string));
-    }
-    
-    if (eventType) {
-      conditions.push(eq(importAuditLog.eventType, eventType as string));
-    }
-
-    const events = await db
-      .select()
-      .from(importAuditLog)
-      .where(and(...conditions))
-      .orderBy(desc(importAuditLog.createdAt))
-      .limit(Number(limit));
-
-      return { importId, events };
+      const eventsResult = await client.query(query, params);
+      
+      return { 
+        importId, 
+        events: eventsResult.rows 
+      };
     });
 
     if (!result) {
@@ -205,35 +198,33 @@ router.get('/metrics', async (req: Request, res: Response) => {
     const { period = 'hour', since } = req.query;
 
     const result = await withTenantClient(tenantId, async (client) => {
-      const db = drizzle(client);
-    const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const metrics = await db
-      .select()
-      .from(importMetrics)
-      .where(and(
-        eq(importMetrics.tenantId, tenantId),
-        eq(importMetrics.period, period as string),
-        gte(importMetrics.periodStart, sinceDate)
-      ))
-      .orderBy(desc(importMetrics.periodStart));
+      const metricsResult = await client.query(
+        `SELECT * FROM import_metrics_hourly 
+         WHERE tenant_id = $1 AND period = $2 AND period_start >= $3
+         ORDER BY period_start DESC`,
+        [tenantId, period, sinceDate]
+      );
 
-    // Calculate summary statistics
-    const summary = metrics.reduce((acc, m) => ({
-      totalImports: acc.totalImports + (m.totalImports || 0),
-      successfulImports: acc.successfulImports + (m.successfulImports || 0),
-      failedImports: acc.failedImports + (m.failedImports || 0),
-      totalRecords: acc.totalRecords + (m.totalRecords || 0),
-      successfulRecords: acc.successfulRecords + (m.successfulRecords || 0),
-      failedRecords: acc.failedRecords + (m.failedRecords || 0)
-    }), {
-      totalImports: 0,
-      successfulImports: 0,
-      failedImports: 0,
-      totalRecords: 0,
-      successfulRecords: 0,
-      failedRecords: 0
-    });
+      const metrics = metricsResult.rows;
+
+      // Calculate summary statistics
+      const summary = metrics.reduce((acc, m) => ({
+        totalImports: acc.totalImports + (m.total_imports || 0),
+        successfulImports: acc.successfulImports + (m.successful_imports || 0),
+        failedImports: acc.failedImports + (m.failed_imports || 0),
+        totalRecords: acc.totalRecords + (m.total_records || 0),
+        successfulRecords: acc.successfulRecords + (m.successful_records || 0),
+        failedRecords: acc.failedRecords + (m.failed_records || 0)
+      }), {
+        totalImports: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        totalRecords: 0,
+        successfulRecords: 0,
+        failedRecords: 0
+      });
 
       return { 
         period,
@@ -262,33 +253,26 @@ router.get('/active', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
 
     const activeImports = await withTenantClient(tenantId, async (client) => {
-      const db = drizzle(client);
+      // Get all processing imports with their current progress
+      const result = await client.query(
+        `SELECT 
+          i.*,
+          p.stage as current_stage,
+          p.status as stage_status,
+          p.records_processed,
+          p.records_total,
+          p.started_at as stage_started_at
+        FROM imports i
+        LEFT JOIN import_progress p ON i.id = p.import_id 
+          AND p.tenant_id = i.tenant_id
+          AND p.status = 'in_progress'
+        WHERE i.tenant_id = $1 
+          AND i.status = 'processing'
+        ORDER BY i.created_at DESC`,
+        [tenantId]
+      );
 
-    // Get all processing imports with their current progress
-    const activeImports = await db
-      .select({
-        import: imports,
-        currentStage: importProgress.stage,
-        stageStatus: importProgress.status,
-        recordsProcessed: importProgress.recordsProcessed,
-        recordsTotal: importProgress.recordsTotal,
-        startedAt: importProgress.startedAt
-      })
-      .from(imports)
-      .leftJoin(
-        importProgress,
-        and(
-          eq(imports.id, importProgress.importId),
-          eq(importProgress.status, 'in_progress')
-        )
-      )
-      .where(and(
-        eq(imports.tenantId, tenantId),
-        eq(imports.status, 'processing')
-      ))
-      .orderBy(desc(imports.createdAt));
-
-      return activeImports;
+      return result.rows;
     });
 
     res.json({ 
@@ -314,35 +298,35 @@ router.get('/errors', async (req: Request, res: Response) => {
     const { since, limit = 50 } = req.query;
 
     const result = await withTenantClient(tenantId, async (client) => {
-      const db = drizzle(client);
       const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    // Get recent errors from audit log
-    const errors = await db
-      .select({
-        importId: importAuditLog.importId,
-        filename: imports.filename,
-        stage: importAuditLog.stage,
-        message: importAuditLog.message,
-        details: importAuditLog.details,
-        createdAt: importAuditLog.createdAt
-      })
-      .from(importAuditLog)
-      .innerJoin(imports, eq(importAuditLog.importId, imports.id))
-      .where(and(
-        eq(imports.tenantId, tenantId),
-        gte(importAuditLog.createdAt, sinceDate),
-        eq(importAuditLog.severity, 'error')
-      ))
-      .orderBy(desc(importAuditLog.createdAt))
-      .limit(Number(limit));
+      // Get recent errors from audit log
+      const errorsResult = await client.query(
+        `SELECT 
+          a.import_id,
+          i.filename,
+          a.stage,
+          a.message,
+          a.details,
+          a.created_at
+        FROM import_audit_log a
+        INNER JOIN imports i ON a.import_id = i.id
+        WHERE i.tenant_id = $1 
+          AND a.created_at >= $2
+          AND a.severity = 'error'
+        ORDER BY a.created_at DESC
+        LIMIT $3`,
+        [tenantId, sinceDate, Number(limit)]
+      );
 
-    // Group errors by type
-    const errorsByType: Record<string, number> = {};
-    errors.forEach(error => {
-      const errorType = (error.details as any)?.errorType || 'Unknown';
-      errorsByType[errorType] = (errorsByType[errorType] || 0) + 1;
-    });
+      const errors = errorsResult.rows;
+
+      // Group errors by type
+      const errorsByType: Record<string, number> = {};
+      errors.forEach(error => {
+        const errorType = error.details?.errorType || 'Unknown';
+        errorsByType[errorType] = (errorsByType[errorType] || 0) + 1;
+      });
 
       return { 
         errors,
