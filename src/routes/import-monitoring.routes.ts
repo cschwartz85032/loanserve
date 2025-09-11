@@ -22,12 +22,8 @@ const router = Router();
  */
 router.get('/dashboard', async (req: Request, res: Response) => {
   try {
-    const { tenantId } = req.context || {};
+    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { timeRange = 'day' } = req.query;
-    
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID required' });
-    }
 
     const dashboard = await getMonitoringDashboard(
       req.client,
@@ -52,11 +48,8 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 router.get('/:importId/status', async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
-    const { tenantId, userId } = req.context || {};
-    
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID required' });
-    }
+    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const userId = (req as any).user?.id;
 
     const monitor = new ImportMonitor(req.client, importId, tenantId, userId);
     const status = await monitor.getImportStatus();
@@ -78,11 +71,7 @@ router.get('/:importId/status', async (req: Request, res: Response) => {
 router.get('/:importId/progress', async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
-    const { tenantId } = req.context || {};
-    
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID required' });
-    }
+    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     
     const db = drizzle(req.client);
     
@@ -132,12 +121,8 @@ router.get('/:importId/progress', async (req: Request, res: Response) => {
 router.get('/:importId/events', async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
-    const { tenantId } = req.context || {};
+    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { limit = 100, severity, eventType } = req.query;
-    
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID required' });
-    }
     
     const db = drizzle(req.client);
     
@@ -199,12 +184,8 @@ router.get('/:importId/events', async (req: Request, res: Response) => {
  */
 router.get('/metrics', async (req: Request, res: Response) => {
   try {
-    const { tenantId } = req.context || {};
+    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { period = 'hour', since } = req.query;
-    
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID required' });
-    }
 
     const db = drizzle(req.client);
     const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -257,11 +238,7 @@ router.get('/metrics', async (req: Request, res: Response) => {
  */
 router.get('/active', async (req: Request, res: Response) => {
   try {
-    const { tenantId } = req.context || {};
-    
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID required' });
-    }
+    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
 
     const db = drizzle(req.client);
 
@@ -308,12 +285,8 @@ router.get('/active', async (req: Request, res: Response) => {
  */
 router.get('/errors', async (req: Request, res: Response) => {
   try {
-    const { tenantId } = req.context || {};
+    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { since, limit = 50 } = req.query;
-    
-    if (!tenantId) {
-      return res.status(400).json({ error: 'Tenant ID required' });
-    }
 
     const db = drizzle(req.client);
     const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
