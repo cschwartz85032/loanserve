@@ -33,7 +33,28 @@ export class DocumentRouter {
     try {
       // Read the file
       const fileBuffer = await fs.readFile(filePath);
-      
+      return await this.analyzeDocumentFromBuffer(fileBuffer, fileName);
+    } catch (error) {
+      console.error('[Document Router] Error analyzing document:', error);
+      return {
+        documentType: 'unknown',
+        extractedData: {},
+        confidence: 0,
+        parserUsed: 'unknown'
+      };
+    }
+  }
+
+  /**
+   * Analyze a document from buffer by routing it to the appropriate parser
+   */
+  async analyzeDocumentFromBuffer(
+    fileBuffer: Buffer,
+    fileName: string
+  ): Promise<DocumentRouterResult> {
+    console.log(`[Document Router] Analyzing file from buffer: ${fileName}`);
+    
+    try {
       // Detect file type based on extension and content
       const fileType = this.detectFileType(fileName, fileBuffer);
       console.log(`[Document Router] Detected file type: ${fileType}`);
@@ -119,38 +140,41 @@ export class DocumentRouter {
       const fnmContent = fileBuffer.toString('utf8');
       const parseResult = parseFNMFile(fnmContent);
       
+      // Log the complete parse result for debugging
+      console.log('[Document Router] Complete FNM parse result:', JSON.stringify(parseResult, null, 2));
+      
       // Convert FNM parse result to DocumentAnalysisResult format
       const result: DocumentRouterResult = {
         documentType: 'fnm_loan_file',
         extractedData: {
-          // Map loan data
-          loanAmount: parseResult.loan?.originalBalance,
-          interestRate: parseResult.loan?.originalInterestRate,
-          loanTerm: parseResult.loan?.originalTerm,
-          loanType: parseResult.loan?.loanType,
-          closingDate: parseResult.loan?.loanDate,
-          firstPaymentDate: parseResult.loan?.firstPaymentDate,
+          // Map loan data (access first loan from loans array)
+          loanAmount: parseResult.loans?.[0]?.originalBalance,
+          interestRate: parseResult.loans?.[0]?.originalInterestRate,
+          loanTerm: parseResult.loans?.[0]?.originalTerm,
+          loanType: parseResult.loans?.[0]?.loanType,
+          closingDate: parseResult.loans?.[0]?.loanDate,
+          firstPaymentDate: parseResult.loans?.[0]?.firstPaymentDate,
           
-          // Map primary borrower data
+          // Map primary borrower data (access first borrower from borrowers array)
           borrowerName: parseResult.borrowers?.[0] ? 
-            `${parseResult.borrowers[0].firstName} ${parseResult.borrowers[0].lastName}`.trim() : undefined,
+            `${parseResult.borrowers[0].firstName || ''} ${parseResult.borrowers[0].lastName || ''}`.trim() : undefined,
           borrowerSSN: parseResult.borrowers?.[0]?.ssn,
           borrowerStreetAddress: parseResult.borrowers?.[0]?.streetAddress,
           borrowerCity: parseResult.borrowers?.[0]?.city,
           borrowerState: parseResult.borrowers?.[0]?.state,
           borrowerZipCode: parseResult.borrowers?.[0]?.zip,
           
-          // Map property data
-          propertyStreetAddress: parseResult.property?.streetAddress,
-          propertyCity: parseResult.property?.city,
-          propertyState: parseResult.property?.state,
-          propertyZipCode: parseResult.property?.zip,
-          propertyType: parseResult.property?.propertyType,
-          propertyValue: parseResult.property?.appraisedValue || parseResult.property?.purchasePrice,
+          // Map property data (access first property from properties array)
+          propertyStreetAddress: parseResult.properties?.[0]?.streetAddress,
+          propertyCity: parseResult.properties?.[0]?.city,
+          propertyState: parseResult.properties?.[0]?.state,
+          propertyZipCode: parseResult.properties?.[0]?.zip,
+          propertyType: parseResult.properties?.[0]?.propertyType,
+          propertyValue: parseResult.properties?.[0]?.appraisedValue || parseResult.properties?.[0]?.purchasePrice,
           
-          // Map employment data
-          borrowerIncome: parseResult.employment?.[0]?.monthlyIncome ? 
-            parseResult.employment[0].monthlyIncome * 12 : undefined,
+          // Map employment data (access first employment from employmentHistory array)
+          borrowerIncome: parseResult.employmentHistory?.[0]?.monthlyIncome ? 
+            parseResult.employmentHistory[0].monthlyIncome * 12 : undefined,
         },
         confidence: 1.0, // FNM parser is deterministic
         parserUsed: 'fnm'
@@ -259,6 +283,14 @@ export class DocumentRouter {
 
 // Export a singleton instance for convenience
 export const documentRouter = new DocumentRouter();
+
+// Export function to route documents from buffer 
+export async function routeDocument(fileName: string, fileBuffer: Buffer): Promise<DocumentAnalysisResult> {
+  const result = await documentRouter.analyzeDocumentFromBuffer(fileBuffer, fileName);
+  // Remove the parserUsed field for backward compatibility
+  const { parserUsed, ...documentResult } = result;
+  return documentResult;
+}
 
 // Export the main analyze function for backward compatibility
 export async function analyzeDocument(
