@@ -233,7 +233,190 @@ export async function initImportConsumer(conn: amqp.Connection) {
   });
 }
 
+/**
+ * Parse MISMO (Mortgage Industry Standards Maintenance Organization) XML data
+ */
+function parseMISMOData(xmlData: any): any[] {
+  const records: any[] = [];
+  
+  // Navigate through MISMO structure (various versions have different structures)
+  const deals = xmlData.DEAL_SETS?.DEAL_SET?.DEALS?.DEAL || 
+                xmlData.MESSAGE?.DEAL_SETS?.DEAL_SET?.DEALS?.DEAL ||
+                xmlData.DEAL || 
+                [xmlData];
+  
+  const dealArray = Array.isArray(deals) ? deals : [deals];
+  
+  for (const deal of dealArray) {
+    if (!deal) continue;
+    
+    // Extract loan data from MISMO structure
+    const loans = deal.LOANS?.LOAN || deal.LOAN || [];
+    const loanArray = Array.isArray(loans) ? loans : [loans];
+    
+    for (const loan of loanArray) {
+      if (!loan) continue;
+      
+      // Extract parties (borrowers)
+      const parties = deal.PARTIES?.PARTY || deal.PARTY || [];
+      const partyArray = Array.isArray(parties) ? parties : [parties];
+      const borrowers = partyArray.filter(p => p.ROLES?.ROLE?.BORROWER || p.BORROWER);
+      
+      // Extract property
+      const collaterals = deal.COLLATERALS?.COLLATERAL || deal.COLLATERAL || [];
+      const collateralArray = Array.isArray(collaterals) ? collaterals : [collaterals];
+      const property = collateralArray[0]?.SUBJECT_PROPERTY || collateralArray[0]?.PROPERTY || {};
+      
+      // Build record
+      const record: any = {
+        // Loan identification
+        loanNumber: loan.LOAN_IDENTIFIERS?.LOAN_IDENTIFIER?.LoanIdentifier ||
+                   loan.LoanIdentifier ||
+                   loan.LOAN_NUMBER ||
+                   `MISMO-${Date.now()}`,
+        
+        // Borrower information (take first borrower)
+        borrowerName: '',
+        
+        // Property information
+        propertyAddress: property.ADDRESS?.AddressLineText || 
+                        property.AddressLineText || 
+                        property.STREET_ADDRESS || '',
+        propertyCity: property.ADDRESS?.CityName || 
+                     property.CityName || 
+                     property.CITY || '',
+        propertyState: property.ADDRESS?.StateCode || 
+                      property.StateCode || 
+                      property.STATE || '',
+        propertyZip: property.ADDRESS?.PostalCode || 
+                    property.PostalCode || 
+                    property.ZIP || '',
+        
+        // Loan details
+        loanAmount: parseFloat(
+          loan.LOAN_DETAIL?.OriginalPrincipalAmount ||
+          loan.OriginalPrincipalAmount ||
+          loan.ORIGINAL_PRINCIPAL_AMOUNT ||
+          loan.LOAN_AMOUNT ||
+          '0'
+        ),
+        interestRate: parseFloat(
+          loan.TERMS_OF_LOAN?.NoteRatePercent ||
+          loan.NoteRatePercent ||
+          loan.NOTE_RATE ||
+          loan.INTEREST_RATE ||
+          '0'
+        ),
+        loanType: loan.LOAN_DETAIL?.LoanPurposeType || 
+                 loan.LoanPurposeType || 
+                 loan.LOAN_PURPOSE || 
+                 'conventional',
+        loanTerm: parseInt(
+          loan.TERMS_OF_LOAN?.LoanTermMonthsCount ||
+          loan.LoanTermMonthsCount ||
+          loan.LOAN_TERM ||
+          '360'
+        ),
+        
+        status: 'active',
+        sourceFormat: 'mismo'
+      };
+      
+      // Extract borrower name if available
+      if (borrowers.length > 0) {
+        const borrower = borrowers[0];
+        const individual = borrower.INDIVIDUAL || borrower.BORROWER?.INDIVIDUAL || borrower;
+        const name = individual.NAME || individual;
+        
+        record.borrowerName = [
+          name.FirstName || name.FIRST_NAME || '',
+          name.MiddleName || name.MIDDLE_NAME || '',
+          name.LastName || name.LAST_NAME || ''
+        ].filter(n => n).join(' ');
+      }
+      
+      records.push(record);
+    }
+  }
+  
+  // If no structured loan data found, return a placeholder
+  if (records.length === 0) {
+    records.push({
+      loanNumber: `MISMO-${Date.now()}`,
+      borrowerName: 'Unknown',
+      propertyAddress: 'Unknown',
+      loanAmount: 0,
+      interestRate: 0,
+      loanType: 'conventional',
+      status: 'active',
+      sourceFormat: 'mismo',
+      parseError: 'Could not extract loan data from MISMO XML'
+    });
+  }
+  
+  return records;
+}
+
 async function processImportData(content: string, fileType?: string): Promise<any[]> {
+  // Check if it's XML/MISMO format
+  if (fileType === 'xml' || fileType === 'mismo' || content.trim().startsWith('<?xml') || content.trim().startsWith('<')) {
+    try {
+      // Parse XML using xmlbuilder2 (already imported in imports.routes.ts)
+      const { convert } = await import('xmlbuilder2');
+      const xmlData = convert(content, { format: 'object' }) as any;
+      
+      // Handle MISMO XML structure (loan data format)
+      if (xmlData.LOAN_APPLICATION || xmlData.MESSAGE || xmlData.DEAL_SETS) {
+        return parseMISMOData(xmlData);
+      }
+      
+      // Handle generic XML data
+      const records: any[] = [];
+      function extractLoans(obj: any, depth = 0): void {
+        if (depth > 10) return; // Prevent infinite recursion
+        
+        if (obj && typeof obj === 'object') {
+          // Check if this looks like a loan record
+          if (obj.loanNumber || obj.LoanNumber || obj.loan_number || obj.LOAN_IDENTIFIER) {
+            records.push({
+              loanNumber: obj.loanNumber || obj.LoanNumber || obj.loan_number || obj.LOAN_IDENTIFIER,
+              borrowerName: obj.borrowerName || obj.BorrowerName || obj.BORROWER_NAME || '',
+              propertyAddress: obj.propertyAddress || obj.PropertyAddress || obj.PROPERTY_ADDRESS || '',
+              loanAmount: parseFloat(obj.loanAmount || obj.LoanAmount || obj.LOAN_AMOUNT || '0'),
+              interestRate: parseFloat(obj.interestRate || obj.InterestRate || obj.INTEREST_RATE || '0'),
+              loanType: obj.loanType || obj.LoanType || obj.LOAN_TYPE || 'conventional',
+              status: 'active'
+            });
+          }
+          
+          // Recursively search for loan data
+          for (const key in obj) {
+            if (Array.isArray(obj[key])) {
+              obj[key].forEach((item: any) => extractLoans(item, depth + 1));
+            } else if (typeof obj[key] === 'object') {
+              extractLoans(obj[key], depth + 1);
+            }
+          }
+        }
+      }
+      
+      extractLoans(xmlData);
+      
+      if (records.length === 0) {
+        // If no loan-like structures found, treat as generic data
+        if (Array.isArray(xmlData)) {
+          return xmlData;
+        } else {
+          return [xmlData];
+        }
+      }
+      
+      return records;
+    } catch (error) {
+      throw new Error(`Invalid XML format: ${error.message}`);
+    }
+  }
+  
   // Check if it's FNM format (starts with record type codes)
   if (fileType === 'fnm' || /^(01|02|03|04|05|06|07|08|09|10|11|12|13|14|15|16)/.test(content.trim())) {
     const validation = validateFNMFile(content);
