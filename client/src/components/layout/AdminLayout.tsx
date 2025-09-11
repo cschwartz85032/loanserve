@@ -10,7 +10,8 @@ import {
   Menu,
   Building2,
   Undo2,
-  Activity
+  Activity,
+  FileUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       title: 'Users',
       href: '/admin/users',
       icon: Users,
+    },
+    {
+      title: 'Import Monitoring',
+      href: '/admin/import-monitoring',
+      icon: FileUp,
     },
     {
       title: 'Queue Monitor',

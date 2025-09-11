@@ -32,6 +32,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import AdminLayout from '@/components/layout/AdminLayout';
 
 interface ImportProgress {
   importId: string;
@@ -135,13 +136,13 @@ export default function ImportMonitoringDashboard() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6" data-testid="page-import-monitoring">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Import Monitoring</h1>
-          <p className="text-muted-foreground">Real-time monitoring of file imports and processing</p>
-        </div>
+    <AdminLayout>
+      <div className="space-y-6" data-testid="page-import-monitoring">
+        {/* Header */}
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="text-muted-foreground">Real-time monitoring of file imports and processing</p>
+          </div>
         <div className="flex gap-2">
           <Button
             variant={autoRefresh ? 'default' : 'outline'}
@@ -467,6 +468,7 @@ export default function ImportMonitoringDashboard() {
           </CardContent>
         </Card>
       )}
-    </div>
+      </div>
+    </AdminLayout>
   );
 }
