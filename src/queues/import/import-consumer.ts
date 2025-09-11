@@ -9,6 +9,7 @@ import { AIPipelineService } from '../../database/ai-pipeline-service';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 import { parseFNMFile, validateFNMFile } from '../../parsers/fnm-parser';
+import { ImportMonitor } from '../../services/import-monitor';
 
 // Initialize S3 client
 const s3Client = new S3Client({
@@ -23,14 +24,28 @@ export async function initImportConsumer(conn: amqp.Connection) {
   await startConsumer(conn, {
     queue: Queues.Import,
     handler: async (payload, { client }) => {
-      const { importId, tenantId, s3Bucket, s3Key, fileType, sha256, fileBuffer } = payload;
+      const { importId, tenantId, s3Bucket, s3Key, fileType, sha256, fileBuffer, userId } = payload;
       const db = drizzle(client);
       const service = new AIPipelineService();
+      const monitor = new ImportMonitor(client, importId, tenantId, userId);
 
       try {
+        // Start monitoring
+        await monitor.logEvent({
+          eventType: 'stage_start',
+          message: `Starting import processing for ${importId}`,
+          severity: 'info',
+          details: { fileType, s3Bucket, s3Key }
+        });
+        
+        await monitor.startStage('validation', 1, { fileType, s3Bucket, s3Key });
         await service.updateImportProgress(importId, 'processing', {}, tenantId);
+        await monitor.completeStage('validation', 'completed');
 
         let importContent: string;
+        
+        // Start upload/download stage
+        await monitor.startStage('upload', 1, { source: s3Bucket ? 's3' : 'buffer' });
         
         // Support both S3 reference (new) and base64 buffer (legacy)
         if (s3Bucket && s3Key) {
@@ -54,18 +69,48 @@ export async function initImportConsumer(conn: amqp.Connection) {
           const crypto = await import('crypto');
           const downloadedHash = crypto.createHash('sha256').update(importContent).digest('hex');
           if (sha256 && downloadedHash !== sha256) {
+            await monitor.logError('upload', `File integrity check failed. Expected SHA256: ${sha256}, got: ${downloadedHash}`);
+            await monitor.completeStage('upload', 'failed');
             throw new Error(`File integrity check failed. Expected SHA256: ${sha256}, got: ${downloadedHash}`);
           }
+          
+          await monitor.completeStage('upload', 'completed');
         } else if (fileBuffer) {
           // Legacy: decode from base64
           importContent = Buffer.from(fileBuffer, 'base64').toString('utf-8');
+          await monitor.completeStage('upload', 'completed');
         } else {
+          await monitor.logError('upload', 'No file content available: neither S3 location nor buffer provided');
+          await monitor.completeStage('upload', 'failed');
           throw new Error('No file content available: neither S3 location nor buffer provided');
         }
 
-        const processedRecords = await processImportData(importContent, fileType);
+        // Start parsing stage
+        await monitor.startStage('parsing', 1, { fileType });
+        
+        let processedRecords;
+        try {
+          processedRecords = await processImportData(importContent, fileType);
+          await monitor.updateProgress('parsing', {
+            recordsTotal: processedRecords.length,
+            recordsProcessed: processedRecords.length,
+            recordsSuccess: processedRecords.length
+          });
+          await monitor.completeStage('parsing', 'completed');
+        } catch (error) {
+          await monitor.logError('parsing', error as Error, undefined, { fileType });
+          await monitor.completeStage('parsing', 'failed', error);
+          throw error;
+        }
 
-        for (const record of processedRecords) {
+        // Start entity creation stage
+        await monitor.startStage('entity_creation', processedRecords.length);
+        
+        for (let i = 0; i < processedRecords.length; i++) {
+          const record = processedRecords[i];
+          const recordId = record.loanNumber || `record_${i}`;
+          
+          try {
           // Create a property first (or find existing)
           const [property] = await db
             .insert(properties)
@@ -118,7 +163,18 @@ export async function initImportConsumer(conn: amqp.Connection) {
               });
             }
           }
+          
+          await monitor.recordProcessed('entity_creation', recordId, true, { index: i });
+          } catch (error) {
+            await monitor.recordProcessed('entity_creation', recordId, false, {
+              error: error instanceof Error ? error.message : String(error)
+            });
+            // Continue processing other records
+          }
         }
+        
+        await monitor.completeStage('entity_creation', 'completed');
+        await monitor.startStage('persistence', 1);
 
         await service.updateImportProgress(
           importId,
@@ -126,6 +182,9 @@ export async function initImportConsumer(conn: amqp.Connection) {
           { loanCount: processedRecords.length, parsedByVersion: '1.0.0' },
           tenantId
         );
+        
+        await monitor.completeStage('persistence', 'completed');
+        await monitor.startStage('complete', 1);
 
         await auditAction(client, {
           tenantId,
@@ -142,13 +201,32 @@ export async function initImportConsumer(conn: amqp.Connection) {
           eventType: 'ImportCompleted',
           payload: { recordCount: processedRecords.length },
         });
+        
+        await monitor.completeStage('complete', 'completed');
+        await monitor.updateMetrics();
+        
+        await monitor.logEvent({
+          eventType: 'stage_complete',
+          message: `Import ${importId} completed successfully`,
+          severity: 'info',
+          details: { totalRecords: processedRecords.length }
+        });
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        await monitor.logError('complete', error as Error, undefined, {
+          importId,
+          errorMessage
+        });
+        
         await service.updateImportProgress(
           importId,
           'failed',
-          { errors: [error instanceof Error ? error.message : String(error)] },
+          { errors: [errorMessage] },
           tenantId
         );
+        
+        await monitor.updateMetrics();
         throw error;
       }
     },
