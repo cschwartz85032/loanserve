@@ -558,7 +558,7 @@ export async function getMonitoringDashboard(
       p.current_record,
       p.records_total,
       p.records_processed,
-      p.records_failed,
+      p.records_failed AS records_failed,
       CASE 
         WHEN p.records_total > 0 
         THEN (p.records_processed::float / p.records_total::float) * 100 

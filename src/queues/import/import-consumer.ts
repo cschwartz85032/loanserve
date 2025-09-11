@@ -115,7 +115,7 @@ export async function initImportConsumer(conn: amqp.Connection) {
           const [property] = await db
             .insert(properties)
             .values({
-              address: record.propertyAddress || '123 Main St',
+              streetAddress: record.propertyAddress || '123 Main St',
               city: record.propertyCity || 'Unknown',
               state: record.propertyState || 'CA',
               zipCode: record.propertyZip || '00000',

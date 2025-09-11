@@ -4,19 +4,30 @@
  * REFACTORED: Uses only raw SQL queries with PoolClient
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { ImportMonitor, getMonitoringDashboard } from '../services/import-monitor';
 import { withTenantClient } from '../db/withTenantClient';
 
 const router = Router();
 
+// Authentication middleware - all monitoring routes require authentication
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!(req as any).isAuthenticated || !(req as any).isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (!(req as any).user?.tenantId) {
+    return res.status(403).json({ error: 'Invalid user session - missing tenant context' });
+  }
+  next();
+}
+
 /**
  * Get monitoring dashboard data
  * GET /api/imports/monitoring/dashboard
  */
-router.get('/dashboard', async (req: Request, res: Response) => {
+router.get('/dashboard', requireAuth, async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = (req as any).user.tenantId; // No fallback - auth required
     const { timeRange = 'day' } = req.query;
 
     const dashboard = await withTenantClient(tenantId, async (client) => {
@@ -41,10 +52,10 @@ router.get('/dashboard', async (req: Request, res: Response) => {
  * Get detailed status for a specific import
  * GET /api/imports/monitoring/:importId/status
  */
-router.get('/:importId/status', async (req: Request, res: Response) => {
+router.get('/:importId/status', requireAuth, async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
-    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = (req as any).user.tenantId; // No fallback - auth required
     const userId = (req as any).user?.id;
 
     const status = await withTenantClient(tenantId, async (client) => {
@@ -66,10 +77,10 @@ router.get('/:importId/status', async (req: Request, res: Response) => {
  * Get progress for all stages of an import
  * GET /api/imports/monitoring/:importId/progress
  */
-router.get('/:importId/progress', async (req: Request, res: Response) => {
+router.get('/:importId/progress', requireAuth, async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
-    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = (req as any).user.tenantId; // No fallback - auth required
     
     const progress = await withTenantClient(tenantId, async (client) => {
       // Verify import belongs to tenant
@@ -122,10 +133,10 @@ router.get('/:importId/progress', async (req: Request, res: Response) => {
  * Get audit log events for an import
  * GET /api/imports/monitoring/:importId/events
  */
-router.get('/:importId/events', async (req: Request, res: Response) => {
+router.get('/:importId/events', requireAuth, async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
-    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = (req as any).user.tenantId; // No fallback - auth required
     const { limit = 100, severity, eventType } = req.query;
     
     const result = await withTenantClient(tenantId, async (client) => {
@@ -192,9 +203,9 @@ router.get('/:importId/events', async (req: Request, res: Response) => {
  * Get aggregated metrics for imports
  * GET /api/imports/monitoring/metrics
  */
-router.get('/metrics', async (req: Request, res: Response) => {
+router.get('/metrics', requireAuth, async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = (req as any).user.tenantId; // No fallback - auth required
     const { period = 'hour', since } = req.query;
 
     const result = await withTenantClient(tenantId, async (client) => {
@@ -248,9 +259,9 @@ router.get('/metrics', async (req: Request, res: Response) => {
  * Get real-time status of all active imports
  * GET /api/imports/monitoring/active
  */
-router.get('/active', async (req: Request, res: Response) => {
+router.get('/active', requireAuth, async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = (req as any).user.tenantId; // No fallback - auth required
 
     const activeImports = await withTenantClient(tenantId, async (client) => {
       // Get all processing imports with their current progress
@@ -292,9 +303,9 @@ router.get('/active', async (req: Request, res: Response) => {
  * Get import error summary
  * GET /api/imports/monitoring/errors
  */
-router.get('/errors', async (req: Request, res: Response) => {
+router.get('/errors', requireAuth, async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = (req as any).user.tenantId; // No fallback - auth required
     const { since, limit = 50 } = req.query;
 
     const result = await withTenantClient(tenantId, async (client) => {

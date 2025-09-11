@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
 import { AIPipelineService } from '../database/ai-pipeline-service';
@@ -12,6 +12,17 @@ import { Readable } from 'stream';
 export const importsRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Authentication middleware
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!(req as any).isAuthenticated || !(req as any).isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  if (!(req as any).user?.tenantId) {
+    return res.status(403).json({ error: 'Invalid user session - missing tenant context' });
+  }
+  next();
+}
+
 // Initialize S3 client
 const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -24,13 +35,13 @@ const s3Client = new S3Client({
 const S3_BUCKET = process.env.S3_IMPORT_BUCKET || 'loanserve-imports';
 
 // Create import job with S3 upload
-importsRouter.post('/imports', upload.single('file'), async (req: any, res) => {
+importsRouter.post('/imports', requireAuth, upload.single('file'), async (req: any, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'File required' });
     }
 
-    const tenantId = req.user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = req.user.tenantId; // No fallback - auth required
     const importType = req.body.importType || 'csv';
     const hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
     const service = new AIPipelineService();
@@ -68,7 +79,7 @@ importsRouter.post('/imports', upload.single('file'), async (req: any, res) => {
       s3VersionId: uploadResult.VersionId,
       s3ETag: uploadResult.ETag,
       contentType: req.file.mimetype,
-      createdBy: req.user?.id || tenantId
+      createdBy: req.user.id // Auth ensures user exists
     });
 
     // Parse first 100KB for preview (without loading entire file)
@@ -153,9 +164,9 @@ async function parseImportContent(content: string, type: string): Promise<any[]>
 }
 
 // Fetch import status
-importsRouter.get('/imports/:id', async (req: any, res) => {
+importsRouter.get('/imports/:id', requireAuth, async (req: any, res) => {
   try {
-    const tenantId = req.user?.tenantId || '00000000-0000-0000-0000-000000000001';
+    const tenantId = req.user.tenantId; // No fallback - auth required
     const service = new AIPipelineService();
     const record = await service.getImport(req.params.id, tenantId);
 
