@@ -1,6 +1,7 @@
 /**
  * Import Monitor Service
  * Provides comprehensive monitoring and progress tracking for import operations
+ * REFACTORED: Uses only raw SQL queries with PoolClient
  */
 
 import { PoolClient } from 'pg';
@@ -56,19 +57,19 @@ export interface ImportEvent {
 }
 
 export class ImportMonitor {
-  private db: ReturnType<typeof drizzle>;
+  private client: PoolClient;
   private importId: string;
   private tenantId: string;
   private userId?: string;
   private stageStartTimes: Map<ImportStage, Date> = new Map();
 
   constructor(
-    client: postgres.Sql,
+    client: PoolClient,
     importId: string,
     tenantId: string,
     userId?: string
   ) {
-    this.db = drizzle(client);
+    this.client = client;
     this.importId = importId;
     this.tenantId = tenantId;
     this.userId = userId;
@@ -85,45 +86,39 @@ export class ImportMonitor {
     const startTime = new Date();
     this.stageStartTimes.set(stage, startTime);
 
-    // Create or update progress record
-    const existing = await this.db
-      .select()
-      .from(importProgress)
-      .where(and(
-        eq(importProgress.importId, this.importId),
-        eq(importProgress.stage, stage)
-      ))
-      .limit(1);
+    // Check if progress record exists
+    const existingResult = await this.client.query(
+      `SELECT id FROM import_progress 
+       WHERE import_id = $1 AND stage = $2 AND tenant_id = $3 
+       LIMIT 1`,
+      [this.importId, stage, this.tenantId]
+    );
 
-    if (existing.length > 0) {
-      await this.db
-        .update(importProgress)
-        .set({
-          status: 'in_progress',
-          startedAt: startTime,
-          recordsTotal: totalRecords,
-          recordsProcessed: 0,
-          recordsSuccess: 0,
-          recordsFailed: 0,
-          recordsSkipped: 0,
-          metadata: metadata || {},
-          updatedAt: startTime
-        })
-        .where(eq(importProgress.id, existing[0].id));
+    if (existingResult.rows.length > 0) {
+      // Update existing record
+      await this.client.query(
+        `UPDATE import_progress 
+         SET status = 'in_progress',
+             started_at = $1,
+             records_total = $2,
+             records_processed = 0,
+             records_success = 0,
+             records_failed = 0,
+             records_skipped = 0,
+             metadata = $3,
+             updated_at = $1
+         WHERE id = $4`,
+        [startTime, totalRecords, metadata || {}, existingResult.rows[0].id]
+      );
     } else {
-      await this.db.insert(importProgress).values({
-        importId: this.importId,
-        tenantId: this.tenantId,
-        stage,
-        status: 'in_progress',
-        startedAt: startTime,
-        recordsTotal: totalRecords,
-        recordsProcessed: 0,
-        recordsSuccess: 0,
-        recordsFailed: 0,
-        recordsSkipped: 0,
-        metadata: metadata || {}
-      });
+      // Create new progress record
+      await this.client.query(
+        `INSERT INTO import_progress 
+         (import_id, tenant_id, stage, status, started_at, records_total, 
+          records_processed, records_success, records_failed, records_skipped, metadata)
+         VALUES ($1, $2, $3, 'in_progress', $4, $5, 0, 0, 0, 0, $6)`,
+        [this.importId, this.tenantId, stage, startTime, totalRecords, metadata || {}]
+      );
     }
 
     // Log audit event
@@ -143,26 +138,69 @@ export class ImportMonitor {
     stage: ImportStage,
     updates: Partial<StageProgress>
   ): Promise<void> {
-    const progress = await this.db
-      .select()
-      .from(importProgress)
-      .where(and(
-        eq(importProgress.importId, this.importId),
-        eq(importProgress.stage, stage)
-      ))
-      .limit(1);
+    // Get current progress record
+    const progressResult = await this.client.query(
+      `SELECT id FROM import_progress 
+       WHERE import_id = $1 AND stage = $2 AND tenant_id = $3 
+       LIMIT 1`,
+      [this.importId, stage, this.tenantId]
+    );
 
-    if (progress.length === 0) {
+    if (progressResult.rows.length === 0) {
       throw new Error(`No progress record found for stage ${stage}`);
     }
 
-    await this.db
-      .update(importProgress)
-      .set({
-        ...updates,
-        updatedAt: new Date()
-      })
-      .where(eq(importProgress.id, progress[0].id));
+    // Build dynamic update query
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+    let paramIndex = 1;
+
+    if (updates.status !== undefined) {
+      updateFields.push(`status = $${paramIndex++}`);
+      updateValues.push(updates.status);
+    }
+    if (updates.recordsProcessed !== undefined) {
+      updateFields.push(`records_processed = $${paramIndex++}`);
+      updateValues.push(updates.recordsProcessed);
+    }
+    if (updates.recordsSuccess !== undefined) {
+      updateFields.push(`records_success = $${paramIndex++}`);
+      updateValues.push(updates.recordsSuccess);
+    }
+    if (updates.recordsFailed !== undefined) {
+      updateFields.push(`records_failed = $${paramIndex++}`);
+      updateValues.push(updates.recordsFailed);
+    }
+    if (updates.recordsSkipped !== undefined) {
+      updateFields.push(`records_skipped = $${paramIndex++}`);
+      updateValues.push(updates.recordsSkipped);
+    }
+    if (updates.currentRecord !== undefined) {
+      updateFields.push(`current_record = $${paramIndex++}`);
+      updateValues.push(updates.currentRecord);
+    }
+    if (updates.errorDetails !== undefined) {
+      updateFields.push(`error_details = $${paramIndex++}`);
+      updateValues.push(updates.errorDetails);
+    }
+    if (updates.metadata !== undefined) {
+      updateFields.push(`metadata = $${paramIndex++}`);
+      updateValues.push(updates.metadata);
+    }
+
+    // Always update timestamp
+    updateFields.push(`updated_at = $${paramIndex++}`);
+    updateValues.push(new Date());
+
+    // Add id to values
+    updateValues.push(progressResult.rows[0].id);
+
+    await this.client.query(
+      `UPDATE import_progress 
+       SET ${updateFields.join(', ')}
+       WHERE id = $${paramIndex}`,
+      updateValues
+    );
   }
 
   /**
@@ -177,53 +215,54 @@ export class ImportMonitor {
     const startedAt = this.stageStartTimes.get(stage);
     const durationMs = startedAt ? completedAt.getTime() - startedAt.getTime() : 0;
 
-    const progress = await this.db
-      .select()
-      .from(importProgress)
-      .where(and(
-        eq(importProgress.importId, this.importId),
-        eq(importProgress.stage, stage)
-      ))
-      .limit(1);
+    // Get progress record
+    const progressResult = await this.client.query(
+      `SELECT * FROM import_progress 
+       WHERE import_id = $1 AND stage = $2 AND tenant_id = $3 
+       LIMIT 1`,
+      [this.importId, stage, this.tenantId]
+    );
 
-    if (progress.length > 0) {
-      await this.db
-        .update(importProgress)
-        .set({
+    if (progressResult.rows.length > 0) {
+      const progress = progressResult.rows[0];
+      
+      await this.client.query(
+        `UPDATE import_progress 
+         SET status = $1,
+             completed_at = $2,
+             duration_ms = $3,
+             error_details = $4,
+             updated_at = $2
+         WHERE id = $5`,
+        [status, completedAt, durationMs, errorDetails || null, progress.id]
+      );
+
+      // Log audit event
+      await this.logEvent({
+        eventType: 'stage_complete',
+        stage,
+        message: `Completed ${stage} stage with status: ${status}`,
+        details: { 
+          durationMs, 
           status,
-          completedAt,
-          durationMs,
-          errorDetails: errorDetails || null,
-          updatedAt: completedAt
-        })
-        .where(eq(importProgress.id, progress[0].id));
+          recordsProcessed: progress.records_processed || 0,
+          recordsSuccess: progress.records_success || 0,
+          recordsFailed: progress.records_failed || 0
+        },
+        severity: status === 'failed' ? 'error' : 'info'
+      });
     }
-
-    // Log audit event
-    await this.logEvent({
-      eventType: 'stage_complete',
-      stage,
-      message: `Completed ${stage} stage with status: ${status}`,
-      details: { 
-        durationMs, 
-        status,
-        recordsProcessed: progress[0]?.recordsProcessed || 0,
-        recordsSuccess: progress[0]?.recordsSuccess || 0,
-        recordsFailed: progress[0]?.recordsFailed || 0
-      },
-      severity: status === 'failed' ? 'error' : 'info'
-    });
 
     // Update import status if stage failed
     if (status === 'failed') {
-      await this.db
-        .update(imports)
-        .set({
-          status: 'failed',
-          errorCount: sql`${imports.errorCount} + 1`,
-          updatedAt: completedAt
-        })
-        .where(eq(imports.id, this.importId));
+      await this.client.query(
+        `UPDATE imports 
+         SET status = 'failed',
+             error_count = COALESCE(error_count, 0) + 1,
+             updated_at = $1
+         WHERE id = $2 AND tenant_id = $3`,
+        [completedAt, this.importId, this.tenantId]
+      );
     }
   }
 
@@ -236,33 +275,38 @@ export class ImportMonitor {
     success: boolean,
     details?: Record<string, any>
   ): Promise<void> {
-    // Update progress counters
-    const progress = await this.db
-      .select()
-      .from(importProgress)
-      .where(and(
-        eq(importProgress.importId, this.importId),
-        eq(importProgress.stage, stage)
-      ))
-      .limit(1);
+    // Get current progress
+    const progressResult = await this.client.query(
+      `SELECT * FROM import_progress 
+       WHERE import_id = $1 AND stage = $2 AND tenant_id = $3 
+       LIMIT 1`,
+      [this.importId, stage, this.tenantId]
+    );
 
-    if (progress.length > 0) {
-      const updates: any = {
-        recordsProcessed: (progress[0].recordsProcessed || 0) + 1,
-        currentRecord: { identifier: recordIdentifier, ...details },
-        updatedAt: new Date()
-      };
-
-      if (success) {
-        updates.recordsSuccess = (progress[0].recordsSuccess || 0) + 1;
-      } else {
-        updates.recordsFailed = (progress[0].recordsFailed || 0) + 1;
-      }
-
-      await this.db
-        .update(importProgress)
-        .set(updates)
-        .where(eq(importProgress.id, progress[0].id));
+    if (progressResult.rows.length > 0) {
+      const progress = progressResult.rows[0];
+      
+      const recordsProcessed = (progress.records_processed || 0) + 1;
+      const recordsSuccess = success ? (progress.records_success || 0) + 1 : (progress.records_success || 0);
+      const recordsFailed = !success ? (progress.records_failed || 0) + 1 : (progress.records_failed || 0);
+      
+      await this.client.query(
+        `UPDATE import_progress 
+         SET records_processed = $1,
+             records_success = $2,
+             records_failed = $3,
+             current_record = $4,
+             updated_at = $5
+         WHERE id = $6`,
+        [
+          recordsProcessed,
+          recordsSuccess,
+          recordsFailed,
+          { identifier: recordIdentifier, ...details },
+          new Date(),
+          progress.id
+        ]
+      );
     }
 
     // Log detailed event for debugging
@@ -280,18 +324,24 @@ export class ImportMonitor {
    * Log an import event
    */
   async logEvent(event: ImportEvent): Promise<void> {
-    await this.db.insert(importAuditLog).values({
-      importId: this.importId,
-      eventType: event.eventType,
-      stage: event.stage || null,
-      recordIdentifier: event.recordIdentifier || null,
-      message: event.message,
-      details: event.details || {},
-      severity: event.severity,
-      stackTrace: event.stackTrace || null,
-      userId: this.userId || null,
-      correlationId: event.correlationId || null
-    });
+    await this.client.query(
+      `INSERT INTO import_audit_log 
+       (import_id, event_type, stage, record_identifier, message, 
+        details, severity, stack_trace, user_id, correlation_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        this.importId,
+        event.eventType,
+        event.stage || null,
+        event.recordIdentifier || null,
+        event.message,
+        event.details || {},
+        event.severity,
+        event.stackTrace || null,
+        this.userId || null,
+        event.correlationId || null
+      ]
+    );
   }
 
   /**
@@ -339,23 +389,28 @@ export class ImportMonitor {
     currentStage?: ImportStage;
     overallProgress: number;
   }> {
-    const importResult = await this.db.query(
-      'SELECT * FROM imports WHERE id = $1 LIMIT 1',
-      [this.importId]
+    // Get import record
+    const importResult = await this.client.query(
+      'SELECT * FROM imports WHERE id = $1 AND tenant_id = $2 LIMIT 1',
+      [this.importId, this.tenantId]
     );
     const importData = importResult.rows[0];
 
-    const stagesResult = await this.db.query(
-      'SELECT * FROM import_progress WHERE import_id = $1 ORDER BY created_at',
-      [this.importId]
+    // Get all stages for this import
+    const stagesResult = await this.client.query(
+      `SELECT * FROM import_progress 
+       WHERE import_id = $1 AND tenant_id = $2 
+       ORDER BY created_at`,
+      [this.importId, this.tenantId]
     );
     const stages = stagesResult.rows;
 
+    // Find current stage
     const currentStage = stages.find(s => s.status === 'in_progress')?.stage as ImportStage;
     
     // Calculate overall progress
-    const totalRecords = stages.reduce((sum, s) => sum + (s.total_records || 0), 0);
-    const processedRecords = stages.reduce((sum, s) => sum + (s.processed_records || 0), 0);
+    const totalRecords = stages.reduce((sum, s) => sum + (s.records_total || 0), 0);
+    const processedRecords = stages.reduce((sum, s) => sum + (s.records_processed || 0), 0);
     const overallProgress = totalRecords > 0 ? (processedRecords / totalRecords) * 100 : 0;
 
     return {
@@ -370,8 +425,11 @@ export class ImportMonitor {
    * Get recent events for this import
    */
   async getRecentEvents(limit: number = 100): Promise<any[]> {
-    const result = await this.db.query(
-      'SELECT * FROM import_audit_log WHERE import_id = $1 ORDER BY created_at DESC LIMIT $2',
+    const result = await this.client.query(
+      `SELECT * FROM import_audit_log 
+       WHERE import_id = $1 
+       ORDER BY created_at DESC 
+       LIMIT $2`,
       [this.importId, limit]
     );
     return result.rows;
@@ -381,15 +439,20 @@ export class ImportMonitor {
    * Update aggregated metrics (called after import completion)
    */
   async updateMetrics(): Promise<void> {
-    const stagesResult = await this.db.query(
-      'SELECT * FROM import_progress WHERE import_id = $1',
-      [this.importId]
+    // Get all stages for this import
+    const stagesResult = await this.client.query(
+      `SELECT * FROM import_progress 
+       WHERE import_id = $1 AND tenant_id = $2`,
+      [this.importId, this.tenantId]
     );
     const stages = stagesResult.rows;
 
-    const importResult = await this.db.query(
-      'SELECT * FROM imports WHERE id = $1 LIMIT 1',
-      [this.importId]
+    // Get import record
+    const importResult = await this.client.query(
+      `SELECT * FROM imports 
+       WHERE id = $1 AND tenant_id = $2 
+       LIMIT 1`,
+      [this.importId, this.tenantId]
     );
     const importData = importResult.rows[0];
 
@@ -399,22 +462,24 @@ export class ImportMonitor {
     const periodStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0);
     const periodEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 59, 59);
 
-    // Calculate total processing time
+    // Calculate totals
     const totalDurationMs = stages.reduce((sum, s) => sum + (s.duration_ms || 0), 0);
-    const totalRecords = stages.reduce((sum, s) => sum + (s.processed_records || 0), 0);
-    const successRecords = stages.reduce((sum, s) => sum + (s.success_records || 0), 0);
-    const failedRecords = stages.reduce((sum, s) => sum + (s.failed_records || 0), 0);
+    const totalRecords = stages.reduce((sum, s) => sum + (s.records_processed || 0), 0);
+    const successRecords = stages.reduce((sum, s) => sum + (s.records_success || 0), 0);
+    const failedRecords = stages.reduce((sum, s) => sum + (s.records_failed || 0), 0);
 
-    // Update or create hourly metrics
-    const existingResult = await this.db.query(
+    // Check for existing metrics record
+    const existingResult = await this.client.query(
       `SELECT * FROM import_metrics_hourly 
-       WHERE tenant_id = $1 AND period = $2 AND period_start = $3 LIMIT 1`,
-      [this.tenantId, 'hour', periodStart]
+       WHERE tenant_id = $1 AND period = 'hour' AND period_start = $2 
+       LIMIT 1`,
+      [this.tenantId, periodStart]
     );
-    const existing = existingResult.rows;
 
-    if (existing.length > 0) {
-      await this.db.query(
+    if (existingResult.rows.length > 0) {
+      const existing = existingResult.rows[0];
+      // Update existing metrics
+      await this.client.query(
         `UPDATE import_metrics_hourly 
          SET total_imports = total_imports + 1,
              successful_imports = successful_imports + $1,
@@ -422,7 +487,8 @@ export class ImportMonitor {
              total_records = total_records + $3,
              successful_records = successful_records + $4,
              failed_records = failed_records + $5,
-             avg_processing_time_ms = (avg_processing_time_ms * total_imports + $6) / (total_imports + 1)
+             avg_processing_time_ms = (avg_processing_time_ms * total_imports + $6) / (total_imports + 1),
+             updated_at = NOW()
          WHERE id = $7`,
         [
           importData.status === 'completed' ? 1 : 0,
@@ -431,21 +497,20 @@ export class ImportMonitor {
           successRecords,
           failedRecords,
           totalDurationMs,
-          existing[0].id
+          existing.id
         ]
       );
     } else {
-      await this.db.query(
+      // Create new metrics record
+      await this.client.query(
         `INSERT INTO import_metrics_hourly 
          (tenant_id, period, period_start, period_end, total_imports, successful_imports, 
           failed_imports, total_records, successful_records, failed_records, avg_processing_time_ms)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         VALUES ($1, 'hour', $2, $3, 1, $4, $5, $6, $7, $8, $9)`,
         [
           this.tenantId,
-          'hour',
           periodStart,
           periodEnd,
-          1,
           importData.status === 'completed' ? 1 : 0,
           importData.status === 'failed' ? 1 : 0,
           totalRecords,
@@ -491,18 +556,21 @@ export async function getMonitoringDashboard(
       i.*,
       p.stage,
       p.current_record,
-      p.total_records,
-      p.processed_records,
-      p.failed_records,
-      p.percentage_complete,
-      p.estimated_completion
+      p.records_total,
+      p.records_processed,
+      p.records_failed,
+      CASE 
+        WHEN p.records_total > 0 
+        THEN (p.records_processed::float / p.records_total::float) * 100 
+        ELSE 0 
+      END as percentage_complete
     FROM imports i
-    LEFT JOIN import_progress p ON i.id = p.import_id
+    LEFT JOIN import_progress p ON i.id = p.import_id AND p.tenant_id = i.tenant_id
     WHERE i.tenant_id = $1 
       AND i.status = 'processing'
+      AND p.status = 'in_progress'
     ORDER BY i.created_at DESC
   `, [tenantId]);
-  const activeImports = activeImportsResult.rows;
 
   // Get recent imports
   const recentImportsResult = await client.query(`
@@ -512,16 +580,14 @@ export async function getMonitoringDashboard(
     ORDER BY created_at DESC
     LIMIT 20
   `, [tenantId, since]);
-  const recentImports = recentImportsResult.rows;
 
   // Get aggregated metrics
   const metricsResult = await client.query(`
-    SELECT * FROM import_metrics
+    SELECT * FROM import_metrics_hourly
     WHERE tenant_id = $1 
       AND period_start >= $2
     ORDER BY period_start DESC
   `, [tenantId, since]);
-  const metrics = metricsResult.rows;
 
   // Get recent critical events/alerts
   const alertsResult = await client.query(`
@@ -538,12 +604,11 @@ export async function getMonitoringDashboard(
     ORDER BY a.created_at DESC
     LIMIT 10
   `, [tenantId, since]);
-  const alerts = alertsResult.rows;
 
   return {
-    activeImports,
-    recentImports,
-    metrics,
-    alerts
+    activeImports: activeImportsResult.rows,
+    recentImports: recentImportsResult.rows,
+    metrics: metricsResult.rows,
+    alerts: alertsResult.rows
   };
 }
