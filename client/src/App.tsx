@@ -23,6 +23,7 @@ import AdminUsers from "@/pages/AdminUsers";
 import AdminUserDetail from "@/pages/AdminUserDetail";
 import AdminEscrow from "@/pages/admin/AdminEscrow";
 import QueueMonitor from "@/pages/admin/QueueMonitor";
+import ImportMonitoringDashboard from "@/pages/ImportMonitoringDashboard";
 
 import { queryClient } from "@/lib/queryClient";
 
@@ -165,6 +166,13 @@ function AppRoutes() {
           {() => (
             <ProtectedRoute>
               <QueueMonitor />
+            </ProtectedRoute>
+          )}
+        </Route>
+        <Route path="/admin/import-monitoring">
+          {() => (
+            <ProtectedRoute>
+              <ImportMonitoringDashboard />
             </ProtectedRoute>
           )}
         </Route>
