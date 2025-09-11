@@ -83,19 +83,31 @@ export const imports = pgTable('imports', {
   filename: text('filename').notNull(),
   sizeBytes: integer('size_bytes').notNull(),
   sha256: text('sha256').notNull(),
+  // S3 storage fields
+  s3Bucket: text('s3_bucket'),
+  s3Key: text('s3_key'),
+  s3VersionId: text('s3_version_id'),
+  s3ETag: text('s3_etag'),
+  contentType: text('content_type'),
+  // Processing metadata
   docsetId: uuid('docset_id'),
   status: text('status').notNull(),
   errorCount: integer('error_count').notNull().default(0),
   progress: jsonb('progress').notNull().default({}),
   mappingVersion: text('mapping_version'),
+  parsedByVersion: text('parsed_by_version'),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  // Business metadata
   correlationId: text('correlation_id'),
   investorDirectives: jsonb('investor_directives').default([]),
   escrowInstructions: jsonb('escrow_instructions').default([]),
+  // Audit fields
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 }, (table) => ({
-  tenantStatusIdx: index('idx_imports_tenant_status_created').on(table.tenantId, table.status, table.createdAt)
+  tenantStatusIdx: index('idx_imports_tenant_status_created').on(table.tenantId, table.status, table.createdAt),
+  s3LocationIdx: index('idx_imports_s3_location').on(table.s3Bucket, table.s3Key)
 }));
 
 // Import errors table
