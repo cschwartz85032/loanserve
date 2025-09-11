@@ -8,6 +8,7 @@ import { loans, documents, properties } from '../../../shared/schema';
 import { AIPipelineService } from '../../database/ai-pipeline-service';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
+import { parseFNMFile, validateFNMFile } from '../../parsers/fnm-parser';
 
 // Initialize S3 client
 const s3Client = new S3Client({
@@ -155,9 +156,130 @@ export async function initImportConsumer(conn: amqp.Connection) {
 }
 
 async function processImportData(content: string, fileType?: string): Promise<any[]> {
-  // Real CSV/JSON parsing implementation
-  const lines = content.trim().split('\n');
-  if (lines.length === 0) return [];
+  // Check if it's FNM format (starts with record type codes)
+  if (fileType === 'fnm' || /^(01|02|03|04|05|06|07|08|09|10|11|12|13|14|15|16)/.test(content.trim())) {
+    const validation = validateFNMFile(content);
+    if (!validation.valid) {
+      throw new Error(`Invalid FNM file: ${validation.errors.join(', ')}`);
+    }
+    
+    const fnmResult = parseFNMFile(content);
+    
+    // Log parse statistics
+    console.log('FNM Parse Statistics:', fnmResult.statistics);
+    
+    // Transform FNM data to loan records
+    const records: any[] = [];
+    
+    // Process each loan with associated data
+    // Note: FNM files typically have one loan per file, but can have multiple loans
+    // For simplicity, we'll create a record for each loan and include the first property
+    for (let i = 0; i < fnmResult.loans.length; i++) {
+      const loan = fnmResult.loans[i];
+      
+      // Get the first property (FNM files typically have one property per loan)
+      const property = fnmResult.properties[i] || fnmResult.properties[0];
+      
+      // Create a combined borrower name from the first primary borrower
+      const primaryBorrower = fnmResult.borrowers.find(b => b.borrowerPosition === 1) || fnmResult.borrowers[0];
+      const borrowerName = primaryBorrower ? 
+        `${primaryBorrower.firstName || ''} ${primaryBorrower.lastName || ''}`.trim() : 
+        '';
+      
+      const record: any = {
+        // Standard loan fields expected by persistence layer
+        loanNumber: loan.loanNumber,
+        borrowerName: borrowerName,
+        
+        // Property fields expected by persistence layer (flattened)
+        propertyAddress: property?.streetAddress || '',
+        propertyCity: property?.city || '',
+        propertyState: property?.state || '',
+        propertyZip: property?.zip || '',
+        propertyCounty: property?.county || '',
+        propertyType: property?.propertyType || '',
+        numberOfUnits: property?.numberOfUnits || 1,
+        yearBuilt: property?.yearBuilt,
+        appraisedValue: property?.appraisedValue,
+        purchasePrice: property?.purchasePrice,
+        
+        // Loan financial details
+        loanAmount: loan.originalBalance,
+        interestRate: loan.originalInterestRate,
+        loanType: loan.loanType || 'conventional',
+        term: loan.originalTerm,
+        loanDate: loan.loanDate,
+        firstPaymentDate: loan.firstPaymentDate,
+        maturityDate: loan.maturityDate,
+        ltv: loan.ltv,
+        productType: loan.productType,
+        documentationType: loan.documentationType,
+        miRequired: loan.miRequired,
+        prepaymentPenalty: loan.prepaymentPenaltyIndicator,
+        status: 'active',
+        
+        // Additional structured data (for separate processing)
+        fnmData: {
+          // All borrowers for this loan (in FNM, all borrowers are associated with the loan)
+          borrowers: fnmResult.borrowers.map(b => ({
+            position: b.borrowerPosition,
+            firstName: b.firstName,
+            middleName: b.middleName,
+            lastName: b.lastName,
+            ssn: b.ssn,
+            dateOfBirth: b.dateOfBirth,
+            email: b.email,
+            homePhone: b.homePhone,
+            cellPhone: b.cellPhone,
+            workPhone: b.workPhone,
+            address: b.streetAddress,
+            city: b.city,
+            state: b.state,
+            zip: b.zip,
+            mailingAddress: b.mailingAddress,
+            mailingCity: b.mailingCity,
+            mailingState: b.mailingState,
+            mailingZip: b.mailingZip,
+          })),
+          
+          // Employment history (linked by borrower position)
+          employmentHistory: fnmResult.employmentHistory.map(e => ({
+            borrowerPosition: e.borrowerPosition,
+            employerName: e.employerName,
+            employerAddress: e.employerAddress,
+            employerCity: e.employerCity,
+            employerState: e.employerState,
+            employerZip: e.employerZip,
+            employerPhone: e.employerPhone,
+            position: e.positionDescription,
+            startDate: e.employmentStartDate,
+            endDate: e.employmentEndDate,
+            monthlyIncome: e.monthlyIncome,
+            isSelfEmployed: e.isSelfEmployed,
+            isPrimary: e.isPrimaryEmployment,
+          })),
+          
+          // Contact points (linked by borrower position)
+          contacts: fnmResult.contacts.map(c => ({
+            borrowerPosition: c.borrowerPosition,
+            type: c.contactType,
+            value: c.contactValue,
+            preference: c.contactPreference,
+            bestTime: c.bestTime,
+            timeZone: c.timeZone,
+          })),
+        },
+        
+        // Metadata
+        sourceFormat: 'fnm',
+        parseErrors: fnmResult.parseErrors.slice(0, 10), // Limit errors to prevent huge records
+      };
+      
+      records.push(record);
+    }
+    
+    return records;
+  }
   
   // Check if it's JSON format
   if (content.trim().startsWith('[') || content.trim().startsWith('{')) {
@@ -170,6 +292,9 @@ async function processImportData(content: string, fileType?: string): Promise<an
   }
   
   // Parse as CSV
+  const lines = content.trim().split('\n');
+  if (lines.length === 0) return [];
+  
   const headers = lines[0].split(',').map(h => h.trim());
   const records: any[] = [];
   
