@@ -1,0 +1,158 @@
+Project Setup & Context
+
+Project: cschwartz85032/loanserve (monorepo; client + server + src services/queues)
+
+Language & Framework: Node.js + TypeScript (React on the client, Express on the server)
+
+Runtime / Infra:
+
+PostgreSQL (Neon Serverless) for persistence (seen in logs)
+
+RabbitMQ for async processing (queues declared & bound)
+
+S3 for import artifacts (env S3_IMPORT_BUCKET)
+
+Grok/X.AI for AI doc analysis (server AI service)
+
+Known Symptoms / Error Messages
+
+Import Monitoring Dashboard 404s / empty: UI calls /api/imports/monitoring/* endpoints, but they aren’t registered on the server. UI code shows queries against these endpoints, and routes exist in src/routes/import-monitoring.routes.ts, but server isn’t mounting them.
+
+Bulk Import stalls / 404: UI posts to /api/imports and polls /api/imports/:id, but the server doesn’t show importsRouter mounted (actual file exists).
+
+PDF Analysis intermittently unavailable: UI posts to /api/documents/analyze; server imports analyzeDocument but there is no visible app.post('/api/documents/analyze', ...) registration in server/routes.ts. Historical logs show it used to respond 200.
+
+Expected Behavior
+
+Bulk ingestion: PDFs analyzed; CSV/JSON/XML queued; progress & metrics visible in dashboard; completed jobs create loans/documents. UI implements this flow already.
+
+Monitoring: /api/imports/monitoring/* returns active jobs, errors, metrics, and per-import stage progress (routes + service present).
+
+2) Reproduction Steps
+
+Install & run
+
+npm i
+
+Ensure env vars set: DB_URL (Neon), RABBITMQ_URL, S3_IMPORT_BUCKET, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, XAI_API_KEY (or XAI_API_KEY_NEW).
+
+npm run dev (starts client & server).
+
+Trigger UI paths
+
+Navigate to Admin → Import Monitoring (/admin/import-monitoring). UI calls:
+
+/api/imports/monitoring/dashboard
+
+/api/imports/monitoring/active
+
+/api/imports/monitoring/errors
+
+/api/imports/monitoring/:id/progress
+Confirm 404/empty responses in Network panel.
+
+Trigger bulk ingestion
+
+On Bulk Ingestion tab, drop a CSV; UI POSTs /api/imports then GETs /api/imports/:id to poll. Expect failure if router not mounted.
+
+Trigger PDF analysis
+
+On AI / bulk flow, drop a PDF; UI POSTs /api/documents/analyze. If unmounted, response ≠ 200.
+
+3) Investigation & Analysis
+A) UI endpoints (confirmed)
+
+Bulk ingestion UI sends to /api/documents/analyze, /api/imports, /api/imports/:id.
+
+Monitoring dashboard UI calls /api/imports/monitoring/*.
+
+B) Server routes present but not mounted
+
+Import Monitoring routes are implemented in src/routes/import-monitoring.routes.ts (dashboard, active, errors, per-import progress) but no app.use is registering them in server/routes.ts.
+
+Imports API routes exist (src/routes/imports.routes.ts with S3 upload + queue publish + status) but no app.use('/api', importsRouter) appears in the current server/routes.ts snapshot.
+
+NOTE: There’s a proposed diff adding importsRouter to server routes (not yet visible in compiled file).
+
+C) /api/documents/analyze regression
+
+server/openai.ts provides DocumentAnalysisService used to analyze PDFs via X.AI Grok, but no visible app.post('/api/documents/analyze') in server/routes.ts. Earlier logs showed successful POSTs to that path. Likely a lost mount during refactors.
+
+D) Queue/worker path OK
+
+Document & import consumers exist and use Grok fallback and Textract, and Import consumer supports S3 references & base64 legacy buffers; it updates metrics via ImportMonitor.
+
+E) DB schema for monitoring is present
+
+AI pipeline/monitoring schema (imports, import_progress, import_audit_log, import_metrics) is implemented, with RLS/tenant policies.
+
+Root cause summary: Routes mismatch between client expectations and server mount points. The monitoring and imports routers exist but are not registered; the documents/analyze endpoint is not mounted in server/routes.ts, causing 404s / failures during ingestion and dashboard views.
+
+4) Proposed Fix
+A) Mount Import Monitoring routes
+
+Add after auth & policy middleware in server/routes.ts:
+
+// Import Monitoring routes
+const importMonitoringRoutes = (await import('../src/routes/import-monitoring.routes')).default;
+app.use('/api/imports/monitoring', importMonitoringRoutes);
+
+
+This wires the implemented handlers for dashboard, active, errors, and per-import progress.
+
+B) Mount Imports API routes
+
+Add:
+
+// Imports (upload + status)
+const { importsRouter } = await import('../src/routes/imports.routes');
+app.use('/api', importsRouter);
+
+
+This satisfies POST /api/imports and GET /api/imports/:id.
+
+C) Re-add /api/documents/analyze endpoint
+
+Implement in server/routes.ts (or a dedicated router):
+
+app.post('/api/documents/analyze', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    const { DocumentAnalysisService } = await import('./openai'); // uses X.AI Grok
+    const svc = new DocumentAnalysisService();
+    const result = await svc.analyzeFile(req.file.originalname, req.file.buffer);
+    return res.json(result); // { documentType, extractedData, confidence }
+  } catch (err) {
+    console.error('analyze error', err);
+    res.status(500).json({ error: 'analysis failed' });
+  }
+});
+
+
+Server already imports the service; we’re adding the route.
+
+D) Ensure tenant-aware DB connections in monitoring (already handled)
+
+import-monitoring.routes.ts uses withTenantClient across endpoints; no change needed.
+
+E) Environment safeguards
+
+Confirm S3_IMPORT_BUCKET for imports, and AWS creds in non-prod; keep server-side encryption to AES256 as implemented.
+
+Side effects & mitigations
+
+Auth & PII masking: Mount under /api after policy middlewares (as shown above) to preserve masking & auth flow.
+
+Rate & size limits: existing multer limits (10MB) still apply; if larger PDFs are needed, raise maxFileSize in openai.ts cautiously.
+
+Tests to add
+
+Route smoke tests:
+
+GET /api/imports/monitoring/dashboard returns JSON with activeImports/recentImports.
+
+POST /api/imports with small CSV returns 202 { importId }.
+
+POST /api/documents/analyze with small PDF returns {documentType, extractedData}.
+
+Consumer test: import-consumer end-to-end (already have Vitest skeleton for import consumer).

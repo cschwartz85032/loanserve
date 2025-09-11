@@ -249,6 +249,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const dlqRoutes = (await import('./routes/dlq-routes.js')).default;
   app.use('/api', dlqRoutes);
 
+  // Register Import Monitoring routes
+  const importMonitoringRoutes = (await import('../src/routes/import-monitoring.routes')).default;
+  app.use('/api/imports/monitoring', importMonitoringRoutes);
+
+  // Register Imports API routes (upload + status)
+  const { importsRouter } = await import('../src/routes/imports.routes');
+  app.use('/api', importsRouter);
+
+  // Register Documents Analysis endpoint
+  app.post('/api/documents/analyze', requireAuth, upload.single('file'), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'File required' });
+      }
+
+      // Use the document router to handle different file types
+      const { routeDocument } = await import('./document-router');
+      const result = await routeDocument(req.file.originalname, req.file.buffer);
+      return res.json(result);
+    } catch (error) {
+      console.error('Document analysis error:', error);
+      res.status(500).json({ 
+        error: 'Document analysis failed - document may be too complex or large',
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   // Register Phase 3 Escrow Subsystem routes
   const { escrowRoutes } = await import('./escrow/routes');
   app.use('/api/escrow', escrowRoutes);
@@ -1913,14 +1941,6 @@ To implement full file serving:
   // Register Payment routes
   const { paymentsRouter } = await import('../src/routes/payments.routes');
   app.use('/api', paymentsRouter);
-
-  // Register Import routes
-  const { importsRouter } = await import('../src/routes/imports.routes');
-  app.use('/api', importsRouter);
-  
-  // Register Import Monitoring routes
-  const importMonitoringRouter = (await import('../src/routes/import-monitoring.routes')).default;
-  app.use('/api/imports/monitoring', importMonitoringRouter);
 
   // Register Investor routes
   const { investorRouter } = await import('../src/routes/investor.routes');
