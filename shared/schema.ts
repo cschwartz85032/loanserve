@@ -687,6 +687,127 @@ export const guarantors = pgTable(
 );
 
 // ========================================
+// BORROWER ADDITIONAL INFORMATION TABLES
+// ========================================
+
+// Borrower Employment History - For servicing and garnishment
+export const borrowerEmployment = pgTable(
+  "borrower_employment",
+  {
+    id: serial("id").primaryKey(),
+    borrowerEntityId: integer("borrower_entity_id")
+      .references(() => borrowerEntities.id)
+      .notNull(),
+    
+    // Employment details
+    employerName: text("employer_name").notNull(),
+    employerPhone: text("employer_phone"),
+    employerAddress: text("employer_address"),
+    employerCity: text("employer_city"),
+    employerState: text("employer_state"),
+    employerZip: text("employer_zip"),
+    
+    // Position details
+    position: text("position"),
+    department: text("department"),
+    employmentType: text("employment_type"), // 'full_time', 'part_time', 'contract', 'self_employed'
+    
+    // Employment period
+    startDate: date("start_date"),
+    endDate: date("end_date"), // NULL if current employer
+    isCurrent: boolean("is_current").default(false),
+    
+    // Income information (for garnishment calculations)
+    monthlyIncome: decimal("monthly_income", { precision: 12, scale: 2 }),
+    payFrequency: text("pay_frequency"), // 'weekly', 'bi_weekly', 'semi_monthly', 'monthly'
+    
+    // Garnishment details
+    isGarnishable: boolean("is_garnishable").default(true),
+    garnishmentOrderId: text("garnishment_order_id"),
+    garnishmentPercentage: decimal("garnishment_percentage", {
+      precision: 5,
+      scale: 2,
+    }),
+    
+    // Verification
+    verificationDate: date("verification_date"),
+    verifiedBy: integer("verified_by").references(() => users.id),
+    verificationNotes: text("verification_notes"),
+    
+    // Source and metadata
+    source: text("source"), // 'fnm', 'manual', 'verification_service'
+    sourceImportId: text("source_import_id"),
+    
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      borrowerIdx: index("borrower_employment_borrower_idx").on(table.borrowerEntityId),
+      currentIdx: index("borrower_employment_current_idx").on(table.isCurrent),
+      garnishmentIdx: index("borrower_employment_garnishment_idx").on(table.garnishmentOrderId),
+    };
+  },
+);
+
+// Borrower References - For skip tracing and collection
+export const borrowerReferences = pgTable(
+  "borrower_references",
+  {
+    id: serial("id").primaryKey(),
+    borrowerEntityId: integer("borrower_entity_id")
+      .references(() => borrowerEntities.id)
+      .notNull(),
+    
+    // Reference details
+    referenceType: text("reference_type").notNull(), // 'personal', 'family', 'professional', 'emergency'
+    name: text("name").notNull(),
+    relationship: text("relationship"), // 'spouse', 'parent', 'sibling', 'friend', 'colleague', 'manager'
+    
+    // Contact information
+    phone: text("phone"),
+    alternatePhone: text("alternate_phone"),
+    email: text("email"),
+    
+    // Address
+    address: text("address"),
+    city: text("city"),
+    state: text("state"),
+    zipCode: text("zip_code"),
+    
+    // Additional details
+    employerName: text("employer_name"),
+    notes: text("notes"),
+    
+    // Contact preferences
+    bestTimeToContact: text("best_time_to_contact"),
+    doNotContact: boolean("do_not_contact").default(false),
+    doNotContactReason: text("do_not_contact_reason"),
+    
+    // Verification
+    lastContactDate: date("last_contact_date"),
+    lastContactResult: text("last_contact_result"),
+    verifiedDate: date("verified_date"),
+    verifiedBy: integer("verified_by").references(() => users.id),
+    
+    // Source and metadata
+    source: text("source"), // 'fnm', 'manual', 'skip_trace'
+    sourceImportId: text("source_import_id"),
+    priority: integer("priority").default(0), // Higher = more likely to have current info
+    
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return {
+      borrowerIdx: index("borrower_references_borrower_idx").on(table.borrowerEntityId),
+      typeIdx: index("borrower_references_type_idx").on(table.referenceType),
+      priorityIdx: index("borrower_references_priority_idx").on(table.priority),
+    };
+  },
+);
+
+// ========================================
 // INVESTOR TABLES
 // ========================================
 
@@ -2345,6 +2466,16 @@ export const insertGuarantorSchema = createInsertSchema(guarantors).omit({
   createdAt: true,
   updatedAt: true,
 });
+export const insertBorrowerEmploymentSchema = createInsertSchema(borrowerEmployment).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertBorrowerReferencesSchema = createInsertSchema(borrowerReferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
 export const insertInvestorSchema = createInsertSchema(investors).omit({
   id: true,
   createdAt: true,
@@ -2463,6 +2594,10 @@ export type LoanBorrower = typeof loanBorrowers.$inferSelect;
 export type InsertLoanBorrower = z.infer<typeof insertLoanBorrowerSchema>;
 export type Guarantor = typeof guarantors.$inferSelect;
 export type InsertGuarantor = z.infer<typeof insertGuarantorSchema>;
+export type BorrowerEmployment = typeof borrowerEmployment.$inferSelect;
+export type InsertBorrowerEmployment = z.infer<typeof insertBorrowerEmploymentSchema>;
+export type BorrowerReferences = typeof borrowerReferences.$inferSelect;
+export type InsertBorrowerReferences = z.infer<typeof insertBorrowerReferencesSchema>;
 export type Investor = typeof investors.$inferSelect;
 export type InsertInvestor = z.infer<typeof insertInvestorSchema>;
 export type PaymentSchedule = typeof paymentSchedule.$inferSelect;
