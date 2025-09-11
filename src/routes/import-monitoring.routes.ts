@@ -13,6 +13,7 @@ import {
   importAuditLog,
   importMetrics 
 } from '../database/ai-pipeline-schema';
+import { withTenantClient } from '../db/withTenantClient';
 
 const router = Router();
 
@@ -25,11 +26,13 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { timeRange = 'day' } = req.query;
 
-    const dashboard = await getMonitoringDashboard(
-      req.client,
-      tenantId,
-      timeRange as 'hour' | 'day' | 'week'
-    );
+    const dashboard = await withTenantClient(tenantId, async (client) => {
+      return await getMonitoringDashboard(
+        client,
+        tenantId,
+        timeRange as 'hour' | 'day' | 'week'
+      );
+    });
 
     res.json(dashboard);
   } catch (error) {
@@ -51,8 +54,10 @@ router.get('/:importId/status', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const userId = (req as any).user?.id;
 
-    const monitor = new ImportMonitor(req.client, importId, tenantId, userId);
-    const status = await monitor.getImportStatus();
+    const status = await withTenantClient(tenantId, async (client) => {
+      const monitor = new ImportMonitor(client, importId, tenantId, userId);
+      return await monitor.getImportStatus();
+    });
 
     res.json(status);
   } catch (error) {
@@ -73,7 +78,8 @@ router.get('/:importId/progress', async (req: Request, res: Response) => {
     const { importId } = req.params;
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     
-    const db = drizzle(req.client);
+    const progress = await withTenantClient(tenantId, async (client) => {
+      const db = drizzle(client);
     
     // Verify import belongs to tenant
     const importRecord = await db
@@ -95,16 +101,19 @@ router.get('/:importId/progress', async (req: Request, res: Response) => {
       .where(eq(importProgress.importId, importId))
       .orderBy(importProgress.createdAt);
 
-    res.json({ 
-      importId,
-      stages: progress,
-      summary: {
-        totalStages: progress.length,
-        completedStages: progress.filter(p => p.status === 'completed').length,
-        failedStages: progress.filter(p => p.status === 'failed').length,
-        currentStage: progress.find(p => p.status === 'in_progress')?.stage
-      }
+      return { 
+        importId,
+        stages: progress,
+        summary: {
+          totalStages: progress.length,
+          completedStages: progress.filter(p => p.status === 'completed').length,
+          failedStages: progress.filter(p => p.status === 'failed').length,
+          currentStage: progress.find(p => p.status === 'in_progress')?.stage
+        }
+      };
     });
+
+    res.json(progress);
   } catch (error) {
     console.error(`Error fetching import progress for ${req.params.importId}:`, error);
     res.status(500).json({ 
@@ -124,7 +133,8 @@ router.get('/:importId/events', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { limit = 100, severity, eventType } = req.query;
     
-    const db = drizzle(req.client);
+    const result = await withTenantClient(tenantId, async (client) => {
+      const db = drizzle(client);
     
     // Verify import belongs to tenant
     const importRecord = await db
@@ -164,10 +174,17 @@ router.get('/:importId/events', async (req: Request, res: Response) => {
       .orderBy(desc(importAuditLog.createdAt))
       .limit(Number(limit));
 
+      return { importId, events };
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: 'Import not found' });
+    }
+
     res.json({ 
-      importId,
-      events,
-      count: events.length
+      importId: result.importId,
+      events: result.events,
+      count: result.events.length
     });
   } catch (error) {
     console.error(`Error fetching import events for ${req.params.importId}:`, error);
@@ -187,7 +204,8 @@ router.get('/metrics', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { period = 'hour', since } = req.query;
 
-    const db = drizzle(req.client);
+    const result = await withTenantClient(tenantId, async (client) => {
+      const db = drizzle(client);
     const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const metrics = await db
@@ -217,12 +235,15 @@ router.get('/metrics', async (req: Request, res: Response) => {
       failedRecords: 0
     });
 
-    res.json({ 
-      period,
-      since: sinceDate,
-      metrics,
-      summary
+      return { 
+        period,
+        since: sinceDate,
+        metrics,
+        summary
+      };
     });
+
+    res.json(result);
   } catch (error) {
     console.error('Error fetching import metrics:', error);
     res.status(500).json({ 
@@ -240,7 +261,8 @@ router.get('/active', async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
 
-    const db = drizzle(req.client);
+    const activeImports = await withTenantClient(tenantId, async (client) => {
+      const db = drizzle(client);
 
     // Get all processing imports with their current progress
     const activeImports = await db
@@ -266,6 +288,9 @@ router.get('/active', async (req: Request, res: Response) => {
       ))
       .orderBy(desc(imports.createdAt));
 
+      return activeImports;
+    });
+
     res.json({ 
       activeImports,
       count: activeImports.length
@@ -288,8 +313,9 @@ router.get('/errors', async (req: Request, res: Response) => {
     const tenantId = (req as any).user?.tenantId || '00000000-0000-0000-0000-000000000001';
     const { since, limit = 50 } = req.query;
 
-    const db = drizzle(req.client);
-    const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const result = await withTenantClient(tenantId, async (client) => {
+      const db = drizzle(client);
+      const sinceDate = since ? new Date(since as string) : new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     // Get recent errors from audit log
     const errors = await db
@@ -318,12 +344,15 @@ router.get('/errors', async (req: Request, res: Response) => {
       errorsByType[errorType] = (errorsByType[errorType] || 0) + 1;
     });
 
-    res.json({ 
-      errors,
-      errorsByType,
-      count: errors.length,
-      since: sinceDate
+      return { 
+        errors,
+        errorsByType,
+        count: errors.length,
+        since: sinceDate
+      };
     });
+
+    res.json(result);
   } catch (error) {
     console.error('Error fetching import errors:', error);
     res.status(500).json({ 

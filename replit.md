@@ -89,6 +89,28 @@ Preferred communication style: Simple, everyday language.
 - **Data Validation**: Comprehensive input validation and sanitization
 - **Audit Trails**: Complete activity logging for regulatory compliance
 
+# Recent Major Architecture Changes (September 2025)
+
+## Import Monitoring System Fix (September 2025)
+
+### Database Connection Pattern Improvements
+- **Fixed**: Critical tenant context issues in import monitoring API routes preventing dashboard functionality
+- **Resolution**: Implemented proper `withTenantClient` pattern across all monitoring routes
+- **Impact**: All `/api/imports/monitoring/*` endpoints now correctly handle tenant isolation
+- **Pattern Applied**: Consistent database connection handling using `withTenantClient(tenantId, async (client) => {...})`
+
+### Routes Updated
+- `/api/imports/monitoring/status` - Fixed tenant context for import status queries
+- `/api/imports/monitoring/[id]/events` - Fixed database connection for event retrieval
+- `/api/imports/monitoring/metrics` - Fixed aggregated metrics queries
+- `/api/imports/monitoring/active` - Fixed active imports tracking
+- `/api/imports/monitoring/errors` - Fixed error reporting and aggregation
+
+### UI Improvements
+- Import Monitoring dashboard integrated with AdminLayout for consistent navigation
+- Added persistent left sidebar navigation for import monitoring features
+- Dashboard now functional and ready for import data visualization
+
 # Recent Major Architecture Changes (January 2025)
 
 ## Phase 3: Microservice Decomposition (January 2025)
