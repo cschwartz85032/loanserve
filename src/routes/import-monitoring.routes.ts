@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from 'express';
 import { ImportMonitor, getMonitoringDashboard } from '../services/import-monitor';
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { drizzle } from 'drizzle-orm/neon-serverless';
 import { eq, and, desc, gte } from 'drizzle-orm';
 import { 
   imports, 

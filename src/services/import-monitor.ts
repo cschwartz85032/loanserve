@@ -3,9 +3,7 @@
  * Provides comprehensive monitoring and progress tracking for import operations
  */
 
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, and, desc, gte, sql, lte } from 'drizzle-orm';
-import postgres from 'postgres';
+import { PoolClient } from 'pg';
 import { 
   importProgress, 
   importMetrics, 
@@ -463,7 +461,7 @@ export class ImportMonitor {
  * Get monitoring dashboard data
  */
 export async function getMonitoringDashboard(
-  client: postgres.Sql,
+  client: PoolClient,
   tenantId: string,
   timeRange: 'hour' | 'day' | 'week' = 'day'
 ): Promise<{
@@ -472,7 +470,6 @@ export async function getMonitoringDashboard(
   metrics: any;
   alerts: any[];
 }> {
-  const db = drizzle(client);
   const now = new Date();
   let since: Date;
 
@@ -488,57 +485,59 @@ export async function getMonitoringDashboard(
   }
 
   // Get active imports (in progress)
-  const activeImports = await db
-    .select({
-      import: imports,
-      progress: importProgress
-    })
-    .from(imports)
-    .leftJoin(importProgress, eq(imports.id, importProgress.importId))
-    .where(and(
-      eq(imports.tenantId, tenantId),
-      eq(imports.status, 'processing')
-    ))
-    .orderBy(desc(imports.createdAt));
+  const activeImportsResult = await client.query(`
+    SELECT 
+      i.*,
+      p.stage,
+      p.current_record,
+      p.total_records,
+      p.processed_records,
+      p.failed_records,
+      p.percentage_complete,
+      p.estimated_completion
+    FROM imports i
+    LEFT JOIN import_progress p ON i.id = p.import_id
+    WHERE i.tenant_id = $1 
+      AND i.status = 'processing'
+    ORDER BY i.created_at DESC
+  `, [tenantId]);
+  const activeImports = activeImportsResult.rows;
 
   // Get recent imports
-  const recentImports = await db
-    .select()
-    .from(imports)
-    .where(and(
-      eq(imports.tenantId, tenantId),
-      gte(imports.createdAt, since)
-    ))
-    .orderBy(desc(imports.createdAt))
-    .limit(20);
+  const recentImportsResult = await client.query(`
+    SELECT * FROM imports
+    WHERE tenant_id = $1 
+      AND created_at >= $2
+    ORDER BY created_at DESC
+    LIMIT 20
+  `, [tenantId, since]);
+  const recentImports = recentImportsResult.rows;
 
   // Get aggregated metrics
-  const metrics = await db
-    .select()
-    .from(importMetrics)
-    .where(and(
-      eq(importMetrics.tenantId, tenantId),
-      gte(importMetrics.periodStart, since)
-    ))
-    .orderBy(desc(importMetrics.periodStart));
+  const metricsResult = await client.query(`
+    SELECT * FROM import_metrics
+    WHERE tenant_id = $1 
+      AND period_start >= $2
+    ORDER BY period_start DESC
+  `, [tenantId, since]);
+  const metrics = metricsResult.rows;
 
   // Get recent critical events/alerts
-  const alerts = await db
-    .select({
-      importId: importAuditLog.importId,
-      message: importAuditLog.message,
-      details: importAuditLog.details,
-      createdAt: importAuditLog.createdAt
-    })
-    .from(importAuditLog)
-    .innerJoin(imports, eq(importAuditLog.importId, imports.id))
-    .where(and(
-      eq(imports.tenantId, tenantId),
-      gte(importAuditLog.createdAt, since),
-      sql`${importAuditLog.severity} IN ('error', 'critical')`
-    ))
-    .orderBy(desc(importAuditLog.createdAt))
-    .limit(10);
+  const alertsResult = await client.query(`
+    SELECT 
+      a.import_id,
+      a.message,
+      a.details,
+      a.created_at
+    FROM import_audit_log a
+    INNER JOIN imports i ON a.import_id = i.id
+    WHERE i.tenant_id = $1 
+      AND a.created_at >= $2
+      AND a.severity IN ('error', 'critical')
+    ORDER BY a.created_at DESC
+    LIMIT 10
+  `, [tenantId, since]);
+  const alerts = alertsResult.rows;
 
   return {
     activeImports,
