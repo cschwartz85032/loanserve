@@ -211,6 +211,78 @@ export const workerStatus = pgTable('worker_status', {
   metadata: jsonb('metadata').default({})
 });
 
+// Import progress monitoring table - detailed tracking for each import
+export const importProgress = pgTable('import_progress', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  importId: uuid('import_id').notNull().references(() => imports.id, { onDelete: 'cascade' }),
+  stage: text('stage').notNull(), // 'upload', 'validation', 'parsing', 'entity_creation', 'persistence', 'complete'
+  status: text('status').notNull(), // 'pending', 'in_progress', 'completed', 'failed', 'skipped'
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  durationMs: integer('duration_ms'),
+  recordsTotal: integer('records_total').default(0),
+  recordsProcessed: integer('records_processed').default(0),
+  recordsSuccess: integer('records_success').default(0),
+  recordsFailed: integer('records_failed').default(0),
+  recordsSkipped: integer('records_skipped').default(0),
+  currentRecord: jsonb('current_record'), // Details of record being processed
+  errorDetails: jsonb('error_details'), // Detailed error information
+  metrics: jsonb('metrics').default({}), // Performance metrics
+  metadata: jsonb('metadata').default({}), // Additional stage-specific data
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  importStageIdx: index('idx_import_progress_import_stage').on(table.importId, table.stage),
+  statusIdx: index('idx_import_progress_status').on(table.status),
+  importCreatedIdx: index('idx_import_progress_import_created').on(table.importId, table.createdAt)
+}));
+
+// Import metrics table - aggregated metrics for monitoring
+export const importMetrics = pgTable('import_metrics', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: uuid('tenant_id').notNull(),
+  period: text('period').notNull(), // 'minute', 'hour', 'day'
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+  totalImports: integer('total_imports').notNull().default(0),
+  successfulImports: integer('successful_imports').notNull().default(0),
+  failedImports: integer('failed_imports').notNull().default(0),
+  totalRecords: integer('total_records').notNull().default(0),
+  successfulRecords: integer('successful_records').notNull().default(0),
+  failedRecords: integer('failed_records').notNull().default(0),
+  avgProcessingTimeMs: numeric('avg_processing_time_ms', { precision: 10, scale: 2 }),
+  p95ProcessingTimeMs: numeric('p95_processing_time_ms', { precision: 10, scale: 2 }),
+  p99ProcessingTimeMs: numeric('p99_processing_time_ms', { precision: 10, scale: 2 }),
+  errorsByType: jsonb('errors_by_type').default({}),
+  fileTypeDistribution: jsonb('file_type_distribution').default({}),
+  stageMetrics: jsonb('stage_metrics').default({}), // Metrics per processing stage
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  tenantPeriodIdx: uniqueIndex('idx_import_metrics_tenant_period').on(table.tenantId, table.period, table.periodStart),
+  periodIdx: index('idx_import_metrics_period').on(table.period, table.periodStart)
+}));
+
+// Import audit log - detailed event log for debugging
+export const importAuditLog = pgTable('import_audit_log', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  importId: uuid('import_id').notNull().references(() => imports.id, { onDelete: 'cascade' }),
+  eventType: text('event_type').notNull(), // 'stage_start', 'stage_complete', 'record_processed', 'error', 'warning'
+  stage: text('stage'),
+  recordIdentifier: text('record_identifier'), // Loan number or other identifier
+  message: text('message').notNull(),
+  details: jsonb('details').default({}),
+  severity: text('severity').notNull().default('info'), // 'debug', 'info', 'warning', 'error', 'critical'
+  stackTrace: text('stack_trace'),
+  userId: uuid('user_id'),
+  correlationId: text('correlation_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  importIdx: index('idx_import_audit_import').on(table.importId),
+  eventTypeIdx: index('idx_import_audit_event_type').on(table.eventType),
+  severityIdx: index('idx_import_audit_severity').on(table.severity),
+  createdIdx: index('idx_import_audit_created').on(table.createdAt)
+}));
+
 // Pipeline alerts table
 export const pipelineAlerts = pgTable('pipeline_alerts', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
