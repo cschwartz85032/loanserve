@@ -552,23 +552,39 @@ export async function getMonitoringDashboard(
 
   // Get active imports (in progress)
   const activeImportsResult = await client.query(`
+    WITH progress_agg AS (
+      SELECT 
+        import_id,
+        tenant_id,
+        MAX(CASE WHEN status = 'in_progress' THEN stage ELSE NULL END) AS stage,
+        MAX(CASE WHEN status = 'in_progress' THEN current_record::text ELSE NULL END)::jsonb AS current_record,
+        SUM(COALESCE(records_total, 0)) AS records_total,
+        SUM(COALESCE(records_processed, 0)) AS records_processed,
+        SUM(COALESCE(records_success, 0)) AS records_success,
+        SUM(COALESCE(records_failed, 0)) AS records_failed,
+        SUM(COALESCE(records_skipped, 0)) AS records_skipped,
+        BOOL_OR(status = 'in_progress') AS has_in_progress
+      FROM import_progress
+      WHERE tenant_id = $1
+      GROUP BY import_id, tenant_id
+    )
     SELECT 
       i.*,
       p.stage,
       p.current_record,
       p.records_total,
       p.records_processed,
-      p.records_failed AS records_failed,
+      p.records_failed,
       CASE 
         WHEN p.records_total > 0 
         THEN (p.records_processed::float / p.records_total::float) * 100 
         ELSE 0 
       END as percentage_complete
     FROM imports i
-    LEFT JOIN import_progress p ON i.id = p.import_id AND p.tenant_id = i.tenant_id
+    INNER JOIN progress_agg p ON i.id = p.import_id AND p.tenant_id = i.tenant_id
     WHERE i.tenant_id = $1 
       AND i.status = 'processing'
-      AND p.status = 'in_progress'
+      AND p.has_in_progress = true
     ORDER BY i.created_at DESC
   `, [tenantId]);
 

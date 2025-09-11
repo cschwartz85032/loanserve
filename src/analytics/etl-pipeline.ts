@@ -172,13 +172,20 @@ export class ETLPipeline {
           const delinquencyBucket = this.calculateDelinquencyBucket(row.days_delinquent);
           const paymentTimingCategory = this.calculatePaymentTiming(row.payment_status);
 
-          // Insert into fact table
+          // Calculate payment breakdowns (simplified - in production would come from payment records)
+          const interestPaymentCents = Math.round((row.current_payment_amount_cents || 0) * 0.3); // Estimate 30% interest
+          const principalPaymentCents = Math.round((row.current_payment_amount_cents || 0) * 0.7); // Estimate 70% principal
+          const escrowPaymentCents = 0; // Would come from escrow records
+          const lateFeeCents = row.days_delinquent > 0 ? 5000 : 0; // $50 late fee if delinquent
+          
+          // Insert into fact table with all required columns
           await c.query(
             `INSERT INTO fact_loan_performance 
              (time_key, loan_key, borrower_key, outstanding_balance_cents, 
-              scheduled_payment_cents, actual_payment_cents, days_delinquent, 
-              payment_status, delinquency_bucket, payment_timing_category)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+              scheduled_payment_cents, actual_payment_cents, interest_payment_cents,
+              principal_payment_cents, escrow_payment_cents, late_fees_cents,
+              days_delinquent, payment_status, delinquency_bucket, payment_timing_category)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
              ON CONFLICT DO NOTHING`,
             [
               timeKey,
@@ -187,6 +194,10 @@ export class ETLPipeline {
               row.principal_minor || 0,
               row.current_payment_amount_cents || 0,
               row.payment_amount_cents || 0,
+              interestPaymentCents,
+              principalPaymentCents,
+              escrowPaymentCents,
+              lateFeeCents,
               row.days_delinquent,
               row.payment_status,
               delinquencyBucket,
@@ -480,10 +491,14 @@ export class ETLPipeline {
   }
 
   private async getLoanDimensionKey(client: any, data: any): Promise<string> {
+    // Convert integer loan_id to a deterministic UUID
+    // Using namespace UUID to ensure same loan_id always generates same UUID
+    const loanIdUuid = this.integerToUuid(data.loan_id);
+    
     // Check if loan dimension exists, create if not
     const result = await client.query(
       'SELECT loan_key FROM dim_loan WHERE loan_id = $1',
-      [data.loan_id]
+      [loanIdUuid]
     );
 
     if (result.rowCount > 0) {
@@ -496,17 +511,45 @@ export class ETLPipeline {
       `INSERT INTO dim_loan 
        (loan_key, loan_id, loan_number, product_type, current_status)
        VALUES ($1, $2, $3, $4, $5)`,
-      [loanKey, data.loan_id, data.loan_number, data.product_type, data.status]
+      [loanKey, loanIdUuid, data.loan_number, data.product_type, data.status]
     );
 
     return loanKey;
   }
 
   private async getBorrowerDimensionKey(client: any, data: any): Promise<string> {
+    // Handle null borrower_id
+    if (!data.borrower_id) {
+      // Check if default borrower exists, create if not
+      const defaultBorrowerKey = '00000000-0000-0000-0000-000000000000';
+      const defaultBorrowerId = '00000000-0000-0000-0000-000000000000';
+      
+      const result = await client.query(
+        'SELECT borrower_key FROM dim_borrower WHERE borrower_key = $1',
+        [defaultBorrowerKey]
+      );
+      
+      if (result.rowCount === 0) {
+        // Create default borrower record for loans without borrowers
+        await client.query(
+          `INSERT INTO dim_borrower 
+           (borrower_key, borrower_id, risk_profile)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (borrower_key) DO NOTHING`,
+          [defaultBorrowerKey, defaultBorrowerId, 'unknown']
+        );
+      }
+      
+      return defaultBorrowerKey;
+    }
+    
+    // Convert integer borrower_id to a deterministic UUID
+    const borrowerIdUuid = this.integerToUuid(data.borrower_id);
+    
     // Check if borrower dimension exists, create if not
     const result = await client.query(
       'SELECT borrower_key FROM dim_borrower WHERE borrower_id = $1',
-      [data.borrower_id]
+      [borrowerIdUuid]
     );
 
     if (result.rowCount > 0) {
@@ -519,7 +562,7 @@ export class ETLPipeline {
       `INSERT INTO dim_borrower 
        (borrower_key, borrower_id, risk_profile)
        VALUES ($1, $2, $3)`,
-      [borrowerKey, data.borrower_id, 'standard']
+      [borrowerKey, borrowerIdUuid, 'standard']
     );
 
     return borrowerKey;
@@ -563,6 +606,22 @@ export class ETLPipeline {
       case 'missed': return 'missed';
       default: return 'scheduled';
     }
+  }
+
+  /**
+   * Convert an integer ID to a deterministic UUID
+   * This ensures the same integer always produces the same UUID
+   */
+  private integerToUuid(id: number | string): string {
+    // Create a deterministic UUID from the integer ID
+    // Using namespace UUID approach for consistency
+    const namespace = '6ba7b810-9dad-11d1-80b4-00c04fd430c8'; // Standard DNS namespace
+    const paddedId = String(id).padStart(12, '0');
+    const uuidSuffix = paddedId.slice(-12);
+    
+    // Create a valid UUID v4 format with deterministic suffix based on ID
+    // Format: namespace-prefix-4xxx-8xxx-paddedId
+    return `${namespace.substring(0, 8)}-0000-4000-8000-${uuidSuffix}`;
   }
 }
 

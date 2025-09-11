@@ -17,7 +17,7 @@ import {
   createFileUploadAuditLog,
   type FileUploadAuditLog 
 } from './utils/file-security';
-import { analyzeDocument } from "./openai";
+import { analyzeDocument } from "./document-router";
 import feeRoutes from "./routes/fees";
 import { registerLedgerRoutes } from "./routes/ledger";
 import authRoutes from "./routes/auth";
