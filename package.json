@@ -86,7 +86,7 @@
     "@types/speakeasy": "^2.0.10",
     "@types/supertest": "^6.0.3",
     "@types/uuid": "^10.0.0",
-    "@uppy/aws-s3": "^4.3.2",
+    "@uppy/aws-s3": "^5.0.0",
     "@uppy/core": "^4.5.2",
     "@uppy/dashboard": "^4.4.3",
     "@uppy/drag-drop": "^4.2.2",
