@@ -5,11 +5,25 @@ import { AIPipelineService } from '../database/ai-pipeline-service';
 import { rabbitmqClient } from '../../server/services/rabbitmq-unified';
 import { Queues } from '../queues/topology';
 import { convert } from 'xmlbuilder2';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import { Readable } from 'stream';
 
 export const importsRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Create import job
+// Initialize S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  } : undefined
+});
+
+const S3_BUCKET = process.env.S3_IMPORT_BUCKET || 'loanserve-imports';
+
+// Create import job with S3 upload
 importsRouter.post('/imports', upload.single('file'), async (req: any, res) => {
   try {
     if (!req.file) {
@@ -21,33 +35,67 @@ importsRouter.post('/imports', upload.single('file'), async (req: any, res) => {
     const hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
     const service = new AIPipelineService();
 
+    // Generate S3 key with tenant isolation
+    const timestamp = Date.now();
+    const s3Key = `imports/${tenantId}/${timestamp}-${hash.substring(0, 8)}-${req.file.originalname}`;
+
+    // Upload to S3
+    const uploadParams = {
+      Bucket: S3_BUCKET,
+      Key: s3Key,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype || 'application/octet-stream',
+      Metadata: {
+        tenantId,
+        importType,
+        sha256: hash,
+        originalName: req.file.originalname
+      },
+      ServerSideEncryption: 'AES256' as const
+    };
+
+    const uploadResult = await s3Client.send(new PutObjectCommand(uploadParams));
+
+    // Create import record with S3 location
     const record = await service.createImport({
       tenantId,
       type: importType,
       filename: req.file.originalname,
       sizeBytes: req.file.size,
       sha256: hash,
+      s3Bucket: S3_BUCKET,
+      s3Key: s3Key,
+      s3VersionId: uploadResult.VersionId,
+      s3ETag: uploadResult.ETag,
+      contentType: req.file.mimetype,
       createdBy: req.user?.id || tenantId
     });
 
-    // Parse file content for preview
+    // Parse first 100KB for preview (without loading entire file)
     let preview: any[] = [];
     try {
-      const content = req.file.buffer.toString('utf-8');
-      preview = await parseImportContent(content, importType);
+      const previewSize = Math.min(req.file.buffer.length, 100 * 1024);
+      const previewContent = req.file.buffer.subarray(0, previewSize).toString('utf-8');
+      preview = await parseImportContent(previewContent, importType);
     } catch (err) {
       console.error('Preview parse error:', err);
     }
 
     await service.updateImportProgress(record.id, 'pending', { preview: preview.slice(0, 5) }, tenantId);
 
-    // Publish to processing queue with file content
+    // Publish to processing queue with S3 reference only
     const message = {
       importId: record.id,
       tenantId,
-      fileBuffer: req.file.buffer.toString('base64'),
-      fileType: importType
+      s3Bucket: S3_BUCKET,
+      s3Key: s3Key,
+      s3VersionId: uploadResult.VersionId,
+      fileType: importType,
+      sha256: hash,
+      sizeBytes: req.file.size,
+      contentType: req.file.mimetype
     };
+    
     await rabbitmqClient.publish(
       '',
       Queues.Import,
@@ -55,7 +103,11 @@ importsRouter.post('/imports', upload.single('file'), async (req: any, res) => {
       { contentType: 'application/json' }
     );
 
-    res.status(202).json({ importId: record.id, status: record.status });
+    res.status(202).json({ 
+      importId: record.id, 
+      status: record.status,
+      s3Location: `s3://${S3_BUCKET}/${s3Key}`
+    });
   } catch (error) {
     console.error('Create import error:', error);
     res.status(500).json({

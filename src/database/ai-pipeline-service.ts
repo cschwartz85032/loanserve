@@ -332,6 +332,11 @@ export class AIPipelineService {
     filename: string;
     sizeBytes: number;
     sha256: string;
+    s3Bucket?: string;
+    s3Key?: string;
+    s3VersionId?: string;
+    s3ETag?: string;
+    contentType?: string;
     correlationId?: string;
     investorDirectives?: any[];
     escrowInstructions?: any[];
@@ -350,6 +355,11 @@ export class AIPipelineService {
           filename: data.filename,
           sizeBytes: data.sizeBytes,
           sha256: data.sha256,
+          s3Bucket: data.s3Bucket,
+          s3Key: data.s3Key,
+          s3VersionId: data.s3VersionId,
+          s3ETag: data.s3ETag,
+          contentType: data.contentType,
           correlationId: data.correlationId,
           investorDirectives: data.investorDirectives || [],
           escrowInstructions: data.escrowInstructions || [],

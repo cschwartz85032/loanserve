@@ -6,20 +6,63 @@ import { publishEvent } from '../../db/eventOutboxService';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { loans, documents, properties } from '../../../shared/schema';
 import { AIPipelineService } from '../../database/ai-pipeline-service';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { Readable } from 'stream';
+
+// Initialize S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  } : undefined
+});
 
 export async function initImportConsumer(conn: amqp.Connection) {
   await startConsumer(conn, {
     queue: Queues.Import,
     handler: async (payload, { client }) => {
-      const { importId, tenantId, fileBuffer } = payload;
+      const { importId, tenantId, s3Bucket, s3Key, fileType, sha256, fileBuffer } = payload;
       const db = drizzle(client);
       const service = new AIPipelineService();
 
       try {
         await service.updateImportProgress(importId, 'processing', {}, tenantId);
 
-        const importContent = Buffer.from(fileBuffer, 'base64').toString('utf-8');
-        const processedRecords = await processImportData(importContent);
+        let importContent: string;
+        
+        // Support both S3 reference (new) and base64 buffer (legacy)
+        if (s3Bucket && s3Key) {
+          // Download from S3
+          const getObjectCommand = new GetObjectCommand({
+            Bucket: s3Bucket,
+            Key: s3Key
+          });
+          
+          const response = await s3Client.send(getObjectCommand);
+          const stream = response.Body as Readable;
+          const chunks: Buffer[] = [];
+          
+          for await (const chunk of stream) {
+            chunks.push(Buffer.from(chunk));
+          }
+          
+          importContent = Buffer.concat(chunks).toString('utf-8');
+          
+          // Verify integrity
+          const crypto = await import('crypto');
+          const downloadedHash = crypto.createHash('sha256').update(importContent).digest('hex');
+          if (sha256 && downloadedHash !== sha256) {
+            throw new Error(`File integrity check failed. Expected SHA256: ${sha256}, got: ${downloadedHash}`);
+          }
+        } else if (fileBuffer) {
+          // Legacy: decode from base64
+          importContent = Buffer.from(fileBuffer, 'base64').toString('utf-8');
+        } else {
+          throw new Error('No file content available: neither S3 location nor buffer provided');
+        }
+
+        const processedRecords = await processImportData(importContent, fileType);
 
         for (const record of processedRecords) {
           // Create a property first (or find existing)
@@ -79,7 +122,7 @@ export async function initImportConsumer(conn: amqp.Connection) {
         await service.updateImportProgress(
           importId,
           'completed',
-          { loanCount: processedRecords.length },
+          { loanCount: processedRecords.length, parsedByVersion: '1.0.0' },
           tenantId
         );
 
@@ -111,7 +154,7 @@ export async function initImportConsumer(conn: amqp.Connection) {
   });
 }
 
-async function processImportData(content: string): Promise<any[]> {
+async function processImportData(content: string, fileType?: string): Promise<any[]> {
   // Real CSV/JSON parsing implementation
   const lines = content.trim().split('\n');
   if (lines.length === 0) return [];
