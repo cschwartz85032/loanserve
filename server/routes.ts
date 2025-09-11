@@ -264,9 +264,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'File required' });
       }
 
+      console.log('[Route] File upload details:', {
+        filename: req.file.originalname,
+        size: req.file.size,
+        mimetype: req.file.mimetype,
+        buffer: req.file.buffer ? 'Buffer present' : 'No buffer',
+        path: req.file.path
+      });
+
+      // Read file buffer (multer stores files on disk, so we need to read them)
+      let fileBuffer: Buffer;
+      if (req.file.buffer) {
+        fileBuffer = req.file.buffer;
+      } else if (req.file.path) {
+        const fs = await import('fs');
+        fileBuffer = await fs.promises.readFile(req.file.path);
+      } else {
+        return res.status(400).json({ error: 'File data not available' });
+      }
+
       // Use the document router to handle different file types
       const { routeDocument } = await import('./document-router');
-      const result = await routeDocument(req.file.originalname, req.file.buffer);
+      const result = await routeDocument(req.file.originalname, fileBuffer);
       return res.json(result);
     } catch (error) {
       console.error('Document analysis error:', error);
