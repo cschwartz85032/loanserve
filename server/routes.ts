@@ -1792,9 +1792,7 @@ To implement full file serving:
   registerLedgerRoutes(app);
 
   // ============= AI DOCUMENT ANALYSIS ROUTES =============
-  // Temporarily bypass authentication in development for testing
-  const authMiddleware = process.env.NODE_ENV === 'production' ? isAuthenticated : (_req: any, _res: any, next: any) => next();
-  app.post("/api/documents/analyze", upload.single('file'), authMiddleware, async (req, res) => {
+  app.post("/api/documents/analyze", upload.single('file'), isAuthenticated, async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -1818,7 +1816,7 @@ To implement full file serving:
     }
   });
 
-  app.post("/api/loans/create-from-documents", authMiddleware, async (req, res) => {
+  app.post("/api/loans/create-from-documents", isAuthenticated, async (req, res) => {
     try {
       const { extractedData, documentTypes } = req.body;
       
