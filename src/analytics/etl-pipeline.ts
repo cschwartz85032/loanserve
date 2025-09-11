@@ -460,9 +460,23 @@ export class ETLPipeline {
 
   // Helper methods for dimension lookups and transformations
 
-  private async getTimeKey(date: string): Promise<number> {
+  private async getTimeKey(date: string | Date): Promise<number> {
     // Convert date to integer key (YYYYMMDD format)
-    return parseInt(date.replace(/-/g, ''));
+    let dateStr: string;
+    if (date instanceof Date) {
+      // Handle Date objects
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      dateStr = `${year}${month}${day}`;
+    } else if (typeof date === 'string') {
+      // Handle string dates
+      dateStr = date.replace(/-/g, '');
+    } else {
+      // Fallback for unexpected types
+      dateStr = String(date).replace(/-/g, '');
+    }
+    return parseInt(dateStr);
   }
 
   private async getLoanDimensionKey(client: any, data: any): Promise<string> {
