@@ -265,7 +265,7 @@ export function BulkIngestionTab({ onLoansCreated }: BulkIngestionTabProps) {
     formData.append('importType', fileData.format === 'mismo' ? 'mismo' : fileData.fileType || 'csv');
 
     try {
-      const response = await fetch('/imports', {
+      const response = await fetch('/api/imports', {
         method: 'POST',
         body: formData,
         credentials: 'include'
@@ -313,7 +313,7 @@ export function BulkIngestionTab({ onLoansCreated }: BulkIngestionTabProps) {
 
     const checkStatus = async () => {
       try {
-        const response = await fetch(`/imports/${importJobId}`, {
+        const response = await fetch(`/api/imports/${importJobId}`, {
           method: 'GET',
           credentials: 'include'
         });

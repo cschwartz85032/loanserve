@@ -390,6 +390,25 @@ export class AIPipelineService {
   }
 
   /**
+   * Fetch import by ID
+   */
+  async getImport(id: string, tenantId: string): Promise<Import | null> {
+    return withTenantClient(tenantId, async (client) => {
+      // Runtime guard - ensure tenant context is set
+      await assertTenantContext(client);
+
+      const db = drizzle(client);
+      const [record] = await db
+        .select()
+        .from(imports)
+        .where(eq(imports.id, id))
+        .limit(1);
+
+      return record || null;
+    });
+  }
+
+  /**
    * Create import error
    */
   async createImportError(data: {

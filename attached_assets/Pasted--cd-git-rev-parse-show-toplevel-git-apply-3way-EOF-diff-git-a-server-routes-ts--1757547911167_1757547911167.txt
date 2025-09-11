@@ -1,0 +1,63 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/server/routes.ts b/server/routes.ts
+index 61187b5ceaca6bb884a33a00f9212f76b3d654ce..d4b5ac8012d315aa04680ff827e397217b7f42f2 100644
+--- a/server/routes.ts
++++ b/server/routes.ts
+@@ -1891,50 +1891,54 @@ To implement full file serving:
+   app.use('/api/messaging', messagingTestRoutes.default);
+ 
+   // Register reconciliation routes
+   const reconciliationRoutes = await import('./routes/reconciliation');
+   app.use('/api/reconciliation', reconciliationRoutes.default);
+ 
+   // Register QC (Quality Control) routes
+   app.use('/api/qc', qcRouter);
+ 
+   // Register Export routes
+   app.use('/api/export', exportRouter);
+ 
+   // Register Notification routes
+   app.use('/api/notifications', notificationRouter);
+ 
+   // Register Storage test routes
+   app.use('/api/storage', storageRoutes);
+ 
+   // Register Prometheus metrics routes
+   app.use('/', metricsRouter);
+ 
+   // Register Payment routes
+   const { paymentsRouter } = await import('../src/routes/payments.routes');
+   app.use('/api', paymentsRouter);
+ 
++  // Register Import routes
++  const { importsRouter } = await import('../src/routes/imports.routes');
++  app.use('/api', importsRouter);
++
+   // Register Investor routes
+   const { investorRouter } = await import('../src/routes/investor.routes');
+   app.use('/api', investorRouter);
+ 
+   // Register Analytics routes
+   const { analyticsRouter } = await import('../src/routes/analytics.routes');
+   app.use('/api/analytics', analyticsRouter);
+ 
+   // Register Vendor Integration routes
+   app.use('/api', vendorRouter);
+ 
+   // Register Public OAuth routes (no auth required)
+   app.use('/public', publicOAuthRouter);
+ 
+   // Register Public API routes (OAuth2 JWT auth)
+   app.use('/public/api', publicApiRouter);
+ 
+   // Register Admin API Management routes
+   app.use('/api', adminApiRouter);
+ 
+   // Register AI Pipeline Monitoring routes
+   const { monitoringRouter } = await import('../src/routes/monitoring.routes');
+   app.use('/api', monitoringRouter);
+ 
+   // Register Health and Reliability routes
+ 
+EOF
+)

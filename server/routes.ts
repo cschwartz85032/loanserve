@@ -1913,6 +1913,10 @@ To implement full file serving:
   const { paymentsRouter } = await import('../src/routes/payments.routes');
   app.use('/api', paymentsRouter);
 
+  // Register Import routes
+  const { importsRouter } = await import('../src/routes/imports.routes');
+  app.use('/api', importsRouter);
+
   // Register Investor routes
   const { investorRouter } = await import('../src/routes/investor.routes');
   app.use('/api', investorRouter);

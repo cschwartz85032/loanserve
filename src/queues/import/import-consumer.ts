@@ -4,83 +4,111 @@ import { Queues } from '../topology';
 import { auditAction } from '../../db/auditService';
 import { publishEvent } from '../../db/eventOutboxService';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
-import { loans, documents } from '../../../shared/schema';
+import { loans, documents, properties } from '../../../shared/schema';
+import { AIPipelineService } from '../../database/ai-pipeline-service';
 
 export async function initImportConsumer(conn: amqp.Connection) {
   await startConsumer(conn, {
     queue: Queues.Import,
     handler: async (payload, { client }) => {
-      // Example payload: { messageId, tenantId, importId, fileData }
-      const { importId, fileData, tenantId } = payload;
+      const { importId, tenantId, fileBuffer } = payload;
       const db = drizzle(client);
+      const service = new AIPipelineService();
 
-      // Parse CSV/JSON import file from S3
-      // This would integrate with S3 to fetch the file content
-      const importContent = await fetchImportFile(fileData.s3Key);
-      
-      // Process each row/record in the import
-      const processedRecords = await processImportData(importContent);
-      
-      // Create loan candidates and documents from import
-      for (const record of processedRecords) {
-        // Create loan
-        const loan = await db.insert(loans).values({
-          loanUrn: record.loanNumber,
-          status: 'application',
-          loanType: 'conventional',
-          // Add other required fields based on schema
-        }).returning();
+      try {
+        await service.updateImportProgress(importId, 'processing', {}, tenantId);
 
-        // Create associated documents if any
-        if (record.documents) {
-          for (const doc of record.documents) {
-            await db.insert(documents).values({
-              loanId: loan[0].id,
-              storageUri: doc.s3Uri,
-              sha256: doc.hash,
-              category: 'loan_application',
-              // Add other required fields
-            });
+        const importContent = Buffer.from(fileBuffer, 'base64').toString('utf-8');
+        const processedRecords = await processImportData(importContent);
+
+        for (const record of processedRecords) {
+          // Create a property first (or find existing)
+          const [property] = await db
+            .insert(properties)
+            .values({
+              address: record.propertyAddress || '123 Main St',
+              city: record.propertyCity || 'Unknown',
+              state: record.propertyState || 'CA',
+              zipCode: record.propertyZip || '00000',
+              propertyType: 'single_family',
+              occupancyType: 'primary',
+              yearBuilt: 2020,
+              squareFeet: 2000,
+              lotSize: 0.25,
+              bedrooms: 3,
+              bathrooms: 2,
+              currentValue: record.loanAmount || 100000,
+              purchasePrice: record.loanAmount || 100000,
+            })
+            .returning()
+            .onConflictDoNothing();
+
+          const propertyId = property?.id || 1;
+
+          const loan = await db
+            .insert(loans)
+            .values({
+              loanNumber: record.loanNumber || `IMPORT-${Date.now()}`,
+              status: 'application',
+              loanType: record.loanType || 'conventional',
+              propertyId: propertyId,
+              originalAmount: String(record.loanAmount || 100000),
+              principalBalance: String(record.loanAmount || 100000),
+              interestRate: String(record.interestRate || 5.0),
+              maturityDate: new Date(Date.now() + 365 * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 years from now
+              paymentAmount: String(record.paymentAmount || 500),
+              rateType: 'fixed',
+              loanTerm: 360, // 30 years in months
+            })
+            .returning();
+
+          if (record.documents) {
+            for (const doc of record.documents) {
+              await db.insert(documents).values({
+                loanId: loan[0].id,
+                category: 'loan_application',
+                title: doc.title || doc.fileName || 'Imported Document',
+                fileName: doc.fileName || 'unknown',
+                storageUrl: doc.url || doc.storageUrl || '',
+                uploadedBy: doc.uploadedBy || 1,
+              });
+            }
           }
         }
+
+        await service.updateImportProgress(
+          importId,
+          'completed',
+          { loanCount: processedRecords.length },
+          tenantId
+        );
+
+        await auditAction(client, {
+          tenantId,
+          targetType: 'imports',
+          targetId: importId,
+          action: 'import_processed',
+          changes: { status: 'completed', recordCount: processedRecords.length },
+        });
+
+        await publishEvent(client, {
+          tenantId,
+          aggregateId: importId,
+          aggregateType: 'import',
+          eventType: 'ImportCompleted',
+          payload: { recordCount: processedRecords.length },
+        });
+      } catch (error) {
+        await service.updateImportProgress(
+          importId,
+          'failed',
+          { errors: [error instanceof Error ? error.message : String(error)] },
+          tenantId
+        );
+        throw error;
       }
-
-      // Import status would be tracked in a separate imports table
-      // For now, just log completion
-
-      // Audit log
-      await auditAction(client, {
-        tenantId,
-        targetType: 'imports',
-        targetId: importId,
-        action: 'import_processed',
-        changes: { status: 'completed', recordCount: processedRecords.length },
-      });
-
-      // Publish domain event
-      await publishEvent(client, {
-        tenantId,
-        aggregateId: importId,
-        aggregateType: 'import',
-        eventType: 'ImportCompleted',
-        payload: { recordCount: processedRecords.length },
-      });
     },
   });
-}
-
-async function fetchImportFile(s3Key: string): Promise<string> {
-  const AWS = require('aws-sdk');
-  const s3 = new AWS.S3();
-  
-  const params = {
-    Bucket: process.env.ARTIFACT_STORE_BUCKET?.replace('s3://', ''),
-    Key: s3Key
-  };
-  
-  const result = await s3.getObject(params).promise();
-  return result.Body.toString();
 }
 
 async function processImportData(content: string): Promise<any[]> {

@@ -1,0 +1,78 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/src/database/ai-pipeline-service.ts b/src/database/ai-pipeline-service.ts
+index 02d8cc7c329a169745f8080d6d4c6b51c9a117f5..1ab068bed48307ddd42a0ee698dba3080c96b158 100644
+--- a/src/database/ai-pipeline-service.ts
++++ b/src/database/ai-pipeline-service.ts
+@@ -367,50 +367,69 @@ export class AIPipelineService {
+    */
+   async updateImportProgress(
+     id: string,
+     status: string,
+     progress: any,
+     tenantId: string,
+     errorCount = 0
+   ): Promise<void> {
+     return withTenantClient(tenantId, async (client) => {
+       // Runtime guard - ensure tenant context is set
+       await assertTenantContext(client);
+       
+       const db = drizzle(client);
+       await db
+         .update(imports)
+         .set({
+           status,
+           progress,
+           errorCount,
+           updatedAt: sql`now()`
+         })
+         .where(eq(imports.id, id));
+     });
+   }
+ 
++  /**
++   * Fetch import by ID
++   */
++  async getImport(id: string, tenantId: string): Promise<Import | null> {
++    return withTenantClient(tenantId, async (client) => {
++      // Runtime guard - ensure tenant context is set
++      await assertTenantContext(client);
++
++      const db = drizzle(client);
++      const [record] = await db
++        .select()
++        .from(imports)
++        .where(eq(imports.id, id))
++        .limit(1);
++
++      return record || null;
++    });
++  }
++
+   /**
+    * Create import error
+    */
+   async createImportError(data: {
+     importId: string;
+     code: string;
+     severity: string;
+     pointer: string;
+     message: string;
+     rawFragment?: any;
+     suggestedCorrection?: any;
+     canAutoCorrect?: boolean;
+     tenantId: string;
+   }): Promise<void> {
+     return withTenantClient(data.tenantId, async (client) => {
+       // Runtime guard - ensure tenant context is set
+       await assertTenantContext(client);
+       
+       const db = drizzle(client);
+       await db
+         .insert(importErrors)
+         .values(data);
+     });
+   }
+ 
+ 
+EOF
+)
