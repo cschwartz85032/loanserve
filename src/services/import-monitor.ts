@@ -121,6 +121,7 @@ export class ImportMonitor {
     } else {
       await this.db.insert(importProgress).values({
         importId: this.importId,
+        tenantId: this.tenantId,
         stage,
         status: 'in_progress',
         startedAt: startTime,

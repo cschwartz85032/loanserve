@@ -78,7 +78,27 @@ router.get('/:importId/status', async (req: Request, res: Response) => {
 router.get('/:importId/progress', async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
+    const { tenantId } = req.context || {};
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID required' });
+    }
+    
     const db = drizzle(req.client);
+    
+    // Verify import belongs to tenant
+    const importRecord = await db
+      .select()
+      .from(imports)
+      .where(and(
+        eq(imports.id, importId),
+        eq(imports.tenantId, tenantId)
+      ))
+      .limit(1);
+    
+    if (importRecord.length === 0) {
+      return res.status(404).json({ error: 'Import not found' });
+    }
 
     const progress = await db
       .select()
@@ -112,8 +132,28 @@ router.get('/:importId/progress', async (req: Request, res: Response) => {
 router.get('/:importId/events', async (req: Request, res: Response) => {
   try {
     const { importId } = req.params;
+    const { tenantId } = req.context || {};
     const { limit = 100, severity, eventType } = req.query;
+    
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Tenant ID required' });
+    }
+    
     const db = drizzle(req.client);
+    
+    // Verify import belongs to tenant
+    const importRecord = await db
+      .select()
+      .from(imports)
+      .where(and(
+        eq(imports.id, importId),
+        eq(imports.tenantId, tenantId)
+      ))
+      .limit(1);
+    
+    if (importRecord.length === 0) {
+      return res.status(404).json({ error: 'Import not found' });
+    }
 
     let query = db
       .select()
